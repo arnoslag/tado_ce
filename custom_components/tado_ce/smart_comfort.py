@@ -7,7 +7,8 @@ Provides intelligent heating analytics including:
 - Recorder integration for historical data (Phase 3)
 - File persistence for data backup (Phase 3)
 
-Singleton pattern: get_smart_comfort_manager(...) / cleanup_smart_comfort_manager()
+v3.0.0: Per-entry instance stored in EntryData.smart_comfort_manager.
+No more global singleton — each home gets its own SmartComfortManager.
 
 This module can bootstrap from HA recorder history on startup,
 allowing immediate rate calculations without waiting for data collection.
@@ -1315,66 +1316,6 @@ class SmartComfortManager:
         
         # Cap at reasonable maximum (8 hours)
         return min(minutes, 480)
-
-
-# Global instance
-_manager: Optional[SmartComfortManager] = None
-
-
-def cleanup_smart_comfort_manager() -> bool:
-    """Clean up the global SmartComfortManager (sync version for executor).
-    
-    NOTE: This performs blocking I/O (save_to_file). 
-    Use async_cleanup_smart_comfort_manager() from async context.
-    
-    Returns:
-        True if manager was cleaned up, False if no manager existed
-    """
-    global _manager
-    if _manager is not None:
-        # Save data before cleanup
-        _manager.save_to_file()
-        _manager = None
-        _LOGGER.debug("Cleaned up SmartComfortManager")
-        return True
-    return False
-
-
-async def async_cleanup_smart_comfort_manager(hass: "HomeAssistant") -> bool:
-    """Clean up the global SmartComfortManager (async version).
-    
-    MUST be called in async_unload_entry() to prevent memory leaks
-    when integration is reloaded or removed.
-    
-    This wraps the blocking save_to_file() in executor to avoid
-    blocking I/O warning in async context.
-    
-    Args:
-        hass: Home Assistant instance
-        
-    Returns:
-        True if manager was cleaned up, False if no manager existed
-    """
-    global _manager
-    if _manager is not None:
-        # Save data before cleanup - run in executor to avoid blocking I/O
-        await hass.async_add_executor_job(_manager.save_to_file)
-        _manager = None
-        _LOGGER.debug("Cleaned up SmartComfortManager (async)")
-        return True
-    return False
-
-
-def get_smart_comfort_manager(history_days: int = DEFAULT_HISTORY_DAYS) -> SmartComfortManager:
-    """Get the global SmartComfortManager instance."""
-    global _manager
-    if _manager is None:
-        _manager = SmartComfortManager(history_days=history_days)
-    else:
-        # Update history_days if changed
-        if _manager._history_days != history_days:
-            _manager.set_history_days(history_days)
-    return _manager
 
 
 async def async_load_history_from_recorder(

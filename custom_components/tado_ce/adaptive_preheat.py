@@ -18,6 +18,7 @@ from homeassistant.helpers.event import async_track_state_change_event
 
 if TYPE_CHECKING:
     from .config_manager import ConfigurationManager
+    from .api_client import TadoApiClient
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -25,15 +26,17 @@ _LOGGER = logging.getLogger(__name__)
 class AdaptivePreheatManager:
     """Manages adaptive preheat automation for heating zones."""
     
-    def __init__(self, hass: HomeAssistant, config_manager: "ConfigurationManager"):
+    def __init__(self, hass: HomeAssistant, config_manager: "ConfigurationManager", api_client: "TadoApiClient | None" = None):
         """Initialize the Adaptive Preheat Manager.
         
         Args:
             hass: Home Assistant instance
             config_manager: Configuration manager with settings
+            api_client: Per-entry API client (v3.0.0 multi-home)
         """
         self._hass = hass
         self._config_manager = config_manager
+        self._api_client = api_client
         self._enabled = False
         self._enabled_zones: list[str] = []  # Zone IDs enabled for adaptive preheat
         self._active_overlays: dict[str, dict] = {}  # zone_id -> overlay info
@@ -233,8 +236,10 @@ class AdaptivePreheatManager:
         )
         
         try:
-            from .api_client import get_async_client
-            client = get_async_client(self._hass)
+            client = self._api_client
+            if client is None:
+                from .api_client import get_async_client
+                client = get_async_client(self._hass)
             
             setting = {
                 "type": "HEATING",
@@ -297,57 +302,3 @@ class AdaptivePreheatManager:
         self._state_listeners.clear()
         
         _LOGGER.debug("Adaptive Preheat: Unloaded")
-
-
-# Singleton instance
-_manager: AdaptivePreheatManager | None = None
-
-
-def get_adaptive_preheat_manager(
-    hass: HomeAssistant | None = None,
-    config_manager: "ConfigurationManager | None" = None
-) -> AdaptivePreheatManager | None:
-    """Get or create the Adaptive Preheat Manager singleton.
-    
-    Args:
-        hass: Home Assistant instance (required for creation)
-        config_manager: Configuration manager (required for creation)
-        
-    Returns:
-        AdaptivePreheatManager instance, or None if not created yet
-    """
-    global _manager
-    
-    if _manager is None and hass is not None and config_manager is not None:
-        _manager = AdaptivePreheatManager(hass, config_manager)
-    
-    return _manager
-
-
-async def async_setup_adaptive_preheat(
-    hass: HomeAssistant,
-    config_manager: "ConfigurationManager"
-) -> None:
-    """Set up Adaptive Preheat Manager.
-    
-    Called from __init__.py during integration setup.
-    
-    Args:
-        hass: Home Assistant instance
-        config_manager: Configuration manager
-    """
-    manager = get_adaptive_preheat_manager(hass, config_manager)
-    if manager:
-        await manager.async_setup()
-
-
-async def async_unload_adaptive_preheat() -> None:
-    """Unload Adaptive Preheat Manager.
-    
-    Called from __init__.py during integration unload.
-    """
-    global _manager
-    
-    if _manager:
-        await _manager.async_unload()
-        _manager = None

@@ -255,13 +255,34 @@ class TadoCEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
     
     def _save_config_sync(self, config: dict):
-        """Save config synchronously (for executor) using atomic write."""
+        """Save config synchronously (for executor) using atomic write.
+        
+        v3.0.0: Writes to per-home config file (config_{home_id}.json) when
+        home_id is present in config dict. Falls back to global CONFIG_FILE
+        for backward compat. Also writes to global CONFIG_FILE for legacy
+        code that still reads from it (GAP-25, GAP-65).
+        """
         import json
         import tempfile
         import shutil
+        from .const import get_data_file
         
         DATA_DIR.mkdir(parents=True, exist_ok=True)
-        # Atomic write: write to temp file then move
+        
+        home_id = config.get("home_id")
+        
+        # v3.0.0: Write to per-home config file
+        if home_id:
+            per_home_path = get_data_file("config", str(home_id))
+            with tempfile.NamedTemporaryFile(
+                mode='w', dir=DATA_DIR, delete=False, suffix='.tmp'
+            ) as tmp:
+                json.dump(config, tmp, indent=2)
+                temp_path = tmp.name
+            shutil.move(temp_path, per_home_path)
+        
+        # Also write to global CONFIG_FILE for backward compat
+        # (legacy code still reads from it during transition)
         with tempfile.NamedTemporaryFile(
             mode='w', dir=DATA_DIR, delete=False, suffix='.tmp'
         ) as tmp:
@@ -500,7 +521,9 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                     _LOGGER.info("Thermal Analytics disabled: cleanup scheduled")
                 
                 if cleanup_flags:
-                    self.hass.data.setdefault(DOMAIN, {}).update(cleanup_flags)
+                    # v3.0.0: Per-entry cleanup flags (GAP-51)
+                    options_cleanup = self.hass.data.setdefault(f'{DOMAIN}_options_cleanup', {})
+                    options_cleanup[self.config_entry.entry_id] = cleanup_flags
                 
                 return self.async_create_entry(title="", data=processed_input)
 

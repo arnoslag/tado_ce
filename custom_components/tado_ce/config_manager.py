@@ -741,7 +741,10 @@ class ConfigurationManager:
         Uses atomic write to prevent corruption.
         
         CRITICAL: This method NEVER overwrites refresh_token or home_id.
-        These are managed by auth_manager and tado_api.py respectively.
+        These are managed by api_client.py (token refresh) and tado_api.py respectively.
+        
+        v3.0.0: Also writes to per-home config file (config_{home_id}.json)
+        when home_id is available from config_entry.data (GAP-60).
         
         Thread-safe: Uses global lock to prevent concurrent write corruption.
         """
@@ -761,13 +764,29 @@ class ConfigurationManager:
                 'hot_water_timer_duration': self.get_hot_water_timer_duration(),
             }
             
+            # v3.0.0: Get home_id from config_entry for per-home file path
+            home_id = None
+            if self._config_entry and hasattr(self._config_entry, 'data'):
+                home_id = self._config_entry.data.get("home_id")
+            
+            # Determine config file path(s)
+            # v3.0.0: Write to per-home file if home_id available,
+            # AND always write to global CONFIG_FILE for backward compat
+            from .const import get_data_file
+            config_paths = [CONFIG_FILE]
+            if home_id:
+                per_home_path = get_data_file("config", str(home_id))
+                if per_home_path != CONFIG_FILE:
+                    config_paths.insert(0, per_home_path)
+            
             temp_path = None
             
             try:
-                # Load existing config
-                if CONFIG_FILE.exists():
+                # Load existing config from primary path (per-home if available)
+                primary_path = config_paths[0]
+                if primary_path.exists():
                     try:
-                        with open(CONFIG_FILE, 'r') as f:
+                        with open(primary_path, 'r') as f:
                             existing_config = json.load(f)
                         
                         # Validate structure
@@ -775,17 +794,26 @@ class ConfigurationManager:
                             raise ValueError("Config must be a dictionary")
                             
                     except (json.JSONDecodeError, ValueError) as e:
-                        _LOGGER.error(f"Corrupt config.json detected: {e}. Creating backup and resetting.")
+                        _LOGGER.error(f"Corrupt config detected: {e}. Creating backup and resetting.")
                         # Backup corrupt file
-                        backup_path = CONFIG_FILE.with_suffix('.json.corrupt')
-                        shutil.copy(CONFIG_FILE, backup_path)
+                        backup_path = primary_path.with_suffix('.json.corrupt')
+                        shutil.copy(primary_path, backup_path)
                         _LOGGER.info(f"Corrupt config backed up to {backup_path}")
+                        existing_config = {}
+                elif CONFIG_FILE.exists() and primary_path != CONFIG_FILE:
+                    # Per-home file doesn't exist yet, seed from global
+                    try:
+                        with open(CONFIG_FILE, 'r') as f:
+                            existing_config = json.load(f)
+                        if not isinstance(existing_config, dict):
+                            existing_config = {}
+                    except (json.JSONDecodeError, ValueError):
                         existing_config = {}
                 else:
                     existing_config = {}
                 
                 # CRITICAL: Preserve refresh_token and home_id
-                # These are managed by auth_manager and tado_api.py, NOT by config_manager
+                # These are managed by api_client.py and tado_api.py, NOT by config_manager
                 preserved_refresh_token = existing_config.get('refresh_token')
                 preserved_home_id = existing_config.get('home_id')
                 
@@ -801,45 +829,40 @@ class ConfigurationManager:
                 
                 if preserved_home_id is not None:
                     existing_config['home_id'] = preserved_home_id
+                elif home_id:
+                    existing_config['home_id'] = str(home_id)
                 elif 'home_id' not in existing_config:
                     # Only set to None if it doesn't exist at all
                     existing_config['home_id'] = None
                 
-                # Atomic write: write to temp file first, then rename
-                CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
-                
-                with tempfile.NamedTemporaryFile(
-                    mode='w',
-                    dir=CONFIG_FILE.parent,
-                    delete=False,
-                    suffix='.tmp'
-                ) as tmp_file:
-                    json.dump(existing_config, tmp_file, indent=2)
-                    tmp_file.flush()
-                    # CRITICAL FIX: Store temp path before closing
-                    temp_path = tmp_file.name
-                
-                # CRITICAL FIX: Verify temp file was created successfully
-                if not Path(temp_path).exists():
-                    raise IOError(f"Temp file was not created: {temp_path}")
-                
-                # Verify temp file size is reasonable (not empty, not too large)
-                temp_size = Path(temp_path).stat().st_size
-                if temp_size == 0:
-                    raise IOError("Temp file is empty")
-                if temp_size > 1024 * 1024:  # 1MB limit
-                    raise IOError(f"Temp file too large: {temp_size} bytes")
-                
-                # Atomic rename (POSIX guarantees atomicity)
-                shutil.move(temp_path, CONFIG_FILE)
-                
-                # CRITICAL FIX: Verify final file exists and is valid JSON
-                if not CONFIG_FILE.exists():
-                    raise IOError("Config file was not created after move")
-                
-                with open(CONFIG_FILE, 'r') as f:
-                    json.load(f)  # Verify JSON is valid
+                # Write to all config paths (per-home + global)
+                for config_path in config_paths:
+                    config_path.parent.mkdir(parents=True, exist_ok=True)
                     
+                    with tempfile.NamedTemporaryFile(
+                        mode='w',
+                        dir=config_path.parent,
+                        delete=False,
+                        suffix='.tmp'
+                    ) as tmp_file:
+                        json.dump(existing_config, tmp_file, indent=2)
+                        tmp_file.flush()
+                        temp_path = tmp_file.name
+                    
+                    # Verify temp file
+                    if not Path(temp_path).exists():
+                        raise IOError(f"Temp file was not created: {temp_path}")
+                    
+                    temp_size = Path(temp_path).stat().st_size
+                    if temp_size == 0:
+                        raise IOError("Temp file is empty")
+                    if temp_size > 1024 * 1024:  # 1MB limit
+                        raise IOError(f"Temp file too large: {temp_size} bytes")
+                    
+                    # Atomic rename
+                    shutil.move(temp_path, config_path)
+                    temp_path = None  # Reset after successful move
+                
                 _LOGGER.debug("Configuration synced to config.json (atomic write verified)")
                 
             except Exception as e:

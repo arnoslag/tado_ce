@@ -63,20 +63,40 @@ def cleanup_api_tracker() -> bool:
 cleanup_tracker = cleanup_api_tracker
 
 
-def _get_tracker() -> Optional[APICallTracker]:
-    """Get or create the global API call tracker (lazy init, no file I/O)."""
+def _get_tracker(home_id: Optional[str] = None, config_manager=None) -> Optional[APICallTracker]:
+    """Get or create the global API call tracker (lazy init, no file I/O).
+    
+    DEPRECATED in v3.0.0: New code should create APICallTracker in
+    async_setup_entry and store in EntryData.api_tracker.
+    
+    Args:
+        home_id: Tado home ID for per-home file path (v3.0.0).
+        config_manager: ConfigurationManager for retention_days (v3.0.0, GAP-28).
+    """
     global _tracker
     if _tracker is None:
-        try:
-            from .config_manager import ConfigurationManager
-            config_manager = ConfigurationManager(None)
-            retention_days = config_manager.get_api_history_retention_days()
-        except (ImportError, AttributeError, TypeError):
-            retention_days = 14
+        # v3.0.0: Use injected config_manager if available (GAP-28)
+        retention_days = 14
+        if config_manager:
+            try:
+                retention_days = config_manager.get_api_history_retention_days()
+            except (AttributeError, TypeError):
+                pass
+        else:
+            try:
+                from .config_manager import ConfigurationManager
+                cm = ConfigurationManager(None)
+                retention_days = cm.get_api_history_retention_days()
+            except (ImportError, AttributeError, TypeError):
+                pass
         
-        # Get home_id for per-home file path
-        from .data_loader import get_current_home_id
-        home_id = get_current_home_id()
+        # v3.0.0: Use injected home_id if available (GAP-28)
+        if home_id is None:
+            try:
+                from .data_loader import get_current_home_id
+                home_id = get_current_home_id()
+            except (ImportError, AttributeError):
+                pass
         
         _tracker = APICallTracker(DATA_DIR, retention_days=retention_days, home_id=home_id)
     return _tracker
@@ -117,12 +137,24 @@ class TadoApiClient:
     # Token cache duration (5 minutes to be safe, Tado tokens valid for ~10 minutes)
     TOKEN_CACHE_DURATION = 300
     
-    def __init__(self, session: aiohttp.ClientSession, hass=None):
+    def __init__(self, session: aiohttp.ClientSession, hass=None,
+                 home_id: Optional[str] = None,
+                 refresh_token: Optional[str] = None,
+                 config_manager=None):
         """Initialize async client.
         
         Args:
             session: aiohttp ClientSession (should be from Home Assistant)
             hass: Home Assistant instance (for accessing config_manager)
+            home_id: Tado home ID for per-home file paths (v3.0.0).
+                     If provided, client uses config_{home_id}.json instead of
+                     global config.json. Required for multi-home isolation (GAP-25).
+            refresh_token: OAuth refresh token injected from EntryData (v3.0.0).
+                           If provided, _load_config() uses this instead of reading
+                           from config file. Required for multi-home isolation (GAP-25).
+            config_manager: ConfigurationManager instance for this entry (v3.0.0).
+                           If provided, save_ratelimit() uses this instead of reading
+                           hass.data[DOMAIN]["config_manager"] (GAP-64).
         """
         self._session = session
         self._hass = hass  # v2.0.1: Store hass for real-time config access
@@ -130,13 +162,16 @@ class TadoApiClient:
         self._token_expiry: Optional[datetime] = None
         self._refresh_lock = asyncio.Lock()
         self._rate_limit: dict = {}
-        self._home_id: Optional[str] = None  # Cached home_id for per-home files
+        self._home_id: Optional[str] = home_id  # v3.0.0: Constructor-injected (GAP-25)
+        self._injected_refresh_token: Optional[str] = refresh_token  # v3.0.0: Constructor-injected
+        self._config_manager = config_manager  # v3.0.0: Constructor-injected (GAP-64)
     
     def _get_data_file(self, base_name: str) -> Path:
         """Get per-home data file path.
         
-        Uses home_id suffix for multi-home support.
-        Falls back to legacy path if home_id not available.
+        v3.0.0: Always uses home_id-scoped path when home_id is set.
+        No legacy fallback — constructor injection guarantees home_id
+        is available for multi-home setups (GAP-25, CP-4).
         
         Args:
             base_name: Base filename without extension (e.g., "zones", "weather")
@@ -145,12 +180,14 @@ class TadoApiClient:
             Path to the data file
         """
         from .const import get_data_file
-        if self._home_id:
-            return get_data_file(base_name, self._home_id)
-        return get_data_file(base_name)
+        return get_data_file(base_name, self._home_id)
     
     async def _ensure_home_id(self) -> Optional[str]:
-        """Ensure home_id is loaded and cached."""
+        """Ensure home_id is loaded and cached.
+        
+        v3.0.0: If home_id was injected via constructor, returns immediately.
+        Only falls back to reading config file for backward compat (legacy callers).
+        """
         if self._home_id is None:
             config = await self._load_config()
             self._home_id = config.get("home_id")
@@ -159,36 +196,71 @@ class TadoApiClient:
     async def _load_config(self) -> dict:
         """Load config from file using native async I/O.
         
-        Note: config.json stays as legacy format (no home_id suffix)
-        because it's the bootstrap file needed before we know home_id.
+        v3.0.0: Uses per-home config file (config_{home_id}.json) when home_id
+        is set. Falls back to global CONFIG_FILE for backward compat (GAP-25).
+        If refresh_token was injected via constructor, it takes precedence
+        over the file value.
         """
         try:
-            if not await aiofiles.os.path.exists(CONFIG_FILE):
-                return {"home_id": None, "refresh_token": None}
-            async with aiofiles.open(CONFIG_FILE, 'r') as f:
+            # v3.0.0: Use per-home config file when home_id is available
+            if self._home_id:
+                config_path = self._get_data_file("config")
+            else:
+                config_path = CONFIG_FILE
+            
+            if not await aiofiles.os.path.exists(config_path):
+                # Fallback: try global CONFIG_FILE if per-home doesn't exist yet
+                if self._home_id and await aiofiles.os.path.exists(CONFIG_FILE):
+                    config_path = CONFIG_FILE
+                else:
+                    result = {"home_id": self._home_id, "refresh_token": None}
+                    # v3.0.0: Use injected refresh_token if available
+                    if self._injected_refresh_token:
+                        result["refresh_token"] = self._injected_refresh_token
+                    return result
+            
+            async with aiofiles.open(config_path, 'r') as f:
                 content = await f.read()
                 config = json.loads(content)
                 # Cache home_id when loading config
                 if config.get("home_id"):
                     self._home_id = config["home_id"]
+                # v3.0.0: Injected refresh_token takes precedence
+                if self._injected_refresh_token:
+                    config["refresh_token"] = self._injected_refresh_token
                 return config
         except Exception as e:
             _LOGGER.error(f"Failed to load config: {e}")
-            return {"home_id": None, "refresh_token": None}
+            result = {"home_id": self._home_id, "refresh_token": None}
+            if self._injected_refresh_token:
+                result["refresh_token"] = self._injected_refresh_token
+            return result
     
     async def _save_config(self, config: dict):
-        """Save config to file atomically using native async I/O."""
+        """Save config to file atomically using native async I/O.
+        
+        v3.0.0: Writes to per-home config file (config_{home_id}.json) when
+        home_id is set. Falls back to global CONFIG_FILE for backward compat.
+        This prevents token rotation for one home from corrupting another
+        home's config (GAP-60, GAP-69).
+        """
         try:
+            # v3.0.0: Use per-home config file when home_id is available
+            if self._home_id:
+                config_path = self._get_data_file("config")
+            else:
+                config_path = CONFIG_FILE
+            
             # Ensure directory exists
-            await aiofiles.os.makedirs(CONFIG_FILE.parent, exist_ok=True)
+            await aiofiles.os.makedirs(config_path.parent, exist_ok=True)
             
             # Write to temp file then atomic rename
-            temp_path = CONFIG_FILE.with_suffix('.tmp')
+            temp_path = config_path.with_suffix('.tmp')
             async with aiofiles.open(temp_path, 'w') as f:
                 await f.write(json.dumps(config, indent=2))
             
             # Atomic move
-            await aiofiles.os.replace(temp_path, CONFIG_FILE)
+            await aiofiles.os.replace(temp_path, config_path)
         except Exception as e:
             _LOGGER.error(f"Failed to save config: {e}")
     
@@ -282,20 +354,22 @@ class TadoApiClient:
         
         # Check Test Mode from config_manager (real-time, not cached)
         # This ensures Test Mode toggle takes effect immediately without restart
+        # v3.0.0: Use injected config_manager if available (GAP-64),
+        # fall back to hass.data[DOMAIN]["config_manager"] for backward compat
         test_mode_enabled = False
-        if self._hass:
+        config_manager = self._config_manager
+        if config_manager is None and self._hass:
             try:
                 from .const import DOMAIN
                 config_manager = self._hass.data.get(DOMAIN, {}).get('config_manager')
-                _LOGGER.debug(f"save_ratelimit: hass.data[DOMAIN]={self._hass.data.get(DOMAIN, {}).keys() if self._hass.data.get(DOMAIN) else 'None'}")
-                _LOGGER.debug(f"save_ratelimit: config_manager={config_manager}")
-                if config_manager:
-                    test_mode_enabled = config_manager.get_test_mode_enabled()
-                    _LOGGER.debug(f"save_ratelimit: config_manager.get_test_mode_enabled()={test_mode_enabled}")
+            except Exception as e:
+                _LOGGER.warning(f"Could not get config_manager from hass.data: {e}")
+        
+        if config_manager:
+            try:
+                test_mode_enabled = config_manager.get_test_mode_enabled()
             except Exception as e:
                 _LOGGER.warning(f"Could not get test_mode from config_manager: {e}")
-        else:
-            _LOGGER.debug("save_ratelimit: self._hass is None")
         
         _LOGGER.debug(f"save_ratelimit: test_mode_enabled={test_mode_enabled}")
         
@@ -1079,7 +1153,7 @@ class TadoApiClient:
                 try:
                     body = await resp.text()
                     _LOGGER.error(f"Failed to delete presence lock: {resp.status}, body: {body}")
-                except:
+                except Exception:
                     _LOGGER.error(f"Failed to delete presence lock: {resp.status}")
                 return False
                 
@@ -1459,30 +1533,43 @@ class TadoApiClient:
 
 
 # Global client instance (per Home Assistant instance)
-# CRITICAL: Must be cleaned up in async_unload_entry() to prevent memory leak
+# v3.0.0: DEPRECATED — clients should be created in async_setup_entry
+# and stored in EntryData.api_client. Kept for backward compat during transition.
 _async_clients: dict = {}
 
 
 def get_api_client(hass) -> TadoApiClient:
-    """Get or create async client for Home Assistant instance.
+    """Get async client for Home Assistant instance.
+    
+    DEPRECATED in v3.0.0: New code should use EntryData.api_client.
+    This wrapper tries to find the client from the first entry's EntryData,
+    falling back to the legacy _async_clients dict.
     
     Args:
         hass: Home Assistant instance
         
     Returns:
-        TadoApiClient instance for this hass instance
-        
-    Note:
-        Client is cached per hass instance. Call cleanup_api_client()
-        in async_unload_entry() to prevent memory leaks.
+        TadoApiClient instance
     """
+    # v3.0.0: Try to get from first entry's EntryData
+    try:
+        from .const import DOMAIN
+        from .entry_data import EntryData
+        domain_data = hass.data.get(DOMAIN, {})
+        for value in domain_data.values():
+            if isinstance(value, EntryData) and value.api_client is not None:
+                return value.api_client
+    except Exception:
+        pass
+    
+    # Fallback to legacy singleton
     from homeassistant.helpers.aiohttp_client import async_get_clientsession
     
     hass_id = id(hass)
     if hass_id not in _async_clients:
         session = async_get_clientsession(hass)
         _async_clients[hass_id] = TadoApiClient(session, hass)
-        _LOGGER.debug("Created new TadoApiClient")
+        _LOGGER.debug("Created new TadoApiClient (legacy singleton)")
     
     return _async_clients[hass_id]
 
@@ -1494,8 +1581,9 @@ get_async_client = get_api_client
 def cleanup_api_client(hass) -> bool:
     """Clean up async client for Home Assistant instance.
     
-    MUST be called in async_unload_entry() to prevent memory leaks
-    when integration is reloaded or removed.
+    DEPRECATED in v3.0.0: Per-entry cleanup is handled in async_unload_entry
+    by discarding the EntryData (which holds the api_client reference).
+    This wrapper cleans up the legacy _async_clients dict if present.
     
     Args:
         hass: Home Assistant instance
@@ -1510,7 +1598,7 @@ def cleanup_api_client(hass) -> bool:
         client._access_token = None
         client._token_expiry = None
         del _async_clients[hass_id]
-        _LOGGER.debug("Cleaned up TadoApiClient")
+        _LOGGER.debug("Cleaned up TadoApiClient (legacy singleton)")
         return True
     return False
 

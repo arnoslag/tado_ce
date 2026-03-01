@@ -39,13 +39,17 @@ MIN_QUOTA_PERCENTAGE_FOR_REFRESH = 0.10  # Minimum 10% remaining to allow refres
 class RefreshHandler:
     """Handle immediate data refresh after user actions."""
     
-    def __init__(self, hass: HomeAssistant):
+    def __init__(self, hass: HomeAssistant, entry_id: Optional[str] = None):
         """Initialize immediate refresh handler.
-        
+
         Args:
             hass: Home Assistant instance
+            entry_id: Config entry ID for per-entry state access (v3.0.0).
+                      If provided, uses EntryData for api_client, data_loader,
+                      config_manager instead of global singletons.
         """
         self.hass = hass
+        self._entry_id = entry_id  # v3.0.0: Per-entry routing (GAP-30)
         # CRITICAL FIX: Per-entity rate limiting instead of global only
         self._last_refresh_per_entity: dict[str, datetime] = {}
         self._global_last_refresh: Optional[datetime] = None
@@ -53,21 +57,40 @@ class RefreshHandler:
         self._min_per_entity_interval = 2  # Per-entity minimum (seconds)
         self._consecutive_failures = 0
         self._max_backoff_interval = 300  # Max 5 minutes backoff
-        
+
         # Debounce mechanism for batch updates
         self._pending_refresh: bool = False
         self._pending_home_state_refresh: bool = False  # v2.0.2: Track if home state refresh needed
         self._debounce_task: Optional[object] = None
         self._debounce_delay = 15.0  # v1.6.1: Default 15 seconds (was 1s), configurable via options
+    def _get_entry_data(self):
+        """Get EntryData for this handler's config entry.
+
+        v3.0.0: Returns EntryData if entry_id is set, None otherwise.
+        Callers should fall back to global singletons when None.
+        """
+        if self._entry_id:
+            try:
+                from .const import DOMAIN
+                return self.hass.data.get(DOMAIN, {}).get(self._entry_id)
+            except Exception:
+                pass
+        return None
     
     def _get_debounce_delay(self) -> float:
         """Get debounce delay from config or use default.
-        
+
         v1.6.1: Configurable via Options > Refresh Debounce Delay
+        v3.0.0: Uses per-entry config_manager when available (GAP-30).
         """
         try:
+            # v3.0.0: Try per-entry config_manager first
+            entry_data = self._get_entry_data()
+            if entry_data and entry_data.config_manager:
+                return float(entry_data.config_manager.get_refresh_debounce_seconds())
+
+            # Fallback to global config_manager
             from .const import DOMAIN
-            # Get config_manager from hass.data (real-time config access)
             config_manager = self.hass.data.get(DOMAIN, {}).get('config_manager')
             if config_manager:
                 return float(config_manager.get_refresh_debounce_seconds())
@@ -77,11 +100,21 @@ class RefreshHandler:
     
     async def _get_rate_limit_info(self) -> dict:
         """Get current rate limit information.
-        
+
+        v3.0.0: Uses per-entry data_loader when available.
+
         Returns:
             Dictionary with rate limit info, or empty dict if unavailable
         """
         try:
+            # v3.0.0: Try per-entry data_loader first
+            entry_data = self._get_entry_data()
+            if entry_data and entry_data.data_loader:
+                return await self.hass.async_add_executor_job(
+                    entry_data.data_loader.load_ratelimit_file
+                ) or {}
+
+            # Fallback to global data_loader
             from .data_loader import load_ratelimit_file
             return await self.hass.async_add_executor_job(load_ratelimit_file) or {}
         except Exception as e:
@@ -285,27 +318,37 @@ class RefreshHandler:
     
     async def _async_fetch_zone_states(self, include_home_state: bool = False):
         """Fetch zone states using async API and save to file.
-        
+
         This is more efficient than subprocess - only 1 API call for zoneStates.
         Weather is not needed for immediate entity refresh.
-        
+
+        v3.0.0: Uses per-entry api_client and data_loader when available.
+        Falls back to global singletons for backward compat.
+
         Args:
             include_home_state: If True, also fetch home state (for presence mode changes)
         """
-        from .api_client import get_async_client
-        from .data_loader import get_current_home_id
         from .const import get_data_file
         import tempfile
         import shutil
-        
-        client = get_async_client(self.hass)
+
+        # v3.0.0: Try per-entry api_client first, fallback to global
+        entry_data = self._get_entry_data()
+        if entry_data and entry_data.api_client:
+            client = entry_data.api_client
+            home_id = entry_data.home_id
+        else:
+            from .api_client import get_async_client
+            from .data_loader import get_current_home_id
+            client = get_async_client(self.hass)
+            home_id = get_current_home_id()
+
         zones_data = await client.api_call("zoneStates")
-        
+
         if zones_data:
             # Get per-home file path
-            home_id = get_current_home_id()
             zones_file = get_data_file("zones", home_id)
-            
+
             # Save to zones.json using atomic write
             def write_file():
                 DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -318,10 +361,10 @@ class RefreshHandler:
                 shutil.move(temp_path, zones_file)
             await self.hass.async_add_executor_job(write_file)
             _LOGGER.debug(f"Zone states refreshed ({len(zones_data.get('zoneStates', {}))} zones)")
-            
+
             # Save rate limit info for API Usage sensor immediate update
             await client.save_ratelimit()
-            
+
             # v2.0.2: Fetch home state if requested (for presence mode changes)
             if include_home_state:
                 home_state = await client.api_call("state")
@@ -351,18 +394,23 @@ class RefreshHandler:
 _handler: Optional[RefreshHandler] = None
 
 
-def get_refresh_handler(hass: HomeAssistant) -> RefreshHandler:
+def get_refresh_handler(hass: HomeAssistant, entry_id: Optional[str] = None) -> RefreshHandler:
     """Get or create the global immediate refresh handler.
-    
+
+    DEPRECATED in v3.0.0: New code should create RefreshHandler in
+    async_setup_entry and store in EntryData.refresh_handler.
+    This wrapper creates a global singleton for backward compat.
+
     Args:
         hass: Home Assistant instance
-        
+        entry_id: Config entry ID for per-entry routing (v3.0.0).
+
     Returns:
         RefreshHandler instance
     """
     global _handler
     if _handler is None:
-        _handler = RefreshHandler(hass)
+        _handler = RefreshHandler(hass, entry_id=entry_id)
     return _handler
 
 

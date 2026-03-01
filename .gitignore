@@ -3,6 +3,7 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.pyc
+.venv/
 
 # Environment variables (contains tokens!)
 .env
