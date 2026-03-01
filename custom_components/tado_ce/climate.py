@@ -26,7 +26,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .const import DOMAIN
 from .device_manager import get_zone_device_info
-from .api_client import get_async_client
+from .entry_data import get_entry_data, get_entry_data_or_none
 from .data_loader import (
     load_zones_file, load_zones_info_file, load_config_file,
     load_home_state_file, load_offsets_file, load_ac_capabilities_file,
@@ -138,9 +138,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                 caps = zone_caps.get(zone_id, {})
                 
                 if zone_type == 'HEATING':
-                    climates.append(TadoClimate(hass, zone_id, zone_name))
+                    climates.append(TadoClimate(hass, entry.entry_id, zone_id, zone_name))
                 elif zone_type == 'AIR_CONDITIONING':
-                    climates.append(TadoACClimate(hass, zone_id, zone_name, caps))
+                    climates.append(TadoACClimate(hass, entry.entry_id, zone_id, zone_name, caps))
     except Exception as e:
         _LOGGER.error(f"Failed to load zones for climate: {e}")
     
@@ -153,8 +153,9 @@ class TadoClimate(ClimateEntity):
 
     """Tado CE Climate Entity."""
     
-    def __init__(self, hass: HomeAssistant, zone_id: str, zone_name: str):
+    def __init__(self, hass: HomeAssistant, entry_id: str, zone_id: str, zone_name: str):
         self.hass = hass
+        self._entry_id = entry_id
         self._zone_id = zone_id
         self._zone_name = zone_name
         self._home_id = None
@@ -164,7 +165,7 @@ class TadoClimate(ClimateEntity):
         self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_zone_{zone_id}_climate"
         self._attr_temperature_unit = UnitOfTemperature.CELSIUS
         # Use zone device info instead of hub device info
-        self._attr_device_info = get_zone_device_info(zone_id, zone_name, "HEATING")
+        self._attr_device_info = get_zone_device_info(zone_id, zone_name, "HEATING", _CACHED_HOME_ID)
         self._attr_supported_features = (
             ClimateEntityFeature.TARGET_TEMPERATURE |
             ClimateEntityFeature.TURN_OFF |
@@ -239,13 +240,9 @@ class TadoClimate(ClimateEntity):
             hvac_action: The HVAC action we expect API to confirm
             target_temp: Optional target temperature for optimistic state
         """
-        # Get sequence number from coordinator
-        get_next_sequence = self.hass.data.get(DOMAIN, {}).get('get_next_sequence')
-        if get_next_sequence:
-            self._optimistic_sequence = get_next_sequence()
-        else:
-            _LOGGER.warning(f"{self._zone_name}: get_next_sequence not available, using fallback")
-            self._optimistic_sequence = int(time.time())
+        # Get sequence number from entry_data
+        _ed = get_entry_data(self.hass, self._entry_id)
+        self._optimistic_sequence = _ed.get_next_sequence()
         
         # Set optimistic state
         self._optimistic_state = {
@@ -259,9 +256,7 @@ class TadoClimate(ClimateEntity):
         
         # Mark entity as fresh in coordinator - MUST await to ensure freshness is set
         # before async_write_ha_state() triggers update()
-        mark_entity_fresh = self.hass.data.get(DOMAIN, {}).get('mark_entity_fresh')
-        if mark_entity_fresh:
-            await mark_entity_fresh(self.entity_id)
+        await _ed.async_mark_entity_fresh(self.entity_id)
         
         _LOGGER.debug(
             f"{self._zone_name}: Set optimistic state: mode={hvac_mode}, action={hvac_action}, seq={self._optimistic_sequence}"
@@ -348,7 +343,7 @@ class TadoClimate(ClimateEntity):
         )
         
         # v2.1.0: Listen for zone config changes
-        zone_config_manager = self.hass.data.get(DOMAIN, {}).get('zone_config_manager')
+        zone_config_manager = get_entry_data(self.hass, self._entry_id).zone_config_manager
         if zone_config_manager:
             @callback
             def _handle_zone_config_change(zone_id: str, key: str, value):
@@ -382,7 +377,10 @@ class TadoClimate(ClimateEntity):
         
         v2.1.0: Per-zone temperature limits.
         """
-        zone_config_manager = self.hass.data.get(DOMAIN, {}).get('zone_config_manager')
+        _ed = get_entry_data_or_none(self.hass, self._entry_id)
+        if _ed is None:
+            return
+        zone_config_manager = _ed.zone_config_manager
         if zone_config_manager:
             self._attr_min_temp = zone_config_manager.get_zone_value(self._zone_id, "min_temp", 5.0)
             self._attr_max_temp = zone_config_manager.get_zone_value(self._zone_id, "max_temp", 25.0)
@@ -405,8 +403,10 @@ class TadoClimate(ClimateEntity):
         """Update climate state from JSON file."""
         # v1.10.0: Layer 1 - Skip update if entity is fresh (coordinator-level protection)
         # This prevents unnecessary file I/O and processing when entity has recent API call
-        is_entity_fresh = self.hass.data.get(DOMAIN, {}).get('is_entity_fresh')
-        if is_entity_fresh and is_entity_fresh(self.entity_id):
+        _ed = get_entry_data_or_none(self.hass, self._entry_id)
+        if _ed is None:
+            return
+        if _ed.is_entity_fresh(self.entity_id):
             _LOGGER.debug(f"{self._zone_name}: Skipping update (entity is fresh)")
             return
         
@@ -459,7 +459,8 @@ class TadoClimate(ClimateEntity):
                 # v2.0.0 fix: Use SINGLE atomic call to heating cycle coordinator
                 # This eliminates race conditions between setpoint and temperature updates
                 if temp is not None and self._attr_current_temperature is not None:
-                    heating_cycle_coordinator = self.hass.data.get(DOMAIN, {}).get('heating_cycle_coordinator')
+                    _ed2 = get_entry_data_or_none(self.hass, self._entry_id)
+                    heating_cycle_coordinator = _ed2.heating_cycle_coordinator if _ed2 else None
                     if heating_cycle_coordinator:
                         # Use on_zone_update for atomic operation
                         self.hass.loop.call_soon_threadsafe(
@@ -553,7 +554,7 @@ class TadoClimate(ClimateEntity):
         """
         try:
             # Check if offset is enabled in config
-            config_manager = self.hass.data.get(DOMAIN, {}).get('config_manager')
+            config_manager = get_entry_data(self.hass, self._entry_id).config_manager
             if not config_manager or not config_manager.get_offset_enabled():
                 self._offset_celsius = None
                 return
@@ -596,7 +597,7 @@ class TadoClimate(ClimateEntity):
         # v2.0.1: Bootstrap Reserve - block action when quota critically low
         await _check_bootstrap_reserve(self.hass, self._zone_name)
         
-        client = get_async_client(self.hass)
+        client = get_entry_data(self.hass, self._entry_id).api_client
         state = "AWAY" if preset_mode == PRESET_AWAY else "HOME"
         
         # Optimistic update BEFORE API call
@@ -674,7 +675,7 @@ class TadoClimate(ClimateEntity):
         self.async_write_ha_state()
         
         # v1.9.2: Await API call with timeout (fixes #44 grey loading state)
-        client = get_async_client(self.hass)
+        client = get_entry_data(self.hass, self._entry_id).api_client
         setting = {
             "type": "HEATING",
             "power": "ON",
@@ -696,7 +697,7 @@ class TadoClimate(ClimateEntity):
         if api_success:
             _LOGGER.info(f"Set {self._zone_name} to {temperature}°C")
             # v2.0.0: Notify heating cycle coordinator of setpoint change
-            heating_cycle_coordinator = self.hass.data.get(DOMAIN, {}).get('heating_cycle_coordinator')
+            heating_cycle_coordinator = get_entry_data(self.hass, self._entry_id).heating_cycle_coordinator
             if heating_cycle_coordinator:
                 await heating_cycle_coordinator.on_setpoint_change(
                     self._zone_id, temperature, self._attr_current_temperature
@@ -722,7 +723,7 @@ class TadoClimate(ClimateEntity):
         # v2.0.1: Bootstrap Reserve - block action when quota critically low
         await _check_bootstrap_reserve(self.hass, self._zone_name)
         
-        client = get_async_client(self.hass)
+        client = get_entry_data(self.hass, self._entry_id).api_client
         
         if hvac_mode == HVACMode.HEAT:
             temp = self._attr_target_temperature or 20
@@ -864,7 +865,7 @@ class TadoClimate(ClimateEntity):
         # v2.0.1: Bootstrap Reserve - block action when quota critically low
         await _check_bootstrap_reserve(self.hass, self._zone_name)
         
-        client = get_async_client(self.hass)
+        client = get_entry_data(self.hass, self._entry_id).api_client
         
         setting = {
             "type": "HEATING",
@@ -908,8 +909,9 @@ class TadoACClimate(ClimateEntity):
 
     """Tado CE Air Conditioning Climate Entity."""
     
-    def __init__(self, hass: HomeAssistant, zone_id: str, zone_name: str, capabilities: dict):
+    def __init__(self, hass: HomeAssistant, entry_id: str, zone_id: str, zone_name: str, capabilities: dict):
         self.hass = hass
+        self._entry_id = entry_id
         self._zone_id = zone_id
         self._zone_name = zone_name
         self._home_id = None
@@ -920,7 +922,7 @@ class TadoACClimate(ClimateEntity):
         self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_zone_{zone_id}_ac_climate"
         self._attr_temperature_unit = UnitOfTemperature.CELSIUS
         # Use zone device info instead of hub device info
-        self._attr_device_info = get_zone_device_info(zone_id, zone_name, "AIR_CONDITIONING")
+        self._attr_device_info = get_zone_device_info(zone_id, zone_name, "AIR_CONDITIONING", _CACHED_HOME_ID)
         
         # Get AC capabilities from dedicated API endpoint
         # Format: {"COOL": {...}, "HEAT": {...}, "DRY": {...}, "FAN": {...}, "AUTO": {...}}
@@ -1204,13 +1206,9 @@ class TadoACClimate(ClimateEntity):
             hvac_action: The HVAC action we expect API to confirm
             target_temp: Optional target temperature for optimistic state
         """
-        # Get sequence number from coordinator
-        get_next_sequence = self.hass.data.get(DOMAIN, {}).get('get_next_sequence')
-        if get_next_sequence:
-            self._optimistic_sequence = get_next_sequence()
-        else:
-            _LOGGER.warning(f"AC {self._zone_name}: get_next_sequence not available, using fallback")
-            self._optimistic_sequence = int(time.time())
+        # Get sequence number from entry_data
+        _ed = get_entry_data(self.hass, self._entry_id)
+        self._optimistic_sequence = _ed.get_next_sequence()
         
         # Set optimistic state
         self._optimistic_state = {
@@ -1226,9 +1224,7 @@ class TadoACClimate(ClimateEntity):
         
         # Mark entity as fresh in coordinator - MUST await to ensure freshness is set
         # before async_write_ha_state() triggers update()
-        mark_entity_fresh = self.hass.data.get(DOMAIN, {}).get('mark_entity_fresh')
-        if mark_entity_fresh:
-            await mark_entity_fresh(self.entity_id)
+        await _ed.async_mark_entity_fresh(self.entity_id)
         
         _LOGGER.debug(
             f"AC {self._zone_name}: Set optimistic state: mode={hvac_mode}, action={hvac_action}, seq={self._optimistic_sequence}"
@@ -1344,7 +1340,7 @@ class TadoACClimate(ClimateEntity):
         )
         
         # v2.1.0: Listen for zone config changes
-        zone_config_manager = self.hass.data.get(DOMAIN, {}).get('zone_config_manager')
+        zone_config_manager = get_entry_data(self.hass, self._entry_id).zone_config_manager
         if zone_config_manager:
             @callback
             def _handle_zone_config_change(zone_id: str, key: str, value):
@@ -1384,7 +1380,10 @@ class TadoACClimate(ClimateEntity):
         If per-zone value is not set, reset to capabilities default.
         v2.3.1: Clamp user values to capabilities range (HIGH-3).
         """
-        zone_config_manager = self.hass.data.get(DOMAIN, {}).get('zone_config_manager')
+        _ed = get_entry_data_or_none(self.hass, self._entry_id)
+        if _ed is None:
+            return
+        zone_config_manager = _ed.zone_config_manager
         if zone_config_manager:
             # Get per-zone overrides (use capabilities as defaults)
             min_temp = zone_config_manager.get_zone_value(self._zone_id, "min_temp", None)
@@ -1437,8 +1436,10 @@ class TadoACClimate(ClimateEntity):
         """Update AC climate state from JSON file."""
         # v1.10.0: Layer 1 - Skip update if entity is fresh (coordinator-level protection)
         # This prevents unnecessary file I/O and processing when entity has recent API call
-        is_entity_fresh = self.hass.data.get(DOMAIN, {}).get('is_entity_fresh')
-        if is_entity_fresh and is_entity_fresh(self.entity_id):
+        _ed = get_entry_data_or_none(self.hass, self._entry_id)
+        if _ed is None:
+            return
+        if _ed.is_entity_fresh(self.entity_id):
             _LOGGER.debug(f"AC {self._zone_name}: Skipping update (entity is fresh)")
             return
         
@@ -1685,7 +1686,7 @@ class TadoACClimate(ClimateEntity):
         # v2.0.1: Bootstrap Reserve - block action when quota critically low
         await _check_bootstrap_reserve(self.hass, f"AC {self._zone_name}")
         
-        client = get_async_client(self.hass)
+        client = get_entry_data(self.hass, self._entry_id).api_client
         
         if hvac_mode == HVACMode.OFF:
             # Optimistic update BEFORE API call
@@ -1968,7 +1969,7 @@ class TadoACClimate(ClimateEntity):
         Uses Tado API v2 format with fanLevel, verticalSwing, horizontalSwing.
         Only sends fields that are supported by the current mode (per capabilities).
         """
-        client = get_async_client(self.hass)
+        client = get_entry_data(self.hass, self._entry_id).api_client
         
         # Build setting from current state + changes
         setting = {
@@ -2105,7 +2106,7 @@ class TadoACClimate(ClimateEntity):
             if overlay_upper == "NEXT_TIME_BLOCK":
                 # Use TADO_MODE termination directly via API
                 await _check_bootstrap_reserve(self.hass, f"AC {self._zone_name}")
-                client = get_async_client(self.hass)
+                client = get_entry_data(self.hass, self._entry_id).api_client
                 setting = {
                     "type": "AIR_CONDITIONING",
                     "power": "ON",

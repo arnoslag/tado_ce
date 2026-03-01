@@ -5,6 +5,7 @@ import json
 import logging
 from datetime import datetime, timedelta, date
 from pathlib import Path
+from typing import Optional
 
 from homeassistant.components.calendar import CalendarEntity, CalendarEvent
 from homeassistant.config_entries import ConfigEntry
@@ -15,7 +16,7 @@ from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN, DATA_DIR, MANUFACTURER, get_data_file
 from .data_loader import load_zones_info_file, get_current_home_id
-from .api_client import get_async_client
+from .entry_data import get_entry_data
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -23,9 +24,14 @@ _LOGGER = logging.getLogger(__name__)
 _CACHED_HOME_ID = None
 
 
-def _get_schedules_file() -> Path:
-    """Get schedules file path with per-home support."""
-    home_id = get_current_home_id()
+def _get_schedules_file(home_id: Optional[str] = None) -> Path:
+    """Get schedules file path with per-home support.
+    
+    Args:
+        home_id: The home ID. If None, falls back to get_current_home_id() global (backward compat).
+    """
+    if home_id is None:
+        home_id = get_current_home_id()
     return get_data_file("schedules", home_id)
 
 
@@ -52,14 +58,17 @@ DAY_TYPE_TO_WEEKDAYS = {
 }
 
 
-def get_schedule_device_info() -> DeviceInfo:
+def get_schedule_device_info(home_id: Optional[str] = None) -> DeviceInfo:
     """Get device info for Heating Schedule device.
     
     v1.9.0: Uses home_id in via_device for multi-home support.
-    """
-    from .device_manager import get_home_id
     
-    home_id = get_home_id()
+    Args:
+        home_id: The home ID. If None, falls back to cached global (backward compat).
+    """
+    if home_id is None:
+        from .device_manager import get_home_id
+        home_id = get_home_id()
     hub_identifier = f"tado_ce_hub_{home_id}" if home_id != "unknown" else "tado_ce_hub"
     
     return DeviceInfo(
@@ -87,7 +96,8 @@ async def async_setup_entry(
         return
     
     # Fetch all schedules first
-    client = get_async_client(hass)
+    entry_data = get_entry_data(hass, entry.entry_id)
+    client = entry_data.api_client
     schedules = {}
     
     for zone_data in zones_info:
@@ -120,6 +130,7 @@ async def async_setup_entry(
         calendars.append(
             TadoZoneScheduleCalendar(
                 hass,
+                entry.entry_id,
                 zone_id,
                 schedule["name"],
                 schedule,
@@ -135,7 +146,7 @@ async def _async_save_schedules(hass: HomeAssistant, schedules: dict) -> None:
     import tempfile
     import shutil
     
-    schedules_file = _get_schedules_file()
+    schedules_file = _get_schedules_file(_CACHED_HOME_ID)
     
     def _save():
         DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -159,12 +170,14 @@ class TadoZoneScheduleCalendar(CalendarEntity):
     def __init__(
         self,
         hass: HomeAssistant,
+        entry_id: str,
         zone_id: str,
         zone_name: str,
         schedule: dict,
     ) -> None:
         """Initialize the calendar."""
         self.hass = hass
+        self._entry_id = entry_id
         self._zone_id = zone_id
         self._zone_name = zone_name
         self._schedule = schedule
@@ -172,7 +185,7 @@ class TadoZoneScheduleCalendar(CalendarEntity):
         # Short name for calendar sidebar (just zone name)
         self._attr_name = "[CE] Schedule"
         self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_zone_{zone_id}_schedule"
-        self._attr_device_info = get_schedule_device_info()
+        self._attr_device_info = get_schedule_device_info(_CACHED_HOME_ID)
         self._attr_icon = "mdi:calendar-clock"
         
         self._event: CalendarEvent | None = None
@@ -205,7 +218,7 @@ class TadoZoneScheduleCalendar(CalendarEntity):
     async def _async_reload_schedule(self) -> None:
         """Reload schedule from file after Refresh Schedule button press."""
         def _load():
-            schedules_file = _get_schedules_file()
+            schedules_file = _get_schedules_file(_CACHED_HOME_ID)
             if schedules_file.exists():
                 with open(schedules_file) as f:
                     return json.load(f)

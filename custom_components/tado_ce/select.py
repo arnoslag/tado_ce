@@ -19,6 +19,7 @@ from .const import (
     TIMER_DURATION_OPTIONS, TIMER_DURATION_DEFAULT,
 )
 from .device_manager import get_hub_device_info
+from .entry_data import get_entry_data
 from .action_helpers import (
     check_bootstrap_reserve as _check_bootstrap_reserve,
     is_within_optimistic_window as _is_within_optimistic_window,
@@ -37,19 +38,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     _LOGGER.debug("Tado CE select: Setting up...")
     from .data_loader import get_current_home_id
     _CACHED_HOME_ID = await hass.async_add_executor_job(get_current_home_id)
+    entry_id = entry.entry_id
     
     entities = []
     
     # Add Presence Mode select (global, 1 API call per change)
-    entities.append(TadoPresenceModeSelect())
+    entities.append(TadoPresenceModeSelect(entry_id))
     
     # v2.0.2: Add Overlay Mode select (Issue #101 - @leoogermenia)
     # 0 API calls - purely local setting
-    entities.append(TadoOverlayModeSelect())
+    entities.append(TadoOverlayModeSelect(entry_id))
     
     # v2.1.0: Add Timer Duration select (for Timer overlay mode)
     # 0 API calls - purely local setting
-    entities.append(TadoTimerDurationSelect())
+    entities.append(TadoTimerDurationSelect(entry_id))
     
     if entities:
         async_add_entities(entities, True)
@@ -79,12 +81,13 @@ class TadoPresenceModeSelect(SelectEntity):
     _attr_options = ["Auto", "Home", "Away"]
     _attr_translation_key = "presence_mode"
     
-    def __init__(self):
+    def __init__(self, entry_id: str):
+        self._entry_id = entry_id
         self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_presence_mode"
         self._attr_name = "[CE] Presence Mode"
         self._attr_current_option = "Auto"
         self._attr_available = True
-        self._attr_device_info = get_hub_device_info()
+        self._attr_device_info = get_hub_device_info(_CACHED_HOME_ID)
         # v2.0.2: Force entity_id for consistent naming (lesson learned)
         self.entity_id = "select.tado_ce_presence_mode"
         
@@ -196,7 +199,6 @@ class TadoPresenceModeSelect(SelectEntity):
         v2.0.1: Bootstrap Reserve check
         v2.0.2: Full 3-layer optimistic update
         """
-        from .api_client import get_async_client
         
         # v2.0.1: Bootstrap Reserve - block action when quota critically low
         await _check_bootstrap_reserve(self.hass, "Presence Mode")
@@ -209,9 +211,8 @@ class TadoPresenceModeSelect(SelectEntity):
         # Layer 1 & 2: Optimistic update BEFORE API call
         self._attr_current_option = option
         self._optimistic_set_at = time.time()
-        get_next_sequence = self.hass.data.get(DOMAIN, {}).get('get_next_sequence')
-        if get_next_sequence:
-            self._optimistic_sequence = get_next_sequence()
+        _ed = get_entry_data(self.hass, self._entry_id)
+        self._optimistic_sequence = _ed.get_next_sequence()
         
         # Layer 3: Set expected state
         self._expected_mode = option
@@ -227,7 +228,7 @@ class TadoPresenceModeSelect(SelectEntity):
         
         # API call - normalize to lowercase for API
         option_lower = option.lower()
-        client = get_async_client(self.hass)
+        client = get_entry_data(self.hass, self._entry_id).api_client
         if option_lower == "auto":
             success = await client.delete_presence_lock()
         else:
@@ -283,12 +284,13 @@ class TadoOverlayModeSelect(SelectEntity):
     _attr_options = OVERLAY_MODE_OPTIONS
     _attr_translation_key = "overlay_mode"
     
-    def __init__(self):
+    def __init__(self, entry_id: str):
+        self._entry_id = entry_id
         self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_overlay_mode"
         self._attr_name = "[CE] Overlay Mode"
         self._attr_current_option = OVERLAY_MODE_DEFAULT_DISPLAY
         self._attr_available = True
-        self._attr_device_info = get_hub_device_info()
+        self._attr_device_info = get_hub_device_info(_CACHED_HOME_ID)
         self._attr_icon = "mdi:timer-cog-outline"
         # v2.0.2: Force entity_id for consistent naming (lesson learned)
         self.entity_id = "select.tado_ce_overlay_mode"
@@ -312,7 +314,7 @@ class TadoOverlayModeSelect(SelectEntity):
         Reads from hass.data cache which is populated during async_setup_entry.
         """
         try:
-            overlay_mode = self.hass.data.get(DOMAIN, {}).get('overlay_mode', OVERLAY_MODE_DEFAULT)
+            overlay_mode = get_entry_data(self.hass, self._entry_id).overlay_mode or OVERLAY_MODE_DEFAULT
             self._attr_current_option = OVERLAY_MODE_REVERSE_MAP.get(overlay_mode, OVERLAY_MODE_DEFAULT_DISPLAY)
         except Exception as e:
             _LOGGER.warning(f"Failed to get overlay mode from cache: {e}")
@@ -335,8 +337,7 @@ class TadoOverlayModeSelect(SelectEntity):
         
         if success:
             # Update hass.data cache
-            if DOMAIN in self.hass.data:
-                self.hass.data[DOMAIN]['overlay_mode'] = api_mode
+            get_entry_data(self.hass, self._entry_id).overlay_mode = api_mode
             _LOGGER.info(f"Overlay mode set to {option} ({api_mode})")
         else:
             _LOGGER.error(f"Failed to save overlay mode: {option}")
@@ -356,12 +357,13 @@ class TadoTimerDurationSelect(SelectEntity):
     _attr_options = TIMER_DURATION_OPTIONS
     _attr_translation_key = "timer_duration"
     
-    def __init__(self):
+    def __init__(self, entry_id: str):
+        self._entry_id = entry_id
         self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_overlay_timer"
         self._attr_name = "[CE] Overlay Timer"
         self._attr_current_option = str(TIMER_DURATION_DEFAULT)
         self._attr_available = True
-        self._attr_device_info = get_hub_device_info()
+        self._attr_device_info = get_hub_device_info(_CACHED_HOME_ID)
         self._attr_icon = "mdi:timer"
         self._attr_unit_of_measurement = "min"
         self.entity_id = "select.tado_ce_overlay_timer_duration"
@@ -378,7 +380,7 @@ class TadoTimerDurationSelect(SelectEntity):
     def update(self):
         """Load timer duration from hass.data cache."""
         try:
-            duration = self.hass.data.get(DOMAIN, {}).get('timer_duration', TIMER_DURATION_DEFAULT)
+            duration = get_entry_data(self.hass, self._entry_id).timer_duration or TIMER_DURATION_DEFAULT
             self._attr_current_option = str(duration)
         except Exception as e:
             _LOGGER.warning(f"Failed to get timer duration from cache: {e}")
@@ -397,8 +399,7 @@ class TadoTimerDurationSelect(SelectEntity):
         
         if success:
             # Update hass.data cache
-            if DOMAIN in self.hass.data:
-                self.hass.data[DOMAIN]['timer_duration'] = duration
+            get_entry_data(self.hass, self._entry_id).timer_duration = duration
             _LOGGER.info(f"Timer duration set to {duration} minutes")
         else:
             _LOGGER.error(f"Failed to save timer duration: {option}")

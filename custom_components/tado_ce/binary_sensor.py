@@ -36,9 +36,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     zone_names = await hass.async_add_executor_job(get_zone_names)
     zones_info = await hass.async_add_executor_job(load_zones_info_file)
     
-    # Get configuration manager from hass data
-    from .config_manager import ConfigurationManager
-    config_manager = ConfigurationManager(entry)
+    # v3.0.0: Get config_manager from per-entry EntryData (GAP-29)
+    from .entry_data import get_entry_data
+    entry_data = get_entry_data(hass, entry.entry_id)
+    config_manager = entry_data.config_manager
+    entry_id = entry.entry_id
     
     # Check if Smart Comfort is enabled (required for Preheat Now sensor)
     smart_comfort_enabled = config_manager.get_smart_comfort_enabled()
@@ -46,7 +48,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     sensors = []
     
     # Home/Away sensor (global)
-    sensors.append(TadoHomeSensor())
+    sensors.append(TadoHomeSensor(entry_id))
     
     # Open Window sensors (per zone that supports it)
     if zones_info:
@@ -59,16 +61,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             if zone_type == 'HEATING':
                 owd = zone.get('openWindowDetection') or {}
                 if owd.get('supported', False):
-                    sensors.append(TadoOpenWindowSensor(zone_id, zone_name, zone_type))
+                    sensors.append(TadoOpenWindowSensor(entry_id, zone_id, zone_name, zone_type))
                 
                 # Add Preheat Now sensor if Smart Comfort is enabled
                 if smart_comfort_enabled:
-                    sensors.append(TadoPreheatNowSensor(zone_id, zone_name, zone_type))
+                    sensors.append(TadoPreheatNowSensor(entry_id, zone_id, zone_name, zone_type))
             
             # Window Predicted sensor for all climate zones (HEATING and AIR_CONDITIONING)
             # v2.2.0: Early open window detection using local temperature analysis
             if zone_type in ('HEATING', 'AIR_CONDITIONING'):
-                sensors.append(TadoWindowPredictedSensor(zone_id, zone_name, zone_type))
+                sensors.append(TadoWindowPredictedSensor(entry_id, zone_id, zone_name, zone_type))
             
 
     
@@ -89,7 +91,8 @@ class TadoHomeSensor(BinarySensorEntity):
     presence mode changes.
     """
     
-    def __init__(self):
+    def __init__(self, entry_id: str):
+        self._entry_id = entry_id
         self._attr_name = "[CE] Home"
         self.entity_id = "binary_sensor.tado_ce_home"
         self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_home"
@@ -97,7 +100,7 @@ class TadoHomeSensor(BinarySensorEntity):
         self._attr_available = False
         self._attr_is_on = None
         # Use hub device info for global entities
-        self._attr_device_info = get_hub_device_info()
+        self._attr_device_info = get_hub_device_info(_CACHED_HOME_ID)
         self._tado_mode = None
         self._presence_locked = None  # v2.0.2: Track if presence is locked (manual override)
         self._data_source = None  # v2.0.2: Track which data source is being used
@@ -184,7 +187,8 @@ class TadoOpenWindowSensor(BinarySensorEntity):
 
     """Binary sensor for Tado Open Window detection."""
     
-    def __init__(self, zone_id: str, zone_name: str, zone_type: str = "HEATING"):
+    def __init__(self, entry_id: str, zone_id: str, zone_name: str, zone_type: str = "HEATING"):
+        self._entry_id = entry_id
         self._zone_id = zone_id
         self._zone_name = zone_name
         self._zone_type = zone_type
@@ -195,7 +199,7 @@ class TadoOpenWindowSensor(BinarySensorEntity):
         self._attr_available = False
         self._attr_is_on = None
         # Use zone device info instead of hub device info
-        self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type)
+        self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type, _CACHED_HOME_ID)
         self._detected_time = None
         self._expiry_time = None
     
@@ -249,7 +253,8 @@ class TadoPreheatNowSensor(BinarySensorEntity):
     so this sensor just reads the adjusted time directly.
     """
     
-    def __init__(self, zone_id: str, zone_name: str, zone_type: str = "HEATING"):
+    def __init__(self, entry_id: str, zone_id: str, zone_name: str, zone_type: str = "HEATING"):
+        self._entry_id = entry_id
         self._zone_id = zone_id
         self._zone_name = zone_name
         self._zone_type = zone_type
@@ -258,7 +263,7 @@ class TadoPreheatNowSensor(BinarySensorEntity):
         self._attr_device_class = BinarySensorDeviceClass.HEAT
         self._attr_available = False
         self._attr_is_on = None
-        self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type)
+        self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type, _CACHED_HOME_ID)
         
         # Attributes for debugging/display
         self._recommended_start = None
@@ -375,7 +380,8 @@ class TadoWindowPredictedSensor(BinarySensorEntity):
     
     _attr_device_class = BinarySensorDeviceClass.WINDOW
     
-    def __init__(self, zone_id: str, zone_name: str, zone_type: str = "HEATING"):
+    def __init__(self, entry_id: str, zone_id: str, zone_name: str, zone_type: str = "HEATING"):
+        self._entry_id = entry_id
         self._zone_id = zone_id
         self._zone_name = zone_name
         self._zone_type = zone_type
@@ -383,7 +389,7 @@ class TadoWindowPredictedSensor(BinarySensorEntity):
         self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_zone_{zone_id}_window_predicted"
         self._attr_available = False
         self._attr_is_on = None
-        self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type)
+        self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type, _CACHED_HOME_ID)
         
         # Detection state
         self._confidence: str = "none"

@@ -1931,35 +1931,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     entry_data.api_client = api_client
     _LOGGER.debug("Tado CE: Per-entry API client created")
     
-    # v1.10.0: Store freshness tracking functions in hass.data for entity access
-    async def mark_entity_fresh(entity_id: str) -> None:
-        """Mark entity as having a recent API call in progress."""
-        async with entry_data.freshness_lock:
-            entry_data.entity_freshness[entity_id] = time.time()
-            _LOGGER.debug("Marked entity fresh: %s", entity_id)
-    
-    def is_entity_fresh(entity_id: str, debounce_seconds: int = None) -> bool:
-        """Check if entity has a recent API call (within debounce window).
-        
-        Args:
-            entity_id: Entity ID to check
-            debounce_seconds: Override debounce window (uses config if None)
-        """
-        if entity_id not in entry_data.entity_freshness:
-            return False
-        
-        # Use config value if not overridden
-        if debounce_seconds is None:
-            debounce_seconds = config_manager.get_refresh_debounce_seconds() + 2
-        
-        elapsed = time.time() - entry_data.entity_freshness[entity_id]
-        if elapsed > debounce_seconds:
-            # Auto-cleanup expired entries
-            del entry_data.entity_freshness[entity_id]
-            return False
-        
-        return True
-    
+    # v1.10.0: Periodic freshness cleanup (entities use EntryData methods directly)
     async def cleanup_entity_freshness() -> None:
         """Periodic cleanup of expired entity freshness entries.
         
@@ -1977,28 +1949,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             if expired:
                 _LOGGER.debug("Cleaned up %d expired entity freshness entries", len(expired))
     
-    def get_next_sequence() -> int:
-        """Get next sequence number for tracking data freshness.
-        
-        Includes overflow protection - resets at sys.maxsize to prevent
-        memory issues in long-running instances.
-        """
-        import sys
-        entry_data.global_sequence[0] += 1
-        # Overflow protection: reset at sys.maxsize
-        if entry_data.global_sequence[0] >= sys.maxsize:
-            _LOGGER.info("Sequence number reached max, resetting to 0")
-            entry_data.global_sequence[0] = 0
-        return entry_data.global_sequence[0]
-    
-    # v3.0.0: Backward compat — entities still read these from flat dict (until Task 6)
-    hass.data[DOMAIN]['mark_entity_fresh'] = mark_entity_fresh
-    hass.data[DOMAIN]['is_entity_fresh'] = is_entity_fresh
-    hass.data[DOMAIN]['get_next_sequence'] = get_next_sequence
-    hass.data[DOMAIN]['config_manager'] = config_manager
-    hass.data[DOMAIN]['zone_config_manager'] = zone_config_manager
-    hass.data[DOMAIN]['overlay_mode'] = overlay_mode
-    hass.data[DOMAIN]['timer_duration'] = timer_duration
+    # v3.0.0 Task 6.5: All entity files now use get_entry_data() — flat dict compat removed
     
     # Start periodic cleanup for entity freshness dict (every 5 minutes)
     from homeassistant.helpers.event import async_track_time_interval
@@ -2016,7 +1967,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         timedelta(minutes=5)
     )
     entry_data.freshness_cleanup_cancel = cleanup_cancel
-    hass.data[DOMAIN]['freshness_cleanup_cancel'] = cleanup_cancel  # Backward compat
     
     # Sync configuration to config.json for tado_api.py
     await config_manager.async_sync_all_to_config_json()
@@ -2249,9 +2199,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             timedelta(minutes=new_interval)
         )
         
-        # v3.0.0: Store cancel in entry_data + backward compat
+        # v3.0.0: Store cancel in entry_data
         entry_data.polling_cancel = cancel_interval[0]
-        hass.data[DOMAIN]['polling_cancel'] = cancel_interval[0]  # Backward compat
     
     async def async_sync_tado():
         """Run Tado sync using async API (v1.6.0+).
@@ -2376,7 +2325,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             )
         
         entry_data.smart_comfort_manager = smart_comfort_manager
-        hass.data[DOMAIN]['smart_comfort_manager'] = smart_comfort_manager  # Backward compat
         
         # 3-Tier Loading Strategy:
         # Tier 1: Load from cache file (fastest, 2h detailed data)
@@ -2457,7 +2405,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             
             # Store in hass.data for sensor access
             entry_data.heating_cycle_coordinator = heating_cycle_coordinator
-            hass.data[DOMAIN]['heating_cycle_coordinator'] = heating_cycle_coordinator  # Backward compat
             
             # Schedule periodic timeout check (every 60 seconds)
             async def async_check_cycle_timeouts(_now):
@@ -2471,7 +2418,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 timedelta(seconds=60)
             )
             entry_data.heating_cycle_timeout_cancel = cancel_timeout_check
-            hass.data[DOMAIN]['heating_cycle_timeout_cancel'] = cancel_timeout_check  # Backward compat
             
             _LOGGER.info("Tado CE: Heating Cycle Analysis initialized")
         except Exception as e:
@@ -3460,10 +3406,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     v3.0.0: Per-entry cleanup (GAP-30, GAP-76).
     CRITICAL: Only cleans up state belonging to THIS entry.
     
-    Backward compat note: flat dict fallbacks (hass.data[DOMAIN].get('key'))
-    are NOT multi-home safe — they read the last-written value which may belong
-    to a different entry. This is acceptable in Phase 1 (single-home only).
-    Remove all flat dict fallbacks when Task 6 entity migration is complete.
+    v3.0.0 Task 6.5: All flat dict backward compat fallbacks removed.
+    All entity files now use get_entry_data() for per-entry access.
     """
     _LOGGER.info("Tado CE: Unloading entry %s...", entry.entry_id)
     
@@ -3480,24 +3424,18 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     
     # Cancel polling timer
     cancel_func = _ed('polling_cancel')
-    if cancel_func is None and DOMAIN in hass.data:
-        cancel_func = hass.data[DOMAIN].get('polling_cancel')  # Backward compat (single-home only)
     if cancel_func:
         cancel_func()
         _LOGGER.debug("Cancelled polling timer")
     
     # Cancel freshness cleanup timer
     cancel_func = _ed('freshness_cleanup_cancel')
-    if cancel_func is None and DOMAIN in hass.data:
-        cancel_func = hass.data[DOMAIN].get('freshness_cleanup_cancel')  # Backward compat (single-home only)
     if cancel_func:
         cancel_func()
         _LOGGER.debug("Cancelled freshness cleanup timer")
     
     # Cancel heating cycle timeout timer
     cancel_func = _ed('heating_cycle_timeout_cancel')
-    if cancel_func is None and DOMAIN in hass.data:
-        cancel_func = hass.data[DOMAIN].get('heating_cycle_timeout_cancel')  # Backward compat (single-home only)
     if cancel_func:
         cancel_func()
         _LOGGER.debug("Cancelled heating cycle timeout timer")
@@ -3543,8 +3481,6 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # --- Unload platforms ---
     
     config_manager = _ed('config_manager')
-    if config_manager is None:
-        config_manager = hass.data.get(DOMAIN, {}).get('config_manager')  # Backward compat (single-home only)
     
     platforms_to_unload = list(BASE_PLATFORMS)
     if CALENDAR_PLATFORM and config_manager and config_manager.get_schedule_calendar_enabled():

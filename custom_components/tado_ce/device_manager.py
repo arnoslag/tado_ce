@@ -105,7 +105,7 @@ def get_home_id() -> str:
     return _CACHED_HOME_ID
 
 
-def get_hub_device_info() -> DeviceInfo:
+def get_hub_device_info(home_id: Optional[str] = None) -> DeviceInfo:
     """Get device info for Tado CE Hub.
     
     The hub device contains global entities that apply to the entire Tado system,
@@ -114,10 +114,14 @@ def get_hub_device_info() -> DeviceInfo:
     v1.9.0: Hub identifier now includes home_id for multi-home support.
     Format: tado_ce_hub_{home_id}
     
+    Args:
+        home_id: The home ID. If None, falls back to cached global (backward compat).
+    
     Returns:
         DeviceInfo: Device information for the Tado CE Hub.
     """
-    home_id = get_home_id()
+    if home_id is None:
+        home_id = get_home_id()
     identifier = f"tado_ce_hub_{home_id}" if home_id != "unknown" else "tado_ce_hub"
     
     return DeviceInfo(
@@ -130,7 +134,7 @@ def get_hub_device_info() -> DeviceInfo:
     )
 
 
-def get_zone_device_info(zone_id: str, zone_name: str, zone_type: str) -> DeviceInfo:
+def get_zone_device_info(zone_id: str, zone_name: str, zone_type: str, home_id: Optional[str] = None) -> DeviceInfo:
     """Get device info for a specific Tado zone.
     
     Each zone device represents a physical zone (room) in the Tado system and contains
@@ -143,12 +147,14 @@ def get_zone_device_info(zone_id: str, zone_name: str, zone_type: str) -> Device
         zone_id: The unique identifier for the zone (e.g., "1", "4", "9").
         zone_name: The human-readable name of the zone (e.g., "Living Room").
         zone_type: The type of zone - "HEATING", "AIR_CONDITIONING", or "HOT_WATER".
+        home_id: The home ID. If None, falls back to cached global (backward compat).
     
     Returns:
         DeviceInfo: Device information for the zone device.
     """
     model = get_zone_type_display(zone_type)
-    home_id = get_home_id()
+    if home_id is None:
+        home_id = get_home_id()
     
     # v1.9.0: Include home_id in identifiers for multi-home support
     if home_id != "unknown":

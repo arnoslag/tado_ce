@@ -10,6 +10,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .device_manager import get_hub_device_info
 from .data_loader import load_mobile_devices_file, get_current_home_id
+from .entry_data import get_entry_data
 
 _LOGGER = logging.getLogger(__name__)
 SCAN_INTERVAL = timedelta(seconds=30)
@@ -35,7 +36,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             
             # Only create tracker if geo tracking is enabled
             if settings.get('geoTrackingEnabled', False):
-                trackers.append(TadoDeviceTracker(device_id, device_name, device))
+                trackers.append(TadoDeviceTracker(entry.entry_id, device_id, device_name, device))
             else:
                 _LOGGER.debug(f"Skipping {device_name} - geoTrackingEnabled is False")
     
@@ -51,7 +52,8 @@ class TadoDeviceTracker(TrackerEntity):
 
     """Tado CE Device Tracker Entity."""
     
-    def __init__(self, device_id: int, device_name: str, device_data: dict):
+    def __init__(self, entry_id: str, device_id: int, device_name: str, device_data: dict):
+        self._entry_id = entry_id
         self._device_id = device_id
         self._device_name = device_name
         self._device_data = device_data
@@ -60,7 +62,7 @@ class TadoDeviceTracker(TrackerEntity):
         self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_device_{device_id}"
         self._attr_available = False
         # Use hub device info for global entities
-        self._attr_device_info = get_hub_device_info()
+        self._attr_device_info = get_hub_device_info(_CACHED_HOME_ID)
         
         self._is_home = None
         self._location = None

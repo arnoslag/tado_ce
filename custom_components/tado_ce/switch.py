@@ -15,6 +15,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from .const import DOMAIN, API_ENDPOINT_DEVICES
 from .device_manager import get_hub_device_info, get_zone_device_info
 from .data_loader import load_zones_info_file, get_current_home_id
+from .entry_data import get_entry_data
 from .action_helpers import (
     check_bootstrap_reserve as _check_bootstrap_reserve,
     is_within_optimistic_window as _is_within_optimistic_window,
@@ -33,10 +34,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     _CACHED_HOME_ID = await hass.async_add_executor_job(get_current_home_id)
     _LOGGER.debug("Tado CE switch: Setting up...")
     zones_info = await hass.async_add_executor_job(load_zones_info_file)
+    entry_id = entry.entry_id
     
     # Get config manager for feature toggles
-    from .config_manager import ConfigurationManager
-    config_manager = ConfigurationManager(entry)
+    entry_data = get_entry_data(hass, entry_id)
+    config_manager = entry_data.config_manager
     
     switches = []
     
@@ -54,7 +56,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                 early_start = zone.get('earlyStart') or {}
                 if early_start.get('supported', True):  # Default to supported
                     switches.append(TadoEarlyStartSwitch(
-                        zone_id, zone_name, zone_type, early_start.get('enabled', False)
+                        entry_id, zone_id, zone_name, zone_type, early_start.get('enabled', False)
                     ))
             
             # Child Lock switches (per device)
@@ -63,7 +65,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                     serial = device.get('shortSerialNo')
                     device_type = device.get('deviceType', 'unknown')
                     switches.append(TadoChildLockSwitch(
-                        zone_id, serial, zone_name, zone_type, device_type, device.get('childLockEnabled', False), zones_info
+                        entry_id, zone_id, serial, zone_name, zone_type, device_type, device.get('childLockEnabled', False), zones_info
                     ))
     
     if switches:
@@ -87,7 +89,8 @@ class TadoEarlyStartSwitch(SwitchEntity):
 
     """Tado CE Early Start Switch Entity."""
     
-    def __init__(self, zone_id: str, zone_name: str, zone_type: str, initial_state: bool):
+    def __init__(self, entry_id: str, zone_id: str, zone_name: str, zone_type: str, initial_state: bool):
+        self._entry_id = entry_id
         self._zone_id = zone_id
         self._zone_name = zone_name
         self._zone_type = zone_type
@@ -99,7 +102,7 @@ class TadoEarlyStartSwitch(SwitchEntity):
         self._attr_is_on = initial_state
         self._attr_available = True
         # Use zone device info instead of hub device info
-        self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type)
+        self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type, _CACHED_HOME_ID)
         
         # v1.9.6: Optimistic update tracking (parity with climate entities)
         self._optimistic_set_at: float | None = None
@@ -206,9 +209,9 @@ class TadoEarlyStartSwitch(SwitchEntity):
     
     async def _async_set_early_start(self, enabled: bool) -> bool:
         """Set early start state via async API."""
-        from .api_client import get_async_client
+        from .entry_data import get_entry_data
         
-        client = get_async_client(self.hass)
+        client = get_entry_data(self.hass, self._entry_id).api_client
         
         # Early start uses a different endpoint format
         endpoint = f"zones/{self._zone_id}/earlyStart"
@@ -230,7 +233,8 @@ class TadoChildLockSwitch(SwitchEntity):
 
     """Tado CE Child Lock Switch Entity."""
     
-    def __init__(self, zone_id: str, serial: str, zone_name: str, zone_type: str, device_type: str, initial_state: bool, zones_info: list):
+    def __init__(self, entry_id: str, zone_id: str, serial: str, zone_name: str, zone_type: str, device_type: str, initial_state: bool, zones_info: list):
+        self._entry_id = entry_id
         self._zone_id = zone_id
         self._serial = serial
         self._zone_name = zone_name
@@ -247,7 +251,7 @@ class TadoChildLockSwitch(SwitchEntity):
         self._attr_is_on = initial_state
         self._attr_available = True
         # Use zone device info instead of hub device info
-        self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type)
+        self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type, _CACHED_HOME_ID)
         
         # v1.9.6: Optimistic update tracking (parity with climate entities)
         self._optimistic_set_at: float | None = None
@@ -367,11 +371,11 @@ class TadoChildLockSwitch(SwitchEntity):
     
     async def _async_set_child_lock(self, enabled: bool) -> bool:
         """Set child lock state via async API."""
-        from .api_client import get_async_client
+        from .entry_data import get_entry_data
         from homeassistant.helpers.aiohttp_client import async_get_clientsession
         import aiohttp
         
-        client = get_async_client(self.hass)
+        client = get_entry_data(self.hass, self._entry_id).api_client
         token = await client.get_access_token()
         
         if not token:

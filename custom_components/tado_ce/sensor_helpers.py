@@ -8,8 +8,6 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from .const import DOMAIN
-
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -65,6 +63,7 @@ def get_effective_temperature(
     hass,
     zone_id: str,
     room_temp: float,
+    entry_id: str,
 ) -> tuple:
     """Get effective temperature for mold risk calculation.
 
@@ -78,6 +77,7 @@ def get_effective_temperature(
         hass: Home Assistant instance
         zone_id: Zone ID for per-zone config lookup
         room_temp: Room average temperature from Tado sensor
+        entry_id: Config entry ID for per-entry data access
 
     Returns:
         Tuple of (effective_temp, outdoor_temp, surface_temp, temperature_source, surface_temp_offset)
@@ -92,8 +92,10 @@ def get_effective_temperature(
     fallback = (room_temp, None, None, "Room Average", 0.0)
 
     try:
-        config_manager = hass.data.get(DOMAIN, {}).get("config_manager")
-        zone_config_manager = hass.data.get(DOMAIN, {}).get("zone_config_manager")
+        from .entry_data import get_entry_data
+        _ed = get_entry_data(hass, entry_id)
+        config_manager = _ed.config_manager
+        zone_config_manager = _ed.zone_config_manager
 
         if not config_manager:
             return fallback

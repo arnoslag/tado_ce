@@ -19,8 +19,13 @@ Type alias:
 from __future__ import annotations
 
 import asyncio
+import logging
+import sys
+import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Callable, Optional
+
+_LOGGER = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
@@ -123,6 +128,48 @@ class EntryData:
     Uses list[int] for mutability in closures (same pattern as current code)."""
 
 
+    # === Methods migrated from __init__.py closures (Task 6.5) ===
+
+    def get_next_sequence(self) -> int:
+        """Get next sequence number for tracking data freshness.
+
+        Includes overflow protection — resets at sys.maxsize to prevent
+        memory issues in long-running instances.
+        """
+        self.global_sequence[0] += 1
+        if self.global_sequence[0] >= sys.maxsize:
+            _LOGGER.info("Sequence number reached max, resetting to 0")
+            self.global_sequence[0] = 0
+        return self.global_sequence[0]
+
+    async def async_mark_entity_fresh(self, entity_id: str) -> None:
+        """Mark entity as having a recent API call in progress."""
+        async with self.freshness_lock:
+            self.entity_freshness[entity_id] = time.time()
+            _LOGGER.debug("Marked entity fresh: %s", entity_id)
+
+    def is_entity_fresh(self, entity_id: str, debounce_seconds: int | None = None) -> bool:
+        """Check if entity has a recent API call (within debounce window).
+
+        Args:
+            entity_id: Entity ID to check
+            debounce_seconds: Override debounce window (uses config if None)
+        """
+        if entity_id not in self.entity_freshness:
+            return False
+        if debounce_seconds is None:
+            if self.config_manager:
+                debounce_seconds = self.config_manager.get_refresh_debounce_seconds() + 2
+            else:
+                debounce_seconds = 7  # safe default
+        elapsed = time.time() - self.entity_freshness[entity_id]
+        if elapsed > debounce_seconds:
+            del self.entity_freshness[entity_id]
+            return False
+        return True
+
+
+
 
 def get_entry_data(hass: Any, entry_id: str) -> EntryData:
     """Get EntryData for a config entry.
@@ -142,3 +189,34 @@ def get_entry_data(hass: Any, entry_id: str) -> EntryData:
     """
     from .const import DOMAIN
     return hass.data[DOMAIN][entry_id]
+
+
+def get_entry_data_or_none(hass: Any, entry_id: str) -> EntryData | None:
+    """Get EntryData for a config entry, returning None if unavailable.
+
+    Safe version of get_entry_data() for use in entity callbacks and
+    properties that may fire during or after entry unload. Avoids KeyError
+    when the entry has already been removed from hass.data.
+
+    Use this instead of get_entry_data() when:
+    - In @callback update() methods (coordinator may fire during unload)
+    - In property accessors that HA may call at any time
+    - In signal/event handlers that may outlive the entry
+
+    Use get_entry_data() (the strict version) when:
+    - In async_setup_entry() where the entry is guaranteed to exist
+    - In service handlers where you want a clear error on bad entry_id
+
+    Args:
+        hass: Home Assistant instance
+        entry_id: The config entry ID (from self._entry_id)
+
+    Returns:
+        EntryData instance, or None if entry was unloaded
+    """
+    from .const import DOMAIN
+    try:
+        return hass.data[DOMAIN][entry_id]
+    except KeyError:
+        _LOGGER.debug("EntryData not found for %s (entry may be unloaded)", entry_id)
+        return None

@@ -17,6 +17,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from .const import DOMAIN
 from .device_manager import get_zone_device_info
 from .data_loader import load_zones_file, load_zones_info_file, load_config_file, get_current_home_id
+from .entry_data import get_entry_data, get_entry_data_or_none
 from .format_helpers import format_overlay_type as _format_overlay_type
 from .action_helpers import (
     check_bootstrap_reserve as _check_bootstrap_reserve,
@@ -53,7 +54,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             
             if zone_type == 'HOT_WATER':
                 _LOGGER.debug(f"Tado CE water_heater: Creating entity for zone {zone_id} ({zone_name})")
-                water_heaters.append(TadoWaterHeater(hass, zone_id, zone_name))
+                water_heaters.append(TadoWaterHeater(hass, entry.entry_id, zone_id, zone_name))
     
     if water_heaters:
         async_add_entities(water_heaters, True)
@@ -67,8 +68,9 @@ class TadoWaterHeater(WaterHeaterEntity):
 
     """Tado CE Water Heater Entity."""
     
-    def __init__(self, hass: HomeAssistant, zone_id: str, zone_name: str):
+    def __init__(self, hass: HomeAssistant, entry_id: str, zone_id: str, zone_name: str):
         self.hass = hass
+        self._entry_id = entry_id
         self._zone_id = zone_id
         self._zone_name = zone_name
         self._home_id = None
@@ -80,7 +82,7 @@ class TadoWaterHeater(WaterHeaterEntity):
         self._attr_min_temp = 30
         self._attr_max_temp = 65
         # Use zone device info instead of hub device info
-        self._attr_device_info = get_zone_device_info(zone_id, zone_name, "HOT_WATER")
+        self._attr_device_info = get_zone_device_info(zone_id, zone_name, "HOT_WATER", _CACHED_HOME_ID)
         
         self._attr_current_operation = None
         self._attr_current_temperature = None
@@ -140,8 +142,10 @@ class TadoWaterHeater(WaterHeaterEntity):
         
         # v2.0.1: Layer 1 - Skip update if entity is fresh (coordinator-level protection)
         # This prevents stale data from overwriting optimistic state after user actions
-        is_entity_fresh = self.hass.data.get(DOMAIN, {}).get('is_entity_fresh')
-        if is_entity_fresh and is_entity_fresh(self.entity_id):
+        _ed = get_entry_data_or_none(self.hass, self._entry_id)
+        if _ed is None:
+            return
+        if _ed.is_entity_fresh(self.entity_id):
             _LOGGER.debug(f"Hot water {self._zone_name}: Skipping update (entity is fresh)")
             return
         
@@ -277,7 +281,6 @@ class TadoWaterHeater(WaterHeaterEntity):
         v2.0.1: Added full 3-layer defense for parity with climate entities.
         v2.0.1: Added bootstrap reserve check - blocks action when quota critically low.
         """
-        from .api_client import get_async_client
         
         # v2.0.1: Bootstrap Reserve - block action when quota critically low
         await _check_bootstrap_reserve(self.hass, f"hot water {self._zone_name}")
@@ -297,19 +300,14 @@ class TadoWaterHeater(WaterHeaterEntity):
         self._optimistic_set_at = time.time()
         
         # v2.0.1: Layer 2 - Sequence number tracking
-        get_next_sequence = self.hass.data.get(DOMAIN, {}).get('get_next_sequence')
-        if get_next_sequence:
-            self._optimistic_sequence = get_next_sequence()
-        else:
-            self._optimistic_sequence = int(time.time())
+        _ed = get_entry_data(self.hass, self._entry_id)
+        self._optimistic_sequence = _ed.get_next_sequence()
         
         # v2.0.1: Layer 3 - Expected state confirmation
         self._expected_operation = operation_mode
         
         # v2.0.1: Layer 1 - Mark entity as fresh to prevent stale data overwrites
-        mark_entity_fresh = self.hass.data.get(DOMAIN, {}).get('mark_entity_fresh')
-        if mark_entity_fresh:
-            await mark_entity_fresh(self.entity_id)
+        await _ed.async_mark_entity_fresh(self.entity_id)
         
         _LOGGER.debug(f"Hot water {self._zone_name}: Set optimistic state: operation={operation_mode}, seq={self._optimistic_sequence}")
         
@@ -317,7 +315,7 @@ class TadoWaterHeater(WaterHeaterEntity):
         
         success = False
         max_retries = 2  # Initial attempt + 1 retry
-        client = get_async_client(self.hass)
+        client = get_entry_data(self.hass, self._entry_id).api_client
         
         for attempt in range(max_retries):
             if operation_mode == STATE_AUTO:
@@ -372,10 +370,8 @@ class TadoWaterHeater(WaterHeaterEntity):
     def _get_timer_duration(self) -> int:
         """Get configured timer duration in minutes (default 60)."""
         try:
-            # Try to get from hass.data
-            from .const import DOMAIN
-            if DOMAIN in self.hass.data and 'config_manager' in self.hass.data[DOMAIN]:
-                config_manager = self.hass.data[DOMAIN]['config_manager']
+            config_manager = get_entry_data(self.hass, self._entry_id).config_manager
+            if config_manager:
                 return config_manager.get_hot_water_timer_duration()
         except Exception as e:
             _LOGGER.debug(f"Failed to get timer duration from config: {e}")
@@ -393,13 +389,12 @@ class TadoWaterHeater(WaterHeaterEntity):
 
     async def _async_turn_on(self) -> bool:
         """Turn on hot water (async)."""
-        from .api_client import get_async_client
         
         if not self._home_id:
             _LOGGER.error("No home_id configured")
             return False
         
-        client = get_async_client(self.hass)
+        client = get_entry_data(self.hass, self._entry_id).api_client
         
         setting = {"type": "HOT_WATER", "power": "ON"}
         termination = {"type": "MANUAL"}
@@ -412,13 +407,12 @@ class TadoWaterHeater(WaterHeaterEntity):
 
     async def _async_turn_off(self) -> bool:
         """Turn off hot water (async)."""
-        from .api_client import get_async_client
         
         if not self._home_id:
             _LOGGER.error("No home_id configured for hot water zone")
             return False
         
-        client = get_async_client(self.hass)
+        client = get_entry_data(self.hass, self._entry_id).api_client
         
         setting = {"type": "HOT_WATER", "power": "OFF"}
         termination = {"type": "MANUAL"}
@@ -431,13 +425,12 @@ class TadoWaterHeater(WaterHeaterEntity):
 
     async def _async_set_timer(self, duration_minutes: int, temperature: float = None) -> bool:
         """Turn on hot water with timer (async)."""
-        from .api_client import get_async_client
         
         if not self._home_id:
             _LOGGER.error("No home_id configured for hot water zone")
             return False
         
-        client = get_async_client(self.hass)
+        client = get_entry_data(self.hass, self._entry_id).api_client
         
         # Build setting payload
         setting = {"type": "HOT_WATER", "power": "ON"}
@@ -477,7 +470,6 @@ class TadoWaterHeater(WaterHeaterEntity):
         v2.0.1: Added full 3-layer defense for parity with climate entities.
         v2.0.1: Added bootstrap reserve check - blocks action when quota critically low.
         """
-        from .api_client import get_async_client
         
         temperature = kwargs.get("temperature")
         if temperature is None:
@@ -507,26 +499,21 @@ class TadoWaterHeater(WaterHeaterEntity):
         self._optimistic_set_at = time.time()
         
         # v2.0.1: Layer 2 - Sequence number tracking
-        get_next_sequence = self.hass.data.get(DOMAIN, {}).get('get_next_sequence')
-        if get_next_sequence:
-            self._optimistic_sequence = get_next_sequence()
-        else:
-            self._optimistic_sequence = int(time.time())
+        _ed = get_entry_data(self.hass, self._entry_id)
+        self._optimistic_sequence = _ed.get_next_sequence()
         
         # v2.0.1: Layer 3 - Expected state confirmation
         self._expected_operation = STATE_HEAT
         self._expected_temperature = temperature
         
         # v2.0.1: Layer 1 - Mark entity as fresh to prevent stale data overwrites
-        mark_entity_fresh = self.hass.data.get(DOMAIN, {}).get('mark_entity_fresh')
-        if mark_entity_fresh:
-            await mark_entity_fresh(self.entity_id)
+        await _ed.async_mark_entity_fresh(self.entity_id)
         
         _LOGGER.debug(f"Hot water {self._zone_name}: Set optimistic state: temp={temperature}, seq={self._optimistic_sequence}")
         
         self.async_write_ha_state()
         
-        client = get_async_client(self.hass)
+        client = get_entry_data(self.hass, self._entry_id).api_client
         
         # Set temperature with manual overlay
         setting = {

@@ -28,6 +28,7 @@ from .const import (
     TEMP_OFFSET_MIN, TEMP_OFFSET_MAX, TEMP_OFFSET_STEP,
     SURFACE_TEMP_OFFSET_MIN, SURFACE_TEMP_OFFSET_MAX, SURFACE_TEMP_OFFSET_STEP,
 )
+from .entry_data import get_entry_data
 from .zone_config_manager import ZoneConfigManager
 
 _LOGGER = logging.getLogger(__name__)
@@ -47,14 +48,14 @@ def _slugify(text: str) -> str:
     return text
 
 
-def _get_zone_device_info(zone_id: str, zone_name: str, zone_type: str) -> DeviceInfo:
+def _get_zone_device_info(zone_id: str, zone_name: str, zone_type: str, home_id: str = None) -> DeviceInfo:
     """Get device info for zone entity registration.
     
     Uses the same identifier format as device_manager.py to ensure
     zone config entities are registered to the existing zone device.
     """
     from .device_manager import get_zone_device_info
-    return get_zone_device_info(zone_id, zone_name, zone_type)
+    return get_zone_device_info(zone_id, zone_name, zone_type, home_id)
 
 
 # =============================================================================
@@ -74,11 +75,13 @@ class TadoHeatingTypeSelect(SelectEntity):
     
     def __init__(
         self,
+        entry_id: str,
         zone_id: str,
         zone_name: str,
         zone_config_manager: ZoneConfigManager,
     ):
         """Initialize heat emitter type select."""
+        self._entry_id = entry_id
         self._zone_id = zone_id
         self._zone_name = zone_name
         self._config_manager = zone_config_manager
@@ -88,7 +91,7 @@ class TadoHeatingTypeSelect(SelectEntity):
         self._attr_name = "[CE] Heat Emitter"
         self.entity_id = f"select.{slug}_heating_type"
         
-        self._attr_device_info = _get_zone_device_info(zone_id, zone_name, "HEATING")
+        self._attr_device_info = _get_zone_device_info(zone_id, zone_name, "HEATING", _CACHED_HOME_ID)
     
     @property
     def current_option(self) -> str:
@@ -127,11 +130,13 @@ class TadoUFHBufferNumber(NumberEntity):
     
     def __init__(
         self,
+        entry_id: str,
         zone_id: str,
         zone_name: str,
         zone_config_manager: ZoneConfigManager,
     ):
         """Initialize UFH buffer number."""
+        self._entry_id = entry_id
         self._zone_id = zone_id
         self._zone_name = zone_name
         self._config_manager = zone_config_manager
@@ -141,7 +146,7 @@ class TadoUFHBufferNumber(NumberEntity):
         self._attr_name = "[CE] UFH Buffer"
         self.entity_id = f"number.{slug}_ufh_buffer"
         
-        self._attr_device_info = _get_zone_device_info(zone_id, zone_name, "HEATING")
+        self._attr_device_info = _get_zone_device_info(zone_id, zone_name, "HEATING", _CACHED_HOME_ID)
     
     @property
     def native_value(self) -> float:
@@ -170,12 +175,14 @@ class TadoAdaptivePreheatSwitch(SwitchEntity):
     
     def __init__(
         self,
+        entry_id: str,
         zone_id: str,
         zone_name: str,
         zone_type: str,
         zone_config_manager: ZoneConfigManager,
     ):
         """Initialize adaptive preheat switch."""
+        self._entry_id = entry_id
         self._zone_id = zone_id
         self._zone_name = zone_name
         self._zone_type = zone_type
@@ -186,7 +193,7 @@ class TadoAdaptivePreheatSwitch(SwitchEntity):
         self._attr_name = "[CE] Adaptive Preheat"
         self.entity_id = f"switch.{slug}_adaptive_preheat"
         
-        self._attr_device_info = _get_zone_device_info(zone_id, zone_name, zone_type)
+        self._attr_device_info = _get_zone_device_info(zone_id, zone_name, zone_type, _CACHED_HOME_ID)
     
     @property
     def is_on(self) -> bool:
@@ -223,12 +230,14 @@ class TadoSmartComfortModeSelect(SelectEntity):
     
     def __init__(
         self,
+        entry_id: str,
         zone_id: str,
         zone_name: str,
         zone_type: str,
         zone_config_manager: ZoneConfigManager,
     ):
         """Initialize smart comfort mode select."""
+        self._entry_id = entry_id
         self._zone_id = zone_id
         self._zone_name = zone_name
         self._zone_type = zone_type
@@ -239,7 +248,7 @@ class TadoSmartComfortModeSelect(SelectEntity):
         self._attr_name = "[CE] Smart Comfort"
         self.entity_id = f"select.{slug}_smart_comfort_mode"
         
-        self._attr_device_info = _get_zone_device_info(zone_id, zone_name, zone_type)
+        self._attr_device_info = _get_zone_device_info(zone_id, zone_name, zone_type, _CACHED_HOME_ID)
     
     @property
     def current_option(self) -> str:
@@ -275,12 +284,14 @@ class TadoWindowTypeSelect(SelectEntity):
     
     def __init__(
         self,
+        entry_id: str,
         zone_id: str,
         zone_name: str,
         zone_type: str,
         zone_config_manager: ZoneConfigManager,
     ):
         """Initialize window type select."""
+        self._entry_id = entry_id
         self._zone_id = zone_id
         self._zone_name = zone_name
         self._zone_type = zone_type
@@ -291,7 +302,7 @@ class TadoWindowTypeSelect(SelectEntity):
         self._attr_name = "[CE] Window Type"
         self.entity_id = f"select.{slug}_window_type"
         
-        self._attr_device_info = _get_zone_device_info(zone_id, zone_name, zone_type)
+        self._attr_device_info = _get_zone_device_info(zone_id, zone_name, zone_type, _CACHED_HOME_ID)
     
     @property
     def current_option(self) -> str:
@@ -326,12 +337,14 @@ class TadoZoneOverlayModeSelect(SelectEntity):
     
     def __init__(
         self,
+        entry_id: str,
         zone_id: str,
         zone_name: str,
         zone_type: str,
         zone_config_manager: ZoneConfigManager,
     ):
         """Initialize overlay mode select."""
+        self._entry_id = entry_id
         self._zone_id = zone_id
         self._zone_name = zone_name
         self._zone_type = zone_type
@@ -342,7 +355,7 @@ class TadoZoneOverlayModeSelect(SelectEntity):
         self._attr_name = "[CE] Overlay Mode"
         self.entity_id = f"select.{slug}_overlay_mode"
         
-        self._attr_device_info = _get_zone_device_info(zone_id, zone_name, zone_type)
+        self._attr_device_info = _get_zone_device_info(zone_id, zone_name, zone_type, _CACHED_HOME_ID)
     
     @property
     def current_option(self) -> str:
@@ -378,12 +391,14 @@ class TadoZoneTimerDurationSelect(SelectEntity):
     
     def __init__(
         self,
+        entry_id: str,
         zone_id: str,
         zone_name: str,
         zone_type: str,
         zone_config_manager: ZoneConfigManager,
     ):
         """Initialize timer duration select."""
+        self._entry_id = entry_id
         self._zone_id = zone_id
         self._zone_name = zone_name
         self._zone_type = zone_type
@@ -394,7 +409,7 @@ class TadoZoneTimerDurationSelect(SelectEntity):
         self._attr_name = "[CE] Overlay Timer"
         self.entity_id = f"select.{slug}_overlay_timer_duration"
         
-        self._attr_device_info = _get_zone_device_info(zone_id, zone_name, zone_type)
+        self._attr_device_info = _get_zone_device_info(zone_id, zone_name, zone_type, _CACHED_HOME_ID)
     
     @property
     def current_option(self) -> str:
@@ -429,12 +444,14 @@ class TadoMinTempNumber(NumberEntity):
     
     def __init__(
         self,
+        entry_id: str,
         zone_id: str,
         zone_name: str,
         zone_type: str,
         zone_config_manager: ZoneConfigManager,
     ):
         """Initialize min temp number."""
+        self._entry_id = entry_id
         self._zone_id = zone_id
         self._zone_name = zone_name
         self._zone_type = zone_type
@@ -445,7 +462,7 @@ class TadoMinTempNumber(NumberEntity):
         self._attr_name = "[CE] Min Temp"
         self.entity_id = f"number.{slug}_min_temp"
         
-        self._attr_device_info = _get_zone_device_info(zone_id, zone_name, zone_type)
+        self._attr_device_info = _get_zone_device_info(zone_id, zone_name, zone_type, _CACHED_HOME_ID)
     
     @property
     def native_value(self) -> float:
@@ -475,12 +492,14 @@ class TadoMaxTempNumber(NumberEntity):
     
     def __init__(
         self,
+        entry_id: str,
         zone_id: str,
         zone_name: str,
         zone_type: str,
         zone_config_manager: ZoneConfigManager,
     ):
         """Initialize max temp number."""
+        self._entry_id = entry_id
         self._zone_id = zone_id
         self._zone_name = zone_name
         self._zone_type = zone_type
@@ -491,7 +510,7 @@ class TadoMaxTempNumber(NumberEntity):
         self._attr_name = "[CE] Max Temp"
         self.entity_id = f"number.{slug}_max_temp"
         
-        self._attr_device_info = _get_zone_device_info(zone_id, zone_name, zone_type)
+        self._attr_device_info = _get_zone_device_info(zone_id, zone_name, zone_type, _CACHED_HOME_ID)
     
     @property
     def native_value(self) -> float:
@@ -528,12 +547,14 @@ class TadoTempOffsetNumber(NumberEntity):
     
     def __init__(
         self,
+        entry_id: str,
         zone_id: str,
         zone_name: str,
         zone_type: str,
         zone_config_manager: ZoneConfigManager,
     ):
         """Initialize temp offset number."""
+        self._entry_id = entry_id
         self._zone_id = zone_id
         self._zone_name = zone_name
         self._zone_type = zone_type
@@ -544,7 +565,7 @@ class TadoTempOffsetNumber(NumberEntity):
         self._attr_name = "[CE] Temp Offset"
         self.entity_id = f"number.{slug}_temp_offset"
         
-        self._attr_device_info = _get_zone_device_info(zone_id, zone_name, zone_type)
+        self._attr_device_info = _get_zone_device_info(zone_id, zone_name, zone_type, _CACHED_HOME_ID)
     
     @property
     def native_value(self) -> float:
@@ -581,12 +602,14 @@ class TadoSurfaceTempOffsetNumber(NumberEntity):
     
     def __init__(
         self,
+        entry_id: str,
         zone_id: str,
         zone_name: str,
         zone_type: str,
         zone_config_manager: ZoneConfigManager,
     ):
         """Initialize surface temp offset number."""
+        self._entry_id = entry_id
         self._zone_id = zone_id
         self._zone_name = zone_name
         self._zone_type = zone_type
@@ -597,7 +620,7 @@ class TadoSurfaceTempOffsetNumber(NumberEntity):
         self._attr_name = "[CE] Surface Offset"
         self.entity_id = f"number.{slug}_surface_temp_offset"
         
-        self._attr_device_info = _get_zone_device_info(zone_id, zone_name, zone_type)
+        self._attr_device_info = _get_zone_device_info(zone_id, zone_name, zone_type, _CACHED_HOME_ID)
     
     @property
     def native_value(self) -> float:
@@ -626,8 +649,10 @@ async def async_setup_zone_config_select(
     global _CACHED_HOME_ID
     from .data_loader import get_current_home_id
     _CACHED_HOME_ID = await hass.async_add_executor_job(get_current_home_id)
-    config_manager = hass.data[DOMAIN].get('config_manager')
-    zone_config_manager = hass.data[DOMAIN].get('zone_config_manager')
+    entry_id = entry.entry_id
+    entry_data = get_entry_data(hass, entry_id)
+    config_manager = entry_data.config_manager
+    zone_config_manager = entry_data.zone_config_manager
     
     if not zone_config_manager:
         _LOGGER.warning("Zone config manager not available, skipping zone config entities")
@@ -672,21 +697,21 @@ async def async_setup_zone_config_select(
             if has_schedule:
                 # Tank-based: create Overlay Mode + Timer Duration only
                 entities.extend([
-                    TadoZoneOverlayModeSelect(zone_id, zone_name, zone_type, zone_config_manager),
-                    TadoZoneTimerDurationSelect(zone_id, zone_name, zone_type, zone_config_manager),
+                    TadoZoneOverlayModeSelect(entry_id, zone_id, zone_name, zone_type, zone_config_manager),
+                    TadoZoneTimerDurationSelect(entry_id, zone_id, zone_name, zone_type, zone_config_manager),
                 ])
             continue  # Skip other entities (Smart Comfort, Window Type, etc.) for hot water
         
         # Heating-only entities
         if zone_type == "HEATING":
-            entities.append(TadoHeatingTypeSelect(zone_id, zone_name, zone_config_manager))
+            entities.append(TadoHeatingTypeSelect(entry_id, zone_id, zone_name, zone_config_manager))
         
         # Heating + AC entities
         entities.extend([
-            TadoSmartComfortModeSelect(zone_id, zone_name, zone_type, zone_config_manager),
-            TadoWindowTypeSelect(zone_id, zone_name, zone_type, zone_config_manager),
-            TadoZoneOverlayModeSelect(zone_id, zone_name, zone_type, zone_config_manager),
-            TadoZoneTimerDurationSelect(zone_id, zone_name, zone_type, zone_config_manager),
+            TadoSmartComfortModeSelect(entry_id, zone_id, zone_name, zone_type, zone_config_manager),
+            TadoWindowTypeSelect(entry_id, zone_id, zone_name, zone_type, zone_config_manager),
+            TadoZoneOverlayModeSelect(entry_id, zone_id, zone_name, zone_type, zone_config_manager),
+            TadoZoneTimerDurationSelect(entry_id, zone_id, zone_name, zone_type, zone_config_manager),
         ])
     
     if entities:
@@ -702,8 +727,10 @@ async def async_setup_zone_config_number(
     global _CACHED_HOME_ID
     from .data_loader import get_current_home_id
     _CACHED_HOME_ID = await hass.async_add_executor_job(get_current_home_id)
-    config_manager = hass.data[DOMAIN].get('config_manager')
-    zone_config_manager = hass.data[DOMAIN].get('zone_config_manager')
+    entry_id = entry.entry_id
+    entry_data = get_entry_data(hass, entry_id)
+    config_manager = entry_data.config_manager
+    zone_config_manager = entry_data.zone_config_manager
     
     if not zone_config_manager:
         _LOGGER.warning("Zone config manager not available, skipping zone config entities")
@@ -735,14 +762,14 @@ async def async_setup_zone_config_number(
         
         # Heating-only entities
         if zone_type == "HEATING":
-            entities.append(TadoUFHBufferNumber(zone_id, zone_name, zone_config_manager))
+            entities.append(TadoUFHBufferNumber(entry_id, zone_id, zone_name, zone_config_manager))
         
         # Heating + AC entities
         entities.extend([
-            TadoMinTempNumber(zone_id, zone_name, zone_type, zone_config_manager),
-            TadoMaxTempNumber(zone_id, zone_name, zone_type, zone_config_manager),
-            TadoTempOffsetNumber(zone_id, zone_name, zone_type, zone_config_manager),
-            TadoSurfaceTempOffsetNumber(zone_id, zone_name, zone_type, zone_config_manager),
+            TadoMinTempNumber(entry_id, zone_id, zone_name, zone_type, zone_config_manager),
+            TadoMaxTempNumber(entry_id, zone_id, zone_name, zone_type, zone_config_manager),
+            TadoTempOffsetNumber(entry_id, zone_id, zone_name, zone_type, zone_config_manager),
+            TadoSurfaceTempOffsetNumber(entry_id, zone_id, zone_name, zone_type, zone_config_manager),
         ])
     
     if entities:
@@ -759,8 +786,10 @@ async def async_setup_zone_config_switch(
     global _CACHED_HOME_ID
     from .data_loader import get_current_home_id
     _CACHED_HOME_ID = await hass.async_add_executor_job(get_current_home_id)
-    config_manager = hass.data[DOMAIN].get('config_manager')
-    zone_config_manager = hass.data[DOMAIN].get('zone_config_manager')
+    entry_id = entry.entry_id
+    entry_data = get_entry_data(hass, entry_id)
+    config_manager = entry_data.config_manager
+    zone_config_manager = entry_data.zone_config_manager
     
     if not zone_config_manager:
         _LOGGER.warning("Zone config manager not available, skipping zone config entities")
@@ -792,7 +821,7 @@ async def async_setup_zone_config_switch(
         
         # Heating + AC entities
         entities.append(
-            TadoAdaptivePreheatSwitch(zone_id, zone_name, zone_type, zone_config_manager)
+            TadoAdaptivePreheatSwitch(entry_id, zone_id, zone_name, zone_type, zone_config_manager)
         )
     
     if entities:
