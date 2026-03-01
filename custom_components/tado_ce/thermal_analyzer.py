@@ -8,12 +8,12 @@ import logging
 from typing import Optional, List, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .heating_cycle_models import HeatingCycle, TemperatureReading
+    from .heating_models import HeatingCycle, TemperatureReading
 
 _LOGGER = logging.getLogger(__name__)
 
 
-class SecondOrderAnalyzer:
+class ThermalAnalyzer:
     """Analyze second-order thermal dynamics from heating cycles.
     
     Second-order analysis provides:

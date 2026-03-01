@@ -9,7 +9,7 @@ from typing import Any, Callable, Optional
 
 from homeassistant.core import HomeAssistant
 
-from .const import DATA_DIR, DEFAULT_ZONE_CONFIG, WINDOW_TYPE_U_VALUES
+from .const import DATA_DIR, DEFAULT_ZONE_CONFIG, WINDOW_U_VALUES
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -154,7 +154,7 @@ class ZoneConfigManager:
             U-value in W/m²K
         """
         window_type = self.get_zone_value(zone_id, "window_type", "double_pane")
-        return WINDOW_TYPE_U_VALUES.get(window_type, 2.7)
+        return WINDOW_U_VALUES.get(window_type, 2.7)
     
     def get_surface_temp_offset(self, zone_id: str) -> float:
         """Get surface temperature offset for mold risk calibration.

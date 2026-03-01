@@ -455,10 +455,17 @@ class APICallTracker:
         return estimated_reset
 
 
-def cleanup_executor():
+def cleanup_api_executor(hass=None):
     """Cleanup function for backward compatibility.
     
     v1.11.0: No longer uses ThreadPoolExecutor, but kept for API compatibility.
     MUST be called in async_unload_entry() to properly cleanup resources.
+    
+    Args:
+        hass: HomeAssistant instance (unused, accepted for consistent singleton API)
     """
     _LOGGER.debug("API call tracker cleanup (no executor to reset in v1.11.0)")
+
+
+# Deprecated alias — use cleanup_api_executor() instead
+cleanup_executor = cleanup_api_executor

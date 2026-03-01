@@ -4,17 +4,24 @@ from datetime import timedelta
 
 from homeassistant.components.device_tracker import SourceType
 from homeassistant.components.device_tracker.config_entry import TrackerEntity
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .device_manager import get_hub_device_info
-from .data_loader import load_mobile_devices_file
+from .data_loader import load_mobile_devices_file, get_current_home_id
 
 _LOGGER = logging.getLogger(__name__)
 SCAN_INTERVAL = timedelta(seconds=30)
 
+# Cached home_id to avoid blocking calls in event loop
+_CACHED_HOME_ID = None
 
-async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
+
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddConfigEntryEntitiesCallback):
     """Set up Tado CE device trackers from a config entry."""
+    global _CACHED_HOME_ID
+    _CACHED_HOME_ID = await hass.async_add_executor_job(get_current_home_id)
     _LOGGER.debug("Tado CE device_tracker: Setting up...")
     mobile_devices = await hass.async_add_executor_job(load_mobile_devices_file)
     
@@ -40,6 +47,8 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
 
 
 class TadoDeviceTracker(TrackerEntity):
+    _attr_has_entity_name = True
+
     """Tado CE Device Tracker Entity."""
     
     def __init__(self, device_id: int, device_name: str, device_data: dict):
@@ -47,8 +56,8 @@ class TadoDeviceTracker(TrackerEntity):
         self._device_name = device_name
         self._device_data = device_data
         
-        self._attr_name = f"Tado CE {device_name}"
-        self._attr_unique_id = f"tado_ce_device_{device_id}"
+        self._attr_name = f"[CE] {device_name}"
+        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_device_{device_id}"
         self._attr_available = False
         # Use hub device info for global entities
         self._attr_device_info = get_hub_device_info()
@@ -96,6 +105,7 @@ class TadoDeviceTracker(TrackerEntity):
             "relative_distance": self._relative_distance,
         }
     
+    @callback
     def update(self):
         """Update device tracker state from JSON file."""
         try:

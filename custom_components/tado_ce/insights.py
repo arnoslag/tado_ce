@@ -33,12 +33,10 @@ class Insight:
     zone_name: Optional[str] = None
 
 
-@dataclass
-class TemperatureReading:
-    """A temperature reading with timestamp."""
-    temperature: float
-    humidity: Optional[float]
-    timestamp: datetime
+from .models import InsightTemperatureReading
+
+# Backward compat alias — existing code may import TemperatureReading from here
+TemperatureReading = InsightTemperatureReading
 
 
 @dataclass

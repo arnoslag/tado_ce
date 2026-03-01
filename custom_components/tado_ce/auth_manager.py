@@ -4,6 +4,8 @@ This module provides thread-safe token management with automatic refresh
 and caching to prevent race conditions when multiple entities request
 access tokens simultaneously.
 
+Singleton pattern: get_auth_manager(...) / cleanup_auth_manager()
+
 CRITICAL: This solves the token rotation race condition that occurs when
 multiple entities (climate, sensor, switch) simultaneously refresh tokens,
 causing authentication failures.
@@ -310,10 +312,13 @@ _auth_manager: Optional[AuthManager] = None
 _auth_manager_lock = Lock()
 
 
-def cleanup_auth_manager() -> bool:
+def cleanup_auth_manager(hass=None) -> bool:
     """Clean up the global AuthManager instance.
     
     MUST be called in async_unload_entry() to ensure fresh auth state on reload.
+    
+    Args:
+        hass: HomeAssistant instance (unused, accepted for consistent singleton API)
     
     Returns:
         True if manager was cleaned up, False if no manager existed

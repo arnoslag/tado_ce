@@ -3,6 +3,7 @@
 This module provides async HTTP client functionality using aiohttp,
 replacing the blocking urllib-based calls for better Home Assistant integration.
 
+Singleton pattern: get_api_client(hass) / cleanup_api_client(hass), cleanup_api_tracker()
 v1.6.0: Added async_sync() to replace subprocess-based tado_api.py sync.
 v1.6.2: Added API call tracking (was missing from v1.6.0 migration).
 v1.11.0: Refactored to use aiofiles for native async file I/O.
@@ -41,7 +42,7 @@ _tracker: Optional[APICallTracker] = None
 _tracker_initialized = False
 
 
-def cleanup_tracker() -> bool:
+def cleanup_api_tracker() -> bool:
     """Clean up the global API call tracker.
     
     MUST be called in async_unload_entry() to prevent stale state on reload.
@@ -56,6 +57,10 @@ def cleanup_tracker() -> bool:
         _LOGGER.debug("Cleaned up API call tracker")
         return True
     return False
+
+
+# Deprecated alias — use cleanup_api_tracker() instead
+cleanup_tracker = cleanup_api_tracker
 
 
 def _get_tracker() -> Optional[APICallTracker]:
@@ -106,7 +111,7 @@ def _detect_call_type(endpoint: str) -> Optional[int]:
     return None
 
 
-class TadoAsyncClient:
+class TadoApiClient:
     """Async Tado API client with automatic token management."""
     
     # Token cache duration (5 minutes to be safe, Tado tokens valid for ~10 minutes)
@@ -1458,17 +1463,17 @@ class TadoAsyncClient:
 _async_clients: dict = {}
 
 
-def get_async_client(hass) -> TadoAsyncClient:
+def get_api_client(hass) -> TadoApiClient:
     """Get or create async client for Home Assistant instance.
     
     Args:
         hass: Home Assistant instance
         
     Returns:
-        TadoAsyncClient instance for this hass instance
+        TadoApiClient instance for this hass instance
         
     Note:
-        Client is cached per hass instance. Call cleanup_async_client()
+        Client is cached per hass instance. Call cleanup_api_client()
         in async_unload_entry() to prevent memory leaks.
     """
     from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -1476,13 +1481,17 @@ def get_async_client(hass) -> TadoAsyncClient:
     hass_id = id(hass)
     if hass_id not in _async_clients:
         session = async_get_clientsession(hass)
-        _async_clients[hass_id] = TadoAsyncClient(session, hass)
-        _LOGGER.debug("Created new TadoAsyncClient")
+        _async_clients[hass_id] = TadoApiClient(session, hass)
+        _LOGGER.debug("Created new TadoApiClient")
     
     return _async_clients[hass_id]
 
 
-def cleanup_async_client(hass) -> bool:
+# Deprecated alias — use get_api_client() instead
+get_async_client = get_api_client
+
+
+def cleanup_api_client(hass) -> bool:
     """Clean up async client for Home Assistant instance.
     
     MUST be called in async_unload_entry() to prevent memory leaks
@@ -1501,6 +1510,10 @@ def cleanup_async_client(hass) -> bool:
         client._access_token = None
         client._token_expiry = None
         del _async_clients[hass_id]
-        _LOGGER.debug("Cleaned up TadoAsyncClient")
+        _LOGGER.debug("Cleaned up TadoApiClient")
         return True
     return False
+
+
+# Deprecated alias — use cleanup_api_client() instead
+cleanup_async_client = cleanup_api_client

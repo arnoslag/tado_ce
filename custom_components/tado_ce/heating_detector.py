@@ -3,7 +3,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from .heating_cycle_models import HeatingCycle, HeatingCycleConfig, TemperatureReading
+from .heating_models import HeatingCycle, HeatingCycleConfig, TemperatureReading
 
 _LOGGER = logging.getLogger(__name__)
 

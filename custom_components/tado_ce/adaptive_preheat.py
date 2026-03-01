@@ -233,7 +233,7 @@ class AdaptivePreheatManager:
         )
         
         try:
-            from .async_api import get_async_client
+            from .api_client import get_async_client
             client = get_async_client(self._hass)
             
             setting = {

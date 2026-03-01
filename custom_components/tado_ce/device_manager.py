@@ -121,6 +121,7 @@ def get_hub_device_info() -> DeviceInfo:
     identifier = f"tado_ce_hub_{home_id}" if home_id != "unknown" else "tado_ce_hub"
     
     return DeviceInfo(
+        configuration_url="https://app.tado.com",
         identifiers={(DOMAIN, identifier)},
         name="Tado CE Hub",
         manufacturer=MANUFACTURER,
@@ -158,10 +159,12 @@ def get_zone_device_info(zone_id: str, zone_name: str, zone_type: str) -> Device
         hub_identifier = "tado_ce_hub"
     
     return DeviceInfo(
+        configuration_url=f"https://app.tado.com/en/main/home/zoneV2/{zone_id}",
         identifiers={(DOMAIN, zone_identifier)},
         name=zone_name,
         manufacturer=MANUFACTURER,
         model=model,
+        suggested_area=zone_name,
         via_device=(DOMAIN, hub_identifier),
     )
 

@@ -244,8 +244,7 @@ QUOTA_BOOTSTRAP_CALLS = 3       # Hard limit - never use these calls
 # Smart Day/Night: Night uses MAX_POLLING_INTERVAL, Day uses remaining quota
 LOW_QUOTA_THRESHOLD = 100       # Trigger Smart Day/Night for low-quota users
 
-# v1.11.0: Mold Risk Enhancement - Window U-values (W/m²K)
-# Standard thermal transmittance values for different window types
+# Canonical window type to U-value mapping (W/m2K). Used for mold risk and migration.
 WINDOW_U_VALUES = {
     "single_pane": 5.0,      # Single glazing (old buildings)
     "double_pane": 2.7,      # Double glazing (most common, default)
@@ -331,14 +330,6 @@ DEFAULT_ZONE_CONFIG = {
 SURFACE_TEMP_OFFSET_MIN = -5.0
 SURFACE_TEMP_OFFSET_MAX = 5.0
 SURFACE_TEMP_OFFSET_STEP = 0.1
-
-# Window type to U-value mapping (for migration from v2.0.x)
-WINDOW_TYPE_U_VALUES = {
-    "single_pane": 5.0,
-    "double_pane": 2.7,
-    "triple_pane": 1.0,
-    "passive_house": 0.8,
-}
 
 # Heating type values
 HEATING_TYPE_RADIATOR = "radiator"

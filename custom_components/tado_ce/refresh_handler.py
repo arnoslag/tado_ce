@@ -1,6 +1,8 @@
 """Immediate Refresh Handler for Tado CE integration.
 
 Handles immediate data refresh after user-initiated state changes.
+
+Singleton pattern: get_refresh_handler(hass) / cleanup_refresh_handler()
 """
 import asyncio
 import json
@@ -34,7 +36,7 @@ QUOTA_CRITICAL_THRESHOLD = 0.9  # 90% quota used
 MIN_QUOTA_PERCENTAGE_FOR_REFRESH = 0.10  # Minimum 10% remaining to allow refresh
 
 
-class ImmediateRefreshHandler:
+class RefreshHandler:
     """Handle immediate data refresh after user actions."""
     
     def __init__(self, hass: HomeAssistant):
@@ -290,7 +292,7 @@ class ImmediateRefreshHandler:
         Args:
             include_home_state: If True, also fetch home state (for presence mode changes)
         """
-        from .async_api import get_async_client
+        from .api_client import get_async_client
         from .data_loader import get_current_home_id
         from .const import get_data_file
         import tempfile
@@ -346,25 +348,29 @@ class ImmediateRefreshHandler:
 
 
 # Global handler instance (initialized in __init__.py)
-_handler: Optional[ImmediateRefreshHandler] = None
+_handler: Optional[RefreshHandler] = None
 
 
-def get_handler(hass: HomeAssistant) -> ImmediateRefreshHandler:
+def get_refresh_handler(hass: HomeAssistant) -> RefreshHandler:
     """Get or create the global immediate refresh handler.
     
     Args:
         hass: Home Assistant instance
         
     Returns:
-        ImmediateRefreshHandler instance
+        RefreshHandler instance
     """
     global _handler
     if _handler is None:
-        _handler = ImmediateRefreshHandler(hass)
+        _handler = RefreshHandler(hass)
     return _handler
 
 
-def cleanup_handler() -> bool:
+# Deprecated alias — use get_refresh_handler() instead
+get_handler = get_refresh_handler
+
+
+def cleanup_refresh_handler() -> bool:
     """Clean up the global immediate refresh handler.
     
     MUST be called in async_unload_entry() to prevent memory leaks.
@@ -381,6 +387,10 @@ def cleanup_handler() -> bool:
             _handler._debounce_task = None
             _LOGGER.debug("Cancelled pending debounce task")
         _handler = None
-        _LOGGER.debug("Cleaned up ImmediateRefreshHandler")
+        _LOGGER.debug("Cleaned up RefreshHandler")
         return True
     return False
+
+
+# Deprecated alias — use cleanup_refresh_handler() instead
+cleanup_handler = cleanup_refresh_handler

@@ -7,20 +7,32 @@ from homeassistant.components.binary_sensor import (
     BinarySensorEntity,
     BinarySensorDeviceClass,
 )
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .device_manager import get_hub_device_info, get_zone_device_info
-from .data_loader import load_zones_file, load_zones_info_file, load_home_state_file, get_zone_names
-from .insights_calculator import detect_window_predicted, TemperatureReading
-from .sensor import _format_tado_mode, _format_data_source, _format_confidence, _format_zone_type
+from .data_loader import load_zones_file, load_zones_info_file, load_home_state_file, get_zone_names, get_current_home_id
+from .insights import detect_window_predicted, TemperatureReading
+from .format_helpers import (
+    format_tado_mode as _format_tado_mode,
+    format_data_source as _format_data_source,
+    format_confidence as _format_confidence,
+    format_zone_type as _format_zone_type,
+)
 
 _LOGGER = logging.getLogger(__name__)
 SCAN_INTERVAL = timedelta(seconds=30)
 
+# Cached home_id to avoid blocking calls in event loop
+_CACHED_HOME_ID = None
 
-async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
+
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddConfigEntryEntitiesCallback):
     """Set up Tado CE binary sensors from a config entry."""
+    global _CACHED_HOME_ID
     _LOGGER.debug("Tado CE binary_sensor: Setting up...")
+    _CACHED_HOME_ID = await hass.async_add_executor_job(get_current_home_id)
     zone_names = await hass.async_add_executor_job(get_zone_names)
     zones_info = await hass.async_add_executor_job(load_zones_info_file)
     
@@ -65,6 +77,8 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
 
 
 class TadoHomeSensor(BinarySensorEntity):
+    _attr_has_entity_name = True
+
     """Binary sensor for Tado Home/Away status.
     
     v2.0.2: Now reads from home_state.json (source of truth for presence)
@@ -76,9 +90,9 @@ class TadoHomeSensor(BinarySensorEntity):
     """
     
     def __init__(self):
-        self._attr_name = "Home"
+        self._attr_name = "[CE] Home"
         self.entity_id = "binary_sensor.tado_ce_home"
-        self._attr_unique_id = "tado_ce_home"
+        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_home"
         self._attr_device_class = BinarySensorDeviceClass.PRESENCE
         self._attr_available = False
         self._attr_is_on = None
@@ -96,7 +110,7 @@ class TadoHomeSensor(BinarySensorEntity):
         after presence mode changes.
         """
         from homeassistant.helpers.dispatcher import async_dispatcher_connect
-        from .immediate_refresh_handler import SIGNAL_ZONES_UPDATED
+        from .refresh_handler import SIGNAL_ZONES_UPDATED
         
         self._remove_signal_listener = async_dispatcher_connect(
             self.hass, SIGNAL_ZONES_UPDATED, self._handle_zones_updated
@@ -110,6 +124,7 @@ class TadoHomeSensor(BinarySensorEntity):
             self._remove_signal_listener = None
             _LOGGER.debug("TadoHomeSensor: Removed signal listener")
     
+    @callback
     def _handle_zones_updated(self):
         """Handle zones_updated signal - schedule immediate update.
         
@@ -125,6 +140,7 @@ class TadoHomeSensor(BinarySensorEntity):
             "data_source": _format_data_source(self._data_source),
         }
     
+    @callback
     def update(self):
         """Update from home_state.json (primary) or zones.json (fallback).
         
@@ -164,15 +180,17 @@ class TadoHomeSensor(BinarySensorEntity):
 
 
 class TadoOpenWindowSensor(BinarySensorEntity):
+    _attr_has_entity_name = True
+
     """Binary sensor for Tado Open Window detection."""
     
     def __init__(self, zone_id: str, zone_name: str, zone_type: str = "HEATING"):
         self._zone_id = zone_id
         self._zone_name = zone_name
         self._zone_type = zone_type
-        self._attr_name = f"{zone_name} Window"
+        self._attr_name = "Window"
         # Use zone_id for unique_id to maintain entity_id stability across zone name changes
-        self._attr_unique_id = f"tado_ce_zone_{zone_id}_open_window"
+        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_zone_{zone_id}_open_window"
         self._attr_device_class = BinarySensorDeviceClass.WINDOW
         self._attr_available = False
         self._attr_is_on = None
@@ -188,6 +206,7 @@ class TadoOpenWindowSensor(BinarySensorEntity):
             "expiry_time": self._expiry_time,
         }
     
+    @callback
     def update(self):
         try:
             # Use data_loader for per-home file support
@@ -219,6 +238,8 @@ class TadoOpenWindowSensor(BinarySensorEntity):
 
 
 class TadoPreheatNowSensor(BinarySensorEntity):
+    _attr_has_entity_name = True
+
     """Binary sensor indicating when to start preheating.
     
     Turns ON when current time >= recommended preheat start time.
@@ -232,8 +253,8 @@ class TadoPreheatNowSensor(BinarySensorEntity):
         self._zone_id = zone_id
         self._zone_name = zone_name
         self._zone_type = zone_type
-        self._attr_name = f"{zone_name} Preheat Now"
-        self._attr_unique_id = f"tado_ce_zone_{zone_id}_preheat_now"
+        self._attr_name = "[CE] Preheat Now"
+        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_zone_{zone_id}_preheat_now"
         self._attr_device_class = BinarySensorDeviceClass.HEAT
         self._attr_available = False
         self._attr_is_on = None
@@ -266,6 +287,7 @@ class TadoPreheatNowSensor(BinarySensorEntity):
             return "mdi:radiator"
         return "mdi:radiator-off"
     
+    @callback
     def update(self):
         """Update preheat now status.
         
@@ -338,6 +360,8 @@ class TadoPreheatNowSensor(BinarySensorEntity):
 
 
 class TadoWindowPredictedSensor(BinarySensorEntity):
+    _attr_has_entity_name = True
+
     """Binary sensor for early open window detection.
     
     v2.2.0: Detects possible open windows using local temperature analysis,
@@ -355,8 +379,8 @@ class TadoWindowPredictedSensor(BinarySensorEntity):
         self._zone_id = zone_id
         self._zone_name = zone_name
         self._zone_type = zone_type
-        self._attr_name = f"{zone_name} Window Predicted"
-        self._attr_unique_id = f"tado_ce_zone_{zone_id}_window_predicted"
+        self._attr_name = "[CE] Window Predicted"
+        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_zone_{zone_id}_window_predicted"
         self._attr_available = False
         self._attr_is_on = None
         self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type)
@@ -391,6 +415,7 @@ class TadoWindowPredictedSensor(BinarySensorEntity):
             return "mdi:window-open-variant"
         return "mdi:window-closed-variant"
     
+    @callback
     def update(self):
         """Update window predicted detection via heating anomaly algorithm.
         

@@ -58,92 +58,90 @@ CONFIDENCE_DISPLAY_MAP: dict[str, str] = {
 }
 
 TADO_MODE_DISPLAY_MAP: dict[str, str] = {"HOME": "Home", "AWAY": "Away"}
-
 DATA_SOURCE_DISPLAY_MAP: dict[str, str] = {"home_state": "Home State", "zones": "Zones"}
+
+BATTERY_STATE_DISPLAY_MAP: dict[str, str] = {
+    "NORMAL": "Normal", "LOW": "Low", "CRITICAL": "Critical",
+}
+CONNECTION_STATE_DISPLAY_MAP: dict[bool, str] = {True: "Online", False: "Offline"}
+CONNECTION_STATE_ATTR_MAP: dict[bool, str] = {True: "online", False: "offline"}
+
+
+# === Generic lookup helper ===
+
+def _lookup(mapping: dict, value, fallback_fn=None) -> str:
+    """Look up value in mapping. Falsy value -> 'Unknown', unmapped -> fallback."""
+    if not value and value is not False:
+        return "Unknown"
+    if value in mapping:
+        return mapping[value]
+    if fallback_fn:
+        return fallback_fn(value)
+    return str(value).replace("_", " ").title()
 
 
 # === Format functions ===
-# All follow: format_<name>(value) -> str
-# Falsy input -> "Unknown", unmapped -> value.replace("_", " ").title()
-
 
 def format_zone_type(zone_type: str) -> str:
     """Convert internal zone_type to user-friendly display value."""
     return ZONE_TYPE_DISPLAY_MAP.get(zone_type, zone_type)
 
-
 def format_window_type(window_type: str) -> str:
-    """Convert internal window_type to user-friendly display value.
-
-    Derives from WINDOW_TYPE_REVERSE_MAP in const.py (single source of truth).
-    Includes 'passive_house' which was missing from the old sensor.py map.
-    """
+    """Convert internal window_type to user-friendly display value."""
     return WINDOW_TYPE_REVERSE_MAP.get(window_type, window_type)
-
 
 def format_comfort_model(comfort_model: str) -> str:
     """Convert internal comfort_model to user-friendly display value."""
-    if not comfort_model:
-        return "Unknown"
-    return COMFORT_MODEL_DISPLAY_MAP.get(comfort_model, comfort_model.title())
-
+    return _lookup(COMFORT_MODEL_DISPLAY_MAP, comfort_model, lambda v: v.title())
 
 def format_insight_type(insight_type: str) -> str:
     """Convert internal insight_type to user-friendly display value."""
-    return INSIGHT_TYPE_DISPLAY_MAP.get(
-        insight_type, insight_type.replace("_", " ").title()
-    )
-
+    return _lookup(INSIGHT_TYPE_DISPLAY_MAP, insight_type)
 
 def format_priority(priority: str) -> str:
     """Convert internal priority to Title Case display value."""
     return priority.title() if priority else "None"
 
-
 def format_api_status(status: str) -> str:
     """Convert internal API status to user-friendly display value."""
-    if not status:
-        return "Unknown"
-    return API_STATUS_DISPLAY_MAP.get(status, status.replace("_", " ").title())
-
+    return _lookup(API_STATUS_DISPLAY_MAP, status)
 
 def format_overlay_type(overlay_type) -> str:
-    """Convert internal overlay_type to user-friendly display value.
-
-    Derives from OVERLAY_MODE_REVERSE_MAP in const.py (single source of truth).
-    """
+    """Convert internal overlay_type to user-friendly display value."""
     if overlay_type is None:
         return "None"
     return OVERLAY_MODE_REVERSE_MAP.get(
         overlay_type, str(overlay_type).replace("_", " ").title()
     )
 
-
 def format_confidence(confidence: str) -> str:
     """Convert internal confidence to user-friendly display value."""
-    if not confidence:
-        return "Unknown"
-    return CONFIDENCE_DISPLAY_MAP.get(
-        confidence, confidence.replace("_", " ").title()
-    )
-
+    return _lookup(CONFIDENCE_DISPLAY_MAP, confidence)
 
 def format_tado_mode(mode: str) -> str:
     """Convert internal tado mode to user-friendly display value."""
-    if not mode:
-        return "Unknown"
-    return TADO_MODE_DISPLAY_MAP.get(mode, mode.title())
-
+    return _lookup(TADO_MODE_DISPLAY_MAP, mode, lambda v: v.title())
 
 def format_data_source(source: str) -> str:
     """Convert internal data source to user-friendly display value."""
-    if not source:
-        return "Unknown"
-    return DATA_SOURCE_DISPLAY_MAP.get(source, source.replace("_", " ").title())
-
+    return _lookup(DATA_SOURCE_DISPLAY_MAP, source)
 
 def format_weather_state(state: str) -> str:
     """Convert internal weather state to user-friendly display value."""
-    if not state:
-        return "Unknown"
-    return WEATHER_STATE_MAP.get(state, state.replace("_", " ").title())
+    return _lookup(WEATHER_STATE_MAP, state)
+
+def format_battery_state(state: str) -> str:
+    """Convert API batteryState to user-friendly display value."""
+    return _lookup(BATTERY_STATE_DISPLAY_MAP, state, lambda v: v.title())
+
+def format_connection_state(connected) -> str:
+    """Convert connectionState.value (bool) to display value. True -> 'Online', False/None -> 'Offline'."""
+    return CONNECTION_STATE_DISPLAY_MAP.get(bool(connected) if connected is not None else False, "Offline")
+
+def format_connection_state_attr(connected) -> str:
+    """Convert connectionState.value (bool) to lowercase for extra_state_attributes."""
+    return CONNECTION_STATE_ATTR_MAP.get(bool(connected) if connected is not None else False, "offline")
+
+def format_power_state(power: str) -> str:
+    """Convert zone power setting to display value. Falsy -> 'Unknown'."""
+    return power if power else "Unknown"

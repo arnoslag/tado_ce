@@ -3,28 +3,10 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
 
+from .models import HeatingCycleReading
 
-@dataclass
-class TemperatureReading:
-    """Single temperature measurement during a heating cycle."""
-    
-    time: datetime  # UTC
-    temp: float
-    
-    def to_dict(self) -> dict:
-        """Serialize to dictionary for JSON storage."""
-        return {
-            "time": self.time.isoformat(),
-            "temp": self.temp,
-        }
-    
-    @classmethod
-    def from_dict(cls, data: dict) -> "TemperatureReading":
-        """Deserialize from dictionary."""
-        return cls(
-            time=datetime.fromisoformat(data["time"]),
-            temp=data["temp"],
-        )
+# Backward compat alias — existing code may import TemperatureReading from here
+TemperatureReading = HeatingCycleReading
 
 
 @dataclass

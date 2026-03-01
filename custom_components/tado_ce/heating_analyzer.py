@@ -2,7 +2,7 @@
 import logging
 from typing import Optional
 
-from .heating_cycle_models import HeatingCycle
+from .heating_models import HeatingCycle
 
 _LOGGER = logging.getLogger(__name__)
 

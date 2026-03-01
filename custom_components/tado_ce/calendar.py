@@ -10,14 +10,17 @@ from homeassistant.components.calendar import CalendarEntity, CalendarEvent
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity import DeviceInfo
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN, DATA_DIR, MANUFACTURER, get_data_file
 from .data_loader import load_zones_info_file, get_current_home_id
-from .async_api import get_async_client
+from .api_client import get_async_client
 
 _LOGGER = logging.getLogger(__name__)
+
+# Cached home_id to avoid blocking calls in event loop
+_CACHED_HOME_ID = None
 
 
 def _get_schedules_file() -> Path:
@@ -60,6 +63,7 @@ def get_schedule_device_info() -> DeviceInfo:
     hub_identifier = f"tado_ce_hub_{home_id}" if home_id != "unknown" else "tado_ce_hub"
     
     return DeviceInfo(
+        configuration_url="https://app.tado.com",
         identifiers={(DOMAIN, "tado_ce_heating_schedule")},
         name="Heating Schedule",
         manufacturer=MANUFACTURER,
@@ -71,9 +75,11 @@ def get_schedule_device_info() -> DeviceInfo:
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
-    async_add_entities: AddEntitiesCallback,
+    async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up Tado CE calendar entities."""
+    global _CACHED_HOME_ID
+    _CACHED_HOME_ID = await hass.async_add_executor_job(get_current_home_id)
     zones_info = await hass.async_add_executor_job(load_zones_info_file)
     
     if not zones_info:
@@ -99,7 +105,8 @@ async def async_setup_entry(
                 schedules[zone_id] = {
                     "name": zone_name,
                     "type": schedule_data.get("type", "ONE_DAY"),
-                    "blocks": schedule_data.get("blocks", {}),
+                    # Tado API may return null for existing keys; 'or {}' handles None correctly
+                    "blocks": schedule_data.get("blocks") or {},
                 }
         except Exception as e:
             _LOGGER.error(f"Failed to fetch schedule for {zone_name}: {e}")
@@ -146,7 +153,7 @@ async def _async_save_schedules(hass: HomeAssistant, schedules: dict) -> None:
 class TadoZoneScheduleCalendar(CalendarEntity):
     """Calendar entity for a single zone's heating schedule."""
     
-    _attr_has_entity_name = False  # Use full name, not device + entity name
+    _attr_has_entity_name = True
     _attr_supported_features = 0  # Read-only
     
     def __init__(
@@ -163,8 +170,8 @@ class TadoZoneScheduleCalendar(CalendarEntity):
         self._schedule = schedule
         
         # Short name for calendar sidebar (just zone name)
-        self._attr_name = zone_name
-        self._attr_unique_id = f"tado_ce_schedule_{zone_id}"
+        self._attr_name = "[CE] Schedule"
+        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_zone_{zone_id}_schedule"
         self._attr_device_info = get_schedule_device_info()
         self._attr_icon = "mdi:calendar-clock"
         
@@ -244,7 +251,7 @@ class TadoZoneScheduleCalendar(CalendarEntity):
         """Return calendar events within a datetime range."""
         events = []
         timetable_type = self._schedule.get("type", "ONE_DAY")
-        blocks_by_day = self._schedule.get("blocks", {})
+        blocks_by_day = self._schedule.get("blocks") or {}
         
         current = start_date
         while current < end_date:
@@ -272,7 +279,8 @@ class TadoZoneScheduleCalendar(CalendarEntity):
         for day_type in day_types:
             weekdays = DAY_TYPE_TO_WEEKDAYS.get(day_type, [])
             if weekday in weekdays:
-                return blocks_by_day.get(day_type, [])
+                # Tado API may return null for existing keys; 'or []' handles None correctly
+                return blocks_by_day.get(day_type) or []
         
         return []
     
@@ -280,14 +288,14 @@ class TadoZoneScheduleCalendar(CalendarEntity):
         """Convert a schedule block to a calendar event."""
         start_time = block.get("start", "00:00")
         end_time = block.get("end", "00:00")
-        setting = block.get("setting", {})
+        setting = block.get("setting") or {}
         
         # Skip OFF blocks
         power = setting.get("power", "OFF")
         if power != "ON":
             return None
         
-        temp = setting.get("temperature", {})
+        temp = setting.get("temperature") or {}
         if not temp:
             return None
         

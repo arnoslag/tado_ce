@@ -47,6 +47,12 @@ After Multi-Home is done, the path to HomeKit local control follows these phases
 
 ## Future Consideration
 
+**Actionable Insights Improvements:**
+- **Smarter Summary** - Replace generic "3 actions needed across 2 zones" with context-rich summaries like "Mold risk in Bedroom (Critical), Battery low in Lounge — 3 actions needed". Top-priority insight drives the summary text.
+- **Insight Correlation / Deduplication** - When a zone has mold risk + humidity trend + condensation simultaneously, group them as a single "humidity problem" action instead of three separate items. Reduces noise and makes actions clearer.
+- **Insight History & Trending** - Track when insights appear and disappear. Enable duration-aware messages like "Bedroom mold risk has persisted for 3 days" and weekly summaries like "5 window predicted alerts last week". Stored in `.storage/tado_ce/insight_history.json`.
+- **Priority Escalation** - Auto-escalate priority when an insight persists beyond thresholds (e.g., battery low > 7 days → critical, mold risk > 3 days → high). Currently priorities are static.
+
 **API Management:**
 - **Call Priority System** - Configurable weighting for different call types (e.g., zoneStates every 10 min, weather every 30 min). Requires significant coordinator architecture changes. Low priority - current adaptive polling handles most use cases.
 - **Event-Driven Full Sync** ([#141](https://github.com/hiall-fyi/tado_ce/issues/141) - @Xavinooo) - Remove 6-hour periodic full sync, make it event-driven (only on HA restart/reload). Zone info, offsets, and AC capabilities rarely change. Saves API calls and simplifies quota planning.

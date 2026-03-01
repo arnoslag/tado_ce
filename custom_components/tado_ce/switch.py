@@ -8,18 +8,29 @@ import time
 from datetime import timedelta
 
 from homeassistant.components.switch import SwitchEntity
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .const import DOMAIN, API_ENDPOINT_DEVICES
 from .device_manager import get_hub_device_info, get_zone_device_info
-from .data_loader import load_zones_info_file
+from .data_loader import load_zones_info_file, get_current_home_id
+from .action_helpers import (
+    check_bootstrap_reserve as _check_bootstrap_reserve,
+    is_within_optimistic_window as _is_within_optimistic_window,
+)
 
 _LOGGER = logging.getLogger(__name__)
 SCAN_INTERVAL = timedelta(seconds=30)
 
+# Cached home_id to avoid blocking calls in event loop
+_CACHED_HOME_ID = None
 
-async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
+
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddConfigEntryEntitiesCallback):
     """Set up Tado CE switches from a config entry."""
+    global _CACHED_HOME_ID
+    _CACHED_HOME_ID = await hass.async_add_executor_job(get_current_home_id)
     _LOGGER.debug("Tado CE switch: Setting up...")
     zones_info = await hass.async_add_executor_job(load_zones_info_file)
     
@@ -62,7 +73,7 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
         _LOGGER.debug("Tado CE: No switches found (device_controls_enabled may be OFF)")
     
     # v2.1.0: Zone configuration switch entities (per-zone settings)
-    from .zone_config_entities import async_setup_zone_config_switch
+    from .zone_config import async_setup_zone_config_switch
     await async_setup_zone_config_switch(hass, entry, async_add_entities)
 
 
@@ -72,6 +83,8 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
 
 
 class TadoEarlyStartSwitch(SwitchEntity):
+    _attr_has_entity_name = True
+
     """Tado CE Early Start Switch Entity."""
     
     def __init__(self, zone_id: str, zone_name: str, zone_type: str, initial_state: bool):
@@ -79,9 +92,9 @@ class TadoEarlyStartSwitch(SwitchEntity):
         self._zone_name = zone_name
         self._zone_type = zone_type
         
-        self._attr_name = f"{zone_name} Early Start"
+        self._attr_name = "[CE] Early Start"
         # Use zone_id for unique_id to maintain entity_id stability across zone name changes
-        self._attr_unique_id = f"tado_ce_zone_{zone_id}_early_start"
+        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_zone_{zone_id}_early_start"
         self._attr_icon = "mdi:clock-fast"
         self._attr_is_on = initial_state
         self._attr_available = True
@@ -94,19 +107,8 @@ class TadoEarlyStartSwitch(SwitchEntity):
     # ========== v1.9.6: Helper Methods ==========
     
     def _is_within_optimistic_window(self) -> bool:
-        """Check if we're within the optimistic update window.
-        
-        v1.9.6: Extracted to helper method for consistency with climate entities.
-        v2.0.1: DRY refactor - uses shared get_optimistic_window().
-        
-        Returns:
-            True if _optimistic_set_at is set and elapsed time < optimistic window.
-        """
-        if self._optimistic_set_at is None:
-            return False
-        from . import get_optimistic_window
-        elapsed = time.time() - self._optimistic_set_at
-        return elapsed < get_optimistic_window(self.hass) if self.hass else elapsed < 17.0
+        """Check if we're within the optimistic update window."""
+        return _is_within_optimistic_window(self.hass, self._optimistic_set_at)
 
     # ========== End Helper Methods ==========
     
@@ -122,6 +124,7 @@ class TadoEarlyStartSwitch(SwitchEntity):
             "description": "Pre-heats the room to reach target temperature on time",
         }
     
+    @callback
     def update(self):
         """Update early start state from API.
         
@@ -148,7 +151,7 @@ class TadoEarlyStartSwitch(SwitchEntity):
         v2.0.1: Added bootstrap reserve check - blocks action when quota critically low.
         """
         # v2.0.1: Bootstrap Reserve - block action when quota critically low
-        await self._check_bootstrap_reserve()
+        await _check_bootstrap_reserve(self.hass, f"Early Start {self._zone_name}")
         
         # Store previous state for rollback
         old_is_on = self._attr_is_on
@@ -174,7 +177,7 @@ class TadoEarlyStartSwitch(SwitchEntity):
         v2.0.1: Added bootstrap reserve check - blocks action when quota critically low.
         """
         # v2.0.1: Bootstrap Reserve - block action when quota critically low
-        await self._check_bootstrap_reserve()
+        await _check_bootstrap_reserve(self.hass, f"Early Start {self._zone_name}")
         
         # Store previous state for rollback
         old_is_on = self._attr_is_on
@@ -201,23 +204,9 @@ class TadoEarlyStartSwitch(SwitchEntity):
         from . import async_trigger_immediate_refresh
         await async_trigger_immediate_refresh(self.hass, self.entity_id, reason)
     
-    async def _check_bootstrap_reserve(self) -> None:
-        """Check if bootstrap reserve is depleted and block action if so.
-        
-        v2.0.1: Bootstrap Reserve - ensures 3 API calls are ALWAYS reserved
-        for auto-recovery after API reset.
-        
-        v2.0.1: DRY refactor - delegates to shared async_check_bootstrap_reserve_or_raise().
-        
-        Raises:
-            HomeAssistantError: If bootstrap reserve is depleted
-        """
-        from . import async_check_bootstrap_reserve_or_raise
-        await async_check_bootstrap_reserve_or_raise(self.hass, f"Early Start {self._zone_name}")
-    
     async def _async_set_early_start(self, enabled: bool) -> bool:
         """Set early start state via async API."""
-        from .async_api import get_async_client
+        from .api_client import get_async_client
         
         client = get_async_client(self.hass)
         
@@ -237,6 +226,8 @@ class TadoEarlyStartSwitch(SwitchEntity):
 
 
 class TadoChildLockSwitch(SwitchEntity):
+    _attr_has_entity_name = True
+
     """Tado CE Child Lock Switch Entity."""
     
     def __init__(self, zone_id: str, serial: str, zone_name: str, zone_type: str, device_type: str, initial_state: bool, zones_info: list):
@@ -250,8 +241,8 @@ class TadoChildLockSwitch(SwitchEntity):
         from .device_manager import get_device_name_suffix
         suffix = get_device_name_suffix(zone_id, serial, device_type, zones_info)
         
-        self._attr_name = f"{zone_name}{suffix} Child Lock"
-        self._attr_unique_id = f"tado_ce_{serial}_child_lock"
+        self._attr_name = "Child Lock"
+        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_device_{serial}_child_lock"
         self._attr_icon = "mdi:lock"
         self._attr_is_on = initial_state
         self._attr_available = True
@@ -264,19 +255,8 @@ class TadoChildLockSwitch(SwitchEntity):
     # ========== v1.9.6: Helper Methods ==========
     
     def _is_within_optimistic_window(self) -> bool:
-        """Check if we're within the optimistic update window.
-        
-        v1.9.6: Extracted to helper method for consistency with climate entities.
-        v2.0.1: DRY refactor - uses shared get_optimistic_window().
-        
-        Returns:
-            True if _optimistic_set_at is set and elapsed time < optimistic window.
-        """
-        if self._optimistic_set_at is None:
-            return False
-        from . import get_optimistic_window
-        elapsed = time.time() - self._optimistic_set_at
-        return elapsed < get_optimistic_window(self.hass) if self.hass else elapsed < 17.0
+        """Check if we're within the optimistic update window."""
+        return _is_within_optimistic_window(self.hass, self._optimistic_set_at)
 
     # ========== End Helper Methods ==========
     
@@ -292,6 +272,7 @@ class TadoChildLockSwitch(SwitchEntity):
             "zone": self._zone_name,
         }
     
+    @callback
     def update(self):
         """Update child lock state from JSON file.
         
@@ -331,7 +312,7 @@ class TadoChildLockSwitch(SwitchEntity):
         v2.0.1: Added bootstrap reserve check - blocks action when quota critically low.
         """
         # v2.0.1: Bootstrap Reserve - block action when quota critically low
-        await self._check_bootstrap_reserve()
+        await _check_bootstrap_reserve(self.hass, f"Child Lock {self._zone_name}")
         
         # Store previous state for rollback
         old_is_on = self._attr_is_on
@@ -357,7 +338,7 @@ class TadoChildLockSwitch(SwitchEntity):
         v2.0.1: Added bootstrap reserve check - blocks action when quota critically low.
         """
         # v2.0.1: Bootstrap Reserve - block action when quota critically low
-        await self._check_bootstrap_reserve()
+        await _check_bootstrap_reserve(self.hass, f"Child Lock {self._zone_name}")
         
         # Store previous state for rollback
         old_is_on = self._attr_is_on
@@ -384,23 +365,9 @@ class TadoChildLockSwitch(SwitchEntity):
         from . import async_trigger_immediate_refresh
         await async_trigger_immediate_refresh(self.hass, self.entity_id, reason)
     
-    async def _check_bootstrap_reserve(self) -> None:
-        """Check if bootstrap reserve is depleted and block action if so.
-        
-        v2.0.1: Bootstrap Reserve - ensures 3 API calls are ALWAYS reserved
-        for auto-recovery after API reset.
-        
-        v2.0.1: DRY refactor - delegates to shared async_check_bootstrap_reserve_or_raise().
-        
-        Raises:
-            HomeAssistantError: If bootstrap reserve is depleted
-        """
-        from . import async_check_bootstrap_reserve_or_raise
-        await async_check_bootstrap_reserve_or_raise(self.hass, f"Child Lock {self._zone_name}")
-    
     async def _async_set_child_lock(self, enabled: bool) -> bool:
         """Set child lock state via async API."""
-        from .async_api import get_async_client
+        from .api_client import get_async_client
         from homeassistant.helpers.aiohttp_client import async_get_clientsession
         import aiohttp
         

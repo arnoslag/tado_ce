@@ -7,6 +7,8 @@ Provides intelligent heating analytics including:
 - Recorder integration for historical data (Phase 3)
 - File persistence for data backup (Phase 3)
 
+Singleton pattern: get_smart_comfort_manager(...) / cleanup_smart_comfort_manager()
+
 This module can bootstrap from HA recorder history on startup,
 allowing immediate rate calculations without waiting for data collection.
 Data is also persisted to file as backup for when recorder is unavailable.
@@ -98,19 +100,20 @@ def _get_day_blocks(blocks: dict, schedule_type: str, weekday: int) -> list:
     Returns:
         List of blocks for that day
     """
+    # Tado API may return null for existing keys; 'or []' handles None correctly
     if schedule_type == "ONE_DAY":
-        return blocks.get("MONDAY_TO_SUNDAY", [])
+        return blocks.get("MONDAY_TO_SUNDAY") or []
     elif schedule_type == "THREE_DAY":
         if weekday < 5:
-            return blocks.get("MONDAY_TO_FRIDAY", [])
+            return blocks.get("MONDAY_TO_FRIDAY") or []
         elif weekday == 5:
-            return blocks.get("SATURDAY", [])
+            return blocks.get("SATURDAY") or []
         else:
-            return blocks.get("SUNDAY", [])
+            return blocks.get("SUNDAY") or []
     else:
         # SEVEN_DAY
         day_name = DAY_TYPE_MAP.get(weekday, "MONDAY")
-        return blocks.get(day_name, [])
+        return blocks.get(day_name) or []
 
 
 def get_next_schedule_change(zone_id: str, current_time: Optional[datetime] = None, look_ahead_days: int = 2) -> Optional[NextScheduleBlock]:
@@ -140,7 +143,8 @@ def get_next_schedule_change(zone_id: str, current_time: Optional[datetime] = No
         _LOGGER.debug(f"No schedule found for zone {zone_id}")
         return None
     
-    blocks = schedule.get("blocks", {})
+    # Tado API may return null for existing keys; 'or {}' handles None correctly
+    blocks = schedule.get("blocks") or {}
     schedule_type = schedule.get("type", "ONE_DAY")
     
     # Look through today and upcoming days
@@ -163,7 +167,7 @@ def get_next_schedule_change(zone_id: str, current_time: Optional[datetime] = No
         for block in day_blocks:
             block_start = block.get("start", "00:00")
             block_end = block.get("end", "00:00")
-            setting = block.get("setting", {})
+            setting = block.get("setting") or {}
             power = setting.get("power", "OFF")
             temp_data = setting.get("temperature")
             
@@ -199,32 +203,10 @@ def get_next_schedule_change(zone_id: str, current_time: Optional[datetime] = No
     return None
 
 
-@dataclass
-class TemperatureReading:
-    """A single temperature reading with context."""
-    timestamp: datetime
-    temperature: float
-    is_heating: bool  # True if HVAC is actively heating/cooling
-    target_temperature: Optional[float] = None
-    
-    def to_dict(self) -> dict:
-        """Convert to dictionary for JSON serialization."""
-        return {
-            "timestamp": self.timestamp.isoformat(),
-            "temperature": self.temperature,
-            "is_heating": self.is_heating,
-            "target_temperature": self.target_temperature
-        }
-    
-    @classmethod
-    def from_dict(cls, data: dict) -> "TemperatureReading":
-        """Create from dictionary."""
-        return cls(
-            timestamp=datetime.fromisoformat(data["timestamp"]),
-            temperature=data["temperature"],
-            is_heating=data["is_heating"],
-            target_temperature=data.get("target_temperature")
-        )
+from .models import SmartComfortReading
+
+# Backward compat alias — existing code may import TemperatureReading from here
+TemperatureReading = SmartComfortReading
 
 
 @dataclass
@@ -824,7 +806,7 @@ class SmartComfortManager:
             with open(cache_file) as f:
                 data = json.load(f)
             
-            zones_data = data.get("zones", {})
+            zones_data = data.get("zones") or {}
             total_readings = 0
             
             for zone_id, zone_data in zones_data.items():

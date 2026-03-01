@@ -3,6 +3,7 @@
 This module provides thread-safe file loading helpers for all Tado CE components.
 All file I/O is blocking and should be called via hass.async_add_executor_job().
 
+Singleton pattern: cleanup_data_loader(hass)
 v1.8.0: Added multi-home support with per-home data files.
 """
 import json
@@ -33,10 +34,13 @@ def get_current_home_id() -> Optional[str]:
     return _current_home_id
 
 
-def cleanup_data_loader() -> bool:
+def cleanup_data_loader(hass=None) -> bool:
     """Clean up data loader state.
     
     MUST be called in async_unload_entry() to reset home_id on reload.
+    
+    Args:
+        hass: Home Assistant instance (unused, accepted for consistent singleton API)
     
     Returns:
         True if state was cleaned up

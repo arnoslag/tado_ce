@@ -21,20 +21,33 @@ from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
 from homeassistant.components.climate import ATTR_HVAC_MODE
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .const import DOMAIN
 from .device_manager import get_zone_device_info
-from .async_api import get_async_client
+from .api_client import get_async_client
 from .data_loader import (
     load_zones_file, load_zones_info_file, load_config_file,
     load_home_state_file, load_offsets_file, load_ac_capabilities_file,
-    get_zone_names as dl_get_zone_names, get_zone_types as dl_get_zone_types
+    get_zone_names as dl_get_zone_names, get_zone_types as dl_get_zone_types,
+    get_current_home_id,
 )
-from .immediate_refresh_handler import SIGNAL_ZONES_UPDATED, SIGNAL_AC_CAPABILITIES_UPDATED
-from .sensor import _format_overlay_type, _format_zone_type
+from .refresh_handler import SIGNAL_ZONES_UPDATED, SIGNAL_AC_CAPABILITIES_UPDATED
+from .format_helpers import (
+    format_overlay_type as _format_overlay_type,
+    format_zone_type as _format_zone_type,
+)
+from .action_helpers import (
+    check_bootstrap_reserve as _check_bootstrap_reserve,
+    record_smart_comfort_data as _record_smart_comfort_data,
+)
 
 _LOGGER = logging.getLogger(__name__)
 SCAN_INTERVAL = timedelta(seconds=30)
+
+# Cached home_id to avoid blocking calls in event loop
+_CACHED_HOME_ID = None
 
 
 # Tado AC modes mapping
@@ -71,15 +84,6 @@ HA_TO_TADO_FAN = {
     FAN_HIGH: "LEVEL5",
 }
 
-def get_zone_names():
-    """Load zone names from API data."""
-    return dl_get_zone_names()
-
-
-def get_zone_types():
-    """Load zone types from API data."""
-    return dl_get_zone_types()
-
 
 def get_zone_capabilities():
     """Load zone capabilities (for AC zones).
@@ -114,10 +118,12 @@ def get_zone_capabilities():
     return caps
 
 
-async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddConfigEntryEntitiesCallback):
     """Set up Tado CE climate from a config entry."""
-    zone_names = await hass.async_add_executor_job(get_zone_names)
-    zone_types = await hass.async_add_executor_job(get_zone_types)
+    global _CACHED_HOME_ID
+    _CACHED_HOME_ID = await hass.async_add_executor_job(get_current_home_id)
+    zone_names = await hass.async_add_executor_job(dl_get_zone_names)
+    zone_types = await hass.async_add_executor_job(dl_get_zone_types)
     zone_caps = await hass.async_add_executor_job(get_zone_capabilities)
     
     climates = []
@@ -143,6 +149,8 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
 
 
 class TadoClimate(ClimateEntity):
+    _attr_has_entity_name = True
+
     """Tado CE Climate Entity."""
     
     def __init__(self, hass: HomeAssistant, zone_id: str, zone_name: str):
@@ -151,9 +159,9 @@ class TadoClimate(ClimateEntity):
         self._zone_name = zone_name
         self._home_id = None
         
-        self._attr_name = zone_name
+        self._attr_name = None
         # Use zone_id for unique_id to maintain entity_id stability across zone name changes
-        self._attr_unique_id = f"tado_ce_zone_{zone_id}_climate"
+        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_zone_{zone_id}_climate"
         self._attr_temperature_unit = UnitOfTemperature.CELSIUS
         # Use zone device info instead of hub device info
         self._attr_device_info = get_zone_device_info(zone_id, zone_name, "HEATING")
@@ -368,6 +376,7 @@ class TadoClimate(ClimateEntity):
             self._unsub_zone_config = None
         await super().async_will_remove_from_hass()
     
+    @callback
     def _update_temp_limits(self):
         """Update min/max temp from zone config.
         
@@ -391,6 +400,7 @@ class TadoClimate(ClimateEntity):
             attrs["offset_celsius"] = self._offset_celsius
         return attrs
 
+    @callback
     def update(self):
         """Update climate state from JSON file."""
         # v1.10.0: Layer 1 - Skip update if entity is fresh (coordinator-level protection)
@@ -518,7 +528,11 @@ class TadoClimate(ClimateEntity):
             self._attr_available = True
             
             # v1.9.0: Record temperature for Smart Comfort analytics
-            self._record_smart_comfort_data()
+            _record_smart_comfort_data(
+                self.hass, self._zone_id, self._zone_name,
+                self._attr_current_temperature, self._attr_target_temperature,
+                is_active=(self._heating_power is not None and self._heating_power > 0),
+            )
             
             # Update preset mode from home state
             self._update_preset_mode()
@@ -530,6 +544,7 @@ class TadoClimate(ClimateEntity):
             _LOGGER.warning(f"Failed to update {self.name}: {e}")
             self._attr_available = False
     
+    @callback
     def _update_offset(self):
         """Update temperature offset from cached offsets file.
         
@@ -553,6 +568,7 @@ class TadoClimate(ClimateEntity):
             # Keep existing offset value on error
             pass
     
+    @callback
     def _update_preset_mode(self):
         """Update preset mode based on home state (not mobile devices).
         
@@ -578,7 +594,7 @@ class TadoClimate(ClimateEntity):
         v2.0.1: Added bootstrap reserve check - blocks action when quota critically low.
         """
         # v2.0.1: Bootstrap Reserve - block action when quota critically low
-        await self._check_bootstrap_reserve()
+        await _check_bootstrap_reserve(self.hass, self._zone_name)
         
         client = get_async_client(self.hass)
         state = "AWAY" if preset_mode == PRESET_AWAY else "HOME"
@@ -640,7 +656,7 @@ class TadoClimate(ClimateEntity):
             return
         
         # v2.0.1: Bootstrap Reserve - block action when quota critically low
-        await self._check_bootstrap_reserve()
+        await _check_bootstrap_reserve(self.hass, self._zone_name)
         
         # v1.10.0: Optimistic update BEFORE API call (Issue #44 fix)
         old_temp = self._attr_target_temperature
@@ -704,7 +720,7 @@ class TadoClimate(ClimateEntity):
         v2.0.1: Added bootstrap reserve check - blocks action when quota critically low.
         """
         # v2.0.1: Bootstrap Reserve - block action when quota critically low
-        await self._check_bootstrap_reserve()
+        await _check_bootstrap_reserve(self.hass, self._zone_name)
         
         client = get_async_client(self.hass)
         
@@ -846,7 +862,7 @@ class TadoClimate(ClimateEntity):
         v2.0.1: Added bootstrap reserve check - blocks action when quota critically low.
         """
         # v2.0.1: Bootstrap Reserve - block action when quota critically low
-        await self._check_bootstrap_reserve()
+        await _check_bootstrap_reserve(self.hass, self._zone_name)
         
         client = get_async_client(self.hass)
         
@@ -885,54 +901,11 @@ class TadoClimate(ClimateEntity):
             _LOGGER.info(f"Set {self._zone_name} to {temperature}°C {term_desc}")
             return True
         return False
-    
-    def _record_smart_comfort_data(self):
-        """Record temperature data for Smart Comfort analytics.
-        
-        v1.9.0: Records current temperature and heating state to the
-        SmartComfortManager for rate calculation and predictions.
-        """
-        try:
-            smart_comfort_manager = self.hass.data.get(DOMAIN, {}).get('smart_comfort_manager')
-            if not smart_comfort_manager or not smart_comfort_manager.is_enabled:
-                return
-            
-            # Only record if we have valid temperature data
-            if self._attr_current_temperature is None:
-                return
-            
-            # Determine if actively heating
-            is_heating = (
-                self._heating_power is not None and 
-                self._heating_power > 0
-            )
-            
-            smart_comfort_manager.record_temperature(
-                zone_id=self._zone_id,
-                zone_name=self._zone_name,
-                temperature=self._attr_current_temperature,
-                is_heating=is_heating,
-                target_temperature=self._attr_target_temperature
-            )
-        except Exception as e:
-            _LOGGER.debug(f"Failed to record smart comfort data for {self._zone_name}: {e}")
-
-    async def _check_bootstrap_reserve(self) -> None:
-        """Check bootstrap reserve and raise error if quota critically low.
-        
-        v2.0.1: Bootstrap Reserve - blocks ALL actions (including manual) when quota
-        falls to the absolute minimum needed for auto-recovery after API reset.
-        
-        v2.0.1: DRY refactor - delegates to shared async_check_bootstrap_reserve_or_raise().
-        
-        Raises:
-            HomeAssistantError: If quota is at bootstrap reserve level
-        """
-        from . import async_check_bootstrap_reserve_or_raise
-        await async_check_bootstrap_reserve_or_raise(self.hass, self._zone_name)
 
 
 class TadoACClimate(ClimateEntity):
+    _attr_has_entity_name = True
+
     """Tado CE Air Conditioning Climate Entity."""
     
     def __init__(self, hass: HomeAssistant, zone_id: str, zone_name: str, capabilities: dict):
@@ -942,9 +915,9 @@ class TadoACClimate(ClimateEntity):
         self._home_id = None
         self._capabilities = capabilities
         
-        self._attr_name = zone_name
+        self._attr_name = None
         # Use zone_id for unique_id to maintain entity_id stability across zone name changes
-        self._attr_unique_id = f"tado_ce_zone_{zone_id}_ac_climate"
+        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_zone_{zone_id}_ac_climate"
         self._attr_temperature_unit = UnitOfTemperature.CELSIUS
         # Use zone device info instead of hub device info
         self._attr_device_info = get_zone_device_info(zone_id, zone_name, "AIR_CONDITIONING")
@@ -1403,6 +1376,7 @@ class TadoACClimate(ClimateEntity):
             self._unsub_zone_config = None
         await super().async_will_remove_from_hass()
     
+    @callback
     def _update_temp_limits(self):
         """Update min/max temp from zone config.
         
@@ -1458,6 +1432,7 @@ class TadoACClimate(ClimateEntity):
             "zone_type": _format_zone_type("AIR_CONDITIONING"),
         }
 
+    @callback
     def update(self):
         """Update AC climate state from JSON file."""
         # v1.10.0: Layer 1 - Skip update if entity is fresh (coordinator-level protection)
@@ -1606,7 +1581,11 @@ class TadoACClimate(ClimateEntity):
             self._attr_available = True
             
             # v1.9.0: Record temperature for Smart Comfort analytics
-            self._record_smart_comfort_data(ac_power_value)
+            _record_smart_comfort_data(
+                self.hass, self._zone_id, self._zone_name,
+                self._attr_current_temperature, self._attr_target_temperature,
+                is_active=(ac_power_value == 'ON'),
+            )
                 
         except Exception as e:
             _LOGGER.warning(f"Failed to update {self.name}: {e}")
@@ -1646,7 +1625,7 @@ class TadoACClimate(ClimateEntity):
             return
         
         # v2.0.1: Bootstrap Reserve - block action when quota critically low
-        await self._check_bootstrap_reserve()
+        await _check_bootstrap_reserve(self.hass, f"AC {self._zone_name}")
         
         # Convert hvac_mode to Tado mode for the overlay
         tado_mode = HA_TO_TADO_HVAC_MODE.get(hvac_mode) if hvac_mode else None
@@ -1704,7 +1683,7 @@ class TadoACClimate(ClimateEntity):
         v2.0.1: Added bootstrap reserve check - blocks action when quota critically low.
         """
         # v2.0.1: Bootstrap Reserve - block action when quota critically low
-        await self._check_bootstrap_reserve()
+        await _check_bootstrap_reserve(self.hass, f"AC {self._zone_name}")
         
         client = get_async_client(self.hass)
         
@@ -1853,7 +1832,7 @@ class TadoACClimate(ClimateEntity):
         v2.0.1: Added bootstrap reserve check - blocks action when quota critically low.
         """
         # v2.0.1: Bootstrap Reserve - block action when quota critically low
-        await self._check_bootstrap_reserve()
+        await _check_bootstrap_reserve(self.hass, f"AC {self._zone_name}")
         
         # Optimistic update BEFORE API call
         old_fan = self._attr_fan_mode
@@ -1916,7 +1895,7 @@ class TadoACClimate(ClimateEntity):
         v2.0.1: Added bootstrap reserve check - blocks action when quota critically low.
         """
         # v2.0.1: Bootstrap Reserve - block action when quota critically low
-        await self._check_bootstrap_reserve()
+        await _check_bootstrap_reserve(self.hass, f"AC {self._zone_name}")
         
         if swing_mode == "off":
             v_swing, h_swing = "OFF", "OFF"
@@ -2125,7 +2104,7 @@ class TadoACClimate(ClimateEntity):
             overlay_upper = overlay.upper()
             if overlay_upper == "NEXT_TIME_BLOCK":
                 # Use TADO_MODE termination directly via API
-                await self._check_bootstrap_reserve()
+                await _check_bootstrap_reserve(self.hass, f"AC {self._zone_name}")
                 client = get_async_client(self.hass)
                 setting = {
                     "type": "AIR_CONDITIONING",
@@ -2168,47 +2147,4 @@ class TadoACClimate(ClimateEntity):
             _LOGGER.warning(f"AC ERROR: {self._zone_name} set_timer API call failed ({e})")
         
         return api_success
-    
-    def _record_smart_comfort_data(self, ac_power_value: str):
-        """Record temperature data for Smart Comfort analytics.
-        
-        v1.9.0: Records current temperature and AC state to the
-        SmartComfortManager for rate calculation and predictions.
-        
-        For AC zones, "is_heating" means AC is actively running (cooling/heating/etc).
-        """
-        try:
-            smart_comfort_manager = self.hass.data.get(DOMAIN, {}).get('smart_comfort_manager')
-            if not smart_comfort_manager or not smart_comfort_manager.is_enabled:
-                return
-            
-            # Only record if we have valid temperature data
-            if self._attr_current_temperature is None:
-                return
-            
-            # For AC, "is_heating" means AC is actively running
-            is_active = ac_power_value == 'ON'
-            
-            smart_comfort_manager.record_temperature(
-                zone_id=self._zone_id,
-                zone_name=self._zone_name,
-                temperature=self._attr_current_temperature,
-                is_heating=is_active,
-                target_temperature=self._attr_target_temperature
-            )
-        except Exception as e:
-            _LOGGER.debug(f"Failed to record smart comfort data for AC {self._zone_name}: {e}")
 
-    async def _check_bootstrap_reserve(self) -> None:
-        """Check bootstrap reserve and raise error if quota critically low.
-        
-        v2.0.1: Bootstrap Reserve - blocks ALL actions (including manual) when quota
-        falls to the absolute minimum needed for auto-recovery after API reset.
-        
-        v2.0.1: DRY refactor - delegates to shared async_check_bootstrap_reserve_or_raise().
-        
-        Raises:
-            HomeAssistantError: If quota is at bootstrap reserve level
-        """
-        from . import async_check_bootstrap_reserve_or_raise
-        await async_check_bootstrap_reserve_or_raise(self.hass, f"AC {self._zone_name}")

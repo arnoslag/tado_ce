@@ -10,15 +10,24 @@ from homeassistant.components.water_heater import (
     WaterHeaterEntityFeature,
 )
 from homeassistant.const import STATE_OFF, UnitOfTemperature
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .const import DOMAIN
 from .device_manager import get_zone_device_info
-from .data_loader import load_zones_file, load_zones_info_file, load_config_file
-from .sensor import _format_overlay_type
+from .data_loader import load_zones_file, load_zones_info_file, load_config_file, get_current_home_id
+from .format_helpers import format_overlay_type as _format_overlay_type
+from .action_helpers import (
+    check_bootstrap_reserve as _check_bootstrap_reserve,
+    is_within_optimistic_window as _is_within_optimistic_window,
+)
 
 _LOGGER = logging.getLogger(__name__)
 SCAN_INTERVAL = timedelta(seconds=30)
+
+# Cached home_id to avoid blocking calls in event loop
+_CACHED_HOME_ID = None
 
 # Operation modes for hot water
 STATE_AUTO = "auto"  # Follow schedule (no overlay)
@@ -26,8 +35,10 @@ STATE_HEAT = "heat"  # Timer or manual heating
 OPERATION_MODES = [STATE_AUTO, STATE_HEAT, STATE_OFF]
 
 
-async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddConfigEntryEntitiesCallback):
     """Set up Tado CE water heater from a config entry."""
+    global _CACHED_HOME_ID
+    _CACHED_HOME_ID = await hass.async_add_executor_job(get_current_home_id)
     _LOGGER.debug("Tado CE water_heater: Setting up...")
     zones_info = await hass.async_add_executor_job(load_zones_info_file)
     
@@ -52,6 +63,8 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
 
 
 class TadoWaterHeater(WaterHeaterEntity):
+    _attr_has_entity_name = True
+
     """Tado CE Water Heater Entity."""
     
     def __init__(self, hass: HomeAssistant, zone_id: str, zone_name: str):
@@ -60,9 +73,9 @@ class TadoWaterHeater(WaterHeaterEntity):
         self._zone_name = zone_name
         self._home_id = None
         
-        self._attr_name = zone_name
+        self._attr_name = None
         # Use zone_id for unique_id to maintain entity_id stability across zone name changes
-        self._attr_unique_id = f"tado_ce_zone_{zone_id}_water_heater"
+        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_zone_{zone_id}_water_heater"
         self._attr_temperature_unit = UnitOfTemperature.CELSIUS
         self._attr_min_temp = 30
         self._attr_max_temp = 65
@@ -104,19 +117,8 @@ class TadoWaterHeater(WaterHeaterEntity):
         self._expected_temperature = None
     
     def _is_within_optimistic_window(self) -> bool:
-        """Check if we're within the optimistic update window.
-        
-        v1.9.6: Extracted to helper method for consistency with climate entities.
-        v2.0.1: DRY refactor - uses shared get_optimistic_window() directly.
-        
-        Returns:
-            True if _optimistic_set_at is set and elapsed time < optimistic window.
-        """
-        if self._optimistic_set_at is None:
-            return False
-        from . import get_optimistic_window
-        elapsed = time.time() - self._optimistic_set_at
-        return elapsed < get_optimistic_window(self.hass)
+        """Check if we're within the optimistic update window."""
+        return _is_within_optimistic_window(self.hass, self._optimistic_set_at)
 
     # ========== End Helper Methods ==========
 
@@ -127,6 +129,7 @@ class TadoWaterHeater(WaterHeaterEntity):
             "zone_id": self._zone_id,
         }
 
+    @callback
     def update(self):
         """Update water heater state from JSON file.
         
@@ -268,16 +271,16 @@ class TadoWaterHeater(WaterHeaterEntity):
     async def async_set_operation_mode(self, operation_mode: str):
         """Set new operation mode with retry logic (async).
         
-        Uses TadoAsyncClient for non-blocking API calls.
+        Uses TadoApiClient for non-blocking API calls.
         
         v1.9.6: Added optimistic tracking and proper rollback (parity with climate entities).
         v2.0.1: Added full 3-layer defense for parity with climate entities.
         v2.0.1: Added bootstrap reserve check - blocks action when quota critically low.
         """
-        from .async_api import get_async_client
+        from .api_client import get_async_client
         
         # v2.0.1: Bootstrap Reserve - block action when quota critically low
-        await self._check_bootstrap_reserve()
+        await _check_bootstrap_reserve(self.hass, f"hot water {self._zone_name}")
         
         # Store previous state for rollback on failure
         previous_mode = self._attr_current_operation
@@ -390,7 +393,7 @@ class TadoWaterHeater(WaterHeaterEntity):
 
     async def _async_turn_on(self) -> bool:
         """Turn on hot water (async)."""
-        from .async_api import get_async_client
+        from .api_client import get_async_client
         
         if not self._home_id:
             _LOGGER.error("No home_id configured")
@@ -409,7 +412,7 @@ class TadoWaterHeater(WaterHeaterEntity):
 
     async def _async_turn_off(self) -> bool:
         """Turn off hot water (async)."""
-        from .async_api import get_async_client
+        from .api_client import get_async_client
         
         if not self._home_id:
             _LOGGER.error("No home_id configured for hot water zone")
@@ -428,7 +431,7 @@ class TadoWaterHeater(WaterHeaterEntity):
 
     async def _async_set_timer(self, duration_minutes: int, temperature: float = None) -> bool:
         """Turn on hot water with timer (async)."""
-        from .async_api import get_async_client
+        from .api_client import get_async_client
         
         if not self._home_id:
             _LOGGER.error("No home_id configured for hot water zone")
@@ -458,7 +461,7 @@ class TadoWaterHeater(WaterHeaterEntity):
         v2.0.1: Added bootstrap reserve check - blocks action when quota critically low.
         """
         # v2.0.1: Bootstrap Reserve - block action when quota critically low
-        await self._check_bootstrap_reserve()
+        await _check_bootstrap_reserve(self.hass, f"hot water {self._zone_name}")
         
         success = await self._async_set_timer(duration_minutes, temperature)
         if success:
@@ -474,7 +477,7 @@ class TadoWaterHeater(WaterHeaterEntity):
         v2.0.1: Added full 3-layer defense for parity with climate entities.
         v2.0.1: Added bootstrap reserve check - blocks action when quota critically low.
         """
-        from .async_api import get_async_client
+        from .api_client import get_async_client
         
         temperature = kwargs.get("temperature")
         if temperature is None:
@@ -490,7 +493,7 @@ class TadoWaterHeater(WaterHeaterEntity):
             return
         
         # v2.0.1: Bootstrap Reserve - block action when quota critically low
-        await self._check_bootstrap_reserve()
+        await _check_bootstrap_reserve(self.hass, f"hot water {self._zone_name}")
         
         # Store previous state for rollback
         old_temp = self._attr_target_temperature
@@ -552,17 +555,3 @@ class TadoWaterHeater(WaterHeaterEntity):
             self._overlay_type = old_overlay
             self._clear_optimistic_state()
             self.async_write_ha_state()
-
-    async def _check_bootstrap_reserve(self) -> None:
-        """Check bootstrap reserve and raise error if quota critically low.
-        
-        v2.0.1: Bootstrap Reserve - blocks ALL actions (including manual) when quota
-        falls to the absolute minimum needed for auto-recovery after API reset.
-        
-        v2.0.1: DRY refactor - delegates to shared async_check_bootstrap_reserve_or_raise().
-        
-        Raises:
-            HomeAssistantError: If quota is at bootstrap reserve level
-        """
-        from . import async_check_bootstrap_reserve_or_raise
-        await async_check_bootstrap_reserve_or_raise(self.hass, f"hot water {self._zone_name}")

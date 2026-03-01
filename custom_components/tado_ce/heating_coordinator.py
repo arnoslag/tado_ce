@@ -7,11 +7,11 @@ from typing import Optional
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
-from .heating_cycle_detector import HeatingCycleDetector
-from .heating_cycle_models import HeatingCycle, HeatingCycleConfig
-from .heating_cycle_storage import HeatingCycleStorage
-from .heating_cycle_analyzer import HeatingCycleAnalyzer
-from .second_order_analyzer import SecondOrderAnalyzer
+from .heating_detector import HeatingCycleDetector
+from .heating_models import HeatingCycle, HeatingCycleConfig
+from .heating_storage import HeatingCycleStorage
+from .heating_analyzer import HeatingCycleAnalyzer
+from .thermal_analyzer import ThermalAnalyzer
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -39,7 +39,7 @@ class HeatingCycleCoordinator(DataUpdateCoordinator):
         self._config = config
         self._storage = HeatingCycleStorage(hass, home_id)
         self._analyzer = HeatingCycleAnalyzer(config.min_cycles)
-        self._second_order = SecondOrderAnalyzer(config.min_cycles)
+        self._second_order = ThermalAnalyzer(config.min_cycles)
         self._detectors: dict[str, HeatingCycleDetector] = {}
         self._zone_data: dict[str, dict] = {}  # Analysis data (heating rate, cycles, etc.)
         self._zone_states: dict[str, dict] = {}  # Cached zone states (current_temp, target_temp)

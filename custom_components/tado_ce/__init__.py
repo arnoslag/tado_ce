@@ -18,29 +18,21 @@ import homeassistant.helpers.config_validation as cv
 from .const import (
     DOMAIN, DATA_DIR, CONFIG_FILE, RATELIMIT_FILE,
     MIN_POLLING_INTERVAL, MAX_POLLING_INTERVAL, POLLING_SAFETY_BUFFER,
-    QUOTA_RESERVE_CALLS, QUOTA_RESERVE_PERCENT, WINDOW_TYPE_U_VALUES,
+    QUOTA_RESERVE_CALLS, QUOTA_RESERVE_PERCENT,
     LOW_QUOTA_THRESHOLD,
 )
 from .config_manager import ConfigurationManager
 from .zone_config_manager import ZoneConfigManager
-from .async_api import get_async_client
+from .api_client import get_async_client
 
 _LOGGER = logging.getLogger(__name__)
 
-# Platform.BUTTON was added in Home Assistant 2021.12
-# Platform.SELECT was added in Home Assistant 2021.7
-# For backward compatibility, check if it exists
-try:
-    BASE_PLATFORMS = [Platform.SENSOR, Platform.CLIMATE, Platform.BINARY_SENSOR, Platform.WATER_HEATER, Platform.DEVICE_TRACKER, Platform.SWITCH, Platform.BUTTON, Platform.SELECT, Platform.NUMBER]
-    CALENDAR_PLATFORM = Platform.CALENDAR
-except AttributeError:
-    # Older Home Assistant version without Platform.BUTTON or Platform.SELECT
-    BASE_PLATFORMS = [Platform.SENSOR, Platform.CLIMATE, Platform.BINARY_SENSOR, Platform.WATER_HEATER, Platform.DEVICE_TRACKER, Platform.SWITCH]
-    CALENDAR_PLATFORM = None
-    _LOGGER.debug("Platform.BUTTON/SELECT/NUMBER not available - some entities will not be loaded")
-
-# v1.6.0: Removed SCRIPT_PATH - no longer using subprocess for sync
-# Legacy tado_api.py is deprecated but kept for reference
+BASE_PLATFORMS = [
+    Platform.SENSOR, Platform.CLIMATE, Platform.BINARY_SENSOR,
+    Platform.WATER_HEATER, Platform.DEVICE_TRACKER, Platform.SWITCH,
+    Platform.BUTTON, Platform.SELECT, Platform.NUMBER,
+]
+CALENDAR_PLATFORM = Platform.CALENDAR
 
 # Service names
 SERVICE_SET_CLIMATE_TIMER = "set_climate_timer"
@@ -610,8 +602,8 @@ async def async_trigger_immediate_refresh(
         include_home_state: If True, also fetch home state (for presence mode changes)
     """
     try:
-        from .immediate_refresh_handler import get_handler
-        handler = get_handler(hass)
+        from .refresh_handler import get_refresh_handler
+        handler = get_refresh_handler(hass)
         await handler.trigger_refresh(entity_id, reason, force=force, skip_debounce=skip_debounce, include_home_state=include_home_state)
     except Exception as e:
         _LOGGER.warning(f"Failed to trigger immediate refresh: {e}")
@@ -1531,8 +1523,8 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) ->
                 _LOGGER.info(f"  Deleted {len(result['deleted'])} legacy files")
         
         # Clean up deprecated code files (tado_api.py, error_handler.py)
-        # These were replaced by async_api.py in v1.6.0 but kept for compatibility
-        # Now safe to remove as all functionality is in async_api.py
+        # These were replaced by api_client.py in v1.6.0 but kept for compatibility
+        # Now safe to remove as all functionality is in api_client.py
         from pathlib import Path
         integration_dir = Path(__file__).parent
         deprecated_code_files = ["tado_api.py", "error_handler.py", "test_schedule_api.py"]
@@ -1557,18 +1549,49 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) ->
         
         _LOGGER.info("Migration step -> v9 complete")
 
+    if initial_version < 11:
+        # Version 10 -> 11 (v3.0.0): Migrate all entity unique_ids to include {home_id}
+        _LOGGER.info("=== Migration: -> v11 ===")
+        _LOGGER.info("Migrating entity unique_ids to v3.0.0 format (adding {home_id}, renaming descriptors)")
+        
+        home_id = config_entry.data.get("home_id")
+        
+        if not home_id and CONFIG_FILE.exists():
+            try:
+                with open(CONFIG_FILE) as f:
+                    config = json.load(f)
+                    home_id = config.get("home_id")
+                    _LOGGER.info(f"  Got home_id from config.json: {home_id}")
+            except Exception as e:
+                _LOGGER.warning(f"  Could not read home_id from config.json: {e}")
+        
+        if home_id:
+            # Set home_id for data_loader so load_zones_info_file() works
+            from .data_loader import set_current_home_id
+            set_current_home_id(str(home_id))
+            
+            migrated_count = _migrate_entity_unique_ids(hass, config_entry, str(home_id))
+            _LOGGER.info(f"  Migrated {migrated_count} entity unique_ids")
+        else:
+            _LOGGER.warning(
+                "  Could not determine home_id for entity UID migration. "
+                "Entity unique_ids will be migrated on next restart after re-authentication."
+            )
+        
+        _LOGGER.info("Migration step -> v11 complete")
+
     # Update to final version (only once, at the end)
-    if initial_version < 10:
-        hass.config_entries.async_update_entry(config_entry, version=10)
+    if initial_version < 11:
+        hass.config_entries.async_update_entry(config_entry, version=11)
         _LOGGER.info(
             "=== Migration Complete ===\n"
             f"  Initial version: {initial_version}\n"
-            f"  Final version: 10\n"
+            f"  Final version: 11\n"
             f"  CONFIG_FILE exists: {CONFIG_FILE.exists()}\n"
             f"  DATA_DIR exists: {DATA_DIR.exists()}"
         )
     else:
-        _LOGGER.info("Config entry already at version 10, no migration needed")
+        _LOGGER.info("Config entry already at version 11, no migration needed")
     
     return True
 
@@ -1945,8 +1968,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await config_manager.async_sync_all_to_config_json()
     
     # Initialize immediate refresh handler
-    from .immediate_refresh_handler import get_handler
-    refresh_handler = get_handler(hass)
+    from .refresh_handler import get_refresh_handler
+    refresh_handler = get_refresh_handler(hass)
     _LOGGER.info("Immediate refresh handler initialized")
     
     # Load home_id and version early to avoid race conditions in device_manager
@@ -2355,8 +2378,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # v1.11.0: Initialize Heating Cycle Coordinator (always enabled for HEATING zones)
     if home_id:
         try:
-            from .heating_cycle_coordinator import HeatingCycleCoordinator
-            from .heating_cycle_models import HeatingCycleConfig
+            from .heating_coordinator import HeatingCycleCoordinator
+            from .heating_models import HeatingCycleConfig
             
             # Create config from user settings
             heating_cycle_config = HeatingCycleConfig(
@@ -2414,21 +2437,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     
     await hass.config_entries.async_forward_entry_setups(entry, platforms_to_load)
     
-    # Auto-assign areas to zone devices (v2.0.0)
-    # This runs after platforms are loaded so devices are already created
-    try:
-        from .area_manager import async_assign_zone_areas
-        from .data_loader import load_zones_info_file
-        
-        _LOGGER.info("Tado CE: Starting auto-assign areas")
-        zones_info = await hass.async_add_executor_job(load_zones_info_file)
-        if zones_info:
-            await async_assign_zone_areas(hass, home_id or "unknown", zones_info)
-        else:
-            _LOGGER.debug("No zones_info available for area assignment")
-    except Exception as e:
-        _LOGGER.warning(f"Failed to auto-assign areas: {e}")
-        # Non-critical feature - continue setup
+    # v2.0.0: Auto-assign areas was handled by area_manager.py (fuzzy matching).
+    # v3.0.0: Replaced by DeviceInfo.suggested_area in device_manager.py (HA native pattern).
+    #         HA automatically assigns areas during device registration — no post-setup step needed.
     
     # Register services
     await _async_register_services(hass)
@@ -2485,6 +2496,182 @@ def _cleanup_entities_by_pattern(entity_registry, domain: str, suffixes: list) -
             entity_registry.async_remove(entity_id)
             removed += 1
     return removed
+
+
+# ============================================================================
+# v3.0.0: Entity unique_id migration map
+# Maps v2.x unique_id patterns to v3.0 patterns (includes {home_id})
+# 31 specific renames + generic {home_id} insertion rule for the rest
+# ============================================================================
+
+# Specific renames: entries where the descriptor also changes (not just {home_id} insertion)
+# Format: (v2.x_suffix, v3.0_suffix_template)
+# The v3.0 template uses {hid} for home_id, {zid} for zone_id, {serial} for device serial
+# Timer buttons use {zone_name} in v2.x — handled separately via zone_name→zone_id lookup
+_UID_RENAME_MAP = {
+    # Hub sensors — shortened descriptors
+    "outside_temperature": "{hid}_outside_temp",
+    "boiler_flow_temperature": "{hid}_boiler_flow_temp",
+    "api_call_breakdown": "{hid}_api_breakdown",
+    # Hub controls — shortened descriptors
+    "resume_all_schedules": "{hid}_resume_all",
+    "refresh_ac_capabilities": "{hid}_refresh_ac",
+    "overlay_timer_duration": "{hid}_overlay_timer",
+}
+
+# Zone-level renames: v2.x pattern "zone_{zid}_{old}" → v3.0 "{hid}_zone_{zid}_{new}"
+_UID_ZONE_RENAME_MAP = {
+    "temperature": "temp",
+    "ac_power": "ac",
+    "mode": "overlay",
+    "historical_deviation": "schedule_deviation",
+    "next_schedule_time": "next_schedule",
+    "next_schedule_temp": "next_sched_temp",
+    "smart_comfort_target": "comfort_target",
+    "mold_risk_percentage": "mold_risk_pct",
+    "condensation_risk": "condensation",
+    "surface_temperature": "surface_temp",
+    "avg_heating_rate": "heating_rate",
+    "analysis_confidence": "confidence",
+    "heating_acceleration": "heat_accel",
+    # Zone config descriptor renames
+    "heating_type": "heat_emitter",
+    "smart_comfort_mode": "smart_comfort",
+    "timer_duration": "overlay_timer",
+    "surface_temp_offset": "surface_offset",
+}
+
+# Zone buttons that need "zone_" segment added (v2.x: tado_ce_{zid}_X → v3.0: tado_ce_{hid}_zone_{zid}_X)
+_UID_ZONE_BUTTON_ADD_SEGMENT = {"refresh_schedule", "boost", "smart_boost"}
+
+# Calendar: tado_ce_schedule_{zid} → tado_ce_{hid}_zone_{zid}_schedule (reordered)
+# Device sensors: tado_ce_{serial}_X → tado_ce_{hid}_device_{serial}_X (added device_ segment)
+# Timer buttons: tado_ce_{zone_name}_timer_{dur}min → tado_ce_{hid}_zone_{zid}_timer_{dur}min
+
+
+def _migrate_entity_unique_ids(hass: HomeAssistant, config_entry: ConfigEntry, home_id: str) -> int:
+    """Migrate v2.x entity unique_ids to v3.0 format (with {home_id}).
+    
+    v3.0.0: One-time cumulative migration. Idempotent — safe to run multiple times.
+    
+    Strategy:
+    1. For each entity in the registry belonging to this config_entry:
+       a. If unique_id already contains home_id → skip (already migrated)
+       b. Try specific rename map first (descriptor changes)
+       c. Fall back to generic rule: insert {home_id} after "tado_ce_"
+    
+    Returns:
+        Number of entities migrated
+    """
+    from homeassistant.helpers import entity_registry as er
+    from .data_loader import load_zones_info_file
+    
+    entity_registry = er.async_get(hass)
+    
+    # Build zone_name → zone_id mapping for timer button migration
+    zones_info = load_zones_info_file()
+    zone_name_to_id = {}
+    if zones_info:
+        for zone in zones_info:
+            zname = zone.get("name", "")
+            zid = str(zone.get("id", ""))
+            if zname and zid:
+                # v2.x timer buttons use lowercased zone_name with spaces replaced by underscores
+                zone_name_to_id[zname.lower().replace(" ", "_")] = zid
+    
+    import re
+    migrated = 0
+    prefix = "tado_ce_"
+    hid = str(home_id)
+    already_migrated_prefix = f"tado_ce_{hid}_"
+    
+    for entity_id, entity_entry in list(entity_registry.entities.items()):
+        if entity_entry.config_entry_id != config_entry.entry_id:
+            continue
+        
+        old_uid = entity_entry.unique_id or ""
+        if not old_uid.startswith(prefix):
+            continue
+        
+        # Skip if already migrated (contains home_id)
+        if old_uid.startswith(already_migrated_prefix):
+            continue
+        
+        new_uid = None
+        rest = old_uid[len(prefix):]  # everything after "tado_ce_"
+        
+        # --- 1. Hub-level specific renames ---
+        if rest in _UID_RENAME_MAP:
+            new_uid = f"{prefix}{_UID_RENAME_MAP[rest].format(hid=hid)}"
+        
+        # --- 2. Calendar: schedule_{zid} → {hid}_zone_{zid}_schedule ---
+        elif rest.startswith("schedule_"):
+            zid = rest[len("schedule_"):]
+            if zid.isdigit():
+                new_uid = f"{prefix}{hid}_zone_{zid}_schedule"
+        
+        # --- 3. Zone-level entities: zone_{zid}_{descriptor} ---
+        elif rest.startswith("zone_"):
+            m = re.match(r"^zone_(\d+)_(.+)$", rest)
+            if m:
+                zid, descriptor = m.group(1), m.group(2)
+                if descriptor in _UID_ZONE_RENAME_MAP:
+                    new_uid = f"{prefix}{hid}_zone_{zid}_{_UID_ZONE_RENAME_MAP[descriptor]}"
+                else:
+                    # Generic: just insert {hid}
+                    new_uid = f"{prefix}{hid}_zone_{zid}_{descriptor}"
+        
+        # --- 4. Zone buttons without zone_ prefix: {zid}_X ---
+        elif not rest.startswith("zone_"):
+            # Check for zone buttons: {zid}_refresh_schedule, {zid}_boost, {zid}_smart_boost
+            for btn_suffix in _UID_ZONE_BUTTON_ADD_SEGMENT:
+                if rest.endswith(f"_{btn_suffix}"):
+                    zid_part = rest[:-(len(btn_suffix) + 1)]
+                    if zid_part.isdigit():
+                        new_uid = f"{prefix}{hid}_zone_{zid_part}_{btn_suffix}"
+                        break
+            
+            # Timer buttons: {zone_name}_timer_{dur}min
+            if new_uid is None:
+                tm = re.match(r"^(.+)_timer_(\d+)min$", rest)
+                if tm:
+                    zname_slug = tm.group(1)
+                    dur = tm.group(2)
+                    zid = zone_name_to_id.get(zname_slug)
+                    if zid:
+                        new_uid = f"{prefix}{hid}_zone_{zid}_timer_{dur}min"
+                    else:
+                        _LOGGER.warning(
+                            f"  Timer button migration: could not resolve zone_name "
+                            f"'{zname_slug}' to zone_id for {old_uid}"
+                        )
+            
+            # Device sensors/switches: {serial}_battery, {serial}_connection, {serial}_child_lock
+            if new_uid is None:
+                for dev_suffix in ("_battery", "_connection", "_child_lock"):
+                    if rest.endswith(dev_suffix):
+                        serial = rest[:-(len(dev_suffix))]
+                        if serial and not serial.isdigit():
+                            # Serial numbers are alphanumeric, not pure digits (digits = zone_id)
+                            new_uid = f"{prefix}{hid}_device_{serial}{dev_suffix}"
+                            break
+        
+        # --- 5. Generic fallback: insert {hid} after tado_ce_ ---
+        if new_uid is None:
+            new_uid = f"{prefix}{hid}_{rest}"
+        
+        # Apply migration
+        if new_uid != old_uid:
+            try:
+                entity_registry.async_update_entity(
+                    entity_id, new_unique_id=new_uid
+                )
+                migrated += 1
+                _LOGGER.debug(f"  Migrated UID: {old_uid} -> {new_uid}")
+            except Exception as e:
+                _LOGGER.warning(f"  Failed to migrate {old_uid}: {e}")
+    
+    return migrated
 
 
 async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
@@ -2868,7 +3055,7 @@ async def _async_register_services(hass: HomeAssistant):
         v2.0.1: Added bootstrap reserve check - blocks action when quota critically low.
         v2.2.3: Added group expansion support (#139).
         """
-        from .async_api import get_async_client
+        from .api_client import get_async_client
         
         # v2.0.1: Bootstrap Reserve - block action when quota critically low
         should_block, reason = await async_check_bootstrap_reserve(hass)
@@ -2906,7 +3093,7 @@ async def _async_register_services(hass: HomeAssistant):
         Sets temperature offset for ALL devices in a zone (supports multi-TRV rooms).
         v2.0.1: Added bootstrap reserve check - blocks action when quota critically low.
         """
-        from .async_api import get_async_client
+        from .api_client import get_async_client
         
         # v2.0.1: Bootstrap Reserve - block action when quota critically low
         should_block, reason = await async_check_bootstrap_reserve(hass)
@@ -2946,7 +3133,7 @@ async def _async_register_services(hass: HomeAssistant):
         
         v2.0.1: Added bootstrap reserve check - blocks action when quota critically low.
         """
-        from .async_api import get_async_client
+        from .api_client import get_async_client
         
         # v2.0.1: Bootstrap Reserve - block action when quota critically low
         should_block, reason = await async_check_bootstrap_reserve(hass)
@@ -3016,7 +3203,7 @@ async def _async_register_services(hass: HomeAssistant):
         
         v2.0.1: Added bootstrap reserve check - blocks action when quota critically low.
         """
-        from .async_api import get_async_client
+        from .api_client import get_async_client
         
         # v2.0.1: Bootstrap Reserve - block action when quota critically low
         should_block, reason = await async_check_bootstrap_reserve(hass)
@@ -3040,7 +3227,7 @@ async def _async_register_services(hass: HomeAssistant):
         
         v2.0.1: Added bootstrap reserve check - blocks action when quota critically low.
         """
-        from .async_api import get_async_client
+        from .api_client import get_async_client
         
         # v2.0.1: Bootstrap Reserve - block action when quota critically low
         should_block, reason = await async_check_bootstrap_reserve(hass)
@@ -3095,7 +3282,7 @@ async def _async_register_services(hass: HomeAssistant):
         Fetches the current temperature offset for a climate entity on-demand.
         Returns the offset value via service response for use in automations.
         """
-        from .async_api import get_async_client
+        from .api_client import get_async_client
         
         entity_id = call.data.get("entity_id")
         client = get_async_client(hass)
@@ -3195,8 +3382,8 @@ def _get_device_serials_for_zone(zone_id: str) -> list[str]:
 
 
 # NOTE: The following blocking functions have been replaced by async methods
-# in async_api.py (v1.5.0+) and removed to enforce proper async architecture:
-# - _get_access_token -> Use async_api.get_async_client().get_access_token()
+# in api_client.py (v1.5.0+) and removed to enforce proper async architecture:
+# - _get_access_token -> Use api_client.get_async_client().get_access_token()
 # - _get_temperature_offset -> client.get_device_offset()
 # - _set_temperature_offset -> client.set_device_offset()
 # - _add_meter_reading -> client.add_meter_reading()
@@ -3226,17 +3413,17 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             _LOGGER.debug("Cancelled freshness cleanup timer")
     
     # Clean up async client to prevent memory leak
-    from .async_api import cleanup_async_client, cleanup_tracker
-    cleanup_async_client(hass)
-    cleanup_tracker()
+    from .api_client import cleanup_api_client, cleanup_api_tracker
+    cleanup_api_client(hass)
+    cleanup_api_tracker()
     
     # Clean up immediate refresh handler
-    from .immediate_refresh_handler import cleanup_handler
-    cleanup_handler()
+    from .refresh_handler import cleanup_refresh_handler
+    cleanup_refresh_handler()
     
     # Clean up API call tracker executor to prevent thread leaks
-    from .api_call_tracker import cleanup_executor
-    cleanup_executor()
+    from .api_call_tracker import cleanup_api_executor
+    cleanup_api_executor(hass)
     
     # Clean up Smart Comfort manager (saves data before cleanup)
     from .smart_comfort import async_cleanup_smart_comfort_manager
@@ -3255,11 +3442,11 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     
     # Clean up data loader home_id
     from .data_loader import cleanup_data_loader
-    cleanup_data_loader()
+    cleanup_data_loader(hass)
     
     # Clean up auth manager
     from .auth_manager import cleanup_auth_manager
-    cleanup_auth_manager()
+    cleanup_auth_manager(hass)
     
     # Build platform list to unload (same logic as setup)
     config_manager = hass.data.get(DOMAIN, {}).get('config_manager')

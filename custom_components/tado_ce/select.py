@@ -8,7 +8,9 @@ import time
 from datetime import timedelta
 
 from homeassistant.components.select import SelectEntity
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .const import (
     DOMAIN, 
@@ -17,14 +19,24 @@ from .const import (
     TIMER_DURATION_OPTIONS, TIMER_DURATION_DEFAULT,
 )
 from .device_manager import get_hub_device_info
+from .action_helpers import (
+    check_bootstrap_reserve as _check_bootstrap_reserve,
+    is_within_optimistic_window as _is_within_optimistic_window,
+)
 
 _LOGGER = logging.getLogger(__name__)
 SCAN_INTERVAL = timedelta(seconds=30)
 
+# Cached home_id to avoid blocking calls in event loop
+_CACHED_HOME_ID = None
 
-async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
+
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddConfigEntryEntitiesCallback):
     """Set up Tado CE select entities from a config entry."""
+    global _CACHED_HOME_ID
     _LOGGER.debug("Tado CE select: Setting up...")
+    from .data_loader import get_current_home_id
+    _CACHED_HOME_ID = await hass.async_add_executor_job(get_current_home_id)
     
     entities = []
     
@@ -44,11 +56,13 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
         _LOGGER.info(f"Tado CE select entities loaded: {len(entities)}")
     
     # v2.1.0: Zone configuration select entities (per-zone settings)
-    from .zone_config_entities import async_setup_zone_config_select
+    from .zone_config import async_setup_zone_config_select
     await async_setup_zone_config_select(hass, entry, async_add_entities)
 
 
 class TadoPresenceModeSelect(SelectEntity):
+    _attr_has_entity_name = True
+
     """Tado CE Presence Mode Select Entity.
     
     Allows control of presence mode: auto (geofencing), home, away.
@@ -66,8 +80,8 @@ class TadoPresenceModeSelect(SelectEntity):
     _attr_translation_key = "presence_mode"
     
     def __init__(self):
-        self._attr_unique_id = "tado_ce_presence_mode"
-        self._attr_name = "Presence Mode"
+        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_presence_mode"
+        self._attr_name = "[CE] Presence Mode"
         self._attr_current_option = "Auto"
         self._attr_available = True
         self._attr_device_info = get_hub_device_info()
@@ -86,19 +100,8 @@ class TadoPresenceModeSelect(SelectEntity):
     # ========== v2.0.2: Helper Methods ==========
     
     def _is_within_optimistic_window(self) -> bool:
-        """Check if we're within the optimistic update window.
-        
-        v2.0.2: Extracted to helper method for consistency with other entities.
-        Uses shared get_optimistic_window() for DRY.
-        
-        Returns:
-            True if _optimistic_set_at is set and elapsed time < optimistic window.
-        """
-        if self._optimistic_set_at is None:
-            return False
-        from . import get_optimistic_window
-        elapsed = time.time() - self._optimistic_set_at
-        return elapsed < get_optimistic_window(self.hass) if self.hass else elapsed < 17.0
+        """Check if we're within the optimistic update window."""
+        return _is_within_optimistic_window(self.hass, self._optimistic_set_at)
     
     def _clear_optimistic_state(self):
         """Clear all optimistic state tracking."""
@@ -123,9 +126,11 @@ class TadoPresenceModeSelect(SelectEntity):
         return {
             "presence": self._presence,
             "presence_locked": self._presence_locked,
+            "automatic_geofencing": not self._presence_locked,
             "api_calls_per_change": 1,
         }
     
+    @callback
     def update(self):
         """Update state from home_state.json.
         
@@ -191,10 +196,10 @@ class TadoPresenceModeSelect(SelectEntity):
         v2.0.1: Bootstrap Reserve check
         v2.0.2: Full 3-layer optimistic update
         """
-        from .async_api import get_async_client
+        from .api_client import get_async_client
         
         # v2.0.1: Bootstrap Reserve - block action when quota critically low
-        await self._check_bootstrap_reserve()
+        await _check_bootstrap_reserve(self.hass, "Presence Mode")
         
         # Store previous state for rollback
         old_mode = self._attr_current_option
@@ -248,20 +253,6 @@ class TadoPresenceModeSelect(SelectEntity):
         """
         from . import async_trigger_immediate_refresh
         await async_trigger_immediate_refresh(self.hass, self.entity_id, reason, include_home_state=True)
-    
-    async def _check_bootstrap_reserve(self) -> None:
-        """Check if bootstrap reserve is depleted and block action if so.
-        
-        v2.0.1: Bootstrap Reserve - ensures 3 API calls are ALWAYS reserved
-        for auto-recovery after API reset.
-        
-        v2.0.2: DRY refactor - delegates to shared async_check_bootstrap_reserve_or_raise().
-        
-        Raises:
-            HomeAssistantError: If bootstrap reserve is depleted
-        """
-        from . import async_check_bootstrap_reserve_or_raise
-        await async_check_bootstrap_reserve_or_raise(self.hass, "Presence Mode")
 
 
 # ============================================================
@@ -269,6 +260,8 @@ class TadoPresenceModeSelect(SelectEntity):
 # ============================================================
 
 class TadoOverlayModeSelect(SelectEntity):
+    _attr_has_entity_name = True
+
     """Tado CE Overlay Mode Select Entity.
     
     Allows control of overlay termination type for manual temperature changes.
@@ -291,8 +284,8 @@ class TadoOverlayModeSelect(SelectEntity):
     _attr_translation_key = "overlay_mode"
     
     def __init__(self):
-        self._attr_unique_id = "tado_ce_overlay_mode"
-        self._attr_name = "Overlay Mode"
+        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_overlay_mode"
+        self._attr_name = "[CE] Overlay Mode"
         self._attr_current_option = OVERLAY_MODE_DEFAULT_DISPLAY
         self._attr_available = True
         self._attr_device_info = get_hub_device_info()
@@ -311,6 +304,7 @@ class TadoOverlayModeSelect(SelectEntity):
             "api_calls_per_change": 0,
         }
     
+    @callback
     def update(self):
         """Load overlay mode from hass.data cache.
         
@@ -349,6 +343,8 @@ class TadoOverlayModeSelect(SelectEntity):
 
 
 class TadoTimerDurationSelect(SelectEntity):
+    _attr_has_entity_name = True
+
     """Tado CE Timer Duration Select Entity.
     
     Controls how long Timer overlay mode lasts.
@@ -361,8 +357,8 @@ class TadoTimerDurationSelect(SelectEntity):
     _attr_translation_key = "timer_duration"
     
     def __init__(self):
-        self._attr_unique_id = "tado_ce_overlay_timer_duration"
-        self._attr_name = "Overlay Timer Duration"
+        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_overlay_timer"
+        self._attr_name = "[CE] Overlay Timer"
         self._attr_current_option = str(TIMER_DURATION_DEFAULT)
         self._attr_available = True
         self._attr_device_info = get_hub_device_info()
@@ -378,6 +374,7 @@ class TadoTimerDurationSelect(SelectEntity):
             "api_calls_per_change": 0,
         }
     
+    @callback
     def update(self):
         """Load timer duration from hass.data cache."""
         try:

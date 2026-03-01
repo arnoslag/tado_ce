@@ -4,20 +4,28 @@ import logging
 from homeassistant.components.button import ButtonEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import EntityCategory
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .const import DOMAIN
 from .device_manager import get_zone_device_info, get_hub_device_info
-from .data_loader import load_zones_info_file
+from .data_loader import load_zones_info_file, get_current_home_id
+from .action_helpers import check_bootstrap_reserve as _check_bootstrap_reserve
 
 _LOGGER = logging.getLogger(__name__)
 
 # Default timer preset durations (in minutes)
 DEFAULT_TIMER_PRESETS = [30, 60, 90]
 
+# Cached home_id to avoid blocking calls in event loop
+_CACHED_HOME_ID = None
 
-async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
+
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddConfigEntryEntitiesCallback):
     """Set up Tado CE buttons from a config entry."""
+    global _CACHED_HOME_ID
     _LOGGER.debug("Tado CE button: Setting up...")
+    _CACHED_HOME_ID = await hass.async_add_executor_job(get_current_home_id)
     zones_info = await hass.async_add_executor_job(load_zones_info_file)
     
     # Get config manager to check feature toggles
@@ -73,15 +81,17 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
 
 
 class TadoResumeAllSchedulesButton(ButtonEntity):
+    _attr_has_entity_name = True
+
     """Button to resume schedules for all zones (delete all overlays)."""
     
     def __init__(self, hass: HomeAssistant):
         """Initialize the button."""
         self.hass = hass
         
-        self._attr_name = "Resume All Schedules"
+        self._attr_name = "[CE] Resume All"
         self.entity_id = "button.tado_ce_resume_all_schedules"
-        self._attr_unique_id = "tado_ce_resume_all_schedules"
+        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_resume_all"
         self._attr_device_info = get_hub_device_info()
         self._attr_icon = "mdi:calendar-refresh"
     
@@ -91,12 +101,12 @@ class TadoResumeAllSchedulesButton(ButtonEntity):
         v2.0.1: Added bootstrap reserve check - blocks action when quota critically low.
         v2.0.1: DRY refactor - uses shared async_trigger_immediate_refresh().
         """
-        from .async_api import get_async_client
+        from .api_client import get_async_client
         from .data_loader import load_zones_info_file
         from . import async_trigger_immediate_refresh
         
         # v2.0.1: Bootstrap Reserve - block action when quota critically low
-        await self._check_bootstrap_reserve()
+        await _check_bootstrap_reserve(self.hass, "Immediate Refresh")
         
         _LOGGER.info("Resume All Schedules button pressed")
         
@@ -136,41 +146,29 @@ class TadoResumeAllSchedulesButton(ButtonEntity):
             self.hass, self.entity_id, "resume_all_schedules", force=True, skip_debounce=True
         )
     
-    async def _check_bootstrap_reserve(self) -> None:
-        """Check if bootstrap reserve is depleted and block action if so.
-        
-        v2.0.1: Bootstrap Reserve - ensures 3 API calls are ALWAYS reserved
-        for auto-recovery after API reset.
-        
-        v2.0.1: DRY refactor - delegates to shared async_check_bootstrap_reserve_or_raise().
-        
-        Raises:
-            HomeAssistantError: If bootstrap reserve is depleted
-        """
-        from . import async_check_bootstrap_reserve_or_raise
-        await async_check_bootstrap_reserve_or_raise(self.hass, "Immediate Refresh")
-
 
 class TadoRefreshACCapabilitiesButton(ButtonEntity):
+    _attr_has_entity_name = True
+
     """Button to refresh AC capabilities cache."""
     
     def __init__(self, hass: HomeAssistant):
         """Initialize the button."""
         self.hass = hass
         
-        self._attr_name = "Refresh AC Capabilities"
+        self._attr_name = "[CE] Refresh AC"
         self.entity_id = "button.tado_ce_refresh_ac_capabilities"
-        self._attr_unique_id = "tado_ce_refresh_ac_capabilities"
+        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_refresh_ac"
         self._attr_device_info = get_hub_device_info()
         self._attr_entity_category = EntityCategory.CONFIG
         self._attr_icon = "mdi:air-conditioner"
     
     async def async_press(self) -> None:
         """Handle button press - refresh AC capabilities from API."""
-        from .async_api import get_async_client
+        from .api_client import get_async_client
         from .data_loader import get_current_home_id
         from .const import get_data_file
-        from .immediate_refresh_handler import SIGNAL_AC_CAPABILITIES_UPDATED
+        from .refresh_handler import SIGNAL_AC_CAPABILITIES_UPDATED
         from homeassistant.helpers.dispatcher import async_dispatcher_send
         
         _LOGGER.info("Refresh AC Capabilities button pressed")
@@ -208,6 +206,8 @@ class TadoRefreshACCapabilitiesButton(ButtonEntity):
 
 
 class TadoWaterHeaterTimerButton(ButtonEntity):
+    _attr_has_entity_name = True
+
     """Button to set water heater timer with preset duration."""
     
     def __init__(self, hass: HomeAssistant, zone_id: str, zone_name: str, duration: int):
@@ -224,8 +224,8 @@ class TadoWaterHeaterTimerButton(ButtonEntity):
         self._zone_name = zone_name
         self._duration = duration
         
-        self._attr_name = f"{zone_name} {duration}min Timer"
-        self._attr_unique_id = f"tado_ce_{zone_name.lower().replace(' ', '_')}_timer_{duration}min"
+        self._attr_name = "[CE] {duration}min Timer"
+        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_zone_{zone_id}_timer_{duration}min"
         self._attr_device_info = get_zone_device_info(zone_id, zone_name, "HOT_WATER")
         self._attr_entity_category = EntityCategory.CONFIG
         self._attr_icon = "mdi:timer"
@@ -288,6 +288,8 @@ class TadoWaterHeaterTimerButton(ButtonEntity):
 
 
 class TadoRefreshScheduleButton(ButtonEntity):
+    _attr_has_entity_name = True
+
     """Button to refresh schedule for a specific zone."""
     
     def __init__(self, hass: HomeAssistant, zone_id: str, zone_name: str):
@@ -302,15 +304,15 @@ class TadoRefreshScheduleButton(ButtonEntity):
         self._zone_id = zone_id
         self._zone_name = zone_name
         
-        self._attr_name = f"{zone_name} Refresh Schedule"
-        self._attr_unique_id = f"tado_ce_{zone_id}_refresh_schedule"
+        self._attr_name = "[CE] Refresh Schedule"
+        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_zone_{zone_id}_refresh_schedule"
         self._attr_device_info = get_zone_device_info(zone_id, zone_name, "HEATING")
         # No entity_category = Controls section (action button, not config)
         self._attr_icon = "mdi:calendar-refresh"
     
     async def async_press(self) -> None:
         """Handle button press - refresh schedule for this zone."""
-        from .async_api import get_async_client
+        from .api_client import get_async_client
         from .calendar import _get_schedules_file
         from .const import DATA_DIR
         import json
@@ -343,7 +345,8 @@ class TadoRefreshScheduleButton(ButtonEntity):
             schedules[self._zone_id] = {
                 "name": self._zone_name,
                 "type": schedule_data.get("type", "ONE_DAY"),
-                "blocks": schedule_data.get("blocks", {}),
+                # Tado API may return null for existing keys; 'or {}' handles None correctly
+                "blocks": schedule_data.get("blocks") or {},
             }
             
             # Save back to file using atomic write
@@ -385,6 +388,8 @@ SMART_BOOST_DEFAULT_RATE = 1.0  # Default heating rate if unknown (°C/h)
 
 
 class TadoBoostButton(ButtonEntity):
+    _attr_has_entity_name = True
+
     """Button to boost heating to maximum temperature for 30 minutes.
     
     Mimics official Tado app boost functionality:
@@ -399,8 +404,8 @@ class TadoBoostButton(ButtonEntity):
         self._zone_id = zone_id
         self._zone_name = zone_name
         
-        self._attr_name = f"{zone_name} Boost"
-        self._attr_unique_id = f"tado_ce_{zone_id}_boost"
+        self._attr_name = "[CE] Boost"
+        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_zone_{zone_id}_boost"
         self._attr_device_info = get_zone_device_info(zone_id, zone_name, "HEATING")
         self._attr_icon = "mdi:fire"
     
@@ -410,11 +415,11 @@ class TadoBoostButton(ButtonEntity):
         v2.0.1: Added bootstrap reserve check - blocks action when quota critically low.
         v2.0.1: DRY refactor - uses shared async_trigger_immediate_refresh().
         """
-        from .async_api import get_async_client
+        from .api_client import get_async_client
         from . import async_trigger_immediate_refresh
         
         # v2.0.1: Bootstrap Reserve - block action when quota critically low
-        await self._check_bootstrap_reserve()
+        await _check_bootstrap_reserve(self.hass, f"Boost {self._zone_name}")
         
         _LOGGER.info(f"Boost button pressed for {self._zone_name}")
         
@@ -446,22 +451,10 @@ class TadoBoostButton(ButtonEntity):
         else:
             _LOGGER.error(f"Boost failed for {self._zone_name}")
     
-    async def _check_bootstrap_reserve(self) -> None:
-        """Check if bootstrap reserve is depleted and block action if so.
-        
-        v2.0.1: Bootstrap Reserve - ensures 3 API calls are ALWAYS reserved
-        for auto-recovery after API reset.
-        
-        v2.0.1: DRY refactor - delegates to shared async_check_bootstrap_reserve_or_raise().
-        
-        Raises:
-            HomeAssistantError: If bootstrap reserve is depleted
-        """
-        from . import async_check_bootstrap_reserve_or_raise
-        await async_check_bootstrap_reserve_or_raise(self.hass, f"Boost {self._zone_name}")
-
 
 class TadoSmartBoostButton(ButtonEntity):
+    _attr_has_entity_name = True
+
     """Button to smart boost heating with calculated duration.
     
     Uses heating rate sensor to calculate optimal boost duration:
@@ -476,8 +469,8 @@ class TadoSmartBoostButton(ButtonEntity):
         self._zone_id = zone_id
         self._zone_name = zone_name
         
-        self._attr_name = f"{zone_name} Smart Boost"
-        self._attr_unique_id = f"tado_ce_{zone_id}_smart_boost"
+        self._attr_name = "[CE] Smart Boost"
+        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_zone_{zone_id}_smart_boost"
         self._attr_device_info = get_zone_device_info(zone_id, zone_name, "HEATING")
         self._attr_icon = "mdi:fire-alert"
     
@@ -545,11 +538,11 @@ class TadoSmartBoostButton(ButtonEntity):
         v2.0.1: Added bootstrap reserve check - blocks action when quota critically low.
         v2.0.1: DRY refactor - uses shared async_trigger_immediate_refresh().
         """
-        from .async_api import get_async_client
+        from .api_client import get_async_client
         from . import async_trigger_immediate_refresh
         
         # v2.0.1: Bootstrap Reserve - block action when quota critically low
-        await self._check_bootstrap_reserve()
+        await _check_bootstrap_reserve(self.hass, f"Smart Boost {self._zone_name}")
         
         _LOGGER.info(f"Smart Boost button pressed for {self._zone_name}")
         
@@ -625,16 +618,4 @@ class TadoSmartBoostButton(ButtonEntity):
         else:
             _LOGGER.error(f"Smart Boost failed for {self._zone_name}")
     
-    async def _check_bootstrap_reserve(self) -> None:
-        """Check if bootstrap reserve is depleted and block action if so.
-        
-        v2.0.1: Bootstrap Reserve - ensures 3 API calls are ALWAYS reserved
-        for auto-recovery after API reset.
-        
-        v2.0.1: DRY refactor - delegates to shared async_check_bootstrap_reserve_or_raise().
-        
-        Raises:
-            HomeAssistantError: If bootstrap reserve is depleted
-        """
-        from . import async_check_bootstrap_reserve_or_raise
-        await async_check_bootstrap_reserve_or_raise(self.hass, f"Smart Boost {self._zone_name}")
+
