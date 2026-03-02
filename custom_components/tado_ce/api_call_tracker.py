@@ -466,6 +466,3 @@ def cleanup_api_executor(hass=None):
     """
     _LOGGER.debug("API call tracker cleanup (no executor to reset in v1.11.0)")
 
-
-# Deprecated alias — use cleanup_api_executor() instead
-cleanup_executor = cleanup_api_executor

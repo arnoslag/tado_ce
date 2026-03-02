@@ -28,30 +28,26 @@ from .action_helpers import (
 _LOGGER = logging.getLogger(__name__)
 SCAN_INTERVAL = timedelta(seconds=30)
 
-# Cached home_id to avoid blocking calls in event loop
-_CACHED_HOME_ID = None
-
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddConfigEntryEntitiesCallback):
     """Set up Tado CE select entities from a config entry."""
-    global _CACHED_HOME_ID
     _LOGGER.debug("Tado CE select: Setting up...")
-    from .data_loader import get_current_home_id
-    _CACHED_HOME_ID = await hass.async_add_executor_job(get_current_home_id)
+    entry_data = get_entry_data(hass, entry.entry_id)
+    home_id = entry_data.home_id
     entry_id = entry.entry_id
     
     entities = []
     
     # Add Presence Mode select (global, 1 API call per change)
-    entities.append(TadoPresenceModeSelect(entry_id))
+    entities.append(TadoPresenceModeSelect(entry_id, home_id))
     
     # v2.0.2: Add Overlay Mode select (Issue #101 - @leoogermenia)
     # 0 API calls - purely local setting
-    entities.append(TadoOverlayModeSelect(entry_id))
+    entities.append(TadoOverlayModeSelect(entry_id, home_id))
     
     # v2.1.0: Add Timer Duration select (for Timer overlay mode)
     # 0 API calls - purely local setting
-    entities.append(TadoTimerDurationSelect(entry_id))
+    entities.append(TadoTimerDurationSelect(entry_id, home_id))
     
     if entities:
         async_add_entities(entities, True)
@@ -81,13 +77,13 @@ class TadoPresenceModeSelect(SelectEntity):
     _attr_options = ["Auto", "Home", "Away"]
     _attr_translation_key = "presence_mode"
     
-    def __init__(self, entry_id: str):
+    def __init__(self, entry_id: str, home_id: str):
         self._entry_id = entry_id
-        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_presence_mode"
+        self._attr_unique_id = f"tado_ce_{home_id}_presence_mode"
         self._attr_name = "[CE] Presence Mode"
         self._attr_current_option = "Auto"
         self._attr_available = True
-        self._attr_device_info = get_hub_device_info(_CACHED_HOME_ID)
+        self._attr_device_info = get_hub_device_info(home_id)
         # v2.0.2: Force entity_id for consistent naming (lesson learned)
         self.entity_id = "select.tado_ce_presence_mode"
         
@@ -151,8 +147,8 @@ class TadoPresenceModeSelect(SelectEntity):
         
         # Load from file
         try:
-            from .data_loader import load_home_state_file
-            home_state = load_home_state_file()
+            entry_data = get_entry_data(self.hass, self._entry_id)
+            home_state = entry_data.data_loader.load_home_state_file()
             if not home_state:
                 return
             
@@ -284,13 +280,13 @@ class TadoOverlayModeSelect(SelectEntity):
     _attr_options = OVERLAY_MODE_OPTIONS
     _attr_translation_key = "overlay_mode"
     
-    def __init__(self, entry_id: str):
+    def __init__(self, entry_id: str, home_id: str):
         self._entry_id = entry_id
-        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_overlay_mode"
+        self._attr_unique_id = f"tado_ce_{home_id}_overlay_mode"
         self._attr_name = "[CE] Overlay Mode"
         self._attr_current_option = OVERLAY_MODE_DEFAULT_DISPLAY
         self._attr_available = True
-        self._attr_device_info = get_hub_device_info(_CACHED_HOME_ID)
+        self._attr_device_info = get_hub_device_info(home_id)
         self._attr_icon = "mdi:timer-cog-outline"
         # v2.0.2: Force entity_id for consistent naming (lesson learned)
         self.entity_id = "select.tado_ce_overlay_mode"
@@ -325,15 +321,14 @@ class TadoOverlayModeSelect(SelectEntity):
         
         v2.0.2: Lesson from v2.0.0 - Uses async_add_executor_job for file I/O.
         """
-        from .data_loader import save_overlay_mode
-        
         # Update state immediately
         self._attr_current_option = option
         self.async_write_ha_state()
         
         # Save to storage (non-blocking)
         api_mode = OVERLAY_MODE_MAP.get(option, OVERLAY_MODE_DEFAULT)
-        success = await self.hass.async_add_executor_job(save_overlay_mode, api_mode)
+        entry_data = get_entry_data(self.hass, self._entry_id)
+        success = await self.hass.async_add_executor_job(entry_data.data_loader.save_overlay_mode, api_mode)
         
         if success:
             # Update hass.data cache
@@ -357,13 +352,13 @@ class TadoTimerDurationSelect(SelectEntity):
     _attr_options = TIMER_DURATION_OPTIONS
     _attr_translation_key = "timer_duration"
     
-    def __init__(self, entry_id: str):
+    def __init__(self, entry_id: str, home_id: str):
         self._entry_id = entry_id
-        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_overlay_timer"
+        self._attr_unique_id = f"tado_ce_{home_id}_overlay_timer"
         self._attr_name = "[CE] Overlay Timer"
         self._attr_current_option = str(TIMER_DURATION_DEFAULT)
         self._attr_available = True
-        self._attr_device_info = get_hub_device_info(_CACHED_HOME_ID)
+        self._attr_device_info = get_hub_device_info(home_id)
         self._attr_icon = "mdi:timer"
         self._attr_unit_of_measurement = "min"
         self.entity_id = "select.tado_ce_overlay_timer_duration"
@@ -387,15 +382,14 @@ class TadoTimerDurationSelect(SelectEntity):
     
     async def async_select_option(self, option: str) -> None:
         """Select timer duration (local only, no API call)."""
-        from .data_loader import save_timer_duration
-        
         # Update state immediately
         self._attr_current_option = option
         self.async_write_ha_state()
         
         # Save to storage (non-blocking)
         duration = int(option)
-        success = await self.hass.async_add_executor_job(save_timer_duration, duration)
+        entry_data = get_entry_data(self.hass, self._entry_id)
+        success = await self.hass.async_add_executor_job(entry_data.data_loader.save_timer_duration, duration)
         
         if success:
             # Update hass.data cache

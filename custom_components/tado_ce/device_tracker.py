@@ -9,22 +9,19 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .device_manager import get_hub_device_info
-from .data_loader import load_mobile_devices_file, get_current_home_id
 from .entry_data import get_entry_data
 
 _LOGGER = logging.getLogger(__name__)
 SCAN_INTERVAL = timedelta(seconds=30)
 
-# Cached home_id to avoid blocking calls in event loop
-_CACHED_HOME_ID = None
-
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddConfigEntryEntitiesCallback):
     """Set up Tado CE device trackers from a config entry."""
-    global _CACHED_HOME_ID
-    _CACHED_HOME_ID = await hass.async_add_executor_job(get_current_home_id)
+    entry_data = get_entry_data(hass, entry.entry_id)
+    data_loader = entry_data.data_loader
+    home_id = entry_data.home_id
     _LOGGER.debug("Tado CE device_tracker: Setting up...")
-    mobile_devices = await hass.async_add_executor_job(load_mobile_devices_file)
+    mobile_devices = await hass.async_add_executor_job(data_loader.load_mobile_devices_file)
     
     trackers = []
     
@@ -36,7 +33,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             
             # Only create tracker if geo tracking is enabled
             if settings.get('geoTrackingEnabled', False):
-                trackers.append(TadoDeviceTracker(entry.entry_id, device_id, device_name, device))
+                trackers.append(TadoDeviceTracker(entry.entry_id, device_id, device_name, device, home_id))
             else:
                 _LOGGER.debug(f"Skipping {device_name} - geoTrackingEnabled is False")
     
@@ -52,17 +49,17 @@ class TadoDeviceTracker(TrackerEntity):
 
     """Tado CE Device Tracker Entity."""
     
-    def __init__(self, entry_id: str, device_id: int, device_name: str, device_data: dict):
+    def __init__(self, entry_id: str, device_id: int, device_name: str, device_data: dict, home_id: str):
         self._entry_id = entry_id
         self._device_id = device_id
         self._device_name = device_name
         self._device_data = device_data
         
         self._attr_name = f"[CE] {device_name}"
-        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_device_{device_id}"
+        self._attr_unique_id = f"tado_ce_{home_id}_device_{device_id}"
         self._attr_available = False
         # Use hub device info for global entities
-        self._attr_device_info = get_hub_device_info(_CACHED_HOME_ID)
+        self._attr_device_info = get_hub_device_info(home_id)
         
         self._is_home = None
         self._location = None
@@ -111,8 +108,9 @@ class TadoDeviceTracker(TrackerEntity):
     def update(self):
         """Update device tracker state from JSON file."""
         try:
-            # Use data_loader for per-home file support
-            devices = load_mobile_devices_file()
+            # Use entry_data.data_loader for per-home file support
+            entry_data = get_entry_data(self.hass, self._entry_id)
+            devices = entry_data.data_loader.load_mobile_devices_file()
             
             if devices:
                 for device in devices:

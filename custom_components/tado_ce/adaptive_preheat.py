@@ -26,17 +26,19 @@ _LOGGER = logging.getLogger(__name__)
 class AdaptivePreheatManager:
     """Manages adaptive preheat automation for heating zones."""
     
-    def __init__(self, hass: HomeAssistant, config_manager: "ConfigurationManager", api_client: "TadoApiClient | None" = None):
+    def __init__(self, hass: HomeAssistant, config_manager: "ConfigurationManager", api_client: "TadoApiClient | None" = None, data_loader=None):
         """Initialize the Adaptive Preheat Manager.
         
         Args:
             hass: Home Assistant instance
             config_manager: Configuration manager with settings
             api_client: Per-entry API client (v3.0.0 multi-home)
+            data_loader: DataLoader instance for per-entry file access (v3.0.0 GAP-100)
         """
         self._hass = hass
         self._config_manager = config_manager
         self._api_client = api_client
+        self._data_loader = data_loader
         self._enabled = False
         self._enabled_zones: list[str] = []  # Zone IDs enabled for adaptive preheat
         self._active_overlays: dict[str, dict] = {}  # zone_id -> overlay info
@@ -64,9 +66,13 @@ class AdaptivePreheatManager:
             self._enabled = False
             return
         
-        # Load zone info
-        from .data_loader import load_zones_info_file
-        zones_info = await self._hass.async_add_executor_job(load_zones_info_file)
+        # Load zone info (v3.0.0: use per-entry data_loader, GAP-100)
+        if self._data_loader is not None:
+            zones_info = await self._hass.async_add_executor_job(self._data_loader.load_zones_info_file)
+        else:
+            # Fallback to deprecated module-level function (backward compat)
+            from .data_loader import load_zones_info_file
+            zones_info = await self._hass.async_add_executor_job(load_zones_info_file)
         
         if not zones_info:
             _LOGGER.warning("Adaptive Preheat: No zones found")

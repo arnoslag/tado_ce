@@ -7,25 +7,28 @@ from datetime import datetime, timedelta, timezone
 
 import aiofiles
 import aiofiles.os
-import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
-import homeassistant.helpers.config_validation as cv
 
 from .const import (
     DOMAIN, DATA_DIR, CONFIG_FILE, RATELIMIT_FILE,
     MIN_POLLING_INTERVAL, MAX_POLLING_INTERVAL, POLLING_SAFETY_BUFFER,
     QUOTA_RESERVE_CALLS, QUOTA_RESERVE_PERCENT,
     LOW_QUOTA_THRESHOLD,
+    SERVICE_SET_CLIMATE_TIMER, SERVICE_SET_WATER_HEATER_TIMER,
+    SERVICE_RESUME_SCHEDULE, SERVICE_SET_TEMP_OFFSET,
+    SERVICE_GET_TEMP_OFFSET, SERVICE_ADD_METER_READING,
+    SERVICE_IDENTIFY_DEVICE, SERVICE_SET_AWAY_CONFIG,
 )
 from .config_manager import ConfigurationManager
 from .zone_config_manager import ZoneConfigManager
 from .api_client import get_async_client, TadoApiClient
 from .entry_data import EntryData
 from .data_loader import DataLoader
+from .services import _async_register_services  # noqa: F401
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -35,16 +38,6 @@ BASE_PLATFORMS = [
     Platform.BUTTON, Platform.SELECT, Platform.NUMBER,
 ]
 CALENDAR_PLATFORM = Platform.CALENDAR
-
-# Service names
-SERVICE_SET_CLIMATE_TIMER = "set_climate_timer"
-SERVICE_SET_WATER_HEATER_TIMER = "set_water_heater_timer"
-SERVICE_RESUME_SCHEDULE = "resume_schedule"
-SERVICE_SET_TEMP_OFFSET = "set_climate_temperature_offset"  # Match official Tado integration
-SERVICE_GET_TEMP_OFFSET = "get_temperature_offset"  # New: on-demand offset fetch
-SERVICE_ADD_METER_READING = "add_meter_reading"
-SERVICE_IDENTIFY_DEVICE = "identify_device"
-SERVICE_SET_AWAY_CONFIG = "set_away_configuration"
 
 # v1.11.0: Adaptive Smart Polling (removed hardcoded POLLING_INTERVALS table)
 # Now uses pure adaptive calculation based on remaining quota and time until reset
@@ -507,25 +500,35 @@ def should_block_manual_action(ratelimit_data: dict, config_manager: Configurati
     return False, ""
 
 
-async def async_check_bootstrap_reserve(hass: HomeAssistant) -> tuple[bool, str]:
+async def async_check_bootstrap_reserve(hass: HomeAssistant, entry_data=None) -> tuple[bool, str]:
     """Async helper to check bootstrap reserve for service handlers.
     
     v2.0.1: Convenience wrapper that loads ratelimit data and config manager.
+    v3.0.0: Accepts optional entry_data for per-entry quota check (GAP-75).
     
     Args:
         hass: Home Assistant instance
+        entry_data: Optional EntryData for per-entry check. If provided,
+            uses entry_data.config_manager and entry_data.data_loader
+            instead of global hass.data[DOMAIN]['config_manager'].
         
     Returns:
         Tuple of (should_block: bool, reason: str)
     """
-    from .data_loader import load_ratelimit_file
-    
     try:
-        config_manager = hass.data.get(DOMAIN, {}).get('config_manager')
-        if not config_manager:
-            return False, ""
+        if entry_data is not None:
+            config_manager = entry_data.config_manager
+            ratelimit_data = await hass.async_add_executor_job(
+                entry_data.data_loader.load_ratelimit_file
+            )
+        else:
+            # Fallback to global (backward compat for entity callers via action_helpers)
+            config_manager = hass.data.get(DOMAIN, {}).get('config_manager')
+            if not config_manager:
+                return False, ""
+            from .data_loader import load_ratelimit_file
+            ratelimit_data = await hass.async_add_executor_job(load_ratelimit_file)
         
-        ratelimit_data = await hass.async_add_executor_job(load_ratelimit_file)
         if not ratelimit_data:
             return False, ""
         
@@ -555,23 +558,25 @@ async def async_show_api_limit_notification(hass: HomeAssistant, message: str) -
     )
 
 
-async def async_check_bootstrap_reserve_or_raise(hass: HomeAssistant, entity_name: str = "") -> None:
+async def async_check_bootstrap_reserve_or_raise(hass: HomeAssistant, entity_name: str = "", entry_data=None) -> None:
     """Check bootstrap reserve and raise HomeAssistantError if quota critically low.
     
     v2.0.1: DRY refactor - single shared function for all entities to check bootstrap reserve.
     Consolidates duplicate _check_bootstrap_reserve() methods across climate, water_heater,
     button, and switch entities.
+    v3.0.0: Accepts optional entry_data for per-entry quota check (GAP-75).
     
     Args:
         hass: Home Assistant instance
         entity_name: Optional entity name for logging (e.g., "Living Room", "Hot Water")
+        entry_data: Optional EntryData for per-entry check.
         
     Raises:
         HomeAssistantError: If quota is at bootstrap reserve level
     """
     from homeassistant.exceptions import HomeAssistantError
     
-    should_block, reason = await async_check_bootstrap_reserve(hass)
+    should_block, reason = await async_check_bootstrap_reserve(hass, entry_data=entry_data)
     if should_block:
         log_name = f" for {entity_name}" if entity_name else ""
         _LOGGER.warning(f"Tado CE: Blocking manual action{log_name} - {reason}")
@@ -1601,7 +1606,8 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) ->
 async def _migrate_to_per_zone_config(
     hass: HomeAssistant,
     entry: ConfigEntry,
-    zone_config_manager: ZoneConfigManager
+    zone_config_manager: ZoneConfigManager,
+    data_loader=None,
 ) -> None:
     """Migrate global settings to per-zone configuration.
     
@@ -1639,8 +1645,12 @@ async def _migrate_to_per_zone_config(
     _LOGGER.info("=== Per-Zone Configuration Migration ===")
     
     # Load zones info
-    from .data_loader import load_zones_info_file
-    zones_info = await hass.async_add_executor_job(load_zones_info_file)
+    # v3.0.0: Use per-entry data_loader when available (8.2c)
+    if data_loader is not None:
+        zones_info = await hass.async_add_executor_job(data_loader.load_zones_info_file)
+    else:
+        from .data_loader import load_zones_info_file
+        zones_info = await hass.async_add_executor_job(load_zones_info_file)
     
     if not zones_info:
         _LOGGER.warning("No zones info available, skipping per-zone migration")
@@ -1654,8 +1664,12 @@ async def _migrate_to_per_zone_config(
     window_type = options.get("mold_risk_window_type", "double_pane")
     
     # Get overlay mode from cache or file (already UPPERCASE)
-    from .data_loader import load_overlay_mode
-    overlay_mode = await hass.async_add_executor_job(load_overlay_mode)
+    # v3.0.0: Use per-entry data_loader when available (8.2c)
+    if data_loader is not None:
+        overlay_mode = await hass.async_add_executor_job(data_loader.load_overlay_mode)
+    else:
+        from .data_loader import load_overlay_mode
+        overlay_mode = await hass.async_add_executor_job(load_overlay_mode)
     
     # v2.1.0: overlay_mode is already UPPERCASE from data_loader
     # No mapping needed - use directly
@@ -1905,17 +1919,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     _LOGGER.info("Zone config manager initialized with %d zones", len(zone_config_manager.zones))
     
     # v2.1.0: Migrate global settings to per-zone configuration
-    await _migrate_to_per_zone_config(hass, entry, zone_config_manager)
+    await _migrate_to_per_zone_config(hass, entry, zone_config_manager, data_loader=data_loader)
     
     # v2.0.2: Load overlay mode into cache (Issue #101 - @leoogermenia)
     # Lesson from v2.0.0: Use async_add_executor_job for file I/O
-    from .data_loader import load_overlay_mode, load_timer_duration
-    overlay_mode = await hass.async_add_executor_job(load_overlay_mode)
+    # v3.0.0: Use per-entry data_loader instead of module-level wrapper (8.2c)
+    overlay_mode = await hass.async_add_executor_job(data_loader.load_overlay_mode)
     entry_data.overlay_mode = overlay_mode
     _LOGGER.debug("Tado CE: Overlay mode loaded: %s", overlay_mode)
     
     # v2.1.0: Load timer duration into cache
-    timer_duration = await hass.async_add_executor_job(load_timer_duration)
+    timer_duration = await hass.async_add_executor_job(data_loader.load_timer_duration)
     entry_data.timer_duration = timer_duration
     _LOGGER.debug("Tado CE: Timer duration loaded: %d minutes", timer_duration)
     
@@ -2331,8 +2345,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         cache_readings = await hass.async_add_executor_job(smart_comfort_manager.load_from_file)
         
         # Get zones_info for entity ID mapping
-        from .data_loader import load_zones_info_file
-        zones_info = await hass.async_add_executor_job(load_zones_info_file)
+        # v3.0.0: Use per-entry data_loader instead of module-level wrapper (8.2c)
+        zones_info = await hass.async_add_executor_job(entry_data.data_loader.load_zones_info_file)
         
         if zones_info:
             # Build mapping: entity_name -> zone_id (numeric)
@@ -2429,7 +2443,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if config_manager.get_adaptive_preheat_enabled():
         try:
             from .adaptive_preheat import AdaptivePreheatManager
-            apm = AdaptivePreheatManager(hass, config_manager, api_client=entry_data.api_client)
+            apm = AdaptivePreheatManager(hass, config_manager, api_client=entry_data.api_client, data_loader=entry_data.data_loader)
             await apm.async_setup()
             entry_data.adaptive_preheat_manager = apm
             _LOGGER.info("Tado CE: Adaptive Preheat enabled")
@@ -2775,11 +2789,11 @@ async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     try:
         # Get previous Test Mode state from ratelimit.json
         from .const import get_data_file
-        from .data_loader import get_current_home_id
         import aiofiles
         import json
         
-        home_id = get_current_home_id()
+        # v3.0.0: Use entry.data directly instead of global singleton (8.2c)
+        home_id = entry.data.get("home_id")
         ratelimit_path = get_data_file("ratelimit", home_id)
         
         prev_test_mode = False
@@ -2814,590 +2828,6 @@ async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     await hass.config_entries.async_reload(entry.entry_id)
 
 
-async def _async_register_services(hass: HomeAssistant):
-    """Register Tado CE services."""
-    
-    # Check if services are already registered (avoid duplicate registration)
-    if hass.services.has_service(DOMAIN, SERVICE_SET_CLIMATE_TIMER):
-        _LOGGER.debug("Tado CE services already registered, skipping")
-        return
-    
-    def expand_group_entity_ids(entity_ids: list, allowed_domains: list = None) -> list:
-        """Expand group entity IDs to individual entity IDs.
-        
-        v2.2.3: Added to support climate groups in custom services (#139).
-        
-        Args:
-            entity_ids: List of entity IDs (may include group.* entities)
-            allowed_domains: Optional list of domains to filter (e.g., ["climate", "water_heater"])
-        
-        Returns:
-            List of expanded entity IDs with groups replaced by their members
-        """
-        expanded_ids = []
-        for entity_id in entity_ids:
-            if entity_id.startswith("group."):
-                # Get group members from state attributes
-                group_state = hass.states.get(entity_id)
-                if group_state and "entity_id" in group_state.attributes:
-                    group_members = group_state.attributes["entity_id"]
-                    # Filter by allowed domains if specified
-                    if allowed_domains:
-                        group_members = [
-                            eid for eid in group_members 
-                            if eid.split(".")[0] in allowed_domains
-                        ]
-                    expanded_ids.extend(group_members)
-                    _LOGGER.debug(f"Expanded group {entity_id} to {len(group_members)} entities")
-                else:
-                    _LOGGER.warning(f"Group {entity_id} not found or has no members")
-            else:
-                # Filter by allowed domains if specified
-                if allowed_domains:
-                    domain = entity_id.split(".")[0]
-                    if domain not in allowed_domains:
-                        _LOGGER.debug(f"Skipping {entity_id} - not in allowed domains {allowed_domains}")
-                        continue
-                expanded_ids.append(entity_id)
-        return expanded_ids
-    
-    async def handle_set_climate_timer(call: ServiceCall):
-        """Handle set_climate_timer service call.
-        
-        Compatible with official Tado integration format:
-        - entity_id (required)
-        - temperature (required)
-        - time_period (required) - Time Period format (e.g., "01:30:00")
-        - overlay (optional)
-        
-        v2.0.1: Added bootstrap reserve check - blocks action when quota critically low.
-        """
-        # v2.0.1: Bootstrap Reserve - block action when quota critically low
-        should_block, reason = await async_check_bootstrap_reserve(hass)
-        if should_block:
-            await async_show_api_limit_notification(hass, reason)
-            raise HomeAssistantError(
-                "API quota critically low - action blocked to preserve bootstrap reserve. "
-                "Please wait for API reset."
-            )
-        
-        entity_ids = call.data.get("entity_id", [])
-        if isinstance(entity_ids, str):
-            entity_ids = [entity_ids]
-        
-        temperature = call.data.get("temperature")
-        time_period = call.data.get("time_period")
-        overlay = call.data.get("overlay")
-        
-        # v2.3.0: time_period is optional when overlay is specified (#152 - @mpartington)
-        # Validate: must have either time_period or overlay
-        duration_minutes = None
-        if time_period:
-            # Convert time_period to minutes with validation
-            try:
-                from datetime import timedelta
-                
-                # Home Assistant cv.time_period returns timedelta
-                if isinstance(time_period, timedelta):
-                    duration_minutes = int(time_period.total_seconds() / 60)
-                else:
-                    # Fallback: parse string format HH:MM:SS
-                    time_parts = str(time_period).split(":")
-                    if len(time_parts) != 3:
-                        raise ValueError(f"Invalid time_period format: {time_period}. Expected HH:MM:SS")
-                    
-                    hours = int(time_parts[0])
-                    minutes = int(time_parts[1])
-                    seconds = int(time_parts[2])
-                    
-                    # Validate ranges
-                    if not (0 <= hours <= 24):
-                        raise ValueError(f"Hours must be 0-24, got {hours}")
-                    if not (0 <= minutes <= 59):
-                        raise ValueError(f"Minutes must be 0-59, got {minutes}")
-                    if not (0 <= seconds <= 59):
-                        raise ValueError(f"Seconds must be 0-59, got {seconds}")
-                    
-                    duration_minutes = hours * 60 + minutes + (seconds // 60)
-                
-                # Validate final duration (5-1440 minutes)
-                if duration_minutes < 5:
-                    raise ValueError(f"Duration must be at least 5 minutes, got {duration_minutes}")
-                if duration_minutes > 1440:
-                    raise ValueError(f"Duration must be at most 1440 minutes (24 hours), got {duration_minutes}")
-                
-                _LOGGER.info(f"Parsed time_period {time_period} to {duration_minutes} minutes")
-                
-            except (ValueError, AttributeError, TypeError) as e:
-                error_msg = f"Failed to parse time_period: {e}"
-                _LOGGER.error(error_msg)
-                raise vol.Invalid(error_msg)
-        elif not overlay:
-            error_msg = "Either time_period or overlay is required for set_climate_timer service"
-            _LOGGER.error(error_msg)
-            raise vol.Invalid(error_msg)
-        
-        # Validate temperature if provided
-        if temperature is None:
-            error_msg = "temperature is required for set_climate_timer service"
-            _LOGGER.error(error_msg)
-            raise vol.Invalid(error_msg)
-        
-        # v2.2.3: Expand groups to individual entity IDs (#139)
-        entity_ids = expand_group_entity_ids(entity_ids, allowed_domains=["climate"])
-        
-        for entity_id in entity_ids:
-            entity = hass.states.get(entity_id)
-            if entity:
-                # Get the climate entity and call async_set_timer
-                climate_entity = hass.data.get("entity_components", {}).get("climate")
-                if climate_entity:
-                    for ent in climate_entity.entities:
-                        if ent.entity_id == entity_id and hasattr(ent, 'async_set_timer'):
-                            try:
-                                await ent.async_set_timer(temperature, duration_minutes, overlay)
-                                if duration_minutes:
-                                    _LOGGER.info(f"Set timer for {entity_id}: {temperature}°C for {duration_minutes}min")
-                                elif overlay:
-                                    _LOGGER.info(f"Set timer for {entity_id}: {temperature}°C with overlay={overlay}")
-                            except Exception as e:
-                                error_msg = f"Failed to set timer for {entity_id}: {e}"
-                                _LOGGER.error(error_msg)
-                                # Continue to next entity instead of failing completely
-                            break
-    
-    async def handle_set_water_heater_timer(call: ServiceCall):
-        """Handle set_water_heater_timer service call.
-        
-        v2.0.1: Added bootstrap reserve check - blocks action when quota critically low.
-        """
-        # v2.0.1: Bootstrap Reserve - block action when quota critically low
-        should_block, reason = await async_check_bootstrap_reserve(hass)
-        if should_block:
-            await async_show_api_limit_notification(hass, reason)
-            raise HomeAssistantError(
-                "API quota critically low - action blocked to preserve bootstrap reserve. "
-                "Please wait for API reset."
-            )
-        
-        entity_ids = call.data.get("entity_id", [])
-        if isinstance(entity_ids, str):
-            entity_ids = [entity_ids]
-        
-        time_period = call.data.get("time_period")
-        temperature = call.data.get("temperature")
-        
-        # CRITICAL FIX: Validate time_period
-        if not time_period:
-            error_msg = "time_period is required for set_water_heater_timer service"
-            _LOGGER.error(error_msg)
-            raise vol.Invalid(error_msg)
-        
-        # Convert time_period to minutes with validation
-        try:
-            from datetime import timedelta
-            
-            # Home Assistant cv.time_period returns timedelta
-            if isinstance(time_period, timedelta):
-                duration_minutes = int(time_period.total_seconds() / 60)
-            else:
-                # Fallback: parse string format HH:MM:SS
-                time_parts = str(time_period).split(":")
-                if len(time_parts) != 3:
-                    raise ValueError(f"Invalid time_period format: {time_period}. Expected HH:MM:SS")
-                
-                hours = int(time_parts[0])
-                minutes = int(time_parts[1])
-                seconds = int(time_parts[2])
-                
-                # Validate ranges
-                if not (0 <= hours <= 24):
-                    raise ValueError(f"Hours must be 0-24, got {hours}")
-                if not (0 <= minutes <= 59):
-                    raise ValueError(f"Minutes must be 0-59, got {minutes}")
-                if not (0 <= seconds <= 59):
-                    raise ValueError(f"Seconds must be 0-59, got {seconds}")
-                
-                duration_minutes = hours * 60 + minutes + (seconds // 60)
-            
-            # Validate final duration (5-1440 minutes)
-            if duration_minutes < 5:
-                raise ValueError(f"Duration must be at least 5 minutes, got {duration_minutes}")
-            if duration_minutes > 1440:
-                raise ValueError(f"Duration must be at most 1440 minutes (24 hours), got {duration_minutes}")
-            
-            _LOGGER.info(f"Parsed time_period {time_period} to {duration_minutes} minutes")
-            
-        except (ValueError, AttributeError, TypeError) as e:
-            error_msg = f"Failed to parse time_period: {e}"
-            _LOGGER.error(error_msg)
-            raise vol.Invalid(error_msg)
-        
-        # Validate temperature if provided
-        if temperature is not None:
-            if not (30 <= temperature <= 80):
-                error_msg = f"Temperature must be 30-80°C, got {temperature}"
-                _LOGGER.error(error_msg)
-                raise vol.Invalid(error_msg)
-        
-        # v2.2.3: Expand groups to individual entity IDs (#139)
-        entity_ids = expand_group_entity_ids(entity_ids, allowed_domains=["water_heater"])
-        
-        # Call water heater entities
-        for entity_id in entity_ids:
-            water_heater_component = hass.data.get("entity_components", {}).get("water_heater")
-            if water_heater_component:
-                for ent in water_heater_component.entities:
-                    if ent.entity_id == entity_id and hasattr(ent, 'async_set_timer'):
-                        try:
-                            await ent.async_set_timer(duration_minutes, temperature)
-                            _LOGGER.info(f"Set timer for {entity_id}: {duration_minutes}min")
-                        except Exception as e:
-                            error_msg = f"Failed to set timer for {entity_id}: {e}"
-                            _LOGGER.error(error_msg)
-                            # Continue to next entity instead of failing completely
-                        break
-    
-    async def handle_resume_schedule(call: ServiceCall):
-        """Handle resume_schedule service call.
-        
-        v2.0.1: Added bootstrap reserve check - blocks action when quota critically low.
-        v2.2.3: Added group expansion support (#139).
-        """
-        from .api_client import get_async_client
-        
-        # v2.0.1: Bootstrap Reserve - block action when quota critically low
-        should_block, reason = await async_check_bootstrap_reserve(hass)
-        if should_block:
-            await async_show_api_limit_notification(hass, reason)
-            raise HomeAssistantError(
-                "API quota critically low - action blocked to preserve bootstrap reserve. "
-                "Please wait for API reset."
-            )
-        
-        entity_ids = call.data.get("entity_id", [])
-        if isinstance(entity_ids, str):
-            entity_ids = [entity_ids]
-        
-        # v2.2.3: Expand groups to individual entity IDs (#139)
-        entity_ids = expand_group_entity_ids(entity_ids, allowed_domains=["climate", "water_heater"])
-        
-        client = get_async_client(hass)
-        
-        for entity_id in entity_ids:
-            domain = entity_id.split(".")[0]
-            component = hass.data.get("entity_components", {}).get(domain)
-            if component:
-                for ent in component.entities:
-                    if ent.entity_id == entity_id:
-                        zone_id = getattr(ent, '_zone_id', None)
-                        if zone_id:
-                            await client.delete_zone_overlay(zone_id)
-                            _LOGGER.info(f"Resumed schedule for {entity_id}")
-                        break
-    
-    async def handle_set_temp_offset(call: ServiceCall):
-        """Handle set_temperature_offset service call.
-        
-        Sets temperature offset for ALL devices in a zone (supports multi-TRV rooms).
-        v2.0.1: Added bootstrap reserve check - blocks action when quota critically low.
-        """
-        from .api_client import get_async_client
-        
-        # v2.0.1: Bootstrap Reserve - block action when quota critically low
-        should_block, reason = await async_check_bootstrap_reserve(hass)
-        if should_block:
-            await async_show_api_limit_notification(hass, reason)
-            raise HomeAssistantError(
-                "API quota critically low - action blocked to preserve bootstrap reserve. "
-                "Please wait for API reset."
-            )
-        
-        entity_id = call.data.get("entity_id")
-        offset = call.data.get("offset")
-        
-        client = get_async_client(hass)
-        
-        # Get zone_id from entity and find ALL device serials
-        climate_component = hass.data.get("entity_components", {}).get("climate")
-        if climate_component:
-            for ent in climate_component.entities:
-                if ent.entity_id == entity_id:
-                    zone_id = getattr(ent, '_zone_id', None)
-                    if zone_id:
-                        # Find ALL device serials for this zone (multi-TRV support)
-                        serials = await hass.async_add_executor_job(
-                            _get_device_serials_for_zone, zone_id
-                        )
-                        if serials:
-                            for serial in serials:
-                                await client.set_device_offset(serial, offset)
-                            _LOGGER.info(f"Set offset {offset}°C for {entity_id} ({len(serials)} device(s))")
-                        else:
-                            _LOGGER.warning(f"No devices found for {entity_id}")
-                    break
-    
-    async def handle_add_meter_reading(call: ServiceCall):
-        """Handle add_meter_reading service call (fully async).
-        
-        v2.0.1: Added bootstrap reserve check - blocks action when quota critically low.
-        """
-        from .api_client import get_async_client
-        
-        # v2.0.1: Bootstrap Reserve - block action when quota critically low
-        should_block, reason = await async_check_bootstrap_reserve(hass)
-        if should_block:
-            await async_show_api_limit_notification(hass, reason)
-            raise HomeAssistantError(
-                "API quota critically low - action blocked to preserve bootstrap reserve. "
-                "Please wait for API reset."
-            )
-        
-        reading = call.data.get("reading")
-        date = call.data.get("date")
-        
-        client = get_async_client(hass)
-        success = await client.add_meter_reading(reading, date)
-        
-        if not success:
-            _LOGGER.error(f"Failed to add meter reading: {reading}")
-    
-    # Register services
-    # v2.2.3: Use cv.entity_ids + handler expansion to support climate groups (#139)
-    hass.services.async_register(
-        DOMAIN, SERVICE_SET_CLIMATE_TIMER, handle_set_climate_timer,
-        schema=vol.Schema({
-            vol.Required("entity_id"): cv.entity_ids,
-            vol.Required("temperature"): vol.Coerce(float),
-            vol.Optional("time_period"): cv.time_period,
-            vol.Optional("overlay"): cv.string,
-        })
-    )
-    
-    hass.services.async_register(
-        DOMAIN, SERVICE_SET_WATER_HEATER_TIMER, handle_set_water_heater_timer,
-        schema=vol.Schema({
-            vol.Required("entity_id"): cv.entity_ids,
-            vol.Required("time_period"): cv.time_period,
-            vol.Optional("temperature"): vol.Coerce(float),
-        })
-    )
-    
-    # v2.2.3: Use cv.entity_ids + handler expansion to support groups (#139)
-    hass.services.async_register(
-        DOMAIN, SERVICE_RESUME_SCHEDULE, handle_resume_schedule,
-        schema=vol.Schema({
-            vol.Required("entity_id"): cv.entity_ids,
-        })
-    )
-    
-    hass.services.async_register(
-        DOMAIN, SERVICE_SET_TEMP_OFFSET, handle_set_temp_offset,
-        schema=vol.Schema({
-            vol.Required("entity_id"): cv.entity_id,
-            vol.Required("offset"): vol.Coerce(float),
-        })
-    )
-    
-    hass.services.async_register(
-        DOMAIN, SERVICE_ADD_METER_READING, handle_add_meter_reading,
-        schema=vol.Schema({
-            vol.Required("reading"): vol.Coerce(int),
-            vol.Optional("date"): cv.string,
-        })
-    )
-    
-    async def handle_identify_device(call: ServiceCall):
-        """Handle identify_device service call (fully async).
-        
-        v2.0.1: Added bootstrap reserve check - blocks action when quota critically low.
-        """
-        from .api_client import get_async_client
-        
-        # v2.0.1: Bootstrap Reserve - block action when quota critically low
-        should_block, reason = await async_check_bootstrap_reserve(hass)
-        if should_block:
-            await async_show_api_limit_notification(hass, reason)
-            raise HomeAssistantError(
-                "API quota critically low - action blocked to preserve bootstrap reserve. "
-                "Please wait for API reset."
-            )
-        
-        device_serial = call.data.get("device_serial")
-        
-        client = get_async_client(hass)
-        success = await client.identify_device(device_serial)
-        
-        if not success:
-            _LOGGER.error(f"Failed to identify device: {device_serial}")
-    
-    async def handle_set_away_config(call: ServiceCall):
-        """Handle set_away_configuration service call (fully async).
-        
-        v2.0.1: Added bootstrap reserve check - blocks action when quota critically low.
-        """
-        from .api_client import get_async_client
-        
-        # v2.0.1: Bootstrap Reserve - block action when quota critically low
-        should_block, reason = await async_check_bootstrap_reserve(hass)
-        if should_block:
-            await async_show_api_limit_notification(hass, reason)
-            raise HomeAssistantError(
-                "API quota critically low - action blocked to preserve bootstrap reserve. "
-                "Please wait for API reset."
-            )
-        
-        entity_id = call.data.get("entity_id")
-        mode = call.data.get("mode")
-        temperature = call.data.get("temperature")
-        comfort_level = call.data.get("comfort_level", 50)
-        
-        client = get_async_client(hass)
-        
-        # Get zone_id from entity
-        climate_component = hass.data.get("entity_components", {}).get("climate")
-        if climate_component:
-            for ent in climate_component.entities:
-                if ent.entity_id == entity_id:
-                    zone_id = getattr(ent, '_zone_id', None)
-                    if zone_id:
-                        success = await client.set_away_configuration(
-                            zone_id, mode, temperature, comfort_level
-                        )
-                        if not success:
-                            _LOGGER.error(f"Failed to set away config for {entity_id}")
-                    break
-    
-    hass.services.async_register(
-        DOMAIN, SERVICE_IDENTIFY_DEVICE, handle_identify_device,
-        schema=vol.Schema({
-            vol.Required("device_serial"): cv.string,
-        })
-    )
-    
-    hass.services.async_register(
-        DOMAIN, SERVICE_SET_AWAY_CONFIG, handle_set_away_config,
-        schema=vol.Schema({
-            vol.Required("entity_id"): cv.entity_id,
-            vol.Required("mode"): cv.string,
-            vol.Optional("temperature"): vol.Coerce(float),
-            vol.Optional("comfort_level"): vol.Coerce(int),
-        })
-    )
-    
-    async def handle_get_temp_offset(call: ServiceCall):
-        """Handle get_temperature_offset service call.
-        
-        Fetches the current temperature offset for a climate entity on-demand.
-        Returns the offset value via service response for use in automations.
-        """
-        from .api_client import get_async_client
-        
-        entity_id = call.data.get("entity_id")
-        client = get_async_client(hass)
-        
-        # Get zone_id from entity
-        climate_component = hass.data.get("entity_components", {}).get("climate")
-        if climate_component:
-            for ent in climate_component.entities:
-                if ent.entity_id == entity_id:
-                    zone_id = getattr(ent, '_zone_id', None)
-                    if zone_id:
-                        # Find device serial for this zone
-                        serial = await hass.async_add_executor_job(
-                            _get_device_serial_for_zone, zone_id
-                        )
-                        if serial:
-                            result = await client.get_device_offset(serial)
-                            if result is not None:
-                                return {"offset_celsius": result}
-                    
-                    _LOGGER.error(f"Failed to get offset for {entity_id}")
-                    return {"offset_celsius": None, "error": "Failed to fetch offset"}
-        
-        _LOGGER.error(f"Entity not found: {entity_id}")
-        return {"offset_celsius": None, "error": "Entity not found"}
-    
-    hass.services.async_register(
-        DOMAIN, SERVICE_GET_TEMP_OFFSET, handle_get_temp_offset,
-        schema=vol.Schema({
-            vol.Required("entity_id"): cv.entity_id,
-        }),
-        supports_response=True,
-    )
-    
-    _LOGGER.info("Tado CE: Services registered")
-
-
-def _get_device_serial_for_zone(zone_id: str) -> str | None:
-    """Get the first device serial for a zone.
-    
-    Args:
-        zone_id: Zone ID to look up
-        
-    Returns:
-        Device serial number, or None if not found
-    """
-    from .data_loader import load_zones_info_file
-    
-    try:
-        zones_info = load_zones_info_file()
-        if not zones_info:
-            return None
-        
-        for zone in zones_info:
-            if str(zone.get('id')) == zone_id:
-                for device in zone.get('devices', []):
-                    serial = device.get('shortSerialNo')
-                    if serial:
-                        return serial
-        return None
-    except Exception as e:
-        _LOGGER.error(f"Failed to get device serial for zone {zone_id}: {e}")
-        return None
-
-
-def _get_device_serials_for_zone(zone_id: str) -> list[str]:
-    """Get ALL device serials for a zone.
-    
-    Used for operations that need to apply to all devices in a zone
-    (e.g., setting temperature offset on multiple TRVs).
-    
-    Args:
-        zone_id: Zone ID to look up
-        
-    Returns:
-        List of device serial numbers (may be empty)
-    """
-    from .data_loader import load_zones_info_file
-    
-    serials = []
-    try:
-        zones_info = load_zones_info_file()
-        if not zones_info:
-            return []
-        
-        for zone in zones_info:
-            if str(zone.get('id')) == zone_id:
-                for device in zone.get('devices', []):
-                    serial = device.get('shortSerialNo')
-                    if serial:
-                        serials.append(serial)
-                break
-        return serials
-    except Exception as e:
-        _LOGGER.error(f"Failed to get device serials for zone {zone_id}: {e}")
-        return []
-
-
-# NOTE: The following blocking functions have been replaced by async methods
-# in api_client.py (v1.5.0+) and removed to enforce proper async architecture:
-# - _get_access_token -> Use api_client.get_async_client().get_access_token()
-# - _get_temperature_offset -> client.get_device_offset()
-# - _set_temperature_offset -> client.set_device_offset()
-# - _add_meter_reading -> client.add_meter_reading()
-# - _identify_device -> client.identify_device()
-# - _set_away_configuration -> client.set_away_configuration()
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

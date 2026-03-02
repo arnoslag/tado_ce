@@ -74,6 +74,16 @@ API_CALL_HISTORY_FILE = DATA_DIR / "api_call_history.json"
 OFFSETS_FILE = DATA_DIR / "offsets.json"
 AC_CAPABILITIES_FILE = DATA_DIR / "ac_capabilities.json"
 
+# Service names
+SERVICE_SET_CLIMATE_TIMER = "set_climate_timer"
+SERVICE_SET_WATER_HEATER_TIMER = "set_water_heater_timer"
+SERVICE_RESUME_SCHEDULE = "resume_schedule"
+SERVICE_SET_TEMP_OFFSET = "set_climate_temperature_offset"  # Match official Tado integration
+SERVICE_GET_TEMP_OFFSET = "get_temperature_offset"  # On-demand offset fetch
+SERVICE_ADD_METER_READING = "add_meter_reading"
+SERVICE_IDENTIFY_DEVICE = "identify_device"
+SERVICE_SET_AWAY_CONFIG = "set_away_configuration"
+
 # API Base URLs
 TADO_API_BASE = "https://my.tado.com/api/v2"
 TADO_AUTH_URL = "https://login.tado.com/oauth2"

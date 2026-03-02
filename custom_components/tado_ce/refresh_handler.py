@@ -101,22 +101,17 @@ class RefreshHandler:
     async def _get_rate_limit_info(self) -> dict:
         """Get current rate limit information.
 
-        v3.0.0: Uses per-entry data_loader when available.
+        v3.0.0: Uses per-entry data_loader.
 
         Returns:
             Dictionary with rate limit info, or empty dict if unavailable
         """
         try:
-            # v3.0.0: Try per-entry data_loader first
             entry_data = self._get_entry_data()
             if entry_data and entry_data.data_loader:
                 return await self.hass.async_add_executor_job(
                     entry_data.data_loader.load_ratelimit_file
                 ) or {}
-
-            # Fallback to global data_loader
-            from .data_loader import load_ratelimit_file
-            return await self.hass.async_add_executor_job(load_ratelimit_file) or {}
         except Exception as e:
             _LOGGER.debug(f"Failed to read rate limit file: {e}")
         return {}
@@ -332,16 +327,10 @@ class RefreshHandler:
         import tempfile
         import shutil
 
-        # v3.0.0: Try per-entry api_client first, fallback to global
+        # v3.0.0: Use per-entry api_client
         entry_data = self._get_entry_data()
-        if entry_data and entry_data.api_client:
-            client = entry_data.api_client
-            home_id = entry_data.home_id
-        else:
-            from .api_client import get_async_client
-            from .data_loader import get_current_home_id
-            client = get_async_client(self.hass)
-            home_id = get_current_home_id()
+        client = entry_data.api_client
+        home_id = entry_data.home_id
 
         zones_data = await client.api_call("zoneStates")
 
@@ -414,10 +403,6 @@ def get_refresh_handler(hass: HomeAssistant, entry_id: Optional[str] = None) -> 
     return _handler
 
 
-# Deprecated alias — use get_refresh_handler() instead
-get_handler = get_refresh_handler
-
-
 def cleanup_refresh_handler() -> bool:
     """Clean up the global immediate refresh handler.
     
@@ -439,6 +424,3 @@ def cleanup_refresh_handler() -> bool:
         return True
     return False
 
-
-# Deprecated alias — use cleanup_refresh_handler() instead
-cleanup_handler = cleanup_refresh_handler

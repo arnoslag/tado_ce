@@ -16,7 +16,6 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .const import DOMAIN
 from .device_manager import get_zone_device_info
-from .data_loader import load_zones_file, load_zones_info_file, load_config_file, get_current_home_id
 from .entry_data import get_entry_data, get_entry_data_or_none
 from .format_helpers import format_overlay_type as _format_overlay_type
 from .action_helpers import (
@@ -27,9 +26,6 @@ from .action_helpers import (
 _LOGGER = logging.getLogger(__name__)
 SCAN_INTERVAL = timedelta(seconds=30)
 
-# Cached home_id to avoid blocking calls in event loop
-_CACHED_HOME_ID = None
-
 # Operation modes for hot water
 STATE_AUTO = "auto"  # Follow schedule (no overlay)
 STATE_HEAT = "heat"  # Timer or manual heating
@@ -38,10 +34,11 @@ OPERATION_MODES = [STATE_AUTO, STATE_HEAT, STATE_OFF]
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddConfigEntryEntitiesCallback):
     """Set up Tado CE water heater from a config entry."""
-    global _CACHED_HOME_ID
-    _CACHED_HOME_ID = await hass.async_add_executor_job(get_current_home_id)
     _LOGGER.debug("Tado CE water_heater: Setting up...")
-    zones_info = await hass.async_add_executor_job(load_zones_info_file)
+    entry_data = get_entry_data(hass, entry.entry_id)
+    data_loader = entry_data.data_loader
+    home_id = entry_data.home_id
+    zones_info = await hass.async_add_executor_job(data_loader.load_zones_info_file)
     
     water_heaters = []
     
@@ -54,7 +51,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             
             if zone_type == 'HOT_WATER':
                 _LOGGER.debug(f"Tado CE water_heater: Creating entity for zone {zone_id} ({zone_name})")
-                water_heaters.append(TadoWaterHeater(hass, entry.entry_id, zone_id, zone_name))
+                water_heaters.append(TadoWaterHeater(hass, entry.entry_id, zone_id, zone_name, home_id))
     
     if water_heaters:
         async_add_entities(water_heaters, True)
@@ -68,21 +65,21 @@ class TadoWaterHeater(WaterHeaterEntity):
 
     """Tado CE Water Heater Entity."""
     
-    def __init__(self, hass: HomeAssistant, entry_id: str, zone_id: str, zone_name: str):
+    def __init__(self, hass: HomeAssistant, entry_id: str, zone_id: str, zone_name: str, home_id: str):
         self.hass = hass
         self._entry_id = entry_id
         self._zone_id = zone_id
         self._zone_name = zone_name
-        self._home_id = None
+        self._home_id = home_id
         
         self._attr_name = None
         # Use zone_id for unique_id to maintain entity_id stability across zone name changes
-        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_zone_{zone_id}_water_heater"
+        self._attr_unique_id = f"tado_ce_{home_id}_zone_{zone_id}_water_heater"
         self._attr_temperature_unit = UnitOfTemperature.CELSIUS
         self._attr_min_temp = 30
         self._attr_max_temp = 65
         # Use zone device info instead of hub device info
-        self._attr_device_info = get_zone_device_info(zone_id, zone_name, "HOT_WATER", _CACHED_HOME_ID)
+        self._attr_device_info = get_zone_device_info(zone_id, zone_name, "HOT_WATER", home_id)
         
         self._attr_current_operation = None
         self._attr_current_temperature = None
@@ -150,13 +147,9 @@ class TadoWaterHeater(WaterHeaterEntity):
             return
         
         try:
-            # Load home_id from config (uses data_loader for per-home file support)
-            config = load_config_file()
-            if config:
-                self._home_id = config.get("home_id")
-            
-            # Load zones data (uses data_loader for per-home file support)
-            data = load_zones_file()
+            # Load zones data (uses entry_data.data_loader for per-home file support)
+            data_loader = _ed.data_loader
+            data = data_loader.load_zones_file()
             if not data:
                 _LOGGER.debug(f"No zones data for {self._zone_name} (zone {self._zone_id})")
                 self._attr_available = False

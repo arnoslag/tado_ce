@@ -27,12 +27,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from .const import DOMAIN
 from .device_manager import get_zone_device_info
 from .entry_data import get_entry_data, get_entry_data_or_none
-from .data_loader import (
-    load_zones_file, load_zones_info_file, load_config_file,
-    load_home_state_file, load_offsets_file, load_ac_capabilities_file,
-    get_zone_names as dl_get_zone_names, get_zone_types as dl_get_zone_types,
-    get_current_home_id,
-)
+
 from .refresh_handler import SIGNAL_ZONES_UPDATED, SIGNAL_AC_CAPABILITIES_UPDATED
 from .format_helpers import (
     format_overlay_type as _format_overlay_type,
@@ -46,8 +41,7 @@ from .action_helpers import (
 _LOGGER = logging.getLogger(__name__)
 SCAN_INTERVAL = timedelta(seconds=30)
 
-# Cached home_id to avoid blocking calls in event loop
-_CACHED_HOME_ID = None
+
 
 
 # Tado AC modes mapping
@@ -85,14 +79,14 @@ HA_TO_TADO_FAN = {
 }
 
 
-def get_zone_capabilities():
+def get_zone_capabilities(data_loader):
     """Load zone capabilities (for AC zones).
     
     First tries to load from ac_capabilities.json (fetched from dedicated API endpoint).
     Falls back to zones_info.json for basic capabilities.
     """
-    ac_caps = load_ac_capabilities_file() or {}
-    zones_info = load_zones_info_file()
+    ac_caps = data_loader.load_ac_capabilities_file() or {}
+    zones_info = data_loader.load_zones_info_file()
     
     if not zones_info:
         return {}
@@ -120,15 +114,16 @@ def get_zone_capabilities():
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddConfigEntryEntitiesCallback):
     """Set up Tado CE climate from a config entry."""
-    global _CACHED_HOME_ID
-    _CACHED_HOME_ID = await hass.async_add_executor_job(get_current_home_id)
-    zone_names = await hass.async_add_executor_job(dl_get_zone_names)
-    zone_types = await hass.async_add_executor_job(dl_get_zone_types)
-    zone_caps = await hass.async_add_executor_job(get_zone_capabilities)
+    entry_data = get_entry_data(hass, entry.entry_id)
+    data_loader = entry_data.data_loader
+    home_id = entry_data.home_id
+    zone_names = await hass.async_add_executor_job(data_loader.get_zone_names)
+    zone_types = await hass.async_add_executor_job(data_loader.get_zone_types)
+    zone_caps = await hass.async_add_executor_job(get_zone_capabilities, data_loader)
     
     climates = []
     try:
-        zones_data = await hass.async_add_executor_job(load_zones_file)
+        zones_data = await hass.async_add_executor_job(data_loader.load_zones_file)
         if zones_data:
             # Use 'or {}' pattern for null safety
             zone_states = zones_data.get('zoneStates') or {}
@@ -138,9 +133,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                 caps = zone_caps.get(zone_id, {})
                 
                 if zone_type == 'HEATING':
-                    climates.append(TadoClimate(hass, entry.entry_id, zone_id, zone_name))
+                    climates.append(TadoClimate(hass, entry.entry_id, zone_id, zone_name, home_id))
                 elif zone_type == 'AIR_CONDITIONING':
-                    climates.append(TadoACClimate(hass, entry.entry_id, zone_id, zone_name, caps))
+                    climates.append(TadoACClimate(hass, entry.entry_id, zone_id, zone_name, caps, home_id))
     except Exception as e:
         _LOGGER.error(f"Failed to load zones for climate: {e}")
     
@@ -153,19 +148,19 @@ class TadoClimate(ClimateEntity):
 
     """Tado CE Climate Entity."""
     
-    def __init__(self, hass: HomeAssistant, entry_id: str, zone_id: str, zone_name: str):
+    def __init__(self, hass: HomeAssistant, entry_id: str, zone_id: str, zone_name: str, home_id: str):
         self.hass = hass
         self._entry_id = entry_id
         self._zone_id = zone_id
         self._zone_name = zone_name
-        self._home_id = None
+        self._home_id = home_id
         
         self._attr_name = None
         # Use zone_id for unique_id to maintain entity_id stability across zone name changes
-        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_zone_{zone_id}_climate"
+        self._attr_unique_id = f"tado_ce_{home_id}_zone_{zone_id}_climate"
         self._attr_temperature_unit = UnitOfTemperature.CELSIUS
         # Use zone device info instead of hub device info
-        self._attr_device_info = get_zone_device_info(zone_id, zone_name, "HEATING", _CACHED_HOME_ID)
+        self._attr_device_info = get_zone_device_info(zone_id, zone_name, "HEATING", home_id)
         self._attr_supported_features = (
             ClimateEntityFeature.TARGET_TEMPERATURE |
             ClimateEntityFeature.TURN_OFF |
@@ -412,12 +407,12 @@ class TadoClimate(ClimateEntity):
         
         try:
             # Load home_id from config (uses data_loader for per-home file support)
-            config = load_config_file()
+            config = get_entry_data(self.hass, self._entry_id).data_loader.load_config_file()
             if config:
                 self._home_id = config.get("home_id")
             
             # Load zones data (uses data_loader for per-home file support)
-            data = load_zones_file()
+            data = get_entry_data(self.hass, self._entry_id).data_loader.load_zones_file()
             if data:
                 # Use 'or {}' pattern for null safety
                 zone_states = data.get('zoneStates') or {}
@@ -560,7 +555,7 @@ class TadoClimate(ClimateEntity):
                 return
             
             # Use data_loader for per-home file support
-            offsets = load_offsets_file()
+            offsets = get_entry_data(self.hass, self._entry_id).data_loader.load_offsets_file()
             if offsets:
                 self._offset_celsius = offsets.get(self._zone_id)
             else:
@@ -578,7 +573,7 @@ class TadoClimate(ClimateEntity):
         """
         try:
             # Use data_loader for per-home file support
-            home_state = load_home_state_file()
+            home_state = get_entry_data(self.hass, self._entry_id).data_loader.load_home_state_file()
             if home_state:
                 presence = home_state.get('presence', 'HOME')
                 self._attr_preset_mode = PRESET_HOME if presence == 'HOME' else PRESET_AWAY
@@ -909,20 +904,20 @@ class TadoACClimate(ClimateEntity):
 
     """Tado CE Air Conditioning Climate Entity."""
     
-    def __init__(self, hass: HomeAssistant, entry_id: str, zone_id: str, zone_name: str, capabilities: dict):
+    def __init__(self, hass: HomeAssistant, entry_id: str, zone_id: str, zone_name: str, capabilities: dict, home_id: str):
         self.hass = hass
         self._entry_id = entry_id
         self._zone_id = zone_id
         self._zone_name = zone_name
-        self._home_id = None
+        self._home_id = home_id
         self._capabilities = capabilities
         
         self._attr_name = None
         # Use zone_id for unique_id to maintain entity_id stability across zone name changes
-        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_zone_{zone_id}_ac_climate"
+        self._attr_unique_id = f"tado_ce_{home_id}_zone_{zone_id}_ac_climate"
         self._attr_temperature_unit = UnitOfTemperature.CELSIUS
         # Use zone device info instead of hub device info
-        self._attr_device_info = get_zone_device_info(zone_id, zone_name, "AIR_CONDITIONING", _CACHED_HOME_ID)
+        self._attr_device_info = get_zone_device_info(zone_id, zone_name, "AIR_CONDITIONING", home_id)
         
         # Get AC capabilities from dedicated API endpoint
         # Format: {"COOL": {...}, "HEAT": {...}, "DRY": {...}, "FAN": {...}, "AUTO": {...}}
@@ -1316,7 +1311,7 @@ class TadoACClimate(ClimateEntity):
             """Handle AC capabilities refresh signal."""
             _LOGGER.debug(f"AC {self._zone_name}: Received ac_capabilities_updated signal, reloading")
             # Reload capabilities from disk
-            new_caps = load_ac_capabilities_file() or {}
+            new_caps = get_entry_data(self.hass, self._entry_id).data_loader.load_ac_capabilities_file() or {}
             zone_caps = new_caps.get(self._zone_id)
             if zone_caps:
                 self._capabilities['ac_capabilities'] = zone_caps
@@ -1445,12 +1440,12 @@ class TadoACClimate(ClimateEntity):
         
         try:
             # Load home_id from config (uses data_loader for per-home file support)
-            config = load_config_file()
+            config = get_entry_data(self.hass, self._entry_id).data_loader.load_config_file()
             if config:
                 self._home_id = config.get("home_id")
             
             # Load zones data (uses data_loader for per-home file support)
-            data = load_zones_file()
+            data = get_entry_data(self.hass, self._entry_id).data_loader.load_zones_file()
             if data:
                 # Use 'or {}' pattern for null safety
                 zone_states = data.get('zoneStates') or {}

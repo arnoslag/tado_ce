@@ -21,13 +21,6 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from .const import DOMAIN, DATA_DIR
 from .entry_data import get_entry_data
 from .device_manager import get_hub_device_info, get_zone_device_info
-from .data_loader import (
-    load_zones_file, load_zones_info_file, load_weather_file,
-    load_config_file, load_ratelimit_file, load_api_call_history_file,
-    load_outdoor_temp_history, save_outdoor_temp_history,
-    load_home_state_file, load_mobile_devices_file, load_schedules_file,
-    get_zone_names as dl_get_zone_names
-)
 from .sensor_helpers import get_outdoor_temperature as _get_outdoor_temp
 from .sensor_helpers import get_effective_temperature as _get_effective_temp
 from .sensor_helpers import calculate_surface_rh as _calculate_surface_rh
@@ -103,66 +96,55 @@ _LOGGER = logging.getLogger(__name__)
 SCAN_INTERVAL = timedelta(seconds=30)
 
 
-# Cached home_id to avoid blocking calls in event loop
-_CACHED_HOME_ID = None
-
-def _load_home_id():
-    """Load home ID from config file (blocking, run in executor)."""
-    config = load_config_file()
-    return config.get('home_id', 'unknown') if config else 'unknown'
-
-
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddConfigEntryEntitiesCallback):
     """Set up Tado CE sensors from a config entry."""
-    # Load home_id in executor to avoid blocking event loop
-    global _CACHED_HOME_ID
-    _CACHED_HOME_ID = await hass.async_add_executor_job(_load_home_id)
-    
     # v3.0.0: Get config_manager from per-entry EntryData (GAP-29)
     entry_data = get_entry_data(hass, entry.entry_id)
     config_manager = entry_data.config_manager
+    data_loader = entry_data.data_loader
+    home_id = entry_data.home_id
     entry_id = entry.entry_id
     
-    zone_names = await hass.async_add_executor_job(dl_get_zone_names)
+    zone_names = await hass.async_add_executor_job(data_loader.get_zone_names)
     
     sensors = []
     
     # Hub sensors (API status, home info)
-    sensors.append(TadoHomeIdSensor(entry_id))
-    sensors.append(TadoApiUsageSensor(entry_id))
-    sensors.append(TadoApiLimitSensor(entry_id))
-    sensors.append(TadoApiResetSensor(entry_id))
-    sensors.append(TadoApiStatusSensor(entry_id))
-    sensors.append(TadoTokenStatusSensor(entry_id))
-    sensors.append(TadoZoneCountSensor(entry_id))
-    sensors.append(TadoLastSyncSensor(entry_id))
+    sensors.append(TadoHomeIdSensor(entry_id, home_id))
+    sensors.append(TadoApiUsageSensor(entry_id, home_id))
+    sensors.append(TadoApiLimitSensor(entry_id, home_id))
+    sensors.append(TadoApiResetSensor(entry_id, home_id))
+    sensors.append(TadoApiStatusSensor(entry_id, home_id))
+    sensors.append(TadoTokenStatusSensor(entry_id, home_id))
+    sensors.append(TadoZoneCountSensor(entry_id, home_id))
+    sensors.append(TadoLastSyncSensor(entry_id, home_id))
     
     # API Monitoring Sensors (Discussion #86, Issue #65)
-    sensors.append(TadoNextSyncSensor(entry_id))
-    sensors.append(TadoPollingIntervalSensor(entry_id))
-    sensors.append(TadoApiHistorySensor(entry_id))
-    sensors.append(TadoApiBreakdownSensor(entry_id))
+    sensors.append(TadoNextSyncSensor(entry_id, home_id))
+    sensors.append(TadoPollingIntervalSensor(entry_id, home_id))
+    sensors.append(TadoApiHistorySensor(entry_id, home_id))
+    sensors.append(TadoApiBreakdownSensor(entry_id, home_id))
     # v2.2.0: Home Insights aggregation sensor
-    sensors.append(TadoHomeInsightsSensor(entry_id))
+    sensors.append(TadoHomeInsightsSensor(entry_id, home_id))
     
     # Boiler Flow Temperature sensor (Hub device - only if data available)
     # This requires OpenTherm connection between Tado and boiler
-    if await hass.async_add_executor_job(_has_boiler_flow_temperature_data):
+    if await hass.async_add_executor_job(_has_boiler_flow_temperature_data, data_loader):
         _LOGGER.info("Boiler flow temperature data detected - creating sensor")
-        sensors.append(TadoBoilerFlowTemperatureSensor(entry_id))
+        sensors.append(TadoBoilerFlowTemperatureSensor(entry_id, home_id))
     else:
         _LOGGER.debug("No boiler flow temperature data found - sensor not created (requires OpenTherm)")
     
     # Weather sensors (optional based on configuration)
     if config_manager.get_weather_enabled():
-        sensors.append(TadoOutsideTemperatureSensor(entry_id))
-        sensors.append(TadoSolarIntensitySensor(entry_id))
-        sensors.append(TadoWeatherStateSensor(entry_id))
+        sensors.append(TadoOutsideTemperatureSensor(entry_id, home_id))
+        sensors.append(TadoSolarIntensitySensor(entry_id, home_id))
+        sensors.append(TadoWeatherStateSensor(entry_id, home_id))
     
     # Zone sensors
     try:
-        zones_data = await hass.async_add_executor_job(load_zones_file)
-        zones_info = await hass.async_add_executor_job(load_zones_info_file)
+        zones_data = await hass.async_add_executor_job(data_loader.load_zones_file)
+        zones_info = await hass.async_add_executor_job(data_loader.load_zones_info_file)
         
         # Build zone type map
         zone_types = {}
@@ -299,7 +281,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     # v2.1.0: Controlled by zone_diagnostics_enabled feature toggle
     if config_manager.get_zone_diagnostics_enabled():
         try:
-            zones_info = await hass.async_add_executor_job(load_zones_info_file)
+            zones_info = await hass.async_add_executor_job(data_loader.load_zones_info_file)
             if zones_info:
                 # Build mapping: serial -> list of (zone_id, zone_name, zone_type, device)
                 device_zones: dict[str, list[tuple]] = {}
@@ -342,7 +324,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     _LOGGER.info(f"Tado CE sensors loaded: {len(sensors)}")
 
 
-def _has_boiler_flow_temperature_data():
+def _has_boiler_flow_temperature_data(data_loader):
     """Check if any zone has boiler flow temperature data (requires OpenTherm).
     
     This is used during setup to determine if the boiler flow temperature
@@ -351,7 +333,7 @@ def _has_boiler_flow_temperature_data():
     """
     try:
         # Use data_loader for per-home file support
-        data = load_zones_file()
+        data = data_loader.load_zones_file()
         if not data:
             return False
         
@@ -377,13 +359,13 @@ class TadoHomeIdSensor(SensorEntity):
 
     """Sensor showing Tado Home ID."""
     
-    def __init__(self, entry_id: str):
+    def __init__(self, entry_id: str, home_id: str):
         self._entry_id = entry_id
         self._attr_name = "[CE] Home ID"
         self.entity_id = "sensor.tado_ce_home_id"
-        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_home_id"
+        self._attr_unique_id = f"tado_ce_{home_id}_home_id"
         self._attr_icon = "mdi:home"
-        self._attr_device_info = get_hub_device_info(_CACHED_HOME_ID)
+        self._attr_device_info = get_hub_device_info(home_id)
         self._attr_entity_category = EntityCategory.DIAGNOSTIC
         self._attr_available = False
         self._attr_native_value = None
@@ -392,7 +374,7 @@ class TadoHomeIdSensor(SensorEntity):
     def update(self):
         try:
             # Use data_loader for per-home file support
-            config = load_config_file()
+            config = get_entry_data(self.hass, self._entry_id).data_loader.load_config_file()
             if config:
                 self._attr_native_value = config.get("home_id")
                 self._attr_available = self._attr_native_value is not None
@@ -407,14 +389,14 @@ class TadoApiUsageSensor(SensorEntity):
 
     """Sensor for Tado API usage tracking."""
     
-    def __init__(self, entry_id: str):
+    def __init__(self, entry_id: str, home_id: str):
         self._entry_id = entry_id
         self._attr_name = "[CE] API Usage"
         self.entity_id = "sensor.tado_ce_api_usage"
-        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_api_usage"
+        self._attr_unique_id = f"tado_ce_{home_id}_api_usage"
         self._attr_native_unit_of_measurement = "calls"
         self._attr_state_class = "measurement"
-        self._attr_device_info = get_hub_device_info(_CACHED_HOME_ID)
+        self._attr_device_info = get_hub_device_info(home_id)
         self._attr_available = False
         self._attr_native_value = None
         self._data = {}
@@ -464,7 +446,7 @@ class TadoApiUsageSensor(SensorEntity):
     def update(self):
         try:
             # Use data_loader for per-home file support
-            self._data = load_ratelimit_file()
+            self._data = get_entry_data(self.hass, self._entry_id).data_loader.load_ratelimit_file()
             if self._data:
                 used = self._data.get("used")
                 if used is not None:
@@ -491,8 +473,7 @@ class TadoApiUsageSensor(SensorEntity):
                     pass
                 
                 # Get home_id for per-home file path
-                from .data_loader import get_current_home_id
-                home_id = get_current_home_id()
+                home_id = get_entry_data(self.hass, self._entry_id).home_id
                 
                 tracker = APICallTracker(DATA_DIR, retention_days=retention_days, home_id=home_id)
                 raw_history = tracker.get_recent_calls(limit=50)
@@ -543,14 +524,14 @@ class TadoApiResetSensor(SensorEntity):
 
     """Sensor showing API rate limit reset time."""
     
-    def __init__(self, entry_id: str):
+    def __init__(self, entry_id: str, home_id: str):
         self._entry_id = entry_id
         self._attr_name = "[CE] API Reset"
         self.entity_id = "sensor.tado_ce_api_reset"
-        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_api_reset"
+        self._attr_unique_id = f"tado_ce_{home_id}_api_reset"
         self._attr_icon = "mdi:timer-refresh"
         self._attr_device_class = "timestamp"
-        self._attr_device_info = get_hub_device_info(_CACHED_HOME_ID)
+        self._attr_device_info = get_hub_device_info(home_id)
         self._attr_available = False
         self._attr_native_value = None
         self._reset_human = None
@@ -591,7 +572,7 @@ class TadoApiResetSensor(SensorEntity):
             from homeassistant.util import dt as dt_util
             
             # Use data_loader for per-home file support
-            data = load_ratelimit_file()
+            data = get_entry_data(self.hass, self._entry_id).data_loader.load_ratelimit_file()
             if not data:
                 self._attr_available = False
                 return
@@ -699,14 +680,14 @@ class TadoApiLimitSensor(SensorEntity):
 
     """Sensor showing Tado API daily limit."""
     
-    def __init__(self, entry_id: str):
+    def __init__(self, entry_id: str, home_id: str):
         self._entry_id = entry_id
         self._attr_name = "[CE] API Limit"
         self.entity_id = "sensor.tado_ce_api_limit"
-        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_api_limit"
+        self._attr_unique_id = f"tado_ce_{home_id}_api_limit"
         self._attr_icon = "mdi:speedometer"
         self._attr_native_unit_of_measurement = "calls"
-        self._attr_device_info = get_hub_device_info(_CACHED_HOME_ID)
+        self._attr_device_info = get_hub_device_info(home_id)
         self._attr_entity_category = EntityCategory.DIAGNOSTIC
         self._attr_available = False
         self._attr_native_value = None
@@ -717,7 +698,7 @@ class TadoApiLimitSensor(SensorEntity):
     def update(self):
         try:
             # Use data_loader for per-home file support
-            data = load_ratelimit_file()
+            data = get_entry_data(self.hass, self._entry_id).data_loader.load_ratelimit_file()
             if data:
                 self._attr_native_value = data.get("limit")
                 self._attr_available = self._attr_native_value is not None
@@ -741,7 +722,7 @@ class TadoApiLimitSensor(SensorEntity):
                 from datetime import datetime, timedelta
                 from homeassistant.util import dt as dt_util
                 
-                history = load_api_call_history_file()
+                history = get_entry_data(self.hass, self._entry_id).data_loader.load_api_call_history_file()
                 if history:
                     # Flatten all calls from all dates
                     all_calls = []
@@ -798,12 +779,12 @@ class TadoApiStatusSensor(SensorEntity):
 
     """Sensor showing Tado API status."""
     
-    def __init__(self, entry_id: str):
+    def __init__(self, entry_id: str, home_id: str):
         self._entry_id = entry_id
         self._attr_name = "[CE] API Status"
         self.entity_id = "sensor.tado_ce_api_status"
-        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_api_status"
-        self._attr_device_info = get_hub_device_info(_CACHED_HOME_ID)
+        self._attr_unique_id = f"tado_ce_{home_id}_api_status"
+        self._attr_device_info = get_hub_device_info(home_id)
         self._attr_available = False
         self._attr_native_value = None
         self._remaining_calls: int | None = None
@@ -832,7 +813,7 @@ class TadoApiStatusSensor(SensorEntity):
     def update(self):
         try:
             # Use data_loader for per-home file support
-            data = load_ratelimit_file()
+            data = get_entry_data(self.hass, self._entry_id).data_loader.load_ratelimit_file()
             if data:
                 self._attr_native_value = _format_api_status(data.get("status", "unknown"))
                 self._remaining_calls = data.get("remaining")
@@ -859,12 +840,12 @@ class TadoTokenStatusSensor(SensorEntity):
 
     """Sensor showing Tado token status."""
     
-    def __init__(self, entry_id: str):
+    def __init__(self, entry_id: str, home_id: str):
         self._entry_id = entry_id
         self._attr_name = "[CE] Token Status"
         self.entity_id = "sensor.tado_ce_token_status"
-        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_token_status"
-        self._attr_device_info = get_hub_device_info(_CACHED_HOME_ID)
+        self._attr_unique_id = f"tado_ce_{home_id}_token_status"
+        self._attr_device_info = get_hub_device_info(home_id)
         self._attr_entity_category = EntityCategory.DIAGNOSTIC
         self._attr_available = False
         self._attr_native_value = None
@@ -879,7 +860,7 @@ class TadoTokenStatusSensor(SensorEntity):
     def update(self):
         try:
             # Use data_loader for per-home file support
-            config = load_config_file()
+            config = get_entry_data(self.hass, self._entry_id).data_loader.load_config_file()
             if config:
                 if config.get("refresh_token"):
                     self._attr_native_value = "valid"
@@ -898,14 +879,14 @@ class TadoZoneCountSensor(SensorEntity):
 
     """Sensor showing number of Tado zones."""
     
-    def __init__(self, entry_id: str):
+    def __init__(self, entry_id: str, home_id: str):
         self._entry_id = entry_id
         self._attr_name = "[CE] Zone Count"
         self.entity_id = "sensor.tado_ce_zone_count"
-        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_zone_count"
+        self._attr_unique_id = f"tado_ce_{home_id}_zone_count"
         self._attr_icon = "mdi:home-thermometer"
         self._attr_native_unit_of_measurement = "zones"
-        self._attr_device_info = get_hub_device_info(_CACHED_HOME_ID)
+        self._attr_device_info = get_hub_device_info(home_id)
         self._attr_entity_category = EntityCategory.DIAGNOSTIC
         self._attr_available = False
         self._attr_native_value = None
@@ -925,7 +906,7 @@ class TadoZoneCountSensor(SensorEntity):
     def update(self):
         try:
             # Use data_loader for per-home file support
-            zones = load_zones_info_file()
+            zones = get_entry_data(self.hass, self._entry_id).data_loader.load_zones_info_file()
             if zones:
                 self._attr_native_value = len(zones)
                 self._heating_zones = len([z for z in zones if z.get('type') == 'HEATING'])
@@ -942,14 +923,14 @@ class TadoLastSyncSensor(SensorEntity):
 
     """Sensor showing last sync time."""
     
-    def __init__(self, entry_id: str):
+    def __init__(self, entry_id: str, home_id: str):
         self._entry_id = entry_id
         self._attr_name = "[CE] Last Sync"
         self.entity_id = "sensor.tado_ce_last_sync"
-        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_last_sync"
+        self._attr_unique_id = f"tado_ce_{home_id}_last_sync"
         self._attr_icon = "mdi:sync"
         self._attr_device_class = SensorDeviceClass.TIMESTAMP
-        self._attr_device_info = get_hub_device_info(_CACHED_HOME_ID)
+        self._attr_device_info = get_hub_device_info(home_id)
         self._attr_entity_category = EntityCategory.DIAGNOSTIC
         self._attr_available = False
         self._attr_native_value = None
@@ -958,7 +939,7 @@ class TadoLastSyncSensor(SensorEntity):
     def update(self):
         try:
             # Use data_loader for per-home file support
-            data = load_ratelimit_file()
+            data = get_entry_data(self.hass, self._entry_id).data_loader.load_ratelimit_file()
             if data:
                 last_updated = data.get("last_updated")
                 if last_updated:
@@ -986,14 +967,14 @@ class TadoNextSyncSensor(SensorEntity):
 
     """Sensor showing next API sync time."""
     
-    def __init__(self, entry_id: str):
+    def __init__(self, entry_id: str, home_id: str):
         self._entry_id = entry_id
         self._attr_name = "[CE] Next Sync"
         self.entity_id = "sensor.tado_ce_next_sync"
-        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_next_sync"
+        self._attr_unique_id = f"tado_ce_{home_id}_next_sync"
         self._attr_icon = "mdi:clock-outline"
         self._attr_device_class = SensorDeviceClass.TIMESTAMP
-        self._attr_device_info = get_hub_device_info(_CACHED_HOME_ID)
+        self._attr_device_info = get_hub_device_info(home_id)
         self._attr_entity_category = EntityCategory.DIAGNOSTIC
         self._attr_available = False
         self._attr_native_value = None
@@ -1014,7 +995,7 @@ class TadoNextSyncSensor(SensorEntity):
             from homeassistant.util import dt as dt_util
             
             # Use data_loader for per-home file support
-            data = load_ratelimit_file()
+            data = get_entry_data(self.hass, self._entry_id).data_loader.load_ratelimit_file()
             if not data:
                 self._attr_available = False
                 return
@@ -1068,15 +1049,15 @@ class TadoPollingIntervalSensor(SensorEntity):
 
     """Sensor showing current polling interval."""
     
-    def __init__(self, entry_id: str):
+    def __init__(self, entry_id: str, home_id: str):
         self._entry_id = entry_id
         self._attr_name = "[CE] Polling Interval"
         self.entity_id = "sensor.tado_ce_polling_interval"
-        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_polling_interval"
+        self._attr_unique_id = f"tado_ce_{home_id}_polling_interval"
         self._attr_icon = "mdi:timer-outline"
         self._attr_native_unit_of_measurement = "min"
         self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_device_info = get_hub_device_info(_CACHED_HOME_ID)
+        self._attr_device_info = get_hub_device_info(home_id)
         self._attr_entity_category = EntityCategory.DIAGNOSTIC
         self._attr_available = False
         self._attr_native_value = None
@@ -1109,7 +1090,7 @@ class TadoPollingIntervalSensor(SensorEntity):
                 return
             
             # v2.0.1: Read test_mode from ratelimit.json (Single Source of Truth)
-            ratelimit_data = load_ratelimit_file()
+            ratelimit_data = get_entry_data(self.hass, self._entry_id).data_loader.load_ratelimit_file()
             self._test_mode = ratelimit_data.get("test_mode", False) if ratelimit_data else False
             
             # Get current interval
@@ -1184,16 +1165,16 @@ class TadoApiHistorySensor(SensorEntity):
 
     """Sensor showing API call history."""
     
-    def __init__(self, entry_id: str):
+    def __init__(self, entry_id: str, home_id: str):
         self._entry_id = entry_id
         self._attr_name = "[CE] Call History"
         self.entity_id = "sensor.tado_ce_call_history"
-        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_call_history"
+        self._attr_unique_id = f"tado_ce_{home_id}_call_history"
         self._attr_icon = "mdi:history"
         self._attr_native_unit_of_measurement = "calls"
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_entity_category = EntityCategory.DIAGNOSTIC
-        self._attr_device_info = get_hub_device_info(_CACHED_HOME_ID)
+        self._attr_device_info = get_hub_device_info(home_id)
         self._attr_available = False
         self._attr_native_value = None
         self._history = []
@@ -1230,7 +1211,7 @@ class TadoApiHistorySensor(SensorEntity):
                 self._history_period_days = 14
             
             # Load call history
-            history_data = load_api_call_history_file()
+            history_data = get_entry_data(self.hass, self._entry_id).data_loader.load_api_call_history_file()
             if not history_data:
                 self._attr_available = True
                 self._attr_native_value = 0
@@ -1337,14 +1318,14 @@ class TadoApiBreakdownSensor(SensorEntity):
 
     """Sensor showing API call breakdown by type."""
     
-    def __init__(self, entry_id: str):
+    def __init__(self, entry_id: str, home_id: str):
         self._entry_id = entry_id
         self._attr_name = "[CE] API Breakdown"
         self.entity_id = "sensor.tado_ce_api_call_breakdown"
-        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_api_breakdown"
+        self._attr_unique_id = f"tado_ce_{home_id}_api_breakdown"
         self._attr_icon = "mdi:chart-bar"
         self._attr_entity_category = EntityCategory.DIAGNOSTIC
-        self._attr_device_info = get_hub_device_info(_CACHED_HOME_ID)
+        self._attr_device_info = get_hub_device_info(home_id)
         self._attr_available = False
         self._attr_native_value = None
         self._breakdown_24h = {}
@@ -1369,7 +1350,7 @@ class TadoApiBreakdownSensor(SensorEntity):
             from datetime import datetime, timezone, timedelta
             
             # Load call history
-            history_data = load_api_call_history_file()
+            history_data = get_entry_data(self.hass, self._entry_id).data_loader.load_api_call_history_file()
             if not history_data:
                 self._attr_available = True
                 self._attr_native_value = "No data"
@@ -1467,11 +1448,11 @@ class TadoOutsideTemperatureSensor(SensorEntity):
 
     """Outside temperature from Tado weather data."""
     
-    def __init__(self, entry_id: str):
+    def __init__(self, entry_id: str, home_id: str):
         self._entry_id = entry_id
         self._attr_name = "Outside Temp"
         self.entity_id = "sensor.tado_ce_outside_temperature"
-        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_outside_temp"
+        self._attr_unique_id = f"tado_ce_{home_id}_outside_temp"
         self._attr_device_class = SensorDeviceClass.TEMPERATURE
         self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
         self._attr_state_class = "measurement"
@@ -1487,7 +1468,7 @@ class TadoOutsideTemperatureSensor(SensorEntity):
     def update(self):
         try:
             # Use data_loader for per-home file support
-            data = load_weather_file()
+            data = get_entry_data(self.hass, self._entry_id).data_loader.load_weather_file()
             if data:
                 # Use 'or {}' pattern for null safety
                 temp_data = data.get('outsideTemperature') or {}
@@ -1504,11 +1485,11 @@ class TadoSolarIntensitySensor(SensorEntity):
 
     """Solar intensity from Tado weather data."""
     
-    def __init__(self, entry_id: str):
+    def __init__(self, entry_id: str, home_id: str):
         self._entry_id = entry_id
         self._attr_name = "Solar Intensity"
         self.entity_id = "sensor.tado_ce_solar_intensity"
-        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_solar_intensity"
+        self._attr_unique_id = f"tado_ce_{home_id}_solar_intensity"
         self._attr_icon = "mdi:white-balance-sunny"
         self._attr_native_unit_of_measurement = PERCENTAGE
         self._attr_state_class = "measurement"
@@ -1524,7 +1505,7 @@ class TadoSolarIntensitySensor(SensorEntity):
     def update(self):
         try:
             # Use data_loader for per-home file support
-            data = load_weather_file()
+            data = get_entry_data(self.hass, self._entry_id).data_loader.load_weather_file()
             if data:
                 # Use 'or {}' pattern for null safety
                 solar_data = data.get('solarIntensity') or {}
@@ -1541,11 +1522,11 @@ class TadoWeatherStateSensor(SensorEntity):
 
     """Weather state from Tado weather data."""
     
-    def __init__(self, entry_id: str):
+    def __init__(self, entry_id: str, home_id: str):
         self._entry_id = entry_id
         self._attr_name = "Weather"
         self.entity_id = "sensor.tado_ce_weather_state"
-        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_weather_state"
+        self._attr_unique_id = f"tado_ce_{home_id}_weather_state"
         self._attr_icon = "mdi:weather-partly-cloudy"
         self._attr_available = False
         self._attr_native_value = None
@@ -1582,7 +1563,7 @@ class TadoWeatherStateSensor(SensorEntity):
     def update(self):
         try:
             # Use data_loader for per-home file support
-            data = load_weather_file()
+            data = get_entry_data(self.hass, self._entry_id).data_loader.load_weather_file()
             if data:
                 # Use 'or {}' pattern for null safety
                 weather_data = data.get('weatherState') or {}
@@ -1610,7 +1591,7 @@ class TadoZoneSensor(SensorEntity):
         self._attr_available = False
         self._attr_native_value = None
         # Use zone device info instead of hub device info
-        self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type, _CACHED_HOME_ID)
+        self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type, home_id)
         # v1.9.4: Unsubscribe callback for zones_updated signal
         self._unsub_zones_updated = None
 
@@ -1642,7 +1623,7 @@ class TadoZoneSensor(SensorEntity):
         """Get zone data from file."""
         try:
             # Use data_loader for per-home file support
-            data = load_zones_file()
+            data = get_entry_data(self.hass, self._entry_id).data_loader.load_zones_file()
             if data:
                 # Use 'or {}' pattern for null safety
                 zone_states = data.get('zoneStates') or {}
@@ -1673,7 +1654,7 @@ class TadoTemperatureSensor(TadoZoneSensor):
         super().__init__(entry_id, zone_id, zone_name, zone_type)
         self._attr_name = "Temp"
         # Use zone_id for unique_id to maintain entity_id stability across zone name changes
-        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_zone_{zone_id}_temp"
+        self._attr_unique_id = f"tado_ce_{home_id}_zone_{zone_id}_temp"
         self._attr_device_class = SensorDeviceClass.TEMPERATURE
         self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
         self._attr_state_class = "measurement"
@@ -1707,7 +1688,7 @@ class TadoHumiditySensor(TadoZoneSensor):
         super().__init__(entry_id, zone_id, zone_name, zone_type)
         self._attr_name = "Humidity"
         # Use zone_id for unique_id to maintain entity_id stability across zone name changes
-        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_zone_{zone_id}_humidity"
+        self._attr_unique_id = f"tado_ce_{home_id}_zone_{zone_id}_humidity"
         self._attr_device_class = SensorDeviceClass.HUMIDITY
         self._attr_native_unit_of_measurement = PERCENTAGE
         self._attr_state_class = "measurement"
@@ -1741,7 +1722,7 @@ class TadoHeatingPowerSensor(TadoZoneSensor):
         super().__init__(entry_id, zone_id, zone_name, zone_type)
         self._attr_name = "Heating"
         # Use zone_name for unique_id to maintain entity_id stability
-        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_zone_{zone_id}_heating"
+        self._attr_unique_id = f"tado_ce_{home_id}_zone_{zone_id}_heating"
         self._attr_native_unit_of_measurement = PERCENTAGE
         self._attr_icon = "mdi:radiator"
         self._attr_state_class = "measurement"
@@ -1762,7 +1743,7 @@ class TadoACPowerSensor(TadoZoneSensor):
         super().__init__(entry_id, zone_id, zone_name, zone_type)
         self._attr_name = "AC"
         # Use zone_name for unique_id to maintain entity_id stability
-        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_zone_{zone_id}_ac"
+        self._attr_unique_id = f"tado_ce_{home_id}_zone_{zone_id}_ac"
         self._attr_native_unit_of_measurement = PERCENTAGE
         self._attr_icon = "mdi:air-conditioner"
         self._attr_state_class = "measurement"
@@ -1788,16 +1769,16 @@ class TadoBoilerFlowTemperatureSensor(SensorEntity):
     any HEATING zone that has this data available.
     """
     
-    def __init__(self, entry_id: str):
+    def __init__(self, entry_id: str, home_id: str):
         self._entry_id = entry_id
         self._attr_name = "[CE] Boiler Flow Temp"
         self.entity_id = "sensor.tado_ce_boiler_flow_temperature"
-        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_boiler_flow_temp"
+        self._attr_unique_id = f"tado_ce_{home_id}_boiler_flow_temp"
         self._attr_device_class = SensorDeviceClass.TEMPERATURE
         self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
         self._attr_state_class = "measurement"
         self._attr_icon = "mdi:water-boiler"
-        self._attr_device_info = get_hub_device_info(_CACHED_HOME_ID)
+        self._attr_device_info = get_hub_device_info(home_id)
         self._attr_available = False
         self._attr_native_value = None
         self._source_zone = None
@@ -1813,7 +1794,7 @@ class TadoBoilerFlowTemperatureSensor(SensorEntity):
         """Update boiler flow temperature from HEATING zones."""
         try:
             # Use data_loader for per-home file support
-            data = load_zones_file()
+            data = get_entry_data(self.hass, self._entry_id).data_loader.load_zones_file()
             if not data:
                 self._attr_available = False
                 return
@@ -1848,7 +1829,7 @@ class TadoTargetTempSensor(TadoZoneSensor):
         super().__init__(entry_id, zone_id, zone_name, zone_type)
         self._attr_name = "[CE] Target"
         # Use zone_name for unique_id to maintain entity_id stability
-        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_zone_{zone_id}_target"
+        self._attr_unique_id = f"tado_ce_{home_id}_zone_{zone_id}_target"
         self._attr_device_class = SensorDeviceClass.TEMPERATURE
         self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
         self._attr_icon = "mdi:thermometer-check"
@@ -1871,7 +1852,7 @@ class TadoOverlaySensor(TadoZoneSensor):
         super().__init__(entry_id, zone_id, zone_name, zone_type)
         self._attr_name = "[CE] Overlay"
         # Use zone_name for unique_id to maintain entity_id stability
-        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_zone_{zone_id}_overlay"
+        self._attr_unique_id = f"tado_ce_{home_id}_zone_{zone_id}_overlay"
         self._attr_icon = "mdi:calendar-clock"
         self._next_change = None
         self._next_temp = None
@@ -1920,7 +1901,7 @@ class TadoHotWaterPowerSensor(TadoZoneSensor):
     def __init__(self, entry_id: str, zone_id: str, zone_name: str, zone_type: str = "HOT_WATER"):
         super().__init__(entry_id, zone_id, zone_name, zone_type)
         self._attr_name = "[CE] Power"
-        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_zone_{zone_id}_power"
+        self._attr_unique_id = f"tado_ce_{home_id}_zone_{zone_id}_power"
         self._attr_icon = "mdi:power"
     
     @callback
@@ -1949,12 +1930,12 @@ class TadoBatterySensor(SensorEntity):
         suffix = get_device_name_suffix(zone_id, self._device_serial, self._device_type, zones_info)
         
         self._attr_name = "Battery"
-        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_device_{self._device_serial}_battery"
+        self._attr_unique_id = f"tado_ce_{home_id}_device_{self._device_serial}_battery"
         self._attr_icon = "mdi:battery"
         self._attr_available = True
         self._attr_native_value = _format_battery_state(device.get('batteryState', 'unknown'))
         # Use zone device info instead of hub device info
-        self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type, _CACHED_HOME_ID)
+        self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type, home_id)
         
         # Extra attributes
         self._firmware = device.get('currentFwVersion')
@@ -1985,7 +1966,7 @@ class TadoBatterySensor(SensorEntity):
     def update(self):
         try:
             # Use data_loader for per-home file support
-            zones_info = load_zones_info_file()
+            zones_info = get_entry_data(self.hass, self._entry_id).data_loader.load_zones_info_file()
             if zones_info:
                 for zone in zones_info:
                     for device in zone.get('devices', []):
@@ -2028,11 +2009,11 @@ class TadoDeviceConnectionSensor(SensorEntity):
         suffix = get_device_name_suffix(zone_id, self._device_serial, self._device_type, zones_info)
         
         self._attr_name = "Connection"
-        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_device_{self._device_serial}_connection"
+        self._attr_unique_id = f"tado_ce_{home_id}_device_{self._device_serial}_connection"
         self._attr_icon = "mdi:wifi"
         self._attr_available = True
         # Use zone device info instead of hub device info
-        self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type, _CACHED_HOME_ID)
+        self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type, home_id)
         
         # Use 'or {}' pattern for null safety
         conn = device.get('connectionState') or {}
@@ -2061,7 +2042,7 @@ class TadoDeviceConnectionSensor(SensorEntity):
     def update(self):
         try:
             # Use data_loader for per-home file support
-            zones_info = load_zones_info_file()
+            zones_info = get_entry_data(self.hass, self._entry_id).data_loader.load_zones_info_file()
             if zones_info:
                 for zone in zones_info:
                     for device in zone.get('devices', []):
@@ -2123,7 +2104,7 @@ class TadoScheduleDeviationSensor(TadoZoneSensor):
     def __init__(self, entry_id: str, zone_id: str, zone_name: str, zone_type: str = "HEATING"):
         super().__init__(entry_id, zone_id, zone_name, zone_type)
         self._attr_name = "[CE] Schedule Deviation"
-        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_zone_{zone_id}_schedule_deviation"
+        self._attr_unique_id = f"tado_ce_{home_id}_zone_{zone_id}_schedule_deviation"
         self._attr_native_unit_of_measurement = "°C"
         self._attr_icon = "mdi:chart-timeline-variant"
         self._attr_state_class = "measurement"
@@ -2228,7 +2209,7 @@ class TadoNextScheduleTimeSensor(TadoZoneSensor):
     def __init__(self, entry_id: str, zone_id: str, zone_name: str, zone_type: str = "HEATING"):
         super().__init__(entry_id, zone_id, zone_name, zone_type)
         self._attr_name = "[CE] Next Schedule"
-        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_zone_{zone_id}_next_schedule"
+        self._attr_unique_id = f"tado_ce_{home_id}_zone_{zone_id}_next_schedule"
         self._attr_icon = "mdi:calendar-clock"
         
         # Attributes
@@ -2254,7 +2235,8 @@ class TadoNextScheduleTimeSensor(TadoZoneSensor):
             from .smart_comfort import get_next_schedule_change
             from datetime import datetime
             
-            next_block = get_next_schedule_change(self._zone_id)
+            _dl = get_entry_data(self.hass, self._entry_id).data_loader
+            next_block = get_next_schedule_change(self._zone_id, data_loader=_dl)
             
             if next_block is None:
                 self._attr_native_value = "No schedule"
@@ -2301,7 +2283,7 @@ class TadoNextScheduleTempSensor(TadoZoneSensor):
     def __init__(self, entry_id: str, zone_id: str, zone_name: str, zone_type: str = "HEATING"):
         super().__init__(entry_id, zone_id, zone_name, zone_type)
         self._attr_name = "[CE] Next Sched Temp"
-        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_zone_{zone_id}_next_sched_temp"
+        self._attr_unique_id = f"tado_ce_{home_id}_zone_{zone_id}_next_sched_temp"
         # No unit_of_measurement so we can show "OFF" as state
         self._attr_icon = "mdi:thermometer-chevron-up"
         
@@ -2344,7 +2326,8 @@ class TadoNextScheduleTempSensor(TadoZoneSensor):
             from .smart_comfort import get_next_schedule_change
             from datetime import datetime
             
-            next_block = get_next_schedule_change(self._zone_id)
+            _dl = get_entry_data(self.hass, self._entry_id).data_loader
+            next_block = get_next_schedule_change(self._zone_id, data_loader=_dl)
             
             if next_block is None:
                 self._attr_native_value = "No schedule"
@@ -2400,7 +2383,7 @@ class TadoPreheatAdvisorSensor(TadoZoneSensor):
     def __init__(self, entry_id: str, zone_id: str, zone_name: str, zone_type: str = "HEATING"):
         super().__init__(entry_id, zone_id, zone_name, zone_type)
         self._attr_name = "[CE] Preheat Advisor"
-        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_zone_{zone_id}_preheat_advisor"
+        self._attr_unique_id = f"tado_ce_{home_id}_zone_{zone_id}_preheat_advisor"
         self._attr_icon = "mdi:clock-start"
         
         # Attributes
@@ -2473,8 +2456,9 @@ class TadoPreheatAdvisorSensor(TadoZoneSensor):
                 self._attr_available = False
                 return
             
-            # Get next schedule change from schedules.json
-            next_block = get_next_schedule_change(self._zone_id)
+            # Get next schedule change from schedules.json (v3.0.0: per-entry data_loader, GAP-100)
+            _dl = get_entry_data(self.hass, self._entry_id).data_loader
+            next_block = get_next_schedule_change(self._zone_id, data_loader=_dl)
             
             if next_block is None:
                 # No schedule data or no more blocks today
@@ -2631,7 +2615,7 @@ class TadoSmartComfortTargetSensor(TadoZoneSensor):
     def __init__(self, entry_id: str, zone_id: str, zone_name: str, zone_type: str = "HEATING"):
         super().__init__(entry_id, zone_id, zone_name, zone_type)
         self._attr_name = "[CE] Comfort Target"
-        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_zone_{zone_id}_comfort_target"
+        self._attr_unique_id = f"tado_ce_{home_id}_zone_{zone_id}_comfort_target"
         self._attr_native_unit_of_measurement = "°C"
         self._attr_icon = "mdi:thermometer-auto"
         self._attr_state_class = "measurement"
@@ -2854,7 +2838,7 @@ class TadoMoldRiskSensor(TadoZoneSensor):
     def __init__(self, entry_id: str, zone_id: str, zone_name: str, zone_type: str = "HEATING"):
         super().__init__(entry_id, zone_id, zone_name, zone_type)
         self._attr_name = "[CE] Mold Risk"
-        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_zone_{zone_id}_mold_risk"
+        self._attr_unique_id = f"tado_ce_{home_id}_zone_{zone_id}_mold_risk"
         self._attr_icon = "mdi:mushroom"
         self._attr_translation_key = "mold_risk"  # v1.11.0: Enable translations
         
@@ -2996,7 +2980,7 @@ class TadoMoldRiskPercentageSensor(TadoZoneSensor):
     def __init__(self, entry_id: str, zone_id: str, zone_name: str, zone_type: str = "HEATING"):
         super().__init__(entry_id, zone_id, zone_name, zone_type)
         self._attr_name = "[CE] Mold Risk %"
-        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_zone_{zone_id}_mold_risk_pct"
+        self._attr_unique_id = f"tado_ce_{home_id}_zone_{zone_id}_mold_risk_pct"
         self._attr_icon = "mdi:water-percent"
         self._attr_device_class = SensorDeviceClass.HUMIDITY
         self._attr_native_unit_of_measurement = "%"
@@ -3102,7 +3086,7 @@ class TadoCondensationRiskSensor(TadoZoneSensor):
     def __init__(self, entry_id: str, zone_id: str, zone_name: str, zone_type: str = "AIR_CONDITIONING"):
         super().__init__(entry_id, zone_id, zone_name, zone_type)
         self._attr_name = "[CE] Condensation"
-        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_zone_{zone_id}_condensation"
+        self._attr_unique_id = f"tado_ce_{home_id}_zone_{zone_id}_condensation"
         self._attr_icon = "mdi:water-alert"
         self._attr_translation_key = "condensation_risk"
         
@@ -3410,7 +3394,7 @@ class TadoSurfaceTemperatureSensor(TadoZoneSensor):
     def __init__(self, entry_id: str, zone_id: str, zone_name: str, zone_type: str = "HEATING"):
         super().__init__(entry_id, zone_id, zone_name, zone_type)
         self._attr_name = "[CE] Surface Temp"
-        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_zone_{zone_id}_surface_temp"
+        self._attr_unique_id = f"tado_ce_{home_id}_zone_{zone_id}_surface_temp"
         self._attr_icon = "mdi:thermometer-lines"
         self._attr_device_class = SensorDeviceClass.TEMPERATURE
         self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
@@ -3547,7 +3531,7 @@ class TadoDewPointSensor(TadoZoneSensor):
     def __init__(self, entry_id: str, zone_id: str, zone_name: str, zone_type: str = "HEATING"):
         super().__init__(entry_id, zone_id, zone_name, zone_type)
         self._attr_name = "[CE] Dew Point"
-        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_zone_{zone_id}_dew_point"
+        self._attr_unique_id = f"tado_ce_{home_id}_zone_{zone_id}_dew_point"
         self._attr_icon = "mdi:water-thermometer"
         self._attr_device_class = SensorDeviceClass.TEMPERATURE
         self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
@@ -3617,7 +3601,7 @@ class TadoComfortLevelSensor(TadoZoneSensor):
     def __init__(self, entry_id: str, zone_id: str, zone_name: str, zone_type: str = "HEATING"):
         super().__init__(entry_id, zone_id, zone_name, zone_type)
         self._attr_name = "[CE] Comfort Level"
-        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_zone_{zone_id}_comfort_level"
+        self._attr_unique_id = f"tado_ce_{home_id}_zone_{zone_id}_comfort_level"
         self._attr_icon = "mdi:air-filter"
         
         # Attributes
@@ -3867,8 +3851,8 @@ class TadoThermalInertiaSensor(CoordinatorEntity, SensorEntity):
         self._zone_name = zone_name
         self._zone_type = zone_type
         self._attr_name = "[CE] Thermal Inertia"
-        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_zone_{zone_id}_thermal_inertia"
-        self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type, _CACHED_HOME_ID)
+        self._attr_unique_id = f"tado_ce_{home_id}_zone_{zone_id}_thermal_inertia"
+        self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type, home_id)
         self._attr_native_unit_of_measurement = "min"
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_icon = "mdi:timer-sand"
@@ -3913,8 +3897,8 @@ class TadoHeatingRateSensor(CoordinatorEntity, SensorEntity):
         self._zone_name = zone_name
         self._zone_type = zone_type
         self._attr_name = "[CE] Heating Rate"
-        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_zone_{zone_id}_heating_rate"
-        self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type, _CACHED_HOME_ID)
+        self._attr_unique_id = f"tado_ce_{home_id}_zone_{zone_id}_heating_rate"
+        self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type, home_id)
         self._attr_native_unit_of_measurement = "°C/min"
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_icon = "mdi:trending-up"
@@ -3959,8 +3943,8 @@ class TadoPreheatTimeSensor(CoordinatorEntity, SensorEntity):
         self._zone_name = zone_name
         self._zone_type = zone_type
         self._attr_name = "[CE] Preheat Time"
-        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_zone_{zone_id}_preheat_time"
-        self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type, _CACHED_HOME_ID)
+        self._attr_unique_id = f"tado_ce_{home_id}_zone_{zone_id}_preheat_time"
+        self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type, home_id)
         self._attr_native_unit_of_measurement = "min"
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_icon = "mdi:clock-fast"
@@ -4031,8 +4015,8 @@ class TadoConfidenceSensor(CoordinatorEntity, SensorEntity):
         self._zone_name = zone_name
         self._zone_type = zone_type
         self._attr_name = "[CE] Confidence"
-        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_zone_{zone_id}_confidence"
-        self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type, _CACHED_HOME_ID)
+        self._attr_unique_id = f"tado_ce_{home_id}_zone_{zone_id}_confidence"
+        self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type, home_id)
         self._attr_native_unit_of_measurement = "%"
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_icon = "mdi:chart-line"
@@ -4096,8 +4080,8 @@ class TadoHeatingAccelerationSensor(CoordinatorEntity, SensorEntity):
         self._zone_name = zone_name
         self._zone_type = zone_type
         self._attr_name = "[CE] Heat Accel"
-        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_zone_{zone_id}_heat_accel"
-        self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type, _CACHED_HOME_ID)
+        self._attr_unique_id = f"tado_ce_{home_id}_zone_{zone_id}_heat_accel"
+        self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type, home_id)
         self._attr_native_unit_of_measurement = "°C/h²"
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_icon = "mdi:chart-bell-curve-cumulative"
@@ -4150,8 +4134,8 @@ class TadoApproachFactorSensor(CoordinatorEntity, SensorEntity):
         self._zone_name = zone_name
         self._zone_type = zone_type
         self._attr_name = "[CE] Approach Factor"
-        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_zone_{zone_id}_approach_factor"
-        self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type, _CACHED_HOME_ID)
+        self._attr_unique_id = f"tado_ce_{home_id}_zone_{zone_id}_approach_factor"
+        self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type, home_id)
         self._attr_native_unit_of_measurement = "%"
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_icon = "mdi:target"
@@ -4199,12 +4183,12 @@ class TadoHomeInsightsSensor(SensorEntity):
     State: Total number of active insights (integer)
     """
 
-    def __init__(self, entry_id: str):
+    def __init__(self, entry_id: str, home_id: str):
         self._entry_id = entry_id
         self._attr_name = "[CE] Home Insights"
         self.entity_id = "sensor.tado_ce_home_insights"
-        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_home_insights"
-        self._attr_device_info = get_hub_device_info(_CACHED_HOME_ID)
+        self._attr_unique_id = f"tado_ce_{home_id}_home_insights"
+        self._attr_device_info = get_hub_device_info(home_id)
         self._attr_available = False
         self._attr_native_value = 0
         self._aggregated: dict = {}
@@ -4256,8 +4240,8 @@ class TadoHomeInsightsSensor(SensorEntity):
         zone_insights: dict[str, list] = {}
 
         try:
-            zones_data = load_zones_file()
-            zones_info = load_zones_info_file()
+            zones_data = get_entry_data(self.hass, self._entry_id).data_loader.load_zones_file()
+            zones_info = get_entry_data(self.hass, self._entry_id).data_loader.load_zones_info_file()
             if not zones_data:
                 return zone_insights
 
@@ -4504,7 +4488,7 @@ class TadoHomeInsightsSensor(SensorEntity):
                         insights.append(insight)
 
                 # --- v2.3.0: Schedule gap ---
-                schedules = load_schedules_file()
+                schedules = get_entry_data(self.hass, self._entry_id).data_loader.load_schedules_file()
                 if schedules and inside_temp is not None:
                     zone_schedule = schedules.get(zone_id)
                     if zone_schedule:
@@ -4657,8 +4641,8 @@ class TadoHomeInsightsSensor(SensorEntity):
 
         try:
             # --- Cross-zone mold risk ---
-            zones_data = load_zones_file()
-            zones_info = load_zones_info_file()
+            zones_data = get_entry_data(self.hass, self._entry_id).data_loader.load_zones_file()
+            zones_info = get_entry_data(self.hass, self._entry_id).data_loader.load_zones_info_file()
             if zones_data:
                 zone_states = zones_data.get("zoneStates") or {}
                 zone_name_map: dict[str, str] = {}
@@ -4768,7 +4752,7 @@ class TadoHomeInsightsSensor(SensorEntity):
 
         try:
             # --- API quota planning ---
-            ratelimit = load_ratelimit_file()
+            ratelimit = get_entry_data(self.hass, self._entry_id).data_loader.load_ratelimit_file()
             if ratelimit:
                 remaining = ratelimit.get("remaining")
                 total = ratelimit.get("limit")
@@ -4782,7 +4766,7 @@ class TadoHomeInsightsSensor(SensorEntity):
 
                 # Estimate calls per hour from history
                 # load_api_call_history_file() returns dict {date: [call_dicts]}, flatten to list
-                history_raw = load_api_call_history_file()
+                history_raw = get_entry_data(self.hass, self._entry_id).data_loader.load_api_call_history_file()
                 if history_raw and isinstance(history_raw, dict):
                     history = [call for calls in history_raw.values() for call in calls]
                 else:
@@ -4800,20 +4784,20 @@ class TadoHomeInsightsSensor(SensorEntity):
                         hub_insights.append(insight)
 
             # --- Weather impact ---
-            weather = load_weather_file()
+            weather = get_entry_data(self.hass, self._entry_id).data_loader.load_weather_file()
             if weather:
                 outdoor_temp = (weather.get("outsideTemperature") or {}).get("celsius")
                 if outdoor_temp is not None:
                     # v2.2.0: Load history from file on first call (lazy-load)
                     if not self._outdoor_temp_loaded:
-                        self._outdoor_temp_history = load_outdoor_temp_history()
+                        self._outdoor_temp_history = get_entry_data(self.hass, self._entry_id).data_loader.load_outdoor_temp_history()
                         self._outdoor_temp_loaded = True
                     # Append new reading and trim to max size
                     self._outdoor_temp_history.append(outdoor_temp)
                     if len(self._outdoor_temp_history) > 336:
                         self._outdoor_temp_history = self._outdoor_temp_history[-336:]
                     # Persist to file (sync, acceptable in update() context)
-                    save_outdoor_temp_history(self._outdoor_temp_history)
+                    get_entry_data(self.hass, self._entry_id).data_loader.save_outdoor_temp_history(self._outdoor_temp_history)
                     # Calculate avg once we have >= 48 readings (~24 min minimum)
                     avg_7d = None
                     if len(self._outdoor_temp_history) >= 48:
@@ -4847,8 +4831,8 @@ class TadoHomeInsightsSensor(SensorEntity):
                     # --- v2.3.0: Solar gain / Solar AC load ---
                     solar_pct = (weather.get("solarIntensity") or {}).get("percentage")
                     if solar_pct is not None:
-                        zones_data = load_zones_file()
-                        zones_info = load_zones_info_file()
+                        zones_data = get_entry_data(self.hass, self._entry_id).data_loader.load_zones_file()
+                        zones_info = get_entry_data(self.hass, self._entry_id).data_loader.load_zones_info_file()
                         if zones_data and zones_info:
                             zone_states = zones_data.get("zoneStates") or {}
                             zone_name_map: dict[str, str] = {}
@@ -4884,11 +4868,11 @@ class TadoHomeInsightsSensor(SensorEntity):
                                 hub_insights.append(sac_insight)
 
             # --- v2.3.0: Away + heating active / Home + all off ---
-            home_state_data = load_home_state_file()
+            home_state_data = get_entry_data(self.hass, self._entry_id).data_loader.load_home_state_file()
             if home_state_data:
                 presence = home_state_data.get("presence")
-                zones_data = load_zones_file()
-                zones_info = load_zones_info_file()
+                zones_data = get_entry_data(self.hass, self._entry_id).data_loader.load_zones_file()
+                zones_info = get_entry_data(self.hass, self._entry_id).data_loader.load_zones_info_file()
                 if zones_data and zones_info:
                     zone_states = zones_data.get("zoneStates") or {}
                     zone_name_map: dict[str, str] = {}
@@ -4943,7 +4927,7 @@ class TadoHomeInsightsSensor(SensorEntity):
                         hub_insights.append(home_off_insight)
 
             # --- v2.3.0: Geofencing device offline ---
-            mobile_devices = load_mobile_devices_file()
+            mobile_devices = get_entry_data(self.hass, self._entry_id).data_loader.load_mobile_devices_file()
             if mobile_devices:
                 device_list = []
                 for md in mobile_devices:
@@ -4957,7 +4941,7 @@ class TadoHomeInsightsSensor(SensorEntity):
                     hub_insights.append(geo_insight)
 
             # --- v2.3.0: API usage spike ---
-            history_raw = load_api_call_history_file()
+            history_raw = get_entry_data(self.hass, self._entry_id).data_loader.load_api_call_history_file()
             if history_raw and isinstance(history_raw, dict):
                 all_calls = [call for calls in history_raw.values() for call in calls]
                 cph = calculate_calls_per_hour(all_calls) if all_calls else None
@@ -5042,8 +5026,8 @@ class TadoZoneInsightsSensor(SensorEntity):
         self._zone_name = zone_name
         self._zone_type = zone_type
         self._attr_name = "[CE] Insights"
-        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_zone_{zone_id}_insights"
-        self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type, _CACHED_HOME_ID)
+        self._attr_unique_id = f"tado_ce_{home_id}_zone_{zone_id}_insights"
+        self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type, home_id)
         self._attr_available = False
         self._attr_native_value = 0
         self._insights: list = []
@@ -5089,7 +5073,7 @@ class TadoZoneInsightsSensor(SensorEntity):
         """Collect insights for this zone only."""
         try:
             insights: list = []
-            zones_data = load_zones_file()
+            zones_data = get_entry_data(self.hass, self._entry_id).data_loader.load_zones_file()
             if not zones_data:
                 self._attr_available = False
                 return
@@ -5228,7 +5212,7 @@ class TadoZoneInsightsSensor(SensorEntity):
 
             # --- Battery / connection ---
             try:
-                zones_info = load_zones_info_file()
+                zones_info = get_entry_data(self.hass, self._entry_id).data_loader.load_zones_info_file()
                 if zones_info:
                     zone_info = next((z for z in zones_info if str(z.get("id")) == self._zone_id), None)
                     if zone_info:

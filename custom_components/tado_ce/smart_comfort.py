@@ -117,7 +117,7 @@ def _get_day_blocks(blocks: dict, schedule_type: str, weekday: int) -> list:
         return blocks.get(day_name) or []
 
 
-def get_next_schedule_change(zone_id: str, current_time: Optional[datetime] = None, look_ahead_days: int = 2) -> Optional[NextScheduleBlock]:
+def get_next_schedule_change(zone_id: str, current_time: Optional[datetime] = None, look_ahead_days: int = 2, data_loader=None) -> Optional[NextScheduleBlock]:
     """Find the next schedule block that requires temperature change.
     
     Parses the zone's schedule and finds the next block where:
@@ -130,16 +130,21 @@ def get_next_schedule_change(zone_id: str, current_time: Optional[datetime] = No
         zone_id: Zone ID to look up schedule for
         current_time: Current time (defaults to now)
         look_ahead_days: How many days to look ahead (default 2 = today + tomorrow)
+        data_loader: DataLoader instance for per-entry schedule access (GAP-100)
         
     Returns:
         NextScheduleBlock with next change info, or None if no schedule/no upcoming change
     """
-    from .data_loader import get_zone_schedule
-    
+    if data_loader is not None:
+        schedule = data_loader.get_zone_schedule(zone_id)
+    else:
+        # Fallback to deprecated module-level function (backward compat)
+        from .data_loader import get_zone_schedule
+        schedule = get_zone_schedule(zone_id)
+
     if current_time is None:
         current_time = datetime.now()
-    
-    schedule = get_zone_schedule(zone_id)
+
     if not schedule:
         _LOGGER.debug(f"No schedule found for zone {zone_id}")
         return None

@@ -9,7 +9,6 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .const import DOMAIN
 from .device_manager import get_zone_device_info, get_hub_device_info
-from .data_loader import load_zones_info_file, get_current_home_id
 from .entry_data import get_entry_data
 from .action_helpers import check_bootstrap_reserve as _check_bootstrap_reserve
 
@@ -18,16 +17,14 @@ _LOGGER = logging.getLogger(__name__)
 # Default timer preset durations (in minutes)
 DEFAULT_TIMER_PRESETS = [30, 60, 90]
 
-# Cached home_id to avoid blocking calls in event loop
-_CACHED_HOME_ID = None
-
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddConfigEntryEntitiesCallback):
     """Set up Tado CE buttons from a config entry."""
-    global _CACHED_HOME_ID
     _LOGGER.debug("Tado CE button: Setting up...")
-    _CACHED_HOME_ID = await hass.async_add_executor_job(get_current_home_id)
-    zones_info = await hass.async_add_executor_job(load_zones_info_file)
+    entry_data = get_entry_data(hass, entry.entry_id)
+    data_loader = entry_data.data_loader
+    home_id = entry_data.home_id
+    zones_info = await hass.async_add_executor_job(data_loader.load_zones_info_file)
     entry_id = entry.entry_id
     
     # Get config manager to check feature toggles
@@ -39,12 +36,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     buttons = []
     
     # Add Resume All Schedules button (hub-level)
-    buttons.append(TadoResumeAllSchedulesButton(hass, entry_id))
+    buttons.append(TadoResumeAllSchedulesButton(hass, entry_id, home_id))
     
     # Add Refresh AC Capabilities button (hub-level) - only if there are AC zones
     has_ac_zones = any(z.get('type') == 'AIR_CONDITIONING' for z in (zones_info or []))
     if has_ac_zones:
-        buttons.append(TadoRefreshACCapabilitiesButton(hass, entry_id))
+        buttons.append(TadoRefreshACCapabilitiesButton(hass, entry_id, home_id))
     
     if zones_info:
         for zone in zones_info:
@@ -56,24 +53,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             if zone_type == 'HOT_WATER':
                 for duration in DEFAULT_TIMER_PRESETS:
                     buttons.append(
-                        TadoWaterHeaterTimerButton(hass, entry_id, zone_id, zone_name, duration)
+                        TadoWaterHeaterTimerButton(hass, entry_id, zone_id, zone_name, duration, home_id)
                     )
             
             # Create boost buttons for heating zones (v2.1.0: controlled by boost_buttons_enabled)
             if zone_type == 'HEATING' and boost_buttons_enabled:
                 # Boost button (official Tado-style: max temp for 30 min)
                 buttons.append(
-                    TadoBoostButton(hass, entry_id, zone_id, zone_name)
+                    TadoBoostButton(hass, entry_id, zone_id, zone_name, home_id)
                 )
                 # Smart Boost button (calculated duration based on heating rate)
                 buttons.append(
-                    TadoSmartBoostButton(hass, entry_id, zone_id, zone_name)
+                    TadoSmartBoostButton(hass, entry_id, zone_id, zone_name, home_id)
                 )
             
             # Create refresh schedule button for heating zones (only if calendar enabled)
             if zone_type == 'HEATING' and schedule_calendar_enabled:
                 buttons.append(
-                    TadoRefreshScheduleButton(hass, entry_id, zone_id, zone_name)
+                    TadoRefreshScheduleButton(hass, entry_id, zone_id, zone_name, home_id)
                 )
     
     if buttons:
@@ -88,15 +85,15 @@ class TadoResumeAllSchedulesButton(ButtonEntity):
 
     """Button to resume schedules for all zones (delete all overlays)."""
     
-    def __init__(self, hass: HomeAssistant, entry_id: str):
+    def __init__(self, hass: HomeAssistant, entry_id: str, home_id: str):
         """Initialize the button."""
         self.hass = hass
         self._entry_id = entry_id
         
         self._attr_name = "[CE] Resume All"
         self.entity_id = "button.tado_ce_resume_all_schedules"
-        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_resume_all"
-        self._attr_device_info = get_hub_device_info(_CACHED_HOME_ID)
+        self._attr_unique_id = f"tado_ce_{home_id}_resume_all"
+        self._attr_device_info = get_hub_device_info(home_id)
         self._attr_icon = "mdi:calendar-refresh"
     
     async def async_press(self) -> None:
@@ -105,7 +102,6 @@ class TadoResumeAllSchedulesButton(ButtonEntity):
         v2.0.1: Added bootstrap reserve check - blocks action when quota critically low.
         v2.0.1: DRY refactor - uses shared async_trigger_immediate_refresh().
         """
-        from .data_loader import load_zones_info_file
         from . import async_trigger_immediate_refresh
         
         # v2.0.1: Bootstrap Reserve - block action when quota critically low
@@ -113,8 +109,9 @@ class TadoResumeAllSchedulesButton(ButtonEntity):
         
         _LOGGER.info("Resume All Schedules button pressed")
         
-        client = get_entry_data(self.hass, self._entry_id).api_client
-        zones_info = await self.hass.async_add_executor_job(load_zones_info_file)
+        _ed = get_entry_data(self.hass, self._entry_id)
+        client = _ed.api_client
+        zones_info = await self.hass.async_add_executor_job(_ed.data_loader.load_zones_info_file)
         
         if not zones_info:
             _LOGGER.warning("No zones found to resume schedules")
@@ -155,21 +152,20 @@ class TadoRefreshACCapabilitiesButton(ButtonEntity):
 
     """Button to refresh AC capabilities cache."""
     
-    def __init__(self, hass: HomeAssistant, entry_id: str):
+    def __init__(self, hass: HomeAssistant, entry_id: str, home_id: str):
         """Initialize the button."""
         self.hass = hass
         self._entry_id = entry_id
         
         self._attr_name = "[CE] Refresh AC"
         self.entity_id = "button.tado_ce_refresh_ac_capabilities"
-        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_refresh_ac"
-        self._attr_device_info = get_hub_device_info(_CACHED_HOME_ID)
+        self._attr_unique_id = f"tado_ce_{home_id}_refresh_ac"
+        self._attr_device_info = get_hub_device_info(home_id)
         self._attr_entity_category = EntityCategory.CONFIG
         self._attr_icon = "mdi:air-conditioner"
     
     async def async_press(self) -> None:
         """Handle button press - refresh AC capabilities from API."""
-        from .data_loader import get_current_home_id
         from .const import get_data_file
         from .refresh_handler import SIGNAL_AC_CAPABILITIES_UPDATED
         from homeassistant.helpers.dispatcher import async_dispatcher_send
@@ -177,7 +173,8 @@ class TadoRefreshACCapabilitiesButton(ButtonEntity):
         _LOGGER.info("Refresh AC Capabilities button pressed")
         
         # v2.3.1: Use home-aware file path (TECH-2)
-        home_id = get_current_home_id()
+        _ed = get_entry_data(self.hass, self._entry_id)
+        home_id = _ed.home_id
         ac_caps_file = get_data_file("ac_capabilities", home_id)
         
         # Delete existing cache to force re-fetch
@@ -189,8 +186,8 @@ class TadoRefreshACCapabilitiesButton(ButtonEntity):
         await self.hass.async_add_executor_job(_delete_cache)
         
         # Fetch fresh capabilities
-        client = get_entry_data(self.hass, self._entry_id).api_client
-        zones_info = await self.hass.async_add_executor_job(load_zones_info_file)
+        client = _ed.api_client
+        zones_info = await self.hass.async_add_executor_job(_ed.data_loader.load_zones_info_file)
         
         if not zones_info:
             _LOGGER.warning("No zones found")
@@ -213,7 +210,7 @@ class TadoWaterHeaterTimerButton(ButtonEntity):
 
     """Button to set water heater timer with preset duration."""
     
-    def __init__(self, hass: HomeAssistant, entry_id: str, zone_id: str, zone_name: str, duration: int):
+    def __init__(self, hass: HomeAssistant, entry_id: str, zone_id: str, zone_name: str, duration: int, home_id: str):
         """Initialize the button.
         
         Args:
@@ -222,6 +219,7 @@ class TadoWaterHeaterTimerButton(ButtonEntity):
             zone_id: Zone ID
             zone_name: Zone name
             duration: Timer duration in minutes
+            home_id: Tado home ID
         """
         self.hass = hass
         self._entry_id = entry_id
@@ -230,8 +228,8 @@ class TadoWaterHeaterTimerButton(ButtonEntity):
         self._duration = duration
         
         self._attr_name = "[CE] {duration}min Timer"
-        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_zone_{zone_id}_timer_{duration}min"
-        self._attr_device_info = get_zone_device_info(zone_id, zone_name, "HOT_WATER", _CACHED_HOME_ID)
+        self._attr_unique_id = f"tado_ce_{home_id}_zone_{zone_id}_timer_{duration}min"
+        self._attr_device_info = get_zone_device_info(zone_id, zone_name, "HOT_WATER", home_id)
         self._attr_entity_category = EntityCategory.CONFIG
         self._attr_icon = "mdi:timer"
     
@@ -297,7 +295,7 @@ class TadoRefreshScheduleButton(ButtonEntity):
 
     """Button to refresh schedule for a specific zone."""
     
-    def __init__(self, hass: HomeAssistant, entry_id: str, zone_id: str, zone_name: str):
+    def __init__(self, hass: HomeAssistant, entry_id: str, zone_id: str, zone_name: str, home_id: str):
         """Initialize the button.
         
         Args:
@@ -305,6 +303,7 @@ class TadoRefreshScheduleButton(ButtonEntity):
             entry_id: Config entry ID
             zone_id: Zone ID
             zone_name: Zone name
+            home_id: Tado home ID
         """
         self.hass = hass
         self._entry_id = entry_id
@@ -312,8 +311,8 @@ class TadoRefreshScheduleButton(ButtonEntity):
         self._zone_name = zone_name
         
         self._attr_name = "[CE] Refresh Schedule"
-        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_zone_{zone_id}_refresh_schedule"
-        self._attr_device_info = get_zone_device_info(zone_id, zone_name, "HEATING", _CACHED_HOME_ID)
+        self._attr_unique_id = f"tado_ce_{home_id}_zone_{zone_id}_refresh_schedule"
+        self._attr_device_info = get_zone_device_info(zone_id, zone_name, "HEATING", home_id)
         # No entity_category = Controls section (action button, not config)
         self._attr_icon = "mdi:calendar-refresh"
     
@@ -336,7 +335,8 @@ class TadoRefreshScheduleButton(ButtonEntity):
                 return
             
             # Get per-home schedules file path
-            schedules_file = _get_schedules_file(_CACHED_HOME_ID)
+            _ed = get_entry_data(self.hass, self._entry_id)
+            schedules_file = _get_schedules_file(_ed.home_id)
             
             # Load existing schedules
             def _load_schedules():
@@ -404,7 +404,7 @@ class TadoBoostButton(ButtonEntity):
     - Automatically resumes schedule after timer expires
     """
     
-    def __init__(self, hass: HomeAssistant, entry_id: str, zone_id: str, zone_name: str):
+    def __init__(self, hass: HomeAssistant, entry_id: str, zone_id: str, zone_name: str, home_id: str):
         """Initialize the button."""
         self.hass = hass
         self._entry_id = entry_id
@@ -412,8 +412,8 @@ class TadoBoostButton(ButtonEntity):
         self._zone_name = zone_name
         
         self._attr_name = "[CE] Boost"
-        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_zone_{zone_id}_boost"
-        self._attr_device_info = get_zone_device_info(zone_id, zone_name, "HEATING", _CACHED_HOME_ID)
+        self._attr_unique_id = f"tado_ce_{home_id}_zone_{zone_id}_boost"
+        self._attr_device_info = get_zone_device_info(zone_id, zone_name, "HEATING", home_id)
         self._attr_icon = "mdi:fire"
     
     async def async_press(self) -> None:
@@ -469,7 +469,7 @@ class TadoSmartBoostButton(ButtonEntity):
     - Capped between 15 minutes and 3 hours
     """
     
-    def __init__(self, hass: HomeAssistant, entry_id: str, zone_id: str, zone_name: str):
+    def __init__(self, hass: HomeAssistant, entry_id: str, zone_id: str, zone_name: str, home_id: str):
         """Initialize the button."""
         self.hass = hass
         self._entry_id = entry_id
@@ -477,8 +477,8 @@ class TadoSmartBoostButton(ButtonEntity):
         self._zone_name = zone_name
         
         self._attr_name = "[CE] Smart Boost"
-        self._attr_unique_id = f"tado_ce_{_CACHED_HOME_ID}_zone_{zone_id}_smart_boost"
-        self._attr_device_info = get_zone_device_info(zone_id, zone_name, "HEATING", _CACHED_HOME_ID)
+        self._attr_unique_id = f"tado_ce_{home_id}_zone_{zone_id}_smart_boost"
+        self._attr_device_info = get_zone_device_info(zone_id, zone_name, "HEATING", home_id)
         self._attr_icon = "mdi:fire-alert"
     
     def _get_climate_entity_id(self) -> str | None:

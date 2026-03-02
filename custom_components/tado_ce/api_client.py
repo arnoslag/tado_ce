@@ -59,9 +59,6 @@ def cleanup_api_tracker() -> bool:
     return False
 
 
-# Deprecated alias — use cleanup_api_tracker() instead
-cleanup_tracker = cleanup_api_tracker
-
 
 def _get_tracker(home_id: Optional[str] = None, config_manager=None) -> Optional[APICallTracker]:
     """Get or create the global API call tracker (lazy init, no file I/O).
@@ -1602,6 +1599,3 @@ def cleanup_api_client(hass) -> bool:
         return True
     return False
 
-
-# Deprecated alias — use cleanup_api_client() instead
-cleanup_async_client = cleanup_api_client

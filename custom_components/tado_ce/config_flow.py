@@ -27,7 +27,7 @@ from .const import (
     DOMAIN, CLIENT_ID, DATA_DIR, CONFIG_FILE,
     API_ENDPOINT_ME, AUTH_ENDPOINT_DEVICE, AUTH_ENDPOINT_TOKEN
 )
-from .data_loader import load_zones_info_file, load_zones_file
+from .entry_data import get_entry_data
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -435,8 +435,10 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
         
         # v2.1.0: Load zones with heatingPower for thermal_analytics_zones multi-select
         zones_with_heating_power = []
-        zones_info = await self.hass.async_add_executor_job(load_zones_info_file)
-        zones_data = await self.hass.async_add_executor_job(load_zones_file)
+        entry_data = get_entry_data(self.hass, self.config_entry.entry_id)
+        data_loader = entry_data.data_loader
+        zones_info = await self.hass.async_add_executor_job(data_loader.load_zones_info_file)
+        zones_data = await self.hass.async_add_executor_job(data_loader.load_zones_file)
         
         if zones_data and zones_info:
             zone_states = zones_data.get('zoneStates') or {}
