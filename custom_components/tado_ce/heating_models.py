@@ -12,7 +12,7 @@ TemperatureReading = HeatingCycleReading
 @dataclass
 class HeatingCycle:
     """Represents a complete heating cycle."""
-    
+
     zone_id: str
     start_time: datetime  # UTC
     end_time: Optional[datetime]  # UTC, None if active
@@ -25,7 +25,7 @@ class HeatingCycle:
     interrupted: bool
     interrupt_reason: Optional[str]
 
-    
+
     def to_dict(self) -> dict:
         """Serialize to dictionary for JSON storage."""
         return {
@@ -41,7 +41,7 @@ class HeatingCycle:
             "interrupted": self.interrupted,
             "interrupt_reason": self.interrupt_reason,
         }
-    
+
     @classmethod
     def from_dict(cls, data: dict) -> "HeatingCycle":
         """Deserialize from dictionary."""
@@ -63,12 +63,12 @@ class HeatingCycle:
 @dataclass
 class HeatingCycleConfig:
     """Configuration for heating cycle analysis."""
-    
+
     enabled: bool = True
     rolling_window_days: int = 7
     inertia_threshold_celsius: float = 0.1
     min_cycles: int = 3
-    
+
     def validate(self) -> None:
         """Validate configuration values."""
         if not 1 <= self.rolling_window_days <= 30:

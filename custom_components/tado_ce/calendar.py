@@ -1,36 +1,40 @@
-"""Tado CE Calendar Platform - Zone Heating Schedules."""
+"""Tado CE Calendar Platform - Zone Heating Schedules.
+
+Extends CoordinatorEntity for automatic update subscription.
+Preserves bus event listener for schedule refresh communication.
+"""
 from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timedelta, date
+from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from homeassistant.components.calendar import CalendarEntity, CalendarEvent
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
-from .const import DOMAIN, DATA_DIR, MANUFACTURER, get_data_file
-from .entry_data import get_entry_data
+from .const import DATA_DIR, DOMAIN, MANUFACTURER, get_data_file
+
+if TYPE_CHECKING:
+    from .coordinator import TadoDataUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
 
 def _get_schedules_file(home_id: Optional[str] = None) -> Path:
     """Get schedules file path with per-home support.
-    
+
     Args:
         home_id: The home ID. If provided, uses per-home path.
     """
     return get_data_file("schedules", home_id)
 
-
-# Legacy constant for backwards compatibility (used by button.py)
-SCHEDULES_FILE = DATA_DIR / "schedules.json"
 
 # Day type mappings
 DAY_TYPES = {
@@ -52,19 +56,16 @@ DAY_TYPE_TO_WEEKDAYS = {
 }
 
 
-def get_schedule_device_info(home_id: Optional[str] = None) -> DeviceInfo:
+def get_schedule_device_info(home_id: str) -> DeviceInfo:
     """Get device info for Heating Schedule device.
-    
-    v1.9.0: Uses home_id in via_device for multi-home support.
-    
+
+    Uses home_id in via_device for multi-home support.
+
     Args:
-        home_id: The home ID. If None, falls back to cached global (backward compat).
+        home_id: The home ID (required).
     """
-    if home_id is None:
-        from .device_manager import get_home_id
-        home_id = get_home_id()
     hub_identifier = f"tado_ce_hub_{home_id}" if home_id != "unknown" else "tado_ce_hub"
-    
+
     return DeviceInfo(
         configuration_url="https://app.tado.com",
         identifiers={(DOMAIN, "tado_ce_heating_schedule")},
@@ -81,28 +82,28 @@ async def async_setup_entry(
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up Tado CE calendar entities."""
-    entry_data = get_entry_data(hass, entry.entry_id)
-    data_loader = entry_data.data_loader
-    home_id = entry_data.home_id
+    coordinator: TadoDataUpdateCoordinator = entry.runtime_data
+    data_loader = coordinator.data_loader
+    home_id = coordinator.home_id
     zones_info = await hass.async_add_executor_job(data_loader.load_zones_info_file)
-    
+
     if not zones_info:
         _LOGGER.warning("No zones found for calendar setup")
         return
-    
+
     # Fetch all schedules first
-    client = entry_data.api_client
+    client = coordinator.api_client
     schedules = {}
-    
+
     for zone_data in zones_info:
         zone_id = str(zone_data.get("id", ""))
         zone_name = zone_data.get("name", f"Zone {zone_id}")
         zone_type = zone_data.get("type", "HEATING")
-        
+
         # Only fetch HEATING zones
         if zone_type != "HEATING":
             continue
-        
+
         try:
             schedule_data = await client.get_zone_schedule(zone_id)
             if schedule_data:
@@ -113,36 +114,35 @@ async def async_setup_entry(
                     "blocks": schedule_data.get("blocks") or {},
                 }
         except Exception as e:
-            _LOGGER.error(f"Failed to fetch schedule for {zone_name}: {e}")
-    
+            _LOGGER.error("Failed to fetch schedule for %s: %s", zone_name, e)
+
     # Save schedules to file
     await _async_save_schedules(hass, schedules, home_id)
-    
+
     # Create calendar entity for each zone
     calendars = []
     for zone_id, schedule in schedules.items():
         calendars.append(
             TadoZoneScheduleCalendar(
-                hass,
-                entry.entry_id,
+                coordinator,
                 zone_id,
                 schedule["name"],
                 schedule,
                 home_id,
             )
         )
-    
+
     async_add_entities(calendars)
-    _LOGGER.info(f"Added {len(calendars)} Tado schedule calendars")
+    _LOGGER.info("Added %s Tado schedule calendars", len(calendars))
 
 
 async def _async_save_schedules(hass: HomeAssistant, schedules: dict, home_id: str = None) -> None:
     """Save schedules to file using atomic write."""
-    import tempfile
     import shutil
-    
+    import tempfile
+
     schedules_file = _get_schedules_file(home_id)
-    
+
     def _save():
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         # Atomic write: write to temp file then move
@@ -152,97 +152,102 @@ async def _async_save_schedules(hass: HomeAssistant, schedules: dict, home_id: s
             json.dump(schedules, tmp, indent=2)
             temp_path = tmp.name
         shutil.move(temp_path, schedules_file)
-    
+
     await hass.async_add_executor_job(_save)
 
 
-class TadoZoneScheduleCalendar(CalendarEntity):
+class TadoZoneScheduleCalendar(CoordinatorEntity["TadoDataUpdateCoordinator"], CalendarEntity):
     """Calendar entity for a single zone's heating schedule."""
-    
+
     _attr_has_entity_name = True
     _attr_supported_features = 0  # Read-only
-    
+
     def __init__(
         self,
-        hass: HomeAssistant,
-        entry_id: str,
+        coordinator: "TadoDataUpdateCoordinator",
         zone_id: str,
         zone_name: str,
         schedule: dict,
         home_id: str = "",
     ) -> None:
         """Initialize the calendar."""
-        self.hass = hass
-        self._entry_id = entry_id
+        super().__init__(coordinator)
         self._zone_id = zone_id
         self._zone_name = zone_name
         self._schedule = schedule
-        
+        # Convenience alias — used for home_id lookups
+        self._entry_id = coordinator.config_entry.entry_id
+
         # Short name for calendar sidebar (just zone name)
         self._attr_name = "[CE] Schedule"
         self._attr_unique_id = f"tado_ce_{home_id}_zone_{zone_id}_schedule"
         self._attr_device_info = get_schedule_device_info(home_id)
         self._attr_icon = "mdi:calendar-clock"
-        
+
         self._event: CalendarEvent | None = None
         self._unsub_schedule_update = None
-    
+
     async def async_added_to_hass(self) -> None:
-        """Register event listener when entity is added."""
+        """Register event listener when entity is added.
+
+        CoordinatorEntity handles update subscription.
+        Bus event listener PRESERVED — this is how RefreshScheduleButton
+        communicates with calendar entities (not a coordinator update).
+        """
         await super().async_added_to_hass()
-        
+
         @callback
         def _handle_schedule_update(event):
             """Handle schedule update event from Refresh Schedule button."""
             event_zone_id = event.data.get("zone_id")
             if event_zone_id == self._zone_id:
-                _LOGGER.debug(f"Schedule update event received for {self._zone_name}")
+                _LOGGER.debug("Schedule update event received for %s", self._zone_name)
                 # Reload schedule from file and trigger update
                 self.hass.async_create_task(self._async_reload_schedule())
-        
+
         self._unsub_schedule_update = self.hass.bus.async_listen(
             f"{DOMAIN}_schedule_updated", _handle_schedule_update
         )
-    
+
     async def async_will_remove_from_hass(self) -> None:
         """Unregister event listener when entity is removed."""
         if self._unsub_schedule_update:
             self._unsub_schedule_update()
             self._unsub_schedule_update = None
         await super().async_will_remove_from_hass()
-    
+
     async def _async_reload_schedule(self) -> None:
         """Reload schedule from file after Refresh Schedule button press."""
         def _load():
-            _home_id = get_entry_data(self.hass, self._entry_id).home_id
-            schedules_file = _get_schedules_file(_home_id)
+            home_id = self.coordinator.home_id
+            schedules_file = _get_schedules_file(home_id)
             if schedules_file.exists():
-                with open(schedules_file) as f:
+                with open(schedules_file) as f:  # noqa: PTH123
                     return json.load(f)
             return {}
-        
+
         try:
             schedules = await self.hass.async_add_executor_job(_load)
             if self._zone_id in schedules:
                 self._schedule = schedules[self._zone_id]
-                _LOGGER.info(f"Reloaded schedule for {self._zone_name}")
+                _LOGGER.info("Reloaded schedule for %s", self._zone_name)
                 # Trigger state update
                 self.async_write_ha_state()
         except Exception as e:
-            _LOGGER.error(f"Failed to reload schedule for {self._zone_name}: {e}")
-    
+            _LOGGER.error("Failed to reload schedule for %s: %s", self._zone_name, e)
+
     @property
     def event(self) -> CalendarEvent | None:
         """Return the current or next upcoming event."""
         return self._event
-    
+
     async def async_update(self) -> None:
         """Update the current event."""
         now = dt_util.now()
         today = now.date()
-        
+
         events = await self.async_get_events(self.hass, today, today + timedelta(days=1))
-        
+
         self._event = None
         for event in sorted(events, key=lambda e: e.start):
             if event.start <= now < event.end:
@@ -251,7 +256,7 @@ class TadoZoneScheduleCalendar(CalendarEntity):
             elif event.start > now:
                 self._event = event
                 break
-    
+
     async def async_get_events(
         self,
         hass: HomeAssistant,
@@ -262,21 +267,21 @@ class TadoZoneScheduleCalendar(CalendarEntity):
         events = []
         timetable_type = self._schedule.get("type", "ONE_DAY")
         blocks_by_day = self._schedule.get("blocks") or {}
-        
+
         current = start_date
         while current < end_date:
             weekday = current.weekday()
             day_blocks = self._get_blocks_for_weekday(weekday, timetable_type, blocks_by_day)
-            
+
             for block in day_blocks:
                 event = self._block_to_event(block, current)
                 if event:
                     events.append(event)
-            
+
             current += timedelta(days=1)
-        
+
         return events
-    
+
     def _get_blocks_for_weekday(
         self,
         weekday: int,
@@ -285,46 +290,46 @@ class TadoZoneScheduleCalendar(CalendarEntity):
     ) -> list[dict]:
         """Get schedule blocks for a specific weekday."""
         day_types = DAY_TYPES.get(timetable_type, ["MONDAY_TO_SUNDAY"])
-        
+
         for day_type in day_types:
             weekdays = DAY_TYPE_TO_WEEKDAYS.get(day_type, [])
             if weekday in weekdays:
                 # Tado API may return null for existing keys; 'or []' handles None correctly
                 return blocks_by_day.get(day_type) or []
-        
+
         return []
-    
+
     def _block_to_event(self, block: dict, event_date: date) -> CalendarEvent | None:
         """Convert a schedule block to a calendar event."""
         start_time = block.get("start", "00:00")
         end_time = block.get("end", "00:00")
         setting = block.get("setting") or {}
-        
+
         # Skip OFF blocks
         power = setting.get("power", "OFF")
         if power != "ON":
             return None
-        
+
         temp = setting.get("temperature") or {}
         if not temp:
             return None
-        
+
         start_h, start_m = map(int, start_time.split(":"))
         end_h, end_m = map(int, end_time.split(":"))
-        
+
         tz = dt_util.get_default_time_zone()
         start_dt = datetime(event_date.year, event_date.month, event_date.day, start_h, start_m, tzinfo=tz)
-        
+
         if end_time == "00:00" and start_time != "00:00":
             end_dt = datetime(event_date.year, event_date.month, event_date.day, 23, 59, 59, tzinfo=tz)
         else:
             end_dt = datetime(event_date.year, event_date.month, event_date.day, end_h, end_m, tzinfo=tz)
-        
+
         if start_dt >= end_dt:
             return None
-        
+
         temp_c = temp.get("celsius", 0)
-        
+
         # Include zone name in summary for calendar view
         return CalendarEvent(
             start=start_dt,

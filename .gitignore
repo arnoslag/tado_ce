@@ -15,5 +15,11 @@ custom_components/tado_ce/data/
 *.backup
 *.bak*
 
+# Dev tooling config (stays in root for tool compatibility)
+pyproject.toml
+
+# Ruff cache
+.ruff_cache/
+
 # Internal documentation (private - not synced to GitHub)
 DEV/

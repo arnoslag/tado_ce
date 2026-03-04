@@ -1,7 +1,6 @@
 """Shared helper functions for Tado CE sensor entities.
 
-v3.0.0: DRY consolidation — extracted from sensor.py to eliminate duplicate methods.
-- get_outdoor_temperature(): was duplicated in 6 sensor classes
+- get_outdoor_temperature(): outdoor temperature lookup from configured entity
 """
 from __future__ import annotations
 
@@ -63,7 +62,8 @@ def get_effective_temperature(
     hass,
     zone_id: str,
     room_temp: float,
-    entry_id: str,
+    config_manager=None,
+    zone_config_manager=None,
 ) -> tuple:
     """Get effective temperature for mold risk calculation.
 
@@ -71,32 +71,14 @@ def get_effective_temperature(
     - Tier 1: Surface temperature estimation (if outdoor temp + window type available)
     - Tier 2: Room average temperature (fallback)
 
-    v3.0.0: Extracted from TadoMoldRiskSensor / TadoMoldRiskPercentageSensor.
-
-    Args:
-        hass: Home Assistant instance
-        zone_id: Zone ID for per-zone config lookup
-        room_temp: Room average temperature from Tado sensor
-        entry_id: Config entry ID for per-entry data access
-
-    Returns:
-        Tuple of (effective_temp, outdoor_temp, surface_temp, temperature_source, surface_temp_offset)
-        - effective_temp: float — temperature to use for mold risk calc
-        - outdoor_temp: Optional[float] — outdoor temperature if available
-        - surface_temp: Optional[float] — calculated surface temperature
-        - temperature_source: str — "Estimated", "Calibrated", or "Room Average"
-        - surface_temp_offset: float — applied offset value
+    Accepts config_manager/zone_config_manager directly
+    instead of entry_id (CoordinatorEntity migration).
     """
-    from .const import WINDOW_U_VALUES, DEFAULT_WINDOW_TYPE
+    from .const import DEFAULT_WINDOW_TYPE, WINDOW_U_VALUES
 
     fallback = (room_temp, None, None, "Room Average", 0.0)
 
     try:
-        from .entry_data import get_entry_data
-        _ed = get_entry_data(hass, entry_id)
-        config_manager = _ed.config_manager
-        zone_config_manager = _ed.zone_config_manager
-
         if not config_manager:
             return fallback
 
@@ -145,8 +127,6 @@ def calculate_surface_rh(effective_temp: float, dew_point: float) -> Optional[in
 
     Uses the Magnus-Tetens formula for saturation vapour pressure.
     Mold typically grows when surface RH exceeds ~70-80 %.
-
-    v3.0.0: Extracted from TadoMoldRiskSensor / TadoMoldRiskPercentageSensor.
 
     Args:
         effective_temp: Surface (or room) temperature in °C

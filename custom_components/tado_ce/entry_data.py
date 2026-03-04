@@ -1,9 +1,7 @@
 """Per-entry state container for Tado CE multi-home support.
 
-v3.0.0 Phase 1: Each config entry (home) gets its own EntryData instance,
-eliminating all shared global state. This is the foundation for multi-home
-support — all per-entry fields that were previously stored in
-hass.data[DOMAIN] (flat dict) are now isolated per config entry.
+Each config entry (home) gets its own EntryData instance, eliminating all
+shared global state. All per-entry fields are isolated per config entry.
 
 Usage:
     # In async_setup_entry:
@@ -30,15 +28,14 @@ _LOGGER = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
 
-    from .api_client import TadoApiClient
+    from .adaptive_preheat import AdaptivePreheatManager
     from .api_call_tracker import APICallTracker
+    from .api_client import TadoApiClient
     from .config_manager import ConfigurationManager
     from .data_loader import DataLoader
     from .heating_coordinator import HeatingCycleCoordinator
-    from .refresh_handler import RefreshHandler
     from .smart_comfort import SmartComfortManager
     from .zone_config_manager import ZoneConfigManager
-    from .adaptive_preheat import AdaptivePreheatManager
 
     # HA official pattern — provides type safety for entry.runtime_data
     type TadoConfigEntry = ConfigEntry[EntryData]
@@ -53,7 +50,7 @@ class EntryData:
     simultaneously cannot interfere with each other's state.
 
     Mutable fields use default_factory to ensure each instance gets its own
-    independent copy (critical for isolation — GAP-27).
+    independent copy (critical for isolation).
     """
 
     # === Identity ===
@@ -62,8 +59,7 @@ class EntryData:
 
     # === Credentials ===
     refresh_token: str = ""
-    """OAuth refresh token, passed to TadoApiClient at construction time (GAP-25).
-    Stored here so token rotation writes to per-home config file."""
+    """OAuth refresh token. Stored here so token rotation writes to per-home config file."""
 
     # === Core managers (set during async_setup_entry) ===
     config_manager: Optional[ConfigurationManager] = None
@@ -73,16 +69,13 @@ class EntryData:
     """Per-entry zone configuration manager (per-zone overrides)."""
 
     data_loader: Optional[DataLoader] = None
-    """Per-entry data loader with home_id-scoped file paths (GAP-77)."""
+    """Per-entry data loader with home_id-scoped file paths."""
 
     api_client: Optional[TadoApiClient] = None
-    """Per-entry async API client (GAP-26: no more shared singleton)."""
+    """Per-entry async API client."""
 
     api_tracker: Optional[APICallTracker] = None
-    """Per-entry API call tracker (GAP-28, GAP-67: per-entry executor)."""
-
-    refresh_handler: Optional[RefreshHandler] = None
-    """Per-entry refresh handler for immediate refresh after state changes."""
+    """Per-entry API call tracker."""
 
     smart_comfort_manager: Optional[SmartComfortManager] = None
     """Per-entry Smart Comfort analytics manager."""
@@ -95,7 +88,7 @@ class EntryData:
 
     # === Timers / Cancellation callbacks ===
     polling_cancel: Optional[Callable[[], None]] = None
-    """Cancel callback for the periodic polling timer (GAP-79, CP-1).
+    """Cancel callback for the periodic polling timer.
     Cancelling one entry's timer must NOT affect another entry's timer."""
 
     freshness_cleanup_cancel: Optional[Callable[[], None]] = None
@@ -111,7 +104,7 @@ class EntryData:
     timer_duration: int = 60
     """Global timer duration in minutes for TIMER overlay mode."""
 
-    # === Closure-based state migrated from __init__.py (GAP-27) ===
+    # === Per-entry mutable state ===
     entity_freshness: dict[str, float] = field(default_factory=dict)
     """entity_id -> timestamp mapping for freshness tracking.
     Each entry has its own dict — mutating one entry's freshness
@@ -128,7 +121,7 @@ class EntryData:
     Uses list[int] for mutability in closures (same pattern as current code)."""
 
 
-    # === Methods migrated from __init__.py closures (Task 6.5) ===
+    # === Methods ===
 
     def get_next_sequence(self) -> int:
         """Get next sequence number for tracking data freshness.

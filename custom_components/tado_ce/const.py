@@ -1,22 +1,18 @@
 """Constants for Tado CE integration."""
-from pathlib import Path
 import os
+from pathlib import Path
 from typing import Optional
 
 DOMAIN = "tado_ce"
 MANUFACTURER = "Joe Yiu (@hiall-fyi)"
 
 # Data directory (persistent storage)
-# v1.5.2: Moved from custom_components/tado_ce/data/ to .storage/tado_ce/
-# This prevents HACS upgrades from overwriting credentials and data files
+# Stored in .storage/tado_ce/ to prevent HACS upgrades from overwriting data files
 # Use environment variable if set (for testing), otherwise use standard HA path
 _BASE_CONFIG_DIR = os.environ.get("TADO_CE_CONFIG_DIR", "/config")
 DATA_DIR = Path(_BASE_CONFIG_DIR) / ".storage" / "tado_ce"
 
-# Legacy data directory (for migration from v1.5.1 and earlier)
-LEGACY_DATA_DIR = Path(_BASE_CONFIG_DIR) / "custom_components" / "tado_ce" / "data"
-
-# v1.8.0: Multi-home support - per-home data files
+# Multi-home support - per-home data files
 # Files that are per-home (need home_id suffix)
 PER_HOME_FILES = [
     "config", "zones", "zones_info", "ratelimit", "weather",
@@ -27,16 +23,14 @@ PER_HOME_FILES = [
 
 def get_data_file(base_name: str, home_id: Optional[str] = None) -> Path:
     """Get data file path, with optional home_id suffix for multi-home support.
-    
-    v1.8.0: Supports per-home data files for multi-home setups.
-    
+
     Args:
         base_name: Base filename without extension (e.g., "zones", "config")
         home_id: Optional home ID for per-home files
-        
+
     Returns:
         Path to the data file
-        
+
     Examples:
         get_data_file("zones") -> /config/.storage/tado_ce/zones.json
         get_data_file("zones", "12345") -> /config/.storage/tado_ce/zones_12345.json
@@ -46,23 +40,8 @@ def get_data_file(base_name: str, home_id: Optional[str] = None) -> Path:
     return DATA_DIR / f"{base_name}.json"
 
 
-def get_legacy_file(base_name: str) -> Path:
-    """Get legacy file path (without home_id suffix).
-    
-    Used for backwards compatibility and migration.
-    
-    Args:
-        base_name: Base filename without extension
-        
-    Returns:
-        Path to the legacy data file
-    """
-    return DATA_DIR / f"{base_name}.json"
-
-
-# Legacy file paths (for backwards compatibility)
-# These are kept for existing code that imports them directly
-# New code should use get_data_file() with home_id
+# Global file paths (non-home-scoped, used for bootstrap and debugging)
+# Per-home files should use get_data_file() with home_id
 CONFIG_FILE = DATA_DIR / "config.json"
 ZONES_FILE = DATA_DIR / "zones.json"
 ZONES_INFO_FILE = DATA_DIR / "zones_info.json"
@@ -106,7 +85,7 @@ DEFAULT_ZONE_NAMES = {
 }
 
 # =============================================================================
-# Unit Conversion Constants (v1.9.0)
+# Unit Conversion Constants
 # =============================================================================
 
 # Wind Speed Conversion Factors (to km/h)
@@ -145,7 +124,7 @@ WIND_CHILL_TEMP_THRESHOLD = 10  # °C - only apply wind chill at or below this
 WIND_CHILL_WIND_THRESHOLD = 4.8  # km/h - minimum wind speed for wind chill
 
 # Heat Index Formula Constants
-# HI = -8.785 + 1.611*T + 2.339*RH - 0.146*T*RH - 0.012*T² - 0.016*RH² 
+# HI = -8.785 + 1.611*T + 2.339*RH - 0.146*T*RH - 0.012*T² - 0.016*RH²
 #      + 0.002*T²*RH + 0.001*T*RH² - 0.000002*T²*RH²
 HEAT_INDEX_CONST_A = -8.785
 HEAT_INDEX_CONST_B = 1.611
@@ -230,26 +209,28 @@ SMART_COMFORT_PRESETS = {
     },
 }
 
-# v1.11.0: Adaptive Smart Polling Constants
-# v2.0.2: MIN_POLLING_INTERVAL is for adaptive calculation floor (sensible default)
+# Adaptive Smart Polling Constants
+# MIN_POLLING_INTERVAL is for adaptive calculation floor (sensible default)
 # Custom intervals can go as low as 1 minute when user explicitly sets them
 MIN_POLLING_INTERVAL = 5        # minutes (adaptive floor - prevents excessive polling by default)
+DEFAULT_DAY_INTERVAL = 30       # minutes (default day polling interval)
+DEFAULT_NIGHT_INTERVAL = 60     # minutes (default night polling interval)
 MIN_CUSTOM_INTERVAL = 1         # minutes (custom interval floor - allows 1-min for high-quota users)
 MAX_POLLING_INTERVAL = 120      # minutes (ensure reasonable updates even with low quota)
 POLLING_SAFETY_BUFFER = 0.90    # Reserve 10% quota for manual calls and unexpected usage
 
-# v2.0.0: Quota Reserve Protection Constants
+# Quota Reserve Protection Constants
 # When remaining quota falls below threshold, pause polling to reserve for manual operations
 QUOTA_RESERVE_CALLS = 5         # Minimum reserved calls (absolute floor) - pause polling
 QUOTA_RESERVE_PERCENT = 0.05    # Reserve 5% of daily limit (whichever is larger)
-QUOTA_RESERVE_ENABLED_DEFAULT = True  # v2.0.1: Default ON, advanced users can disable
+QUOTA_RESERVE_ENABLED_DEFAULT = True
 
-# v2.0.1: Bootstrap Reserve - absolute minimum calls that are NEVER used
+# Bootstrap Reserve - absolute minimum calls that are NEVER used
 # These are reserved for auto-recovery after API reset (detecting reset, initial sync)
 # Even manual actions are blocked when remaining <= QUOTA_BOOTSTRAP_CALLS
 QUOTA_BOOTSTRAP_CALLS = 3       # Hard limit - never use these calls
 
-# v2.2.3: Low Quota Threshold for Smart Day/Night (#144)
+# Low Quota Threshold for Smart Day/Night
 # Users with remaining <= this threshold get special handling to ensure 24h coverage
 # Smart Day/Night: Night uses MAX_POLLING_INTERVAL, Day uses remaining quota
 LOW_QUOTA_THRESHOLD = 100       # Trigger Smart Day/Night for low-quota users
@@ -264,7 +245,7 @@ WINDOW_U_VALUES = {
 DEFAULT_WINDOW_TYPE = "double_pane"
 INTERIOR_SURFACE_HEAT_TRANSFER_COEFFICIENT = 8.0  # W/m²K (standard value for indoor surfaces)
 
-# v2.0.0: UFH (Underfloor Heating) Slow Response Mode
+# UFH (Underfloor Heating) Slow Response Mode
 # Additional buffer time for underfloor heating systems which have higher thermal lag
 UFH_BUFFER_MINUTES_DEFAULT = 0  # Default: no buffer (standard radiators)
 UFH_BUFFER_MINUTES_MIN = 0
@@ -272,7 +253,7 @@ UFH_BUFFER_MINUTES_MAX = 60     # Max 60 minutes additional buffer
 
 
 # =============================================================================
-# Per-Zone Thermal Analytics (v2.1.0)
+# Per-Zone Thermal Analytics
 # =============================================================================
 
 # Config key for zones with Thermal Analytics enabled
@@ -281,11 +262,11 @@ UFH_BUFFER_MINUTES_MAX = 60     # Max 60 minutes additional buffer
 CONF_THERMAL_ANALYTICS_ZONES = "thermal_analytics_zones"
 
 # =============================================================================
-# Per-Zone Configuration Constants (v2.1.0)
+# Per-Zone Configuration Constants
 # =============================================================================
 
 # Zone Features Toggles - control which entity groups are visible
-# v2.1.0: Core features are ALWAYS ON (not in UI)
+# Core features are ALWAYS ON (not in UI)
 # Only Thermal Analytics and Zone Configuration are user-configurable
 # These values are for reference only - actual defaults are in config_manager.py
 ZONE_FEATURES_TOGGLES = {
@@ -298,7 +279,6 @@ ZONE_FEATURES_TOGGLES = {
 }
 
 # Overlay mode values (UPPERCASE - matches Tado API)
-# v2.1.0: Unified to UPPERCASE for consistency across Hub and per-zone
 OVERLAY_MODE_TADO_MODE = "TADO_MODE"
 OVERLAY_MODE_NEXT_TIME_BLOCK = "NEXT_TIME_BLOCK"
 OVERLAY_MODE_TIMER = "TIMER"
@@ -328,12 +308,12 @@ DEFAULT_ZONE_CONFIG = {
     "adaptive_preheat": False,      # Heating + AC
     "smart_comfort_mode": "none",   # none/light/moderate/aggressive (Heating + AC)
     "window_type": "double_pane",   # single_pane/double_pane/triple_pane/passive_house (Heating + AC)
-    "overlay_mode": OVERLAY_MODE_DEFAULT,  # v2.1.0: default to inherit global
+    "overlay_mode": OVERLAY_MODE_DEFAULT,
     "timer_duration": TIMER_DURATION_DEFAULT,  # 15-180 minutes (Heating + AC, when Timer)
     "min_temp": 5.0,                # 5-25°C (Heating + AC)
     "max_temp": 25.0,               # 15-30°C (Heating + AC)
     "temp_offset": 0.0,             # -3.0 to +3.0°C (Heating + AC)
-    "surface_temp_offset": 0.0,     # v2.1.0: -5.0 to +5.0°C offset for mold risk calculation
+    "surface_temp_offset": 0.0,     # -5.0 to +5.0°C offset for mold risk calculation
 }
 
 # Surface temperature offset limits (for mold risk calibration)
@@ -388,3 +368,6 @@ WINDOW_TYPE_REVERSE_MAP = {v: k for k, v in WINDOW_TYPE_MAP.items()}
 TEMP_OFFSET_MIN = -3.0
 TEMP_OFFSET_MAX = 3.0
 TEMP_OFFSET_STEP = 0.5
+
+# Full sync interval (hours) — how often to do a full API sync vs quick sync
+FULL_SYNC_INTERVAL_HOURS = 6

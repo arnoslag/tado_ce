@@ -1,28 +1,26 @@
 """Tado CE service registration and handlers.
 
-Extracted from __init__.py to reduce file size.
 All service handlers for set_climate_timer, set_water_heater_timer,
 resume_schedule, set_temperature_offset, get_temperature_offset,
 add_meter_reading, identify_device, set_away_configuration.
 """
 import logging
 
+import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
-
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import HomeAssistantError
-import homeassistant.helpers.config_validation as cv
 
 from .const import (
     DOMAIN,
-    SERVICE_SET_CLIMATE_TIMER,
-    SERVICE_SET_WATER_HEATER_TIMER,
-    SERVICE_RESUME_SCHEDULE,
-    SERVICE_SET_TEMP_OFFSET,
-    SERVICE_GET_TEMP_OFFSET,
     SERVICE_ADD_METER_READING,
+    SERVICE_GET_TEMP_OFFSET,
     SERVICE_IDENTIFY_DEVICE,
+    SERVICE_RESUME_SCHEDULE,
     SERVICE_SET_AWAY_CONFIG,
+    SERVICE_SET_CLIMATE_TIMER,
+    SERVICE_SET_TEMP_OFFSET,
+    SERVICE_SET_WATER_HEATER_TIMER,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -33,17 +31,15 @@ def _get_device_serial_for_zone(zone_id: str, data_loader=None) -> str | None:
 
     Args:
         zone_id: Zone ID to look up
-        data_loader: DataLoader instance for per-entry file access (v3.0.0 GAP-73)
+        data_loader: DataLoader instance for per-entry file access
 
     Returns:
         Device serial number, or None if not found
     """
     try:
-        if data_loader is not None:
-            zones_info = data_loader.load_zones_info_file()
-        else:
-            from .data_loader import load_zones_info_file
-            zones_info = load_zones_info_file()
+        if data_loader is None:
+            return None
+        zones_info = data_loader.load_zones_info_file()
         if not zones_info:
             return None
 
@@ -55,7 +51,7 @@ def _get_device_serial_for_zone(zone_id: str, data_loader=None) -> str | None:
                         return serial
         return None
     except Exception as e:
-        _LOGGER.error(f"Failed to get device serial for zone {zone_id}: {e}")
+        _LOGGER.error("Failed to get device serial for zone %s: %s", zone_id, e)
         return None
 
 
@@ -67,18 +63,16 @@ def _get_device_serials_for_zone(zone_id: str, data_loader=None) -> list[str]:
 
     Args:
         zone_id: Zone ID to look up
-        data_loader: DataLoader instance for per-entry file access (v3.0.0 GAP-73)
+        data_loader: DataLoader instance for per-entry file access
 
     Returns:
         List of device serial numbers (may be empty)
     """
     serials = []
     try:
-        if data_loader is not None:
-            zones_info = data_loader.load_zones_info_file()
-        else:
-            from .data_loader import load_zones_info_file
-            zones_info = load_zones_info_file()
+        if data_loader is None:
+            return []
+        zones_info = data_loader.load_zones_info_file()
         if not zones_info:
             return []
 
@@ -91,14 +85,14 @@ def _get_device_serials_for_zone(zone_id: str, data_loader=None) -> list[str]:
                 break
         return serials
     except Exception as e:
-        _LOGGER.error(f"Failed to get device serials for zone {zone_id}: {e}")
+        _LOGGER.error("Failed to get device serials for zone %s: %s", zone_id, e)
         return []
 
 
 def _expand_group_entity_ids(hass: HomeAssistant, entity_ids: list, allowed_domains: list = None) -> list:
     """Expand group entity IDs to individual entity IDs.
 
-    v2.2.3: Added to support climate groups in custom services (#139).
+    Added to support climate groups in custom services.
 
     Args:
         hass: Home Assistant instance
@@ -122,39 +116,38 @@ def _expand_group_entity_ids(hass: HomeAssistant, entity_ids: list, allowed_doma
                         if eid.split(".")[0] in allowed_domains
                     ]
                 expanded_ids.extend(group_members)
-                _LOGGER.debug(f"Expanded group {entity_id} to {len(group_members)} entities")
+                _LOGGER.debug("Expanded group %s to %s entities", entity_id, len(group_members))
             else:
-                _LOGGER.warning(f"Group {entity_id} not found or has no members")
+                _LOGGER.warning("Group %s not found or has no members", entity_id)
         else:
             # Filter by allowed domains if specified
             if allowed_domains:
                 domain = entity_id.split(".")[0]
                 if domain not in allowed_domains:
-                    _LOGGER.debug(f"Skipping {entity_id} - not in allowed domains {allowed_domains}")
+                    _LOGGER.debug("Skipping %s - not in allowed domains %s", entity_id, allowed_domains)
                     continue
             expanded_ids.append(entity_id)
     return expanded_ids
 
 
-def _resolve_entry_data(hass: HomeAssistant, entity_id: str):
-    """Resolve EntryData for a service call using the HA entity registry.
 
-    Looks up the entity in the HA entity registry to find its config_entry_id,
-    then returns the corresponding EntryData from hass.data[DOMAIN].
+def _resolve_coordinator(hass: HomeAssistant, entity_id: str):
+    """Resolve TadoDataUpdateCoordinator for a service call using the HA entity registry.
+
+    Uses entry.runtime_data instead of hass.data[DOMAIN].
 
     Args:
         hass: Home Assistant instance
         entity_id: Entity ID to resolve (e.g., "climate.tado_ce_living_room")
 
     Returns:
-        EntryData instance for the entity's config entry
+        TadoDataUpdateCoordinator instance for the entity's config entry
 
     Raises:
         HomeAssistantError: If entity not found, not a Tado CE entity,
             or config entry not loaded
     """
     from homeassistant.helpers import entity_registry as er
-    from .entry_data import EntryData
 
     registry = er.async_get(hass)
     entity_entry = registry.async_get(entity_id)
@@ -175,34 +168,33 @@ def _resolve_entry_data(hass: HomeAssistant, entity_id: str):
             f"Entity {entity_id} has no config entry association"
         )
 
-    domain_data = hass.data.get(DOMAIN, {})
-    entry_data = domain_data.get(config_entry_id)
-
-    if entry_data is None:
+    config_entry = hass.config_entries.async_get_entry(config_entry_id)
+    if config_entry is None or not hasattr(config_entry, 'runtime_data') or config_entry.runtime_data is None:
         raise HomeAssistantError(
             f"No Tado CE entry loaded for {entity_id} (config_entry_id={config_entry_id})"
         )
 
+    coordinator = config_entry.runtime_data
     _LOGGER.debug(
         "Resolved %s -> entry=%s (home_id=%s)",
-        entity_id, config_entry_id, entry_data.home_id,
+        entity_id, config_entry_id, coordinator.home_id,
     )
-    return entry_data
+    return coordinator
 
 
-def _resolve_entry_data_for_device(hass: HomeAssistant, device_serial: str):
-    """Resolve EntryData for a device serial using the HA device registry.
 
-    For home-level services like identify_device that take a device_serial
-    instead of entity_id. Looks up the device in the HA device registry
-    to find its config_entry_id.
+
+def _resolve_coordinator_for_device(hass: HomeAssistant, device_serial: str):
+    """Resolve TadoDataUpdateCoordinator for a device serial using the HA device registry.
+
+    Uses entry.runtime_data instead of hass.data[DOMAIN].
 
     Args:
         hass: Home Assistant instance
         device_serial: Device serial number (e.g., "VA1234567890")
 
     Returns:
-        EntryData instance for the device's config entry
+        TadoDataUpdateCoordinator instance for the device's config entry
 
     Raises:
         HomeAssistantError: If device not found or config entry not loaded
@@ -217,14 +209,14 @@ def _resolve_entry_data_for_device(hass: HomeAssistant, device_serial: str):
             if domain == DOMAIN and identifier == device_serial:
                 # Found the device — get its config entry
                 for config_entry_id in device.config_entries:
-                    domain_data = hass.data.get(DOMAIN, {})
-                    entry_data = domain_data.get(config_entry_id)
-                    if entry_data is not None:
+                    config_entry = hass.config_entries.async_get_entry(config_entry_id)
+                    if config_entry is not None and hasattr(config_entry, 'runtime_data') and config_entry.runtime_data is not None:
+                        coordinator = config_entry.runtime_data
                         _LOGGER.debug(
                             "Resolved device %s -> entry=%s (home_id=%s)",
-                            device_serial, config_entry_id, entry_data.home_id,
+                            device_serial, config_entry_id, coordinator.home_id,
                         )
-                        return entry_data
+                        return coordinator
 
                 raise HomeAssistantError(
                     f"Device {device_serial} found but its config entry is not loaded"
@@ -236,47 +228,52 @@ def _resolve_entry_data_for_device(hass: HomeAssistant, device_serial: str):
     )
 
 
-def _resolve_single_entry_data(hass: HomeAssistant):
-    """Resolve EntryData when there is exactly one Tado CE config entry.
+
+
+def _resolve_single_coordinator(hass: HomeAssistant):
+    """Resolve coordinator when there is exactly one Tado CE config entry.
+
+    Uses entry.runtime_data instead of hass.data[DOMAIN].
 
     For home-level services (add_meter_reading) that don't have an entity_id
     or device_serial to route with. If only one entry exists, returns it.
     If multiple entries exist, raises an error asking the user to specify.
 
     Returns:
-        EntryData instance for the single config entry
+        TadoDataUpdateCoordinator instance for the single config entry
 
     Raises:
         HomeAssistantError: If no entries or multiple entries exist
     """
-    domain_data = hass.data.get(DOMAIN, {})
+    entries = hass.config_entries.async_entries(DOMAIN)
+    loaded = [
+        e for e in entries
+        if hasattr(e, 'runtime_data') and e.runtime_data is not None
+    ]
 
-    # Filter to only EntryData instances (domain_data may contain other keys)
-    from .entry_data import EntryData
-    entries = {k: v for k, v in domain_data.items() if isinstance(v, EntryData)}
-
-    if len(entries) == 0:
+    if len(loaded) == 0:
         raise HomeAssistantError("No Tado CE entries are loaded")
 
-    if len(entries) == 1:
-        entry_data = next(iter(entries.values()))
+    if len(loaded) == 1:
+        coordinator = loaded[0].runtime_data
         _LOGGER.debug(
-            "Single entry resolved (home_id=%s)", entry_data.home_id,
+            "Single entry resolved (home_id=%s)", coordinator.home_id,
         )
-        return entry_data
+        return coordinator
 
     # Multiple entries — list home_ids to help user
-    home_ids = [ed.home_id for ed in entries.values()]
+    home_ids = [e.runtime_data.home_id for e in loaded]
     raise HomeAssistantError(
         f"Multiple Tado homes configured ({', '.join(home_ids)}). "
         "Please use a service that targets a specific entity to route to the correct home."
     )
 
 
+
 async def _async_register_services(hass: HomeAssistant):
     """Register Tado CE services."""
     # Lazy imports to avoid circular dependencies
-    from . import async_check_bootstrap_reserve, async_show_api_limit_notification
+    from .ratelimit import async_check_bootstrap_reserve, async_show_api_limit_notification
 
     # Check if services are already registered (avoid duplicate registration)
     if hass.services.has_service(DOMAIN, SERVICE_SET_CLIMATE_TIMER):
@@ -292,21 +289,21 @@ async def _async_register_services(hass: HomeAssistant):
         - time_period (required) - Time Period format (e.g., "01:30:00")
         - overlay (optional)
 
-        v2.0.1: Added bootstrap reserve check - blocks action when quota critically low.
-        v3.0.0: Per-entry bootstrap reserve check (GAP-75).
+        Added bootstrap reserve check - blocks action when quota critically low.
+        Per-entry bootstrap reserve check.
         """
         entity_ids = call.data.get("entity_id", [])
         if isinstance(entity_ids, str):
             entity_ids = [entity_ids]
 
-        # v2.2.3: Expand groups to individual entity IDs (#139)
+        # Expand groups to individual entity IDs
         entity_ids = _expand_group_entity_ids(hass, entity_ids, allowed_domains=["climate"])
 
-        # v3.0.0: Per-entry bootstrap reserve check — check first entity's entry
+        # Per-entry bootstrap reserve check — check first entity's entry
         if entity_ids:
             try:
-                _ed = _resolve_entry_data(hass, entity_ids[0])
-                should_block, reason = await async_check_bootstrap_reserve(hass, entry_data=_ed)
+                _coord = _resolve_coordinator(hass, entity_ids[0])
+                should_block, reason = await async_check_bootstrap_reserve(hass, coordinator=_coord)
                 if should_block:
                     await async_show_api_limit_notification(hass, reason)
                     raise HomeAssistantError(
@@ -315,14 +312,14 @@ async def _async_register_services(hass: HomeAssistant):
                     )
             except HomeAssistantError:
                 raise
-            except Exception:
-                pass  # If resolve fails, let the entity call handle the error
+            except Exception as err:
+                _LOGGER.debug("Suppressed exception in set_climate_timer bootstrap check: %s", err)
 
         temperature = call.data.get("temperature")
         time_period = call.data.get("time_period")
         overlay = call.data.get("overlay")
 
-        # v2.3.0: time_period is optional when overlay is specified (#152 - @mpartington)
+        # time_period is optional when overlay is specified
         # Validate: must have either time_period or overlay
         duration_minutes = None
         if time_period:
@@ -359,7 +356,7 @@ async def _async_register_services(hass: HomeAssistant):
                 if duration_minutes > 1440:
                     raise ValueError(f"Duration must be at most 1440 minutes (24 hours), got {duration_minutes}")
 
-                _LOGGER.info(f"Parsed time_period {time_period} to {duration_minutes} minutes")
+                _LOGGER.info("Parsed time_period %s to %s minutes", time_period, duration_minutes)
 
             except (ValueError, AttributeError, TypeError) as e:
                 error_msg = f"Failed to parse time_period: {e}"
@@ -387,9 +384,15 @@ async def _async_register_services(hass: HomeAssistant):
                             try:
                                 await ent.async_set_timer(temperature, duration_minutes, overlay)
                                 if duration_minutes:
-                                    _LOGGER.info(f"Set timer for {entity_id}: {temperature}°C for {duration_minutes}min")
+                                    _LOGGER.info(
+                                        "Set timer for %s: %s°C for %smin",
+                                        entity_id, temperature, duration_minutes
+                                    )
                                 elif overlay:
-                                    _LOGGER.info(f"Set timer for {entity_id}: {temperature}°C with overlay={overlay}")
+                                    _LOGGER.info(
+                                        "Set timer for %s: %s°C with overlay=%s",
+                                        entity_id, temperature, overlay
+                                    )
                             except Exception as e:
                                 error_msg = f"Failed to set timer for {entity_id}: {e}"
                                 _LOGGER.error(error_msg)
@@ -399,21 +402,21 @@ async def _async_register_services(hass: HomeAssistant):
     async def handle_set_water_heater_timer(call: ServiceCall):
         """Handle set_water_heater_timer service call.
 
-        v2.0.1: Added bootstrap reserve check - blocks action when quota critically low.
-        v3.0.0: Per-entry bootstrap reserve check (GAP-75).
+        Added bootstrap reserve check - blocks action when quota critically low.
+        Per-entry bootstrap reserve check.
         """
         entity_ids = call.data.get("entity_id", [])
         if isinstance(entity_ids, str):
             entity_ids = [entity_ids]
 
-        # v2.2.3: Expand groups to individual entity IDs (#139)
+        # Expand groups to individual entity IDs
         entity_ids = _expand_group_entity_ids(hass, entity_ids, allowed_domains=["water_heater"])
 
-        # v3.0.0: Per-entry bootstrap reserve check
+        # Per-entry bootstrap reserve check
         if entity_ids:
             try:
-                _ed = _resolve_entry_data(hass, entity_ids[0])
-                should_block, reason = await async_check_bootstrap_reserve(hass, entry_data=_ed)
+                _coord = _resolve_coordinator(hass, entity_ids[0])
+                should_block, reason = await async_check_bootstrap_reserve(hass, coordinator=_coord)
                 if should_block:
                     await async_show_api_limit_notification(hass, reason)
                     raise HomeAssistantError(
@@ -422,8 +425,8 @@ async def _async_register_services(hass: HomeAssistant):
                     )
             except HomeAssistantError:
                 raise
-            except Exception:
-                pass
+            except Exception as err:
+                _LOGGER.debug("Suppressed exception in set_water_heater_timer bootstrap check: %s", err)
 
         time_period = call.data.get("time_period")
         temperature = call.data.get("temperature")
@@ -467,7 +470,7 @@ async def _async_register_services(hass: HomeAssistant):
             if duration_minutes > 1440:
                 raise ValueError(f"Duration must be at most 1440 minutes (24 hours), got {duration_minutes}")
 
-            _LOGGER.info(f"Parsed time_period {time_period} to {duration_minutes} minutes")
+            _LOGGER.info("Parsed time_period %s to %s minutes", time_period, duration_minutes)
 
         except (ValueError, AttributeError, TypeError) as e:
             error_msg = f"Failed to parse time_period: {e}"
@@ -489,7 +492,7 @@ async def _async_register_services(hass: HomeAssistant):
                     if ent.entity_id == entity_id and hasattr(ent, 'async_set_timer'):
                         try:
                             await ent.async_set_timer(duration_minutes, temperature)
-                            _LOGGER.info(f"Set timer for {entity_id}: {duration_minutes}min")
+                            _LOGGER.info("Set timer for %s: %smin", entity_id, duration_minutes)
                         except Exception as e:
                             error_msg = f"Failed to set timer for {entity_id}: {e}"
                             _LOGGER.error(error_msg)
@@ -499,27 +502,27 @@ async def _async_register_services(hass: HomeAssistant):
     async def handle_resume_schedule(call: ServiceCall):
         """Handle resume_schedule service call.
 
-        v2.0.1: Added bootstrap reserve check - blocks action when quota critically low.
-        v2.2.3: Added group expansion support (#139).
-        v3.0.0: Per-entry API client routing (GAP-75).
+        Added bootstrap reserve check - blocks action when quota critically low.
+        Added group expansion support.
+        Per-entry API client routing.
         """
         entity_ids = call.data.get("entity_id", [])
         if isinstance(entity_ids, str):
             entity_ids = [entity_ids]
 
-        # v2.2.3: Expand groups to individual entity IDs (#139)
+        # Expand groups to individual entity IDs
         entity_ids = _expand_group_entity_ids(hass, entity_ids, allowed_domains=["climate", "water_heater"])
 
         for entity_id in entity_ids:
-            # v3.0.0: Resolve per-entry API client
+            # Resolve per-entry API client
             try:
-                _ed = _resolve_entry_data(hass, entity_id)
+                _coord = _resolve_coordinator(hass, entity_id)
             except HomeAssistantError as e:
-                _LOGGER.error(f"resume_schedule: {e}")
+                _LOGGER.error("resume_schedule: %s", e)
                 continue
 
             # Per-entry bootstrap reserve check
-            should_block, reason = await async_check_bootstrap_reserve(hass, entry_data=_ed)
+            should_block, reason = await async_check_bootstrap_reserve(hass, coordinator=_coord)
             if should_block:
                 await async_show_api_limit_notification(hass, reason)
                 raise HomeAssistantError(
@@ -534,25 +537,25 @@ async def _async_register_services(hass: HomeAssistant):
                     if ent.entity_id == entity_id:
                         zone_id = getattr(ent, '_zone_id', None)
                         if zone_id:
-                            await _ed.api_client.delete_zone_overlay(zone_id)
-                            _LOGGER.info(f"Resumed schedule for {entity_id}")
+                            await _coord.api_client.delete_zone_overlay(zone_id)
+                            _LOGGER.info("Resumed schedule for %s", entity_id)
                         break
 
     async def handle_set_temp_offset(call: ServiceCall):
         """Handle set_temperature_offset service call.
 
         Sets temperature offset for ALL devices in a zone (supports multi-TRV rooms).
-        v2.0.1: Added bootstrap reserve check - blocks action when quota critically low.
-        v3.0.0: Per-entry API client and data_loader routing (GAP-73, GAP-75).
+        Added bootstrap reserve check - blocks action when quota critically low.
+        Per-entry API client and data_loader routing.
         """
         entity_id = call.data.get("entity_id")
         offset = call.data.get("offset")
 
-        # v3.0.0: Resolve per-entry data
-        _ed = _resolve_entry_data(hass, entity_id)
+        # Resolve per-entry data
+        _coord = _resolve_coordinator(hass, entity_id)
 
         # Per-entry bootstrap reserve check
-        should_block, reason = await async_check_bootstrap_reserve(hass, entry_data=_ed)
+        should_block, reason = await async_check_bootstrap_reserve(hass, coordinator=_coord)
         if should_block:
             await async_show_api_limit_notification(hass, reason)
             raise HomeAssistantError(
@@ -568,29 +571,29 @@ async def _async_register_services(hass: HomeAssistant):
                     zone_id = getattr(ent, '_zone_id', None)
                     if zone_id:
                         # Find ALL device serials for this zone (multi-TRV support)
-                        # v3.0.0: Use per-entry data_loader (GAP-73)
+                        # Use per-entry data_loader
                         serials = await hass.async_add_executor_job(
-                            _get_device_serials_for_zone, zone_id, _ed.data_loader
+                            _get_device_serials_for_zone, zone_id, _coord.data_loader
                         )
                         if serials:
                             for serial in serials:
-                                await _ed.api_client.set_device_offset(serial, offset)
-                            _LOGGER.info(f"Set offset {offset}°C for {entity_id} ({len(serials)} device(s))")
+                                await _coord.api_client.set_device_offset(serial, offset)
+                            _LOGGER.info("Set offset %s°C for %s (%s device(s))", offset, entity_id, len(serials))
                         else:
-                            _LOGGER.warning(f"No devices found for {entity_id}")
+                            _LOGGER.warning("No devices found for %s", entity_id)
                     break
 
     async def handle_add_meter_reading(call: ServiceCall):
         """Handle add_meter_reading service call (fully async).
 
-        v2.0.1: Added bootstrap reserve check - blocks action when quota critically low.
-        v3.0.0: Per-entry routing via _resolve_single_entry_data (GAP-74c).
+        Added bootstrap reserve check - blocks action when quota critically low.
+        Per-entry routing via _resolve_single_coordinator.
         """
-        # v3.0.0: Resolve entry — no entity_id, use single-entry implicit routing
-        _ed = _resolve_single_entry_data(hass)
+        # Resolve entry — no entity_id, use single-entry implicit routing
+        _coord = _resolve_single_coordinator(hass)
 
         # Per-entry bootstrap reserve check
-        should_block, reason = await async_check_bootstrap_reserve(hass, entry_data=_ed)
+        should_block, reason = await async_check_bootstrap_reserve(hass, coordinator=_coord)
         if should_block:
             await async_show_api_limit_notification(hass, reason)
             raise HomeAssistantError(
@@ -601,24 +604,24 @@ async def _async_register_services(hass: HomeAssistant):
         reading = call.data.get("reading")
         date = call.data.get("date")
 
-        success = await _ed.api_client.add_meter_reading(reading, date)
+        success = await _coord.api_client.add_meter_reading(reading, date)
 
         if not success:
-            _LOGGER.error(f"Failed to add meter reading: {reading}")
+            _LOGGER.error("Failed to add meter reading: %s", reading)
 
     async def handle_identify_device(call: ServiceCall):
         """Handle identify_device service call (fully async).
 
-        v2.0.1: Added bootstrap reserve check - blocks action when quota critically low.
-        v3.0.0: Per-entry routing via _resolve_entry_data_for_device (GAP-74b).
+        Added bootstrap reserve check - blocks action when quota critically low.
+        Per-entry routing via _resolve_coordinator_for_device.
         """
         device_serial = call.data.get("device_serial")
 
-        # v3.0.0: Resolve entry via device registry lookup
-        _ed = _resolve_entry_data_for_device(hass, device_serial)
+        # Resolve entry via device registry lookup
+        _coord = _resolve_coordinator_for_device(hass, device_serial)
 
         # Per-entry bootstrap reserve check
-        should_block, reason = await async_check_bootstrap_reserve(hass, entry_data=_ed)
+        should_block, reason = await async_check_bootstrap_reserve(hass, coordinator=_coord)
         if should_block:
             await async_show_api_limit_notification(hass, reason)
             raise HomeAssistantError(
@@ -626,27 +629,27 @@ async def _async_register_services(hass: HomeAssistant):
                 "Please wait for API reset."
             )
 
-        success = await _ed.api_client.identify_device(device_serial)
+        success = await _coord.api_client.identify_device(device_serial)
 
         if not success:
-            _LOGGER.error(f"Failed to identify device: {device_serial}")
+            _LOGGER.error("Failed to identify device: %s", device_serial)
 
     async def handle_set_away_config(call: ServiceCall):
         """Handle set_away_configuration service call (fully async).
 
-        v2.0.1: Added bootstrap reserve check - blocks action when quota critically low.
-        v3.0.0: Per-entry API client routing (GAP-75).
+        Added bootstrap reserve check - blocks action when quota critically low.
+        Per-entry API client routing.
         """
         entity_id = call.data.get("entity_id")
         mode = call.data.get("mode")
         temperature = call.data.get("temperature")
         comfort_level = call.data.get("comfort_level", 50)
 
-        # v3.0.0: Resolve per-entry data
-        _ed = _resolve_entry_data(hass, entity_id)
+        # Resolve per-entry data
+        _coord = _resolve_coordinator(hass, entity_id)
 
         # Per-entry bootstrap reserve check
-        should_block, reason = await async_check_bootstrap_reserve(hass, entry_data=_ed)
+        should_block, reason = await async_check_bootstrap_reserve(hass, coordinator=_coord)
         if should_block:
             await async_show_api_limit_notification(hass, reason)
             raise HomeAssistantError(
@@ -661,11 +664,11 @@ async def _async_register_services(hass: HomeAssistant):
                 if ent.entity_id == entity_id:
                     zone_id = getattr(ent, '_zone_id', None)
                     if zone_id:
-                        success = await _ed.api_client.set_away_configuration(
+                        success = await _coord.api_client.set_away_configuration(
                             zone_id, mode, temperature, comfort_level
                         )
                         if not success:
-                            _LOGGER.error(f"Failed to set away config for {entity_id}")
+                            _LOGGER.error("Failed to set away config for %s", entity_id)
                     break
 
     async def handle_get_temp_offset(call: ServiceCall):
@@ -673,15 +676,15 @@ async def _async_register_services(hass: HomeAssistant):
 
         Fetches the current temperature offset for a climate entity on-demand.
         Returns the offset value via service response for use in automations.
-        v3.0.0: Per-entry API client and data_loader routing (GAP-73, GAP-75).
+        Per-entry API client and data_loader routing.
         """
         entity_id = call.data.get("entity_id")
 
-        # v3.0.0: Resolve per-entry data
+        # Resolve per-entry data
         try:
-            _ed = _resolve_entry_data(hass, entity_id)
+            _coord = _resolve_coordinator(hass, entity_id)
         except HomeAssistantError as e:
-            _LOGGER.error(f"get_temp_offset: {e}")
+            _LOGGER.error("get_temp_offset: %s", e)
             return {"offset_celsius": None, "error": str(e)}
 
         # Get zone_id from entity
@@ -692,23 +695,23 @@ async def _async_register_services(hass: HomeAssistant):
                     zone_id = getattr(ent, '_zone_id', None)
                     if zone_id:
                         # Find device serial for this zone
-                        # v3.0.0: Use per-entry data_loader (GAP-73)
+                        # Use per-entry data_loader
                         serial = await hass.async_add_executor_job(
-                            _get_device_serial_for_zone, zone_id, _ed.data_loader
+                            _get_device_serial_for_zone, zone_id, _coord.data_loader
                         )
                         if serial:
-                            result = await _ed.api_client.get_device_offset(serial)
+                            result = await _coord.api_client.get_device_offset(serial)
                             if result is not None:
                                 return {"offset_celsius": result}
 
-                    _LOGGER.error(f"Failed to get offset for {entity_id}")
+                    _LOGGER.error("Failed to get offset for %s", entity_id)
                     return {"offset_celsius": None, "error": "Failed to fetch offset"}
 
-        _LOGGER.error(f"Entity not found: {entity_id}")
+        _LOGGER.error("Entity not found: %s", entity_id)
         return {"offset_celsius": None, "error": "Entity not found"}
 
     # Register services
-    # v2.2.3: Use cv.entity_ids + handler expansion to support climate groups (#139)
+    # Use cv.entity_ids + handler expansion to support climate groups
     hass.services.async_register(
         DOMAIN, SERVICE_SET_CLIMATE_TIMER, handle_set_climate_timer,
         schema=vol.Schema({
@@ -728,7 +731,7 @@ async def _async_register_services(hass: HomeAssistant):
         })
     )
 
-    # v2.2.3: Use cv.entity_ids + handler expansion to support groups (#139)
+    # Use cv.entity_ids + handler expansion to support groups
     hass.services.async_register(
         DOMAIN, SERVICE_RESUME_SCHEDULE, handle_resume_schedule,
         schema=vol.Schema({

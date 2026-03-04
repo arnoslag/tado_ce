@@ -1,18 +1,15 @@
 """Actionable insights calculator for Tado CE sensors.
 
-v2.2.0: Provides SMART recommendation calculations for environment,
+Provides SMART recommendation calculations for environment,
 thermal analytics, device status sensors, and window predicted detection.
 
 SMART = Specific, Measurable, Achievable, Relevant, Time-bound
-
-Issue Reference: Discussion #112 - @tigro7
 """
 import math
-from typing import Optional
 from dataclasses import dataclass
+from datetime import datetime
 from enum import IntEnum
-from datetime import datetime, timedelta
-from collections import deque
+from typing import Optional
 
 
 class InsightPriority(IntEnum):
@@ -33,7 +30,7 @@ class Insight:
     zone_name: Optional[str] = None
 
 
-from .models import InsightTemperatureReading
+from .models import InsightTemperatureReading  # noqa: E402
 
 # Backward compat alias — existing code may import TemperatureReading from here
 TemperatureReading = InsightTemperatureReading
@@ -172,10 +169,10 @@ def calculate_mold_risk_recommendation(
 ) -> str:
     """Calculate SMART recommendation for mold risk with delta format.
 
-    v2.2.0: Uses delta-first format showing changes needed before absolute
+    Uses delta-first format showing changes needed before absolute
     targets. Includes level transition guidance (e.g. Critical->High).
 
-    v2.2.2 FIX (#147): Removed arbitrary min() temperature caps that could
+    FIX: Removed arbitrary min() temperature caps that could
     suggest temperatures below current room temp. When room is already warm
     but surface temp is low (insulation issue), recommends ventilation/
     insulation check instead of pointless heating increase.
@@ -216,7 +213,7 @@ def calculate_mold_risk_recommendation(
             delta_t = round(target_temp - current_temp, 1)
             actions.append(f"increase heating by {delta_t}\u00b0C (to {target_temp:.0f}\u00b0C)")
         elif current_temp:
-            # v2.2.2 FIX (#147): Use target_temp as base when available,
+            # Use target_temp as base when available,
             # and guard against suggesting temp <= current_temp
             suggested = (target_temp + 2) if target_temp else (current_temp + 2)
             if suggested <= current_temp:
@@ -241,7 +238,7 @@ def calculate_mold_risk_recommendation(
             )
         if margin is not None and margin < 5:
             needed = round(5 - margin, 1)
-            # v2.2.2 FIX (#147): Use target_temp as base when available,
+            # Use target_temp as base when available,
             # guard against suggesting temp <= current_temp
             base_temp = target_temp if target_temp else current_temp
             if base_temp:
@@ -290,7 +287,7 @@ def calculate_comfort_recommendation(
 ) -> str:
     """Calculate SMART recommendation for comfort level with time frame.
 
-    v2.2.0: Added hvac_action parameter to differentiate between
+    Added hvac_action parameter to differentiate between
     "heating in progress" vs "heating not reaching target".
 
     Args:
@@ -340,7 +337,7 @@ def calculate_comfort_recommendation(
                     f"increase setpoint to {suggested:.0f}\u00b0C if not warming up"
                 )
             else:
-                # v2.2.2 FIX (#147): Remove min() cap that could suggest
+                # Remove min() cap that could suggest
                 # temp <= current_temp. Use current_temp + 2 directly.
                 suggested = current_temp + 2
                 return (
@@ -393,37 +390,40 @@ def calculate_condensation_recommendation(
     current_temp: Optional[float] = None
 ) -> str:
     """Calculate SMART recommendation for condensation risk (AC zones).
-    
+
     Args:
         risk_level: Current risk level (Critical, High, Medium, Low, Minimal)
         zone_name: Name of the zone
         margin: Temperature margin above dew point
         ac_setpoint: Current AC setpoint temperature
         current_temp: Current room temperature
-    
+
     Returns:
         SMART recommendation string (empty if no action needed)
     """
     if risk_level in ("Minimal", "Low"):
         return ""
-    
+
     if risk_level == "Critical":
         if ac_setpoint is not None:
             suggested = ac_setpoint + 2
-            return f"{zone_name}: URGENT condensation risk - increase AC setpoint from {ac_setpoint:.0f}°C to {suggested:.0f}°C immediately"
+            return (
+                f"{zone_name}: URGENT condensation risk - increase AC setpoint "
+                f"from {ac_setpoint:.0f}°C to {suggested:.0f}°C immediately"
+            )
         return f"{zone_name}: URGENT condensation risk - increase AC setpoint by 2°C and improve ventilation"
-    
+
     if risk_level == "High":
         if ac_setpoint is not None and margin is not None:
             suggested = ac_setpoint + 1
             return f"{zone_name}: Only {margin:.1f}°C above dew point - increase AC setpoint to {suggested:.0f}°C"
         return f"{zone_name}: High condensation risk - increase AC setpoint by 1°C"
-    
+
     if risk_level == "Medium":
         if margin is not None:
             return f"{zone_name}: {margin:.1f}°C above dew point - monitor conditions, consider raising AC setpoint"
         return f"{zone_name}: Moderate condensation risk - ensure adequate ventilation"
-    
+
     return ""
 
 
@@ -442,7 +442,7 @@ def calculate_heating_condensation_recommendation(
     indoor dew point.
 
     All values are calculated from current conditions — NO hardcoded
-    temperature or humidity thresholds (CP-5).
+    temperature or humidity thresholds.
 
     Args:
         risk_level: Current risk level (Critical, High, Medium, Low, None)
@@ -496,18 +496,18 @@ def calculate_battery_recommendation(
     device_type: Optional[str] = None
 ) -> str:
     """Calculate SMART recommendation for battery status.
-    
+
     Args:
         battery_state: Current battery state (Normal, Low, Critical)
         zone_name: Name of the zone
         device_type: Type of device (TRV, Thermostat, etc.)
-    
+
     Returns:
         SMART recommendation string (empty if battery is normal)
     """
     if battery_state.upper() == "NORMAL":
         return ""
-    
+
     # Determine battery type based on device
     battery_type = "AA batteries"
     if device_type:
@@ -516,13 +516,13 @@ def calculate_battery_recommendation(
             battery_type = "2x AA batteries"
         elif "thermostat" in device_lower or "su0" in device_lower:
             battery_type = "3x AAA batteries"
-    
+
     if battery_state.upper() == "CRITICAL":
         return f"{zone_name}: Replace {battery_type} TODAY - device may stop working"
-    
+
     if battery_state.upper() == "LOW":
         return f"{zone_name}: Replace {battery_type} within 1-2 weeks"
-    
+
     return ""
 
 
@@ -535,19 +535,19 @@ def calculate_connection_recommendation(
     offline_minutes: Optional[int] = None
 ) -> str:
     """Calculate SMART recommendation for device connection status.
-    
+
     Args:
         connection_state: Current connection state (Online, Offline)
         zone_name: Name of the zone
         last_seen: Last seen timestamp string
         offline_minutes: Minutes since device was last seen
-    
+
     Returns:
         SMART recommendation string (empty if connected)
     """
     if connection_state.upper() == "ONLINE":
         return ""
-    
+
     if connection_state.upper() == "OFFLINE":
         # Provide time-specific recommendations
         if offline_minutes is not None:
@@ -561,12 +561,15 @@ def calculate_connection_recommendation(
             else:
                 days = offline_minutes // 1440
                 return f"{zone_name}: Device offline {days} days - replace batteries and re-pair if needed"
-        
+
         if last_seen:
             return f"{zone_name}: Device offline since {last_seen} - check batteries and bridge connection"
-        
-        return f"{zone_name}: Device offline - 1) Check batteries 2) Verify bridge is online 3) Move device closer to bridge"
-    
+
+        return (
+            f"{zone_name}: Device offline - 1) Check batteries "
+            "2) Verify bridge is online 3) Move device closer to bridge"
+        )
+
     return ""
 
 
@@ -579,24 +582,24 @@ def calculate_api_status_recommendation(
     current_interval_minutes: Optional[int] = None
 ) -> str:
     """Calculate SMART recommendation for API status.
-    
+
     Args:
         remaining_calls: Remaining API calls
         total_calls: Total API calls allowed
         reset_time_human: Human-readable reset time (e.g., "3h 20m")
         current_interval_minutes: Current polling interval in minutes
-    
+
     Returns:
         SMART recommendation string (empty if API usage is healthy)
     """
     if remaining_calls is None or total_calls is None:
         return ""
-    
+
     usage_percent = ((total_calls - remaining_calls) / total_calls) * 100
-    
+
     if usage_percent < 70:
         return ""
-    
+
     # Calculate suggested interval based on remaining calls and time
     suggested_interval = None
     if current_interval_minutes:
@@ -604,25 +607,32 @@ def calculate_api_status_recommendation(
             suggested_interval = max(current_interval_minutes * 2, 60)
         elif usage_percent >= 80:
             suggested_interval = max(current_interval_minutes + 15, 30)
-    
+
     reset_info = f" (resets in {reset_time_human})" if reset_time_human else ""
-    
+
     if usage_percent >= 95:
         return f"API CRITICAL: Only {remaining_calls} calls remaining{reset_info} - pause automations until reset"
-    
+
     if usage_percent >= 90:
         if suggested_interval:
-            return f"API WARNING: {remaining_calls} calls remaining{reset_info} - increase polling to {suggested_interval} min in Settings → Tado CE → Configure"
+            return (
+                f"API WARNING: {remaining_calls} calls remaining{reset_info}"
+                f" - increase polling to {suggested_interval} min"
+                " in Settings → Tado CE → Configure"
+            )
         return f"API WARNING: {remaining_calls} calls remaining{reset_info} - reduce polling frequency"
-    
+
     if usage_percent >= 80:
         if suggested_interval:
-            return f"API usage at {usage_percent:.0f}%{reset_info} - consider increasing polling to {suggested_interval} min"
+            return (
+                f"API usage at {usage_percent:.0f}%{reset_info}"
+                f" - consider increasing polling to {suggested_interval} min"
+            )
         return f"API usage at {usage_percent:.0f}%{reset_info} - monitor usage"
-    
+
     if usage_percent >= 70:
         return f"API usage at {usage_percent:.0f}%{reset_info}"
-    
+
     return ""
 
 
@@ -744,11 +754,11 @@ def calculate_confidence_recommendation(
 
 def get_insight_priority(insight_type: str, severity: str) -> InsightPriority:
     """Get priority level for an insight based on type and severity.
-    
+
     Args:
         insight_type: Type of insight (window_predicted, mold_risk, etc.)
         severity: Severity level (critical, high, medium, low)
-    
+
     Returns:
         InsightPriority enum value
     """
@@ -772,34 +782,34 @@ def get_insight_priority(insight_type: str, severity: str) -> InsightPriority:
         ("api", "critical"): InsightPriority.CRITICAL,
         ("api", "warning"): InsightPriority.HIGH,
         ("api", "high"): InsightPriority.MEDIUM,
-        # v2.3.0: Category A — Overlay & Schedule
+        # Category A — Overlay & Schedule
         ("overlay_duration", "medium"): InsightPriority.MEDIUM,
         ("overlay_duration", "low"): InsightPriority.LOW,
         ("schedule_gap", "medium"): InsightPriority.MEDIUM,
         ("frequent_override", "low"): InsightPriority.LOW,
-        # v2.3.0: Category B — Home/Away Presence
+        # Category B — Home/Away Presence
         ("away_heating", "high"): InsightPriority.HIGH,
         ("home_all_off", "medium"): InsightPriority.MEDIUM,
-        # v2.3.0: Category C — Weather & Outdoor
+        # Category C — Weather & Outdoor
         ("solar_gain", "low"): InsightPriority.LOW,
         ("solar_ac_load", "low"): InsightPriority.LOW,
         ("frost_risk", "high"): InsightPriority.HIGH,
         ("frost_risk", "medium"): InsightPriority.MEDIUM,
         ("heating_season", "low"): InsightPriority.LOW,
-        # v2.3.0: Category D — Heating/AC Efficiency
+        # Category D — Heating/AC Efficiency
         ("heating_off_cold", "medium"): InsightPriority.MEDIUM,
         ("boiler_flow_anomaly", "high"): InsightPriority.HIGH,
         ("boiler_flow_anomaly", "medium"): InsightPriority.MEDIUM,
         ("early_start_disabled", "low"): InsightPriority.LOW,
         ("thermal_efficiency", "medium"): InsightPriority.MEDIUM,
-        # v2.3.0: Category E — Cross-Zone
+        # Category E — Cross-Zone
         ("cross_zone_condensation", "high"): InsightPriority.HIGH,
         ("cross_zone_efficiency", "low"): InsightPriority.LOW,
         ("temp_imbalance", "low"): InsightPriority.LOW,
         ("humidity_imbalance", "medium"): InsightPriority.MEDIUM,
-        # v2.3.0: Category F — Environment Trends
+        # Category F — Environment Trends
         ("humidity_trend", "medium"): InsightPriority.MEDIUM,
-        # v2.3.0: Category G — Device & System
+        # Category G — Device & System
         ("device_limitation", "low"): InsightPriority.LOW,
         ("geofencing_offline", "medium"): InsightPriority.MEDIUM,
         ("api_usage_spike", "medium"): InsightPriority.MEDIUM,
@@ -900,7 +910,6 @@ def aggregate_home_insights(zone_insights: dict[str, list[Insight]]) -> dict:
         return empty_result
 
     # Group by action label, tracking zones and max priority per action
-    from collections import OrderedDict
     action_groups: dict[str, dict] = {}
     for insight in all_insights:
         label = _get_action_label(insight.insight_type)
@@ -1400,7 +1409,7 @@ def calculate_calls_per_hour(history: list) -> Optional[float]:
         return None
 
 # ============================================================================
-# v2.3.0: Expanded Actionable Insights — Category A (Overlay & Schedule)
+# Category A (Overlay & Schedule)
 # ============================================================================
 
 
@@ -1525,7 +1534,7 @@ def calculate_frequent_override_insight(
 
 
 # ============================================================================
-# v2.3.0: Expanded Actionable Insights — Category B (Home/Away Presence)
+# Category B (Home/Away Presence)
 # ============================================================================
 
 
@@ -1614,7 +1623,7 @@ def calculate_home_all_off_insight(
 
 
 # ============================================================================
-# v2.3.0: Expanded Actionable Insights — Category C (Weather & Outdoor)
+# Category C (Weather & Outdoor)
 # ============================================================================
 
 
@@ -1769,7 +1778,7 @@ def calculate_heating_season_advisory_insight(
 
 
 # ============================================================================
-# v2.3.0: Expanded Actionable Insights — Category D (Heating/AC Efficiency)
+# Category D (Heating/AC Efficiency)
 # ============================================================================
 
 
@@ -1950,7 +1959,7 @@ def calculate_poor_thermal_efficiency_insight(
 
 
 # ============================================================================
-# v2.3.0: Expanded Actionable Insights — Category E (Cross-Zone)
+# Category E (Cross-Zone)
 # ============================================================================
 
 
@@ -2116,7 +2125,7 @@ def calculate_humidity_imbalance_insight(
 
 
 # ============================================================================
-# v2.3.0: Expanded Actionable Insights — Category F (Environment Trends)
+# Category F (Environment Trends)
 # ============================================================================
 
 
@@ -2163,7 +2172,7 @@ def calculate_humidity_trend_insight(
 
 
 # ============================================================================
-# v2.3.0: Expanded Actionable Insights — Category G (Device & System)
+# Category G (Device & System)
 # ============================================================================
 
 

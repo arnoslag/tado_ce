@@ -1,0 +1,222 @@
+"""Tado CE Insight Sensors — home and zone actionable insights."""
+from __future__ import annotations
+
+import logging
+from datetime import datetime
+from typing import TYPE_CHECKING
+
+from homeassistant.components.sensor import SensorEntity
+from homeassistant.core import callback
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
+
+from .device_manager import get_hub_device_info, get_zone_device_info
+from .format_helpers import (
+    format_insight_type as _format_insight_type,
+)
+from .format_helpers import (
+    format_priority as _format_priority,
+)
+from .insights import aggregate_home_insights
+from .sensor_insight_collector import (
+    collect_single_zone_insights,
+    collect_zone_insights,
+    get_cross_zone_insights,
+    get_hub_insights,
+)
+
+if TYPE_CHECKING:
+    from .coordinator import TadoDataUpdateCoordinator
+
+_LOGGER = logging.getLogger(__name__)
+
+
+class TadoHomeInsightsSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], SensorEntity):
+    _attr_has_entity_name = True
+
+    """Hub-level sensor aggregating actionable insights from all zones.
+
+    Collects insights from zone sensors (mold risk, comfort,
+    battery, connection, window predicted, preheat timing, schedule
+    deviation, heating anomaly) and aggregates them into a single
+    home-level summary with priority-based recommendations.
+
+    Also includes cross-zone aggregation (mold risk, window predicted),
+    hub-level insights (API quota planning, weather impact).
+
+    State: Total number of active insights (integer)
+    """
+
+    def __init__(self, coordinator: "TadoDataUpdateCoordinator"):
+        super().__init__(coordinator)
+        self._attr_name = "[CE] Home Insights"
+        self.entity_id = "sensor.tado_ce_home_insights"
+        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_home_insights"
+        self._attr_device_info = get_hub_device_info(coordinator.home_id)
+        self._attr_available = False
+        self._attr_native_value = 0
+        self._aggregated: dict = {}
+        # Track per-zone heating anomaly start times for real duration measurement
+        self._anomaly_start_times: dict[str, datetime] = {}
+        # Per-zone humidity history for trend detection (in-memory only)
+        self._humidity_histories: dict[str, list] = {}
+
+    @property
+    def icon(self):
+        """Dynamic icon based on top priority."""
+        top = self._aggregated.get("top_priority", "none")
+        if top == "critical":
+            return "mdi:alert-octagon"
+        if top == "high":
+            return "mdi:alert-circle"
+        if top == "medium":
+            return "mdi:alert"
+        if top == "low":
+            return "mdi:information"
+        return "mdi:home-analytics"
+
+    @property
+    def extra_state_attributes(self):
+        return {
+            "summary": self._aggregated.get("summary", ""),
+            "actions_needed": self._aggregated.get("actions_needed", []),
+            "zones_ok": self._aggregated.get("zones_ok", []),
+            "top_priority": _format_priority(self._aggregated.get("top_priority", "none")),
+            "top_recommendation": self._aggregated.get("top_recommendation", ""),
+            "zones_with_issues": self._aggregated.get("zones_with_issues", []),
+            "cross_zone_insights": self._aggregated.get("cross_zone_insights", []),
+        }
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        self.update()
+        self.async_write_ha_state()
+
+    @callback
+    def update(self):
+        """Update home insights by collecting and aggregating zone data."""
+        try:
+            zone_insights = collect_zone_insights(
+                self.hass, self.coordinator,
+                self._anomaly_start_times, self._humidity_histories,
+            )
+
+            cross_zone = get_cross_zone_insights(
+                self.hass, self.coordinator, zone_insights,
+            )
+
+            hub = get_hub_insights(self.hass, self.coordinator)
+
+            if hub:
+                zone_insights["_hub"] = hub
+            if cross_zone:
+                zone_insights["_cross_zone"] = cross_zone
+
+            self._aggregated = aggregate_home_insights(zone_insights)
+
+            cross_recs = [i.recommendation for i in cross_zone if i.recommendation]
+            self._aggregated["cross_zone_insights"] = cross_recs
+
+            self._attr_native_value = len(self._aggregated.get("actions_needed", []))
+            self._attr_available = True
+        except Exception as e:
+            _LOGGER.debug("Failed to update home insights: %s", e)
+            self._attr_available = False
+
+
+class TadoZoneInsightsSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], SensorEntity):
+    _attr_has_entity_name = True
+
+    """Per-zone sensor showing actionable insights for a single zone.
+
+    Collects insights specific to this zone (mold risk, comfort,
+    battery, connection, window predicted, preheat timing, heating anomaly)
+    and presents them as a zone-level summary.
+
+    State: Number of active insights for this zone (integer)
+    """
+
+    def __init__(self, coordinator: "TadoDataUpdateCoordinator", zone_id: str, zone_name: str, zone_type: str):
+        super().__init__(coordinator)
+        self._zone_id = zone_id
+        self._zone_name = zone_name
+        self._zone_type = zone_type
+        self._attr_name = "[CE] Insights"
+        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_zone_{zone_id}_insights"
+        self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type, coordinator.home_id)
+        self._attr_available = False
+        self._attr_native_value = 0
+        self._insights: list = []
+        # Use dict for anomaly tracking (consistent with Home sensor)
+        self._anomaly_start_times: dict[str, datetime] = {}
+
+    @property
+    def icon(self):
+        """Dynamic icon based on top priority."""
+        if not self._insights:
+            return "mdi:lightbulb-outline"
+        top = max(self._insights, key=lambda i: i.priority.value)
+        name = top.priority.name.lower()
+        if name == "critical":
+            return "mdi:alert-octagon"
+        if name == "high":
+            return "mdi:alert-circle"
+        if name == "medium":
+            return "mdi:alert"
+        if name == "low":
+            return "mdi:information"
+        return "mdi:lightbulb-outline"
+
+    @property
+    def extra_state_attributes(self):
+        if not self._insights:
+            return {
+                "top_priority": "None",
+                "top_recommendation": "",
+                "insight_types": [],
+                "recommendations": [],
+            }
+        top = max(self._insights, key=lambda i: i.priority.value)
+        return {
+            "top_priority": _format_priority(top.priority.name.lower()),
+            "top_recommendation": top.recommendation,
+            "insight_types": [_format_insight_type(i.insight_type) for i in self._insights],
+            "recommendations": [i.recommendation for i in self._insights],
+        }
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        self.update()
+        self.async_write_ha_state()
+
+    @callback
+    def update(self):
+        """Collect insights for this zone using shared collector."""
+        try:
+            coord_data = self.coordinator.data or {}
+            zones_data = coord_data.get("zones")
+            if not zones_data:
+                self._attr_available = False
+                return
+
+            zone_states = zones_data.get("zoneStates") or {}
+            zone_data = zone_states.get(self._zone_id)
+            if not zone_data:
+                self._attr_available = False
+                return
+
+            zones_info = coord_data.get("zones_info")
+
+            self._insights = collect_single_zone_insights(
+                hass=self.hass,
+                coordinator=self.coordinator,
+                zone_id=self._zone_id,
+                zone_name=self._zone_name,
+                zone_data=zone_data,
+                zones_info=zones_info,
+                anomaly_start_times=self._anomaly_start_times,
+            )
+            self._attr_native_value = len(self._insights)
+            self._attr_available = True
+        except Exception as e:
+            _LOGGER.debug("Failed to update zone insights for %s: %s", self._zone_name, e)
+            self._attr_available = False
