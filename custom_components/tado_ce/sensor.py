@@ -102,6 +102,35 @@ from .sensor_zone import (
 _LOGGER = logging.getLogger(__name__)
 
 
+def _create_common_zone_sensors(coordinator, zone_id, zone_name, zone_type, config_manager):
+    """Create sensors common to HEATING and AC zones."""
+    sensors = [
+        TadoTemperatureSensor(coordinator, zone_id, zone_name, zone_type),
+        TadoHumiditySensor(coordinator, zone_id, zone_name, zone_type),
+        TadoTargetTempSensor(coordinator, zone_id, zone_name, zone_type),
+        TadoOverlaySensor(coordinator, zone_id, zone_name, zone_type),
+    ]
+    sensors.append(TadoZoneInsightsSensor(coordinator, zone_id, zone_name, zone_type))
+    if config_manager.get_environment_sensors_enabled():
+        sensors.extend([
+            TadoMoldRiskSensor(coordinator, zone_id, zone_name, zone_type),
+            TadoMoldRiskPercentageSensor(coordinator, zone_id, zone_name, zone_type),
+            TadoComfortLevelSensor(coordinator, zone_id, zone_name, zone_type),
+            TadoCondensationRiskSensor(coordinator, zone_id, zone_name, zone_type),
+            TadoSurfaceTemperatureSensor(coordinator, zone_id, zone_name, zone_type),
+            TadoDewPointSensor(coordinator, zone_id, zone_name, zone_type),
+        ])
+    if config_manager.get_smart_comfort_enabled():
+        sensors.extend([
+            TadoScheduleDeviationSensor(coordinator, zone_id, zone_name, zone_type),
+            TadoNextScheduleTimeSensor(coordinator, zone_id, zone_name, zone_type),
+            TadoNextScheduleTempSensor(coordinator, zone_id, zone_name, zone_type),
+            TadoPreheatAdvisorSensor(coordinator, zone_id, zone_name, zone_type),
+            TadoSmartComfortTargetSensor(coordinator, zone_id, zone_name, zone_type),
+        ])
+    return sensors
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -180,24 +209,10 @@ async def async_setup_entry(
                 has_temperature = inside_temp.get('celsius') is not None
 
                 if zone_type == 'HEATING':
-                    sensors.extend([
-                        TadoTemperatureSensor(coordinator, zone_id, zone_name, zone_type),
-                        TadoHumiditySensor(coordinator, zone_id, zone_name, zone_type),
-                        TadoTargetTempSensor(coordinator, zone_id, zone_name, zone_type),
-                        TadoOverlaySensor(coordinator, zone_id, zone_name, zone_type),
-                    ])
-                    sensors.append(TadoZoneInsightsSensor(coordinator, zone_id, zone_name, zone_type))
+                    sensors.extend(_create_common_zone_sensors(
+                        coordinator, zone_id, zone_name, zone_type, config_manager))
                     if config_manager.get_zone_diagnostics_enabled():
                         sensors.append(TadoHeatingPowerSensor(coordinator, zone_id, zone_name, zone_type))
-                    if config_manager.get_environment_sensors_enabled():
-                        sensors.extend([
-                            TadoMoldRiskSensor(coordinator, zone_id, zone_name, zone_type),
-                            TadoMoldRiskPercentageSensor(coordinator, zone_id, zone_name, zone_type),
-                            TadoComfortLevelSensor(coordinator, zone_id, zone_name, zone_type),
-                            TadoCondensationRiskSensor(coordinator, zone_id, zone_name, zone_type),
-                            TadoSurfaceTemperatureSensor(coordinator, zone_id, zone_name, zone_type),
-                            TadoDewPointSensor(coordinator, zone_id, zone_name, zone_type),
-                        ])
                     thermal_analytics_zones = config_manager.get_thermal_analytics_zones()
                     zone_thermal_enabled = (not thermal_analytics_zones) or (zone_id in thermal_analytics_zones)
                     if (config_manager.get_thermal_analytics_enabled()
@@ -225,41 +240,12 @@ async def async_setup_entry(
                                 "not available - thermal analytics sensors not created",
                                 zone_name
                             )
-                    if config_manager.get_smart_comfort_enabled():
-                        sensors.extend([
-                            TadoScheduleDeviationSensor(coordinator, zone_id, zone_name, zone_type),
-                            TadoNextScheduleTimeSensor(coordinator, zone_id, zone_name, zone_type),
-                            TadoNextScheduleTempSensor(coordinator, zone_id, zone_name, zone_type),
-                            TadoPreheatAdvisorSensor(coordinator, zone_id, zone_name, zone_type),
-                            TadoSmartComfortTargetSensor(coordinator, zone_id, zone_name, zone_type),
-                        ])
+                    # Smart comfort sensors already included by _create_common_zone_sensors
 
                 elif zone_type == 'AIR_CONDITIONING':
-                    sensors.extend([
-                        TadoTemperatureSensor(coordinator, zone_id, zone_name, zone_type),
-                        TadoHumiditySensor(coordinator, zone_id, zone_name, zone_type),
-                        TadoACPowerSensor(coordinator, zone_id, zone_name, zone_type),
-                        TadoTargetTempSensor(coordinator, zone_id, zone_name, zone_type),
-                        TadoOverlaySensor(coordinator, zone_id, zone_name, zone_type),
-                    ])
-                    sensors.append(TadoZoneInsightsSensor(coordinator, zone_id, zone_name, zone_type))
-                    if config_manager.get_environment_sensors_enabled():
-                        sensors.extend([
-                            TadoMoldRiskSensor(coordinator, zone_id, zone_name, zone_type),
-                            TadoMoldRiskPercentageSensor(coordinator, zone_id, zone_name, zone_type),
-                            TadoComfortLevelSensor(coordinator, zone_id, zone_name, zone_type),
-                            TadoCondensationRiskSensor(coordinator, zone_id, zone_name, zone_type),
-                            TadoSurfaceTemperatureSensor(coordinator, zone_id, zone_name, zone_type),
-                            TadoDewPointSensor(coordinator, zone_id, zone_name, zone_type),
-                        ])
-                    if config_manager.get_smart_comfort_enabled():
-                        sensors.extend([
-                            TadoScheduleDeviationSensor(coordinator, zone_id, zone_name, zone_type),
-                            TadoNextScheduleTimeSensor(coordinator, zone_id, zone_name, zone_type),
-                            TadoNextScheduleTempSensor(coordinator, zone_id, zone_name, zone_type),
-                            TadoPreheatAdvisorSensor(coordinator, zone_id, zone_name, zone_type),
-                            TadoSmartComfortTargetSensor(coordinator, zone_id, zone_name, zone_type),
-                        ])
+                    sensors.extend(_create_common_zone_sensors(
+                        coordinator, zone_id, zone_name, zone_type, config_manager))
+                    sensors.append(TadoACPowerSensor(coordinator, zone_id, zone_name, zone_type))
                 elif zone_type == 'HOT_WATER':
                     if has_temperature:
                         sensors.append(TadoTemperatureSensor(coordinator, zone_id, zone_name, zone_type))

@@ -17,6 +17,17 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 
+def _get_coordinator(hass: HomeAssistant, entry_id: str):
+    """Get coordinator from entry_id, or None."""
+    try:
+        entry = hass.config_entries.async_get_entry(entry_id)
+        if entry and hasattr(entry, 'runtime_data') and entry.runtime_data is not None:
+            return entry.runtime_data
+    except (AttributeError, TypeError):
+        pass
+    return None
+
+
 
 async def async_trigger_immediate_refresh(  # noqa: PLR0913
     hass: HomeAssistant,
@@ -43,10 +54,8 @@ async def async_trigger_immediate_refresh(  # noqa: PLR0913
         entity_registry = er.async_get(hass)
         entity_entry = entity_registry.async_get(entity_id)
         if entity_entry and entity_entry.config_entry_id:
-            config_entry = hass.config_entries.async_get_entry(entity_entry.config_entry_id)
-            if config_entry and hasattr(config_entry, 'runtime_data') and config_entry.runtime_data is not None:
-                coordinator = config_entry.runtime_data
-                if coordinator.refresh_handler:
+            coordinator = _get_coordinator(hass, entity_entry.config_entry_id)
+            if coordinator and coordinator.refresh_handler:
                     await coordinator.refresh_handler.trigger_refresh(
                         entity_id, reason, force=force,
                         skip_debounce=skip_debounce,
@@ -76,11 +85,9 @@ def get_optimistic_window(hass: HomeAssistant, entry_id: str | None = None) -> f
     """
     try:
         if entry_id:
-            config_entry = hass.config_entries.async_get_entry(entry_id)
-            if config_entry and hasattr(config_entry, 'runtime_data') and config_entry.runtime_data is not None:
-                coordinator = config_entry.runtime_data
-                if coordinator.config_manager:
-                    return float(coordinator.config_manager.get_refresh_debounce_seconds()) + 2.0
+            coordinator = _get_coordinator(hass, entry_id)
+            if coordinator and coordinator.config_manager:
+                return float(coordinator.config_manager.get_refresh_debounce_seconds()) + 2.0
     except Exception:  # noqa: BLE001, S110
         pass
     return 17.0  # Default: 15s debounce + 2s buffer
@@ -104,9 +111,8 @@ def get_overlay_termination(hass: HomeAssistant, entry_id: str | None = None) ->
     duration = 60
     if entry_id:
         try:
-            config_entry = hass.config_entries.async_get_entry(entry_id)
-            if config_entry and hasattr(config_entry, 'runtime_data') and config_entry.runtime_data is not None:
-                coordinator = config_entry.runtime_data
+            coordinator = _get_coordinator(hass, entry_id)
+            if coordinator:
                 mode = coordinator.overlay_mode or "TADO_MODE"
                 duration = coordinator.timer_duration or 60
         except (AttributeError, TypeError):
@@ -144,9 +150,8 @@ def get_zone_overlay_termination(hass: HomeAssistant, zone_id: str, entry_id: st
     zone_config_manager = None
     if entry_id:
         try:
-            config_entry = hass.config_entries.async_get_entry(entry_id)
-            if config_entry and hasattr(config_entry, 'runtime_data') and config_entry.runtime_data is not None:
-                coordinator = config_entry.runtime_data
+            coordinator = _get_coordinator(hass, entry_id)
+            if coordinator:
                 zone_config_manager = coordinator.zone_config_manager
         except (AttributeError, TypeError):
             pass

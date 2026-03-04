@@ -36,6 +36,35 @@ from .sensor_zone import TadoZoneSensor
 
 _LOGGER = logging.getLogger(__name__)
 
+
+def _extract_mold_risk_data(zone_data, hass, zone_id, coordinator):
+    """Extract shared mold risk data (humidity, temps, dew point) from zone data.
+
+    Returns:
+        Tuple of (humidity, room_temp, effective_temp, outdoor_temp, surface_temp,
+                  temperature_source, surface_temp_offset, dew_point) or None if data unavailable.
+    """
+    sensor_data = zone_data.get('sensorDataPoints') or {}
+    humidity = (sensor_data.get('humidity') or {}).get('percentage')
+    if humidity is None:
+        return None
+
+    room_temp = (sensor_data.get('insideTemperature') or {}).get('celsius')
+    if room_temp is None:
+        return None
+
+    (effective_temp, outdoor_temp, surface_temp,
+     temperature_source, surface_temp_offset) = _get_effective_temp(
+        hass, zone_id, room_temp,
+        config_manager=coordinator.config_manager,
+        zone_config_manager=coordinator.zone_config_manager,
+    )
+
+    dew_point = _calculate_dew_point(room_temp, humidity)
+
+    return (humidity, room_temp, effective_temp, outdoor_temp, surface_temp,
+            temperature_source, surface_temp_offset, dew_point)
+
 def _calculate_surface_temperature(indoor_temp: float, outdoor_temp: float, u_value: float) -> float:
     """Calculate window surface temperature using heat transfer physics.
 
@@ -158,35 +187,16 @@ class TadoMoldRiskSensor(TadoZoneSensor):
                 self._attr_available = False
                 return
 
-            # Get humidity from zone data
-            sensor_data = zone_data.get('sensorDataPoints') or {}
-            self._humidity = (sensor_data.get('humidity') or {}).get('percentage')
-
-            if self._humidity is None:
+            result = _extract_mold_risk_data(zone_data, self.hass, self._zone_id, self.coordinator)
+            if result is None:
                 self._attr_available = False
                 return
 
-            # Get room temperature (always needed as fallback)
-            room_temp = (sensor_data.get('insideTemperature') or {}).get('celsius')
-            if room_temp is None:
-                self._attr_available = False
-                return
-
-            # Store room temp and determine effective temp (Tier 1 or Tier 2)
-            self._room_temp = room_temp
-            (self._effective_temp, self._outdoor_temp, self._surface_temp,
-             self._temperature_source, self._surface_temp_offset) = _get_effective_temp(
-                self.hass, self._zone_id, room_temp,
-                config_manager=self.coordinator.config_manager,
-                zone_config_manager=self.coordinator.zone_config_manager,
-            )
-
-            # Calculate dew point using ROOM temperature (not surface temp)
-            # Dew point is a property of the air, not the surface
-            self._dew_point = _calculate_dew_point(room_temp, self._humidity)
+            (self._humidity, self._room_temp, self._effective_temp, self._outdoor_temp,
+             self._surface_temp, self._temperature_source, self._surface_temp_offset,
+             self._dew_point) = result
 
             # Calculate margin (difference between effective/surface temperature and dew point)
-            # This tells us how close the surface is to condensation
             self._margin = round(self._effective_temp - self._dew_point, 1)
 
             # Determine risk level
@@ -284,32 +294,14 @@ class TadoMoldRiskPercentageSensor(TadoZoneSensor):
                 self._attr_available = False
                 return
 
-            # Get humidity from zone data
-            sensor_data = zone_data.get('sensorDataPoints') or {}
-            self._humidity = (sensor_data.get('humidity') or {}).get('percentage')
-
-            if self._humidity is None:
+            result = _extract_mold_risk_data(zone_data, self.hass, self._zone_id, self.coordinator)
+            if result is None:
                 self._attr_available = False
                 return
 
-            # Get room temperature (always needed as fallback)
-            room_temp = (sensor_data.get('insideTemperature') or {}).get('celsius')
-            if room_temp is None:
-                self._attr_available = False
-                return
-
-            # Store room temp and determine effective temp (Tier 1 or Tier 2)
-            self._room_temp = room_temp
-            (self._effective_temp, self._outdoor_temp, self._surface_temp,
-             self._temperature_source, _) = _get_effective_temp(
-                self.hass, self._zone_id, room_temp,
-                config_manager=self.coordinator.config_manager,
-                zone_config_manager=self.coordinator.zone_config_manager,
-            )
-
-            # Calculate dew point using ROOM temperature (not surface temp)
-            # Dew point is a property of the air, not the surface
-            self._dew_point = _calculate_dew_point(room_temp, self._humidity)
+            (self._humidity, self._room_temp, self._effective_temp, self._outdoor_temp,
+             self._surface_temp, self._temperature_source, _,
+             self._dew_point) = result
 
             # Calculate surface RH (mold risk percentage)
             surface_rh = (

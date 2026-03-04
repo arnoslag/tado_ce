@@ -6,13 +6,38 @@ smart_comfort.py into distinctly-named classes.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from datetime import datetime
-from typing import Optional
+from typing import Optional, get_type_hints
+
+
+class _SerializableMixin:
+    """Mixin for dataclasses with datetime fields — provides to_dict/from_dict."""
+
+    def to_dict(self) -> dict:
+        """Serialize to dictionary for JSON storage."""
+        d = {}
+        for f in fields(self):
+            v = getattr(self, f.name)
+            d[f.name] = v.isoformat() if isinstance(v, datetime) else v
+        return d
+
+    @classmethod
+    def from_dict(cls, data: dict):
+        """Deserialize from dictionary."""
+        hints = get_type_hints(cls)
+        kwargs = {}
+        for f in fields(cls):
+            v = data.get(f.name)
+            if v is not None and hints.get(f.name) is datetime:
+                v = datetime.fromisoformat(v)
+            if v is not None:
+                kwargs[f.name] = v
+        return cls(**kwargs)
 
 
 @dataclass
-class HeatingCycleReading:
+class HeatingCycleReading(_SerializableMixin):
     """Single temperature measurement during a heating cycle.
 
     Migrated from heating_models.py TemperatureReading.
@@ -20,21 +45,6 @@ class HeatingCycleReading:
 
     time: datetime  # UTC
     temp: float
-
-    def to_dict(self) -> dict:
-        """Serialize to dictionary for JSON storage."""
-        return {
-            "time": self.time.isoformat(),
-            "temp": self.temp,
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict) -> HeatingCycleReading:
-        """Deserialize from dictionary."""
-        return cls(
-            time=datetime.fromisoformat(data["time"]),
-            temp=data["temp"],
-        )
 
 
 @dataclass
@@ -50,7 +60,7 @@ class InsightTemperatureReading:
 
 
 @dataclass
-class SmartComfortReading:
+class SmartComfortReading(_SerializableMixin):
     """A single temperature reading with heating context.
 
     Migrated from smart_comfort.py TemperatureReading.
@@ -60,22 +70,3 @@ class SmartComfortReading:
     temperature: float
     is_heating: bool  # True if HVAC is actively heating/cooling
     target_temperature: Optional[float] = None
-
-    def to_dict(self) -> dict:
-        """Convert to dictionary for JSON serialization."""
-        return {
-            "timestamp": self.timestamp.isoformat(),
-            "temperature": self.temperature,
-            "is_heating": self.is_heating,
-            "target_temperature": self.target_temperature,
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict) -> SmartComfortReading:
-        """Create from dictionary."""
-        return cls(
-            timestamp=datetime.fromisoformat(data["timestamp"]),
-            temperature=data["temperature"],
-            is_heating=data["is_heating"],
-            target_temperature=data.get("target_temperature"),
-        )

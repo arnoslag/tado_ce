@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 import aiofiles
 import aiofiles.os
 
-from .const import QUOTA_BOOTSTRAP_CALLS, RATELIMIT_FILE
+from .const import QUOTA_BOOTSTRAP_CALLS, get_data_file
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -199,14 +199,15 @@ async def async_dismiss_api_limit_notification(hass: HomeAssistant) -> None:
         pass  # Notification may not exist
 
 
-async def async_detect_reset_from_history(hass: HomeAssistant) -> datetime | None:
+async def async_detect_reset_from_history(hass: HomeAssistant, home_id: str | None = None) -> datetime | None:
     """Detect API reset time from Home Assistant sensor history.
 
-    Queries the recorder for sensor.tado_ce_api_usage history and finds
+    Queries the recorder for the API usage sensor history and finds
     the time when the value dropped to its minimum (reset point).
 
     Args:
         hass: Home Assistant instance
+        home_id: Home ID for multi-home support (finds correct entity via registry)
 
     Returns:
         Estimated reset time (datetime in UTC), or None if not enough data
@@ -214,13 +215,25 @@ async def async_detect_reset_from_history(hass: HomeAssistant) -> datetime | Non
     try:
         from homeassistant.components.recorder import get_instance
         from homeassistant.components.recorder.history import get_significant_states
+        from homeassistant.helpers import entity_registry as er
         from homeassistant.util import dt as dt_util
 
         # Query last 36 hours of history (to catch reset even if it was yesterday)
         end_time = dt_util.utcnow()
         start_time = end_time - timedelta(hours=36)
 
-        entity_id = "sensor.tado_ce_api_usage"
+        # Find correct entity_id via unique_id (multi-home safe)
+        entity_id = None
+        if home_id:
+            target_uid = f"tado_ce_{home_id}_api_usage"
+            registry = er.async_get(hass)
+            entry = registry.async_get_entity_id("sensor", "tado_ce", target_uid)
+            if entry:
+                entity_id = entry
+
+        # Fallback to hardcoded entity_id (single-home or registry miss)
+        if not entity_id:
+            entity_id = "sensor.tado_ce_api_usage"
 
         # Get history from recorder
         def _get_history():
@@ -290,21 +303,25 @@ async def async_detect_reset_from_history(hass: HomeAssistant) -> datetime | Non
         return None
 
 
-async def async_update_ratelimit_reset_time(hass: HomeAssistant, detected_reset: datetime) -> None:
-    """Update ratelimit.json with detected reset time from HA history.
+async def async_update_ratelimit_reset_time(
+    hass: HomeAssistant, detected_reset: datetime, home_id: str | None = None,
+) -> None:
+    """Update ratelimit JSON with detected reset time from HA history.
 
     This is called after sync when we detect the actual reset time from
-    sensor.tado_ce_api_usage history. It's more accurate than extrapolation.
+    the API usage sensor history. It's more accurate than extrapolation.
 
     Args:
         hass: Home Assistant instance
         detected_reset: Detected reset time (datetime in UTC)
+        home_id: Home ID for per-home ratelimit file (multi-home support)
     """
     try:
-        if not await aiofiles.os.path.exists(RATELIMIT_FILE):
+        ratelimit_path = get_data_file("ratelimit", home_id)
+        if not await aiofiles.os.path.exists(ratelimit_path):
             return
 
-        async with aiofiles.open(RATELIMIT_FILE, 'r') as f:
+        async with aiofiles.open(ratelimit_path, 'r') as f:
             content = await f.read()
             data = json.loads(content)
 
@@ -333,11 +350,11 @@ async def async_update_ratelimit_reset_time(hass: HomeAssistant, detected_reset:
                 data["reset_human"] = f"{hours}h {minutes}m" if hours > 0 else f"{minutes}m"
 
             # Write back with atomic write
-            temp_path = RATELIMIT_FILE.with_suffix('.tmp')
+            temp_path = ratelimit_path.with_suffix('.tmp')
             async with aiofiles.open(temp_path, 'w') as f:
                 await f.write(json.dumps(data, indent=2))
 
-            await aiofiles.os.replace(temp_path, RATELIMIT_FILE)
+            await aiofiles.os.replace(temp_path, ratelimit_path)
             _LOGGER.info("Updated reset time from HA history: %s UTC", detected_reset.strftime('%H:%M'))
 
     except Exception as e:

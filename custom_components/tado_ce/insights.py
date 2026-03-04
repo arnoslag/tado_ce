@@ -7,9 +7,12 @@ SMART = Specific, Measurable, Achievable, Relevant, Time-bound
 """
 import math
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from enum import IntEnum
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
+
+if TYPE_CHECKING:
+    from .insight_history import InsightHistoryTracker
 
 
 class InsightPriority(IntEnum):
@@ -34,6 +37,154 @@ from .models import InsightTemperatureReading  # noqa: E402
 
 # Backward compat alias — existing code may import TemperatureReading from here
 TemperatureReading = InsightTemperatureReading
+
+
+# ============ Priority Escalation Rules ============
+# Maps insight_type → list of (days_threshold, escalated_priority), sorted ascending.
+# Last matching rule wins (i.e., longest duration that applies).
+ESCALATION_RULES: dict[str, list[tuple[int, InsightPriority]]] = {
+    "battery":          [(7, InsightPriority.HIGH), (14, InsightPriority.CRITICAL)],
+    "mold_risk":        [(3, InsightPriority.HIGH), (7, InsightPriority.CRITICAL)],
+    "condensation":     [(3, InsightPriority.HIGH)],
+    "connection":       [(2, InsightPriority.CRITICAL)],
+    "heating_anomaly":  [(1, InsightPriority.CRITICAL)],
+    "humidity_trend":   [(5, InsightPriority.HIGH)],
+    "heating_off_cold": [(2, InsightPriority.HIGH)],
+    "frost_risk":       [(1, InsightPriority.HIGH), (3, InsightPriority.CRITICAL)],
+}
+
+# ---------------------------------------------------------------------------
+# Correlation groups — related insight types that can be merged per zone
+# ---------------------------------------------------------------------------
+CORRELATION_GROUPS: dict[str, list[str]] = {
+    "humidity_problem": [
+        "mold_risk", "humidity_trend", "condensation", "cross_zone_condensation",
+    ],
+    "heating_efficiency_issue": [
+        "heating_anomaly", "thermal_efficiency", "boiler_flow_anomaly",
+    ],
+    "schedule_review": [
+        "overlay_duration", "frequent_override", "schedule_gap", "schedule_deviation",
+    ],
+    "device_maintenance": ["battery", "connection"],
+}
+
+# Reverse lookup: insight_type → group key (immutable after module load)
+_INSIGHT_TO_GROUP: dict[str, str] = {
+    t: grp for grp, types in CORRELATION_GROUPS.items() for t in types
+}
+
+
+def escalate_priorities(
+    insights: list[Insight],
+    history: "InsightHistoryTracker",
+    now: datetime,
+) -> list[Insight]:
+    """Return new list with escalated priorities based on persistence duration.
+
+    Pure function — does not mutate input insights or history.
+    Insights not in ESCALATION_RULES keep their original priority.
+    Escalated priority is always >= base priority (monotonic).
+    Escalated priority is capped at CRITICAL (4).
+    """
+    result: list[Insight] = []
+    for insight in insights:
+        rules = ESCALATION_RULES.get(insight.insight_type)
+        if not rules:
+            result.append(insight)
+            continue
+
+        dur = history.get_duration(insight.insight_type, insight.zone_name)
+        if dur is None:
+            result.append(insight)
+            continue
+
+        days = dur.total_seconds() / 86400
+        escalated_priority = insight.priority
+        for threshold_days, new_priority in rules:
+            if days >= threshold_days and new_priority > escalated_priority:
+                escalated_priority = new_priority
+
+        # Cap at CRITICAL
+        if escalated_priority > InsightPriority.CRITICAL:
+            escalated_priority = InsightPriority.CRITICAL
+
+        if escalated_priority != insight.priority:
+            result.append(Insight(
+                priority=escalated_priority,
+                recommendation=insight.recommendation,
+                insight_type=insight.insight_type,
+                zone_name=insight.zone_name,
+            ))
+        else:
+            result.append(insight)
+    return result
+
+
+def correlate_insights(
+    zone_insights: dict[str, list[Insight]],
+) -> dict[str, list[Insight]]:
+    """Correlate related insights within each zone for home-level aggregation.
+
+    For each zone, if multiple insights belong to the same correlation group,
+    merge them into a single Insight with:
+    - priority = max of group members
+    - insight_type = group key (e.g., "humidity_problem")
+    - recommendation = combined summary referencing all contributing types
+    - zone_name = preserved
+
+    Cross-zone insights (zone_name starting with "_") are never correlated.
+    Insight types not in any correlation group pass through unchanged.
+    Single-member groups also pass through unchanged.
+
+    Returns new dict — does not mutate input.
+    """
+    result: dict[str, list[Insight]] = {}
+
+    for zone_name, insights in zone_insights.items():
+        # Skip hub/cross-zone keys — pass through unchanged
+        if zone_name.startswith("_"):
+            result[zone_name] = list(insights)
+            continue
+
+        # Group insights by correlation group
+        groups: dict[str, list[Insight]] = {}
+        ungrouped: list[Insight] = []
+
+        for insight in insights:
+            grp = _INSIGHT_TO_GROUP.get(insight.insight_type)
+            if grp is not None:
+                groups.setdefault(grp, []).append(insight)
+            else:
+                ungrouped.append(insight)
+
+        merged: list[Insight] = list(ungrouped)
+
+        for grp_key, members in groups.items():
+            if len(members) == 1:
+                # Single member — pass through unchanged
+                merged.append(members[0])
+            else:
+                # Merge: max priority, combined recommendation
+                max_pri = max(m.priority for m in members)
+                type_labels = [
+                    _get_action_label(m.insight_type) for m in members
+                ]
+                combined_rec = "%s: %s — %s" % (
+                    zone_name,
+                    grp_key.replace("_", " ").title(),
+                    " + ".join(type_labels),
+                )
+                merged.append(Insight(
+                    priority=max_pri,
+                    recommendation=combined_rec,
+                    insight_type=grp_key,
+                    zone_name=zone_name,
+                ))
+
+        result[zone_name] = merged
+
+    return result
 
 
 @dataclass
@@ -862,8 +1013,172 @@ def _get_action_label(insight_type: str) -> str:
         "api_usage_spike": "API usage spike detected",
         "geofencing_offline": "Check geofencing status",
         "device_limitation": "Device limitation detected",
+        # Correlated groups (merged insight types)
+        "humidity_problem": "Address humidity problem",
+        "heating_efficiency_issue": "Investigate heating efficiency",
+        "schedule_review": "Review schedule settings",
+        "device_maintenance": "Check device health",
     }
     return action_map.get(insight_type, insight_type.replace("_", " ").title())
+
+def _build_smart_summary(
+    sorted_actions: list[tuple[str, dict]],
+    zones_with_issues: list[str],
+) -> str:
+    """Build context-rich summary from top-priority actions.
+
+    Rules:
+        1. No actions → default "all well" message.
+        2. Show up to 2 top-priority items: "Label in Zone (Priority)".
+           For cross-zone/hub actions (no zones): "Label (Priority)".
+        3. If more actions remain, append " + N more".
+        4. Single action → just that action (no count).
+        5. If 2-item text exceeds 200 chars, fall back to 1 item + count.
+    """
+    if not sorted_actions:
+        return "All zones are running well — no issues detected."
+
+    def _fmt(label: str, grp: dict) -> str:
+        pri = InsightPriority(grp["priority"]).name.capitalize()
+        zones = grp["zones"]
+        if zones:
+            return "%s in %s (%s)" % (label, ", ".join(zones), pri)
+        return "%s (%s)" % (label, pri)
+
+    total = len(sorted_actions)
+    first = _fmt(*sorted_actions[0])
+
+    if total == 1:
+        return first
+
+    remaining = total - 2
+    suffix = " + %d more" % remaining if remaining > 0 else ""
+    second = _fmt(*sorted_actions[1])
+    text = "%s, %s%s" % (first, second, suffix)
+
+    if len(text) <= 200:
+        return text
+
+    # Fallback: 1 item + total remaining count
+    remaining_all = total - 1
+    return "%s + %d more" % (first, remaining_all)
+
+# Priority → health score deduction
+_HEALTH_DEDUCTIONS: dict[InsightPriority, int] = {
+    InsightPriority.CRITICAL: 25,
+    InsightPriority.HIGH: 15,
+    InsightPriority.MEDIUM: 8,
+    InsightPriority.LOW: 3,
+}
+
+
+def calculate_insight_health_score(insights: list[Insight]) -> int:
+    """Calculate home health score (0–100, higher = healthier).
+
+    Starts at 100 and deducts per insight based on priority.
+    Floor at 0. Score of 100 = no active insights.
+    """
+    score = 100
+    for insight in insights:
+        score -= _HEALTH_DEDUCTIONS.get(insight.priority, 0)
+    return max(score, 0)
+
+def build_weekly_digest(
+    history: "InsightHistoryTracker",
+    now: datetime,
+) -> dict:
+    """Build weekly digest from insight history.
+
+    Analyses entries from the last 7 days to produce a summary dict.
+
+    Args:
+        history: InsightHistoryTracker instance (uses .entries property).
+        now: Current UTC datetime.
+
+    Returns:
+        Dict with period, total_unique_insights, most_frequent_type,
+        most_affected_zone, longest_persisting, resolved_this_week.
+    """
+    week_ago = now - timedelta(days=7)
+    period_start = week_ago.strftime("%Y-%m-%d")
+    period_end = now.strftime("%Y-%m-%d")
+
+    empty = {
+        "period": "%s to %s" % (period_start, period_end),
+        "total_unique_insights": 0,
+        "most_frequent_type": None,
+        "most_affected_zone": None,
+        "longest_persisting": None,
+        "resolved_this_week": 0,
+    }
+
+    entries = history.entries
+    if not entries:
+        return empty
+
+    type_counts: dict[str, int] = {}
+    zone_counts: dict[str, int] = {}
+    longest: dict | None = None
+    longest_days: float = 0.0
+    active_count = 0
+    resolved_count = 0
+
+    for key, entry in entries.items():
+        try:
+            first_seen = datetime.fromisoformat(entry["first_seen"])
+            last_seen = datetime.fromisoformat(entry["last_seen"])
+            if first_seen.tzinfo is None:
+                first_seen = first_seen.replace(tzinfo=timezone.utc)
+            if last_seen.tzinfo is None:
+                last_seen = last_seen.replace(tzinfo=timezone.utc)
+        except (ValueError, KeyError, TypeError):
+            continue
+
+        # Only consider entries that overlap with the last 7 days
+        if last_seen < week_ago:
+            continue
+
+        parts = key.split(":", 1)
+        insight_type = parts[0]
+        zone_name = parts[1] if len(parts) > 1 else "_hub"
+
+        active_count += 1
+        type_counts[insight_type] = type_counts.get(insight_type, 0) + 1
+        if zone_name != "_hub":
+            zone_counts[zone_name] = zone_counts.get(zone_name, 0) + 1
+
+        duration_days = (last_seen - first_seen).total_seconds() / 86400
+        if duration_days > longest_days:
+            longest_days = duration_days
+            longest = {
+                "type": insight_type,
+                "zone": zone_name if zone_name != "_hub" else None,
+                "days": round(duration_days, 1),
+            }
+
+        # Resolved = last_seen is in the past week but entry is no longer active
+        # (last_seen < now means it was last seen before current poll)
+        # We approximate: if last_seen < now - 1 hour, consider resolved
+        if last_seen < now - timedelta(hours=1):
+            resolved_count += 1
+
+    if active_count == 0:
+        return empty
+
+    most_frequent_type = max(type_counts, key=type_counts.get) if type_counts else None
+    most_affected_zone = max(zone_counts, key=zone_counts.get) if zone_counts else None
+
+    return {
+        "period": "%s to %s" % (period_start, period_end),
+        "total_unique_insights": active_count,
+        "most_frequent_type": most_frequent_type,
+        "most_affected_zone": most_affected_zone,
+        "longest_persisting": longest,
+        "resolved_this_week": resolved_count,
+    }
+
+
+
 
 
 def aggregate_home_insights(zone_insights: dict[str, list[Insight]]) -> dict:
@@ -943,13 +1258,8 @@ def aggregate_home_insights(zone_insights: dict[str, list[Insight]]) -> dict:
     # Zones with no issues
     zones_ok = sorted(all_zone_names - set(zones_with_issues))
 
-    # Build summary sentence
-    n_actions = len(actions_needed)
-    n_zones = len(zones_with_issues)
-    if n_actions == 1:
-        summary = f"1 action needed across {n_zones} zone{'s' if n_zones != 1 else ''}."
-    else:
-        summary = f"{n_actions} actions needed across {n_zones} zone{'s' if n_zones != 1 else ''}."
+    # Build smart summary from top-priority actions
+    summary = _build_smart_summary(sorted_actions, zones_with_issues)
 
     return {
         "total_insights": len(all_insights),

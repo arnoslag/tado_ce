@@ -25,6 +25,7 @@ import aiofiles.os
 
 from .const import DOMAIN, FULL_SYNC_INTERVAL_HOURS, get_data_file
 from .exceptions import TadoAuthError, TadoSyncError
+from .insight_history import InsightHistoryTracker
 from .polling import get_polling_interval, should_pause_polling
 
 if TYPE_CHECKING:
@@ -107,6 +108,9 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._outdoor_temp_history: list[float] = []
         self._outdoor_temp_loaded: bool = False
 
+        # Insight history tracker (persistent insight duration tracking)
+        self.insight_history = InsightHistoryTracker(hass, self.home_id)
+
         # Full sync tracking
         self._last_full_sync: datetime | None = None
         self._cached_ratelimit: dict | None = None
@@ -163,13 +167,13 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             async_update_ratelimit_reset_time,
         )
 
-        detected_reset = await async_detect_reset_from_history(self.hass)
+        detected_reset = await async_detect_reset_from_history(self.hass, self.home_id)
         if detected_reset:
             _LOGGER.debug(
                 "Tado CE: HA history detected reset at %s UTC",
                 detected_reset.strftime("%H:%M"),
             )
-            await async_update_ratelimit_reset_time(self.hass, detected_reset)
+            await async_update_ratelimit_reset_time(self.hass, detected_reset, self.home_id)
 
         # 5. Load all data files in parallel (no inter-dependencies)
         (
@@ -223,12 +227,25 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             zone_states = zone_data.get("zoneStates", {})
             for zone_id, data in zone_states.items():
                 try:
-                    await self.heating_cycle_coordinator.on_zone_update(zone_id, data)
+                    setting = data.get("setting") or {}
+                    target_temp = (setting.get("temperature") or {}).get("celsius")
+                    sensor_data = data.get("sensorDataPoints") or {}
+                    current_temp = (
+                        (sensor_data.get("insideTemperature") or {}).get("celsius")
+                    )
+                    if target_temp is not None and current_temp is not None:
+                        await self.heating_cycle_coordinator.on_zone_update(
+                            zone_id, target_temp, current_temp,
+                        )
                 except Exception:
                     _LOGGER.debug("HeatingCycleCoordinator update failed for zone %s", zone_id)
 
         # 8. Cleanup expired entity freshness entries (replaces 5-min timer)
         await self._cleanup_entity_freshness()
+
+        # 9. Save insight history if dirty (piggyback on poll cycle)
+        if self.insight_history._dirty:
+            await self.insight_history.async_save()
 
         return {
             "zones": zone_data or {},

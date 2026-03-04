@@ -147,6 +147,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     coordinator.overlay_mode = overlay_mode
     coordinator.timer_duration = timer_duration
 
+    # Load insight history from disk and prune stale entries
+    loaded_count = await coordinator.insight_history.async_load()
+    pruned_count = coordinator.insight_history.prune_old_entries()
+    if loaded_count or pruned_count:
+        _LOGGER.debug(
+            "Tado CE: Insight history loaded %d entries, pruned %d stale",
+            loaded_count, pruned_count,
+        )
+
     # First refresh
     await coordinator.async_config_entry_first_refresh()
 
@@ -218,6 +227,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             _LOGGER.debug("Cancelled pending debounce task")
         coordinator.refresh_handler = None
         _LOGGER.debug("Cleaned up coordinator RefreshHandler")
+
+    # Save insight history before shutdown
+    if coordinator and hasattr(coordinator, 'insight_history'):
+        await coordinator.insight_history.async_save()
 
     # Per-entry cleanup (API client, timers, managers)
     from .entry_lifecycle import async_cleanup_entry_components

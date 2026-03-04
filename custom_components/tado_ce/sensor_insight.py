@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from homeassistant.components.sensor import SensorEntity
@@ -16,7 +16,10 @@ from .format_helpers import (
 from .format_helpers import (
     format_priority as _format_priority,
 )
-from .insights import aggregate_home_insights
+from .insights import Insight, aggregate_home_insights, calculate_insight_health_score
+from .insights import build_weekly_digest as _build_weekly_digest
+from .insights import correlate_insights as _correlate_insights
+from .insights import escalate_priorities as _escalate_priorities
 from .sensor_insight_collector import (
     collect_single_zone_insights,
     collect_zone_insights,
@@ -55,6 +58,10 @@ class TadoHomeInsightsSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], Sen
         self._attr_available = False
         self._attr_native_value = 0
         self._aggregated: dict = {}
+        self._health_score: int = 100
+        # Weekly digest cache — recompute only when date changes
+        self._weekly_digest: dict = {}
+        self._weekly_digest_date: str = ""
         # Track per-zone heating anomaly start times for real duration measurement
         self._anomaly_start_times: dict[str, datetime] = {}
         # Per-zone humidity history for trend detection (in-memory only)
@@ -76,6 +83,7 @@ class TadoHomeInsightsSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], Sen
 
     @property
     def extra_state_attributes(self):
+        persistent = self.coordinator.insight_history.get_persistent_insights()
         return {
             "summary": self._aggregated.get("summary", ""),
             "actions_needed": self._aggregated.get("actions_needed", []),
@@ -84,6 +92,9 @@ class TadoHomeInsightsSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], Sen
             "top_recommendation": self._aggregated.get("top_recommendation", ""),
             "zones_with_issues": self._aggregated.get("zones_with_issues", []),
             "cross_zone_insights": self._aggregated.get("cross_zone_insights", []),
+            "persistent_insights": persistent,
+            "insight_health_score": self._health_score,
+            "weekly_digest": self._weekly_digest,
         }
 
     @callback
@@ -110,6 +121,54 @@ class TadoHomeInsightsSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], Sen
                 zone_insights["_hub"] = hub
             if cross_zone:
                 zone_insights["_cross_zone"] = cross_zone
+
+            # Flatten all insights for history tracking
+            all_insights = []
+            for insights_list in zone_insights.values():
+                all_insights.extend(insights_list)
+
+            # Update insight history with current poll cycle
+            now = datetime.now(timezone.utc)
+            self.coordinator.insight_history.update(all_insights, now)
+
+            # Escalate priorities based on persistence duration
+            history = self.coordinator.insight_history
+            escalated = _escalate_priorities(all_insights, history, now)
+
+            # Rebuild zone_insights with escalated insights (preserving zone grouping)
+            idx = 0
+            for zone_key in zone_insights:
+                count = len(zone_insights[zone_key])
+                zone_insights[zone_key] = escalated[idx:idx + count]
+                idx += count
+
+            # Append duration text for persistent insights (≥ 24h)
+            for zone_key in zone_insights:
+                for i, insight in enumerate(zone_insights[zone_key]):
+                    dur = history.get_duration(insight.insight_type, insight.zone_name)
+                    if dur is not None and dur.total_seconds() >= 86400:
+                        days = int(dur.total_seconds() // 86400)
+                        label = "1 day" if days == 1 else "%d days" % days
+                        zone_insights[zone_key][i] = Insight(
+                            priority=insight.priority,
+                            recommendation="%s (persisting for %s)" % (insight.recommendation, label),
+                            insight_type=insight.insight_type,
+                            zone_name=insight.zone_name,
+                        )
+
+            # Correlate related insights within each zone
+            zone_insights = _correlate_insights(zone_insights)
+
+            # Compute health score from escalated insights (before correlation)
+            self._health_score = calculate_insight_health_score(escalated)
+
+            # Update weekly digest (recompute only when date changes)
+            today = now.strftime("%Y-%m-%d")
+            if today != self._weekly_digest_date:
+                self._weekly_digest = _build_weekly_digest(
+                    self.coordinator.insight_history, now,
+                )
+                self._weekly_digest_date = today
 
             self._aggregated = aggregate_home_insights(zone_insights)
 

@@ -33,6 +33,7 @@ from .optimistic import (
     resolve_optimistic_vs_api,
     set_optimistic_state,
 )
+from .climate_helpers import api_call_with_rollback
 from .device_manager import get_zone_device_info
 from .format_helpers import (
     format_overlay_type as _format_overlay_type,
@@ -40,7 +41,11 @@ from .format_helpers import (
 from .format_helpers import (
     format_zone_type as _format_zone_type,
 )
-from .helpers import async_trigger_immediate_refresh
+from .helpers import (
+    async_trigger_immediate_refresh,
+    build_timer_termination,
+    get_zone_overlay_termination,
+)
 from .climate_maps import (
     HA_TO_TADO_FAN,
     HA_TO_TADO_HVAC_MODE,
@@ -707,78 +712,28 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
         client = self.coordinator.api_client
 
         if hvac_mode == HVACMode.OFF:
-            # Optimistic update BEFORE API call
-            old_mode = self._attr_hvac_mode
-            old_action = self._attr_hvac_action
-            self._attr_hvac_mode = HVACMode.OFF
-            self._attr_hvac_action = HVACAction.OFF
-            self._overlay_type = "MANUAL"
-            # Use new optimistic state tracking with sequence numbers
-            await self._set_optimistic_state(HVACMode.OFF, HVACAction.OFF)
-            self.async_write_ha_state()
-
             setting = {
                 "type": "AIR_CONDITIONING",
                 "power": "OFF",
             }
-            # Use per-zone overlay mode
-            from .helpers import get_zone_overlay_termination  # noqa: PLC0415
             termination = get_zone_overlay_termination(self.hass, self._zone_id, entry_id=self._entry_id)
-
-            # Await API call with timeout (fixes #44)
-            api_success = False
-            try:
-                async with asyncio.timeout(10):
-                    api_success = await client.set_zone_overlay(self._zone_id, setting, termination)
-            except TimeoutError:
-                _LOGGER.warning("AC TIMEOUT: %s OFF mode API call timed out", self._zone_name)
-            except Exception as e:  # noqa: BLE001
-                _LOGGER.warning("AC ERROR: %s OFF mode API call failed (%s)", self._zone_name, e)
-
-            if api_success:
-                _LOGGER.info("AC Set %s to OFF mode", self._zone_name)
-                await async_trigger_immediate_refresh(self.hass, self.entity_id, "hvac_mode_change")
-            else:
-                _LOGGER.warning("AC ROLLBACK: %s OFF mode failed", self._zone_name)
-                self._attr_hvac_mode = old_mode
-                self._attr_hvac_action = old_action
-                self._clear_optimistic_state()
-                self.async_write_ha_state()
+            await api_call_with_rollback(
+                self,
+                client.set_zone_overlay(self._zone_id, setting, termination),
+                hvac_mode=HVACMode.OFF,
+                hvac_action=HVACAction.OFF,
+                reason="AC Set OFF mode",
+            )
 
         elif hvac_mode == HVACMode.AUTO:
-            # Optimistic update BEFORE API call
-            old_mode = self._attr_hvac_mode
-            old_overlay = self._overlay_type
-            old_action = self._attr_hvac_action
-            self._attr_hvac_mode = HVACMode.AUTO
-            self._overlay_type = None
-            # Set hvac_action to IDLE when switching to AUTO
-            # The actual state will be updated when zones.json is refreshed.
-            self._attr_hvac_action = HVACAction.IDLE
-            # Use new optimistic state tracking with sequence numbers
-            await self._set_optimistic_state(HVACMode.AUTO, HVACAction.IDLE)
-            self.async_write_ha_state()
-
-            # Await API call with timeout (fixes #44)
-            api_success = False
-            try:
-                async with asyncio.timeout(10):
-                    api_success = await client.delete_zone_overlay(self._zone_id)
-            except TimeoutError:
-                _LOGGER.warning("AC TIMEOUT: %s AUTO mode API call timed out", self._zone_name)
-            except Exception as e:  # noqa: BLE001
-                _LOGGER.warning("AC ERROR: %s AUTO mode API call failed (%s)", self._zone_name, e)
-
-            if api_success:
-                _LOGGER.info("AC Set %s to AUTO mode (deleted overlay)", self._zone_name)
-                await async_trigger_immediate_refresh(self.hass, self.entity_id, "hvac_mode_change")
-            else:
-                _LOGGER.warning("AC ROLLBACK: %s AUTO mode failed", self._zone_name)
-                self._attr_hvac_mode = old_mode
-                self._overlay_type = old_overlay
-                self._attr_hvac_action = old_action
-                self._clear_optimistic_state()
-                self.async_write_ha_state()
+            await api_call_with_rollback(
+                self,
+                client.delete_zone_overlay(self._zone_id),
+                hvac_mode=HVACMode.AUTO,
+                hvac_action=HVACAction.IDLE,
+                overlay_type=None,
+                reason="AC Set AUTO mode (deleted overlay)",
+            )
         else:
             # Optimistic update BEFORE API call
             # Include all attributes that will be set by _async_set_ac_overlay
@@ -1096,7 +1051,6 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
         # Termination
         # Use per-zone overlay mode
         # DRY — use shared build_timer_termination
-        from .helpers import build_timer_termination  # noqa: PLC0415
         termination = build_timer_termination(
             duration_minutes=duration_minutes, overlay=overlay,
             hass=self.hass, zone_id=self._zone_id, entry_id=self._entry_id,

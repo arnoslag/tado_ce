@@ -18,8 +18,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import sys
-import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
@@ -123,43 +121,9 @@ class EntryData:
 
     # === Methods ===
 
-    def get_next_sequence(self) -> int:
-        """Get next sequence number for tracking data freshness.
-
-        Includes overflow protection — resets at sys.maxsize to prevent
-        memory issues in long-running instances.
-        """
-        self.global_sequence[0] += 1
-        if self.global_sequence[0] >= sys.maxsize:
-            _LOGGER.info("Sequence number reached max, resetting to 0")
-            self.global_sequence[0] = 0
-        return self.global_sequence[0]
-
-    async def async_mark_entity_fresh(self, entity_id: str) -> None:
-        """Mark entity as having a recent API call in progress."""
-        async with self.freshness_lock:
-            self.entity_freshness[entity_id] = time.time()
-            _LOGGER.debug("Marked entity fresh: %s", entity_id)
-
-    def is_entity_fresh(self, entity_id: str, debounce_seconds: int | None = None) -> bool:
-        """Check if entity has a recent API call (within debounce window).
-
-        Args:
-            entity_id: Entity ID to check
-            debounce_seconds: Override debounce window (uses config if None)
-        """
-        if entity_id not in self.entity_freshness:
-            return False
-        if debounce_seconds is None:
-            if self.config_manager:
-                debounce_seconds = self.config_manager.get_refresh_debounce_seconds() + 2
-            else:
-                debounce_seconds = 7  # safe default
-        elapsed = time.time() - self.entity_freshness[entity_id]
-        if elapsed > debounce_seconds:
-            del self.entity_freshness[entity_id]
-            return False
-        return True
+    # NOTE: Freshness/sequence methods (get_next_sequence, mark_entity_fresh,
+    # is_entity_fresh) are on TadoDataUpdateCoordinator — the canonical source.
+    # EntryData only holds the raw state dicts; coordinator owns the logic.
 
 
 

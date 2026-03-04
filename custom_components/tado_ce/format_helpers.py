@@ -71,7 +71,7 @@ CONNECTION_STATE_ATTR_MAP: dict[bool, str] = {True: "online", False: "offline"}
 
 def _lookup(mapping: dict, value, fallback_fn=None) -> str:
     """Look up value in mapping. Falsy value -> 'Unknown', unmapped -> fallback."""
-    if not value and value is not False:
+    if value is None or value == "":
         return "Unknown"
     if value in mapping:
         return mapping[value]

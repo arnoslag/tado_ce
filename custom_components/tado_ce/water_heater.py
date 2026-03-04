@@ -232,7 +232,8 @@ class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeate
                         self._expected_temperature, api_operation, api_target_temp,
                     )
 
-            # Also check time-based window as fallback
+            # Also check time-based window as safety net (should rarely trigger)
+            # Sequence-based checking (Layer 3 above) is the primary mechanism
             if not should_preserve_optimistic and self._is_within_optimistic_window():
                 should_preserve_optimistic = True
                 _LOGGER.debug("Hot water %s: Preserving optimistic state (within time window)", self._zone_name)

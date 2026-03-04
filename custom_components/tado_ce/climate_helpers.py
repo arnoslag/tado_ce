@@ -73,3 +73,75 @@ def update_preset_mode(coordinator: TadoDataUpdateCoordinator) -> str | None:
         # Keep last known preset mode — caller handles fallback
         pass
     return None
+
+
+async def api_call_with_rollback(
+    entity,
+    api_coro,
+    *,
+    hvac_mode,
+    hvac_action,
+    overlay_type: str | None = "MANUAL",
+    target_temp: float | None = None,
+    reason: str,
+) -> bool:
+    """Execute API call with optimistic update + rollback pattern.
+
+    Consolidates the repeated pattern across climate_heating.py and climate_ac.py:
+    1. Save old state
+    2. Set optimistic state
+    3. API call with timeout
+    4. Success → log + trigger refresh
+    5. Failure → rollback to old state
+
+    Args:
+        entity: Climate entity (heating or AC)
+        api_coro: Awaitable API call (e.g., client.set_zone_overlay(...))
+        hvac_mode: Target HVAC mode for optimistic update
+        hvac_action: Target HVAC action for optimistic update
+        overlay_type: Overlay type to set (None for AUTO/schedule mode)
+        target_temp: Optional target temperature
+        reason: Reason string for logging and refresh trigger
+
+    Returns:
+        True if API call succeeded, False otherwise
+
+    """
+    import asyncio
+
+    from .helpers import async_trigger_immediate_refresh
+
+    # Save old state for rollback
+    old_mode = entity._attr_hvac_mode
+    old_action = entity._attr_hvac_action
+    old_overlay = entity._overlay_type
+
+    # Optimistic update
+    entity._attr_hvac_mode = hvac_mode
+    entity._attr_hvac_action = hvac_action
+    entity._overlay_type = overlay_type
+    await entity._set_optimistic_state(hvac_mode, hvac_action, target_temp=target_temp)
+    entity.async_write_ha_state()
+
+    # API call with timeout
+    api_success = False
+    try:
+        async with asyncio.timeout(10):
+            api_success = await api_coro
+    except TimeoutError:
+        _LOGGER.warning("TIMEOUT: %s %s timed out", entity._zone_name, reason)
+    except Exception as e:  # noqa: BLE001
+        _LOGGER.warning("ERROR: %s %s failed (%s)", entity._zone_name, reason, e)
+
+    if api_success:
+        _LOGGER.info("%s: %s", entity._zone_name, reason)
+        await async_trigger_immediate_refresh(entity.hass, entity.entity_id, "hvac_mode_change")
+    else:
+        _LOGGER.warning("ROLLBACK: %s %s failed", entity._zone_name, reason)
+        entity._attr_hvac_mode = old_mode
+        entity._attr_hvac_action = old_action
+        entity._overlay_type = old_overlay
+        entity._clear_optimistic_state()
+        entity.async_write_ha_state()
+
+    return api_success
