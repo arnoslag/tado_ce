@@ -1,21 +1,24 @@
-"""Tado CE Number Platform.
+"""Tado CE Number Platform — zone configuration numbers."""
 
-Number entities for zone configuration (min/max temp, timer duration, etc.)
-"""
+from __future__ import annotations
+
 import logging
-from datetime import timedelta
+from typing import TYPE_CHECKING
 
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+if TYPE_CHECKING:
+    from homeassistant.core import HomeAssistant
+    from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+
+    from .coordinator import TadoConfigEntry
 
 _LOGGER = logging.getLogger(__name__)
-SCAN_INTERVAL = timedelta(seconds=30)
+
+PARALLEL_UPDATES = 1
 
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: TadoConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up Tado CE number entities from a config entry."""
@@ -23,4 +26,5 @@ async def async_setup_entry(
 
     # Zone configuration number entities (per-zone settings)
     from .zone_config import async_setup_zone_config_number
+
     await async_setup_zone_config_number(hass, entry, async_add_entities)

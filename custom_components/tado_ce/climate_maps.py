@@ -1,5 +1,9 @@
-"""Climate platform helpers — HVAC mode maps, fan maps, zone capabilities."""
+"""Tado CE climate maps — HVAC mode maps, fan maps."""
+
+from __future__ import annotations
+
 import logging
+from typing import Any
 
 from homeassistant.components.climate.const import (
     FAN_AUTO,
@@ -46,40 +50,7 @@ HA_TO_TADO_FAN = {
 }
 
 
-def get_zone_capabilities(data_loader):
-    """Load zone capabilities (for AC zones).
-
-    First tries to load from ac_capabilities.json (fetched from dedicated API endpoint).
-    Falls back to zones_info.json for basic capabilities.
-    """
-    ac_caps = data_loader.load_ac_capabilities_file() or {}
-    zones_info = data_loader.load_zones_info_file()
-
-    if not zones_info:
-        return {}
-
-    caps = {}
-    for z in zones_info:
-        zone_id = str(z.get('id'))
-        zone_type = z.get('type')
-
-        if zone_type == 'AIR_CONDITIONING' and zone_id in ac_caps:
-            # Use detailed AC capabilities from dedicated API
-            caps[zone_id] = {
-                'type': zone_type,
-                'ac_capabilities': ac_caps[zone_id],
-            }
-        else:
-            # Fallback to basic capabilities from zones_info
-            # Use 'or {}' pattern for null safety
-            caps[zone_id] = {
-                'type': zone_type,
-                'capabilities': z.get('capabilities') or {},
-            }
-    return caps
-
-
-def build_fan_mapping(fan_levels: set) -> tuple[dict, dict]:
+def build_fan_mapping(fan_levels: set[Any]) -> tuple[dict[str, Any], dict[str, Any]]:
     """Build bidirectional fan level mapping from actual AC capabilities.
 
     Dynamic mapping to fix #142 (Mitsubishi/Fujitsu HIGH fan speed).
@@ -101,11 +72,18 @@ def build_fan_mapping(fan_levels: set) -> tuple[dict, dict]:
     """
     TADO_FAN_ORDER = [
         "SILENT",
-        "LOW", "LEVEL1", "ONE",
-        "MIDDLE", "LEVEL2", "TWO",
-        "LEVEL3", "THREE",
-        "LEVEL4", "FOUR",
-        "HIGH", "LEVEL5",
+        "LOW",
+        "LEVEL1",
+        "ONE",
+        "MIDDLE",
+        "LEVEL2",
+        "TWO",
+        "LEVEL3",
+        "THREE",
+        "LEVEL4",
+        "FOUR",
+        "HIGH",
+        "LEVEL5",
     ]
 
     tado_to_ha = {}
@@ -123,7 +101,7 @@ def build_fan_mapping(fan_levels: set) -> tuple[dict, dict]:
     # Sort remaining non-AUTO, non-SILENT levels by known order
     other_levels = sorted(
         [f for f in fan_levels if f not in ("AUTO", "SILENT")],
-        key=lambda x: TADO_FAN_ORDER.index(x) if x in TADO_FAN_ORDER else 99
+        key=lambda x: TADO_FAN_ORDER.index(x) if x in TADO_FAN_ORDER else 99,
     )
 
     n = len(other_levels)

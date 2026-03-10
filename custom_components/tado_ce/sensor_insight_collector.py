@@ -1,13 +1,12 @@
-"""Tado CE Insight Collector — standalone functions for insight collection.
+"""Tado CE Insight Collector — standalone insight collection functions."""
 
-Functions accept hass, coordinator, and mutable state dicts as parameters
-instead of accessing self.* attributes.
-"""
 from __future__ import annotations
 
+from datetime import UTC, datetime
 import logging
-from datetime import datetime
+from typing import TYPE_CHECKING, Any
 
+from .calculations import classify_comfort_level, classify_mold_risk_level
 from .insights import (
     Insight,
     aggregate_cross_zone_condensation,
@@ -42,25 +41,28 @@ from .insights import (
     calculate_solar_gain_insight,
     calculate_temperature_imbalance_insight,
     calculate_weather_impact_insight,
-    classify_comfort_level,
-    classify_mold_risk_level,
     get_insight_priority,
 )
+
+if TYPE_CHECKING:
+    from homeassistant.core import HomeAssistant
+
+    from .coordinator import TadoDataUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
 
 def collect_single_zone_insights(
-    hass,
-    coordinator,
+    hass: HomeAssistant,
+    coordinator: TadoDataUpdateCoordinator,
     zone_id: str,
     zone_name: str,
-    zone_data: dict,
-    zones_info: list | None,
+    zone_data: dict[str, Any],
+    zones_info: list[Any] | None,
     anomaly_start_times: dict[str, datetime],
-    humidity_histories: dict[str, list] | None = None,
-    schedules: dict | None = None,
-) -> list:
+    humidity_histories: dict[str, list[Any]] | None = None,
+    schedules: dict[str, Any] | None = None,
+) -> list[Any]:
     """Collect all insights for a single zone.
 
     Shared by both TadoHomeInsightsSensor (via collect_zone_insights)
@@ -81,7 +83,7 @@ def collect_single_zone_insights(
     Returns:
         List of Insight objects for this zone.
     """
-    insights: list = []
+    insights: list[Any] = []
 
     sensor_data = zone_data.get("sensorDataPoints") or {}
     humidity = (sensor_data.get("humidity") or {}).get("percentage")
@@ -92,14 +94,19 @@ def collect_single_zone_insights(
         risk = classify_mold_risk_level(inside_temp, humidity)
         if risk in ("Critical", "High", "Medium"):
             rec = calculate_mold_risk_recommendation(
-                risk_level=risk, zone_name=zone_name,
-                humidity=humidity, current_temp=inside_temp,
-            )
-            insights.append(Insight(
-                priority=get_insight_priority("mold_risk", risk.lower()),
-                recommendation=rec, insight_type="mold_risk",
+                risk_level=risk,
                 zone_name=zone_name,
-            ))
+                humidity=humidity,
+                current_temp=inside_temp,
+            )
+            insights.append(
+                Insight(
+                    priority=get_insight_priority("mold_risk", risk.lower()),
+                    recommendation=rec,
+                    insight_type="mold_risk",
+                    zone_name=zone_name,
+                ),
+            )
 
     # --- Comfort (skip when heating OFF) ---
     setting = zone_data.get("setting") or {}
@@ -108,32 +115,43 @@ def collect_single_zone_insights(
         comfort_state = classify_comfort_level(inside_temp)
         if comfort_state in ("Cold", "Cool", "Freezing"):
             rec = calculate_comfort_recommendation(
-                comfort_state=comfort_state, zone_name=zone_name,
+                comfort_state=comfort_state,
+                zone_name=zone_name,
                 current_temp=inside_temp,
             )
-            insights.append(Insight(
-                priority=get_insight_priority("comfort", "too_cold"),
-                recommendation=rec, insight_type="comfort",
-                zone_name=zone_name,
-            ))
+            insights.append(
+                Insight(
+                    priority=get_insight_priority("comfort", "too_cold"),
+                    recommendation=rec,
+                    insight_type="comfort",
+                    zone_name=zone_name,
+                ),
+            )
         elif comfort_state in ("Hot", "Sweltering"):
             rec = calculate_comfort_recommendation(
-                comfort_state=comfort_state, zone_name=zone_name,
+                comfort_state=comfort_state,
+                zone_name=zone_name,
                 current_temp=inside_temp,
             )
-            insights.append(Insight(
-                priority=get_insight_priority("comfort", "too_hot"),
-                recommendation=rec, insight_type="comfort",
-                zone_name=zone_name,
-            ))
+            insights.append(
+                Insight(
+                    priority=get_insight_priority("comfort", "too_hot"),
+                    recommendation=rec,
+                    insight_type="comfort",
+                    zone_name=zone_name,
+                ),
+            )
 
-    # --- HA entity-based insights ---
-    if hass:
-        slug = zone_name.lower().replace(" ", "_")
-        _collect_ha_entity_insights(
-            hass, slug, zone_name, zone_data, inside_temp,
-            anomaly_start_times, insights,
-        )
+    # --- Coordinator-based insights (no hass.states.get) ---
+    _collect_ha_entity_insights(
+        coordinator,
+        zone_id,
+        zone_name,
+        zone_data,
+        inside_temp,
+        anomaly_start_times,
+        insights,
+    )
 
     # --- Overlay duration ---
     overlay_type = zone_data.get("overlayType")
@@ -148,7 +166,8 @@ def collect_single_zone_insights(
 
     # --- Frequent override ---
     insight = calculate_frequent_override_insight(
-        overlay_type=overlay_type, zone_name=zone_name,
+        overlay_type=overlay_type,
+        zone_name=zone_name,
     )
     if insight:
         insights.append(insight)
@@ -164,23 +183,23 @@ def collect_single_zone_insights(
         insights.append(insight)
 
     # --- Early start disabled ---
-    if hass:
-        slug = zone_name.lower().replace(" ", "_")
-        insight = _check_early_start(hass, slug, zone_name)
-        if insight:
-            insights.append(insight)
+    insight = _check_early_start(coordinator, zone_id, zone_name, zones_info)  # type: ignore[assignment]
+    if insight:
+        insights.append(insight)
 
     # --- Poor thermal efficiency ---
-    if hass:
-        slug = zone_name.lower().replace(" ", "_")
-        insight = _check_thermal_efficiency(hass, slug, zone_name)
-        if insight:
-            insights.append(insight)
+    insight = _check_thermal_efficiency(coordinator, zone_id, zone_name)  # type: ignore[assignment]
+    if insight:
+        insights.append(insight)
 
     # --- Schedule gap (Home sensor passes schedules; Zone sensor skips) ---
     if schedules and inside_temp is not None:
-        insight = _check_schedule_gap(
-            schedules, zone_id, zone_data, inside_temp, zone_name,
+        insight = _check_schedule_gap(  # type: ignore[assignment]
+            schedules,
+            zone_id,
+            zone_data,
+            inside_temp,
+            zone_name,
         )
         if insight:
             insights.append(insight)
@@ -192,7 +211,8 @@ def collect_single_zone_insights(
     if flow_temp is not None:
         hp_pct = (activity.get("heatingPower") or {}).get("percentage")
         insight = calculate_boiler_flow_anomaly_insight(
-            flow_temp=flow_temp, heating_power_pct=hp_pct,
+            flow_temp=flow_temp,
+            heating_power_pct=hp_pct,
             zone_name=zone_name,
         )
         if insight:
@@ -201,7 +221,8 @@ def collect_single_zone_insights(
     # --- Device limitation ---
     if zones_info:
         zone_info = next(
-            (z for z in zones_info if str(z.get("id")) == zone_id), None,
+            (z for z in zones_info if str(z.get("id")) == zone_id),
+            None,
         )
         if zone_info:
             insight = calculate_device_limitation_insight(
@@ -235,11 +256,11 @@ def collect_single_zone_insights(
 
 
 def collect_zone_insights(
-    hass,
-    coordinator,
+    hass: HomeAssistant,
+    coordinator: TadoDataUpdateCoordinator,
     anomaly_start_times: dict[str, datetime],
-    humidity_histories: dict[str, list],
-) -> dict[str, list]:
+    humidity_histories: dict[str, list[Any]],
+) -> dict[str, list[Any]]:
     """Collect insights from all zones by reading zone data files.
 
     Args:
@@ -251,7 +272,7 @@ def collect_zone_insights(
     Returns:
         Dict mapping zone names to lists of Insight objects.
     """
-    zone_insights: dict[str, list] = {}
+    zone_insights: dict[str, list[Any]] = {}
 
     try:
         coord_data = coordinator.data or {}
@@ -291,70 +312,100 @@ def collect_zone_insights(
 
 
 def _collect_ha_entity_insights(
-    hass,
-    slug: str,
+    coordinator: TadoDataUpdateCoordinator,
+    zone_id: str,
     zone_name: str,
-    zone_data: dict,
+    zone_data: dict[str, Any],
     inside_temp: float | None,
     anomaly_start_times: dict[str, datetime],
-    insights: list,
+    insights: list[Any],
 ) -> None:
-    """Collect insights that depend on HA entity states.
+    """Collect insights using coordinator data instead of hass.states.get().
 
-    Handles condensation, window predicted, preheat timing, heating anomaly.
+    Reads condensation risk and window predicted from coordinator.entity_data
+    (published by entity update() methods). Reads heating power directly from
+    zone_data (already in coordinator.data). Reads preheat time from
+    HeatingCycleCoordinator.
     """
-    # Condensation risk
-    cond_state = hass.states.get(f"sensor.{slug}_condensation_risk")
-    if cond_state and cond_state.state not in ("unavailable", "unknown", "None", "Low"):
-        cond_rec = (cond_state.attributes or {}).get("recommendation", "")
-        if not cond_rec:
-            cond_rec = f"{zone_name}: Condensation risk detected"
-        insights.append(Insight(
-            priority=get_insight_priority("condensation", cond_state.state.lower()),
-            recommendation=cond_rec, insight_type="condensation",
-            zone_name=zone_name,
-        ))
+    # Condensation risk — from coordinator.entity_data (published by TadoCondensationRiskSensor)
+    cond_data = coordinator.get_entity_data(zone_id, "condensation_risk")
+    if cond_data:
+        cond_state = cond_data.get("state", "None")
+        if cond_state not in ("None", "Low", "unavailable", "unknown"):
+            cond_rec = cond_data.get("recommendation", "")
+            if not cond_rec:
+                cond_rec = f"{zone_name}: Condensation risk detected"
+            insights.append(
+                Insight(
+                    priority=get_insight_priority("condensation", cond_state.lower()),
+                    recommendation=cond_rec,
+                    insight_type="condensation",
+                    zone_name=zone_name,
+                ),
+            )
 
-    # Window predicted
-    wp_state = hass.states.get(f"binary_sensor.{slug}_window_predicted")
-    if wp_state and wp_state.state == "on":
-        wp_rec = (wp_state.attributes or {}).get("recommendation", "")
+    # Window predicted — from coordinator.entity_data (published by TadoWindowPredictedSensor)
+    wp_data = coordinator.get_entity_data(zone_id, "window_predicted")
+    if wp_data and wp_data.get("state") == "on":
+        wp_rec = wp_data.get("recommendation", "")
         if not wp_rec:
             wp_rec = f"{zone_name}: Possible open window detected"
-        insights.append(Insight(
-            priority=get_insight_priority("window_predicted", "high"),
-            recommendation=wp_rec, insight_type="window_predicted",
-            zone_name=zone_name,
-        ))
+        insights.append(
+            Insight(
+                priority=get_insight_priority("window_predicted", "high"),
+                recommendation=wp_rec,
+                insight_type="window_predicted",
+                zone_name=zone_name,
+            ),
+        )
 
-    # Preheat timing
-    ph_state = hass.states.get(f"sensor.{slug}_preheat_time")
-    sc_state = hass.states.get(f"sensor.{slug}_next_schedule_time")
-    ph_min = _safe_float(ph_state)
-    sc_val = sc_state.state if sc_state and sc_state.state not in ("unavailable", "unknown") else None
+    # Preheat timing — from HeatingCycleCoordinator (no hass.states.get needed)
+    hcc = coordinator.heating_cycle_coordinator
+    ph_min: float | None = None
+    if hcc:
+        zone_state = hcc.get_zone_state(zone_id)
+        if zone_state:
+            current_temp = zone_state.get("current_temp")
+            target_temp = zone_state.get("target_temp")
+            if current_temp is not None and target_temp is not None:
+                ph_min = hcc.estimate_preheat_time(zone_id, current_temp, target_temp)
+
+    # Next schedule time — from coordinator.data["schedules"]
+    sc_val: str | None = None
+    schedules = (coordinator.data or {}).get("schedules") or {}
+    zone_schedule = schedules.get(zone_id) or schedules.get(str(zone_id))
+    if zone_schedule:
+        next_change = zone_data.get("nextScheduleChange") or {}
+        sc_val = next_change.get("start")
+
     insight = calculate_preheat_timing_insight(
-        preheat_time_minutes=ph_min, next_schedule_time=sc_val,
+        preheat_time_minutes=ph_min,
+        next_schedule_time=sc_val,
         zone_name=zone_name,
     )
     if insight:
         insights.append(insight)
 
-    # Heating anomaly
-    pw_state = hass.states.get(f"sensor.{slug}_heating_power")
-    if pw_state and pw_state.state not in ("unavailable", "unknown"):
+    # Heating anomaly — from zone_data directly (already in coordinator.data)
+    activity = zone_data.get("activityDataPoints") or {}
+    heating_power = activity.get("heatingPower") or {}
+    power_pct = heating_power.get("percentage")
+    if power_pct is not None:
         try:
-            power_pct = float(pw_state.state)
+            power_pct = float(power_pct)
             setting = zone_data.get("setting") or {}
             target = (setting.get("temperature") or {}).get("celsius")
             if inside_temp is not None and target is not None:
                 temp_delta = abs(inside_temp - target)
                 if power_pct >= 80 and temp_delta < 0.5:
                     if zone_name not in anomaly_start_times:
-                        anomaly_start_times[zone_name] = datetime.now()
-                    elapsed = (datetime.now() - anomaly_start_times[zone_name]).total_seconds() / 60
+                        anomaly_start_times[zone_name] = datetime.now(UTC)
+                    elapsed = (datetime.now(UTC) - anomaly_start_times[zone_name]).total_seconds() / 60
                     ha_insight = calculate_heating_anomaly_insight(
-                        heating_power_pct=power_pct, temp_delta=temp_delta,
-                        duration_minutes=int(elapsed), zone_name=zone_name,
+                        heating_power_pct=power_pct,
+                        temp_delta=temp_delta,
+                        duration_minutes=int(elapsed),
+                        zone_name=zone_name,
                     )
                     if ha_insight:
                         insights.append(ha_insight)
@@ -364,54 +415,83 @@ def _collect_ha_entity_insights(
             pass
 
 
-def _safe_float(state) -> float | None:
-    """Extract float from HA state, returning None if unavailable."""
-    if state and state.state not in ("unavailable", "unknown"):
-        try:
-            return float(state.state)
-        except (ValueError, TypeError):
-            pass
-    return None
+def _check_early_start(
+    coordinator: TadoDataUpdateCoordinator,
+    zone_id: str,
+    zone_name: str,
+    zones_info: list[Any] | None,
+) -> bool:
+    """Check early start disabled + long preheat insight.
 
-
-def _check_early_start(hass, slug: str, zone_name: str):
-    """Check early start disabled + long preheat insight."""
-    es_state = hass.states.get(f"switch.{slug}_early_start")
-    ph_state = hass.states.get(f"sensor.{slug}_preheat_time")
+    Reads earlyStart from zones_info (API data) and preheat time from
+    HeatingCycleCoordinator — no hass.states.get() needed.
+    """
     early_start_on = True
-    if es_state and es_state.state == "off":
-        early_start_on = False
-    return calculate_early_start_disabled_insight(
+    if zones_info:
+        zone_info = next(
+            (z for z in zones_info if str(z.get("id")) == zone_id),
+            None,
+        )
+        if zone_info:
+            es_data = zone_info.get("earlyStart") or {}
+            early_start_on = es_data.get("enabled", True)
+
+    ph_min: float | None = None
+    hcc = coordinator.heating_cycle_coordinator
+    if hcc:
+        zone_state = hcc.get_zone_state(zone_id)
+        if zone_state:
+            current_temp = zone_state.get("current_temp")
+            target_temp = zone_state.get("target_temp")
+            if current_temp is not None and target_temp is not None:
+                ph_min = hcc.estimate_preheat_time(zone_id, current_temp, target_temp)
+
+    return calculate_early_start_disabled_insight(  # type: ignore[return-value]
         early_start_enabled=early_start_on,
-        preheat_time_minutes=_safe_float(ph_state),
+        preheat_time_minutes=ph_min,
         zone_name=zone_name,
     )
 
 
-def _check_thermal_efficiency(hass, slug: str, zone_name: str):
-    """Check poor thermal efficiency insight."""
-    ti_val = _safe_float(hass.states.get(f"sensor.{slug}_thermal_inertia"))
-    hr_val = _safe_float(hass.states.get(f"sensor.{slug}_avg_heating_rate"))
-    conf_val = _safe_float(hass.states.get(f"sensor.{slug}_analysis_confidence"))
-    return calculate_poor_thermal_efficiency_insight(
-        thermal_inertia=ti_val, heating_rate=hr_val,
-        confidence_score=conf_val, zone_name=zone_name,
+def _check_thermal_efficiency(
+    coordinator: TadoDataUpdateCoordinator,
+    zone_id: str,
+    zone_name: str,
+) -> dict[str, Any] | None:
+    """Check poor thermal efficiency insight.
+
+    Reads thermal analytics from HeatingCycleCoordinator — no hass.states.get() needed.
+    """
+    hcc = coordinator.heating_cycle_coordinator
+    if not hcc:
+        return None
+    zone_data = hcc.get_zone_data(zone_id)
+    if not zone_data:
+        return None
+    ti_val = zone_data.get("inertia_time")
+    hr_val = zone_data.get("heating_rate")
+    conf_val = zone_data.get("confidence_score")
+    return calculate_poor_thermal_efficiency_insight(  # type: ignore[return-value]
+        thermal_inertia=ti_val,
+        heating_rate=hr_val,
+        confidence_score=conf_val,
+        zone_name=zone_name,
     )
 
 
 def _check_schedule_gap(
-    schedules: dict,
+    schedules: dict[str, Any],
     zone_id: str,
-    zone_data: dict,
+    zone_data: dict[str, Any],
     inside_temp: float,
     zone_name: str,
-):
+) -> dict[str, Any] | None:
     """Check schedule gap insight for a zone."""
     zone_schedule = schedules.get(zone_id)
     if not zone_schedule:
         return None
 
-    raw_blocks = zone_schedule.get("blocks") or zone_schedule.get("schedule", [])
+    raw_blocks = zone_schedule.get("blocks") or zone_schedule.get("schedule") or []
     if isinstance(raw_blocks, dict):
         blocks = [b for day_blocks in raw_blocks.values() for b in day_blocks]
     else:
@@ -441,8 +521,8 @@ def _check_schedule_gap(
         if off_durations:
             longest_off = max(off_durations)
 
-    return calculate_schedule_gap_insight(
-        schedule_blocks=blocks if blocks else None,
+    return calculate_schedule_gap_insight(  # type: ignore[return-value]
+        schedule_blocks=blocks or None,
         current_temp=inside_temp,
         next_target_temp=next_target,
         longest_off_hours=longest_off,
@@ -453,50 +533,59 @@ def _check_schedule_gap(
 def _collect_single_zone_device_insights(
     zone_id: str,
     zone_name: str,
-    zones_info: list,
-    insights: list,
+    zones_info: list[Any],
+    insights: list[Any],
 ) -> None:
     """Collect battery and connection insights for a single zone."""
     zone_info = next(
-        (z for z in zones_info if str(z.get("id")) == zone_id), None,
+        (z for z in zones_info if str(z.get("id")) == zone_id),
+        None,
     )
     if not zone_info:
         return
 
-    for device in zone_info.get("devices", []):
+    # Tado API may return null for 'devices'; 'or []' handles None correctly
+    for device in zone_info.get("devices") or []:
         battery = device.get("batteryState")
         if battery and battery.upper() in ("LOW", "CRITICAL"):
             device_type = device.get("deviceType", "unknown")
             rec = calculate_battery_recommendation(
-                battery_state=battery, zone_name=zone_name,
+                battery_state=battery,
+                zone_name=zone_name,
                 device_type=device_type,
             )
             severity = "critical" if battery.upper() == "CRITICAL" else "low"
-            insights.append(Insight(
-                priority=get_insight_priority("battery", severity),
-                recommendation=rec, insight_type="battery",
-                zone_name=zone_name,
-            ))
+            insights.append(
+                Insight(
+                    priority=get_insight_priority("battery", severity),
+                    recommendation=rec,
+                    insight_type="battery",
+                    zone_name=zone_name,
+                ),
+            )
 
         conn = device.get("connectionState") or {}
         conn_value = conn.get("value")
         if conn_value is not None and not conn_value:
             rec = calculate_connection_recommendation(
-                connection_state="Offline", zone_name=zone_name,
-            )
-            insights.append(Insight(
-                priority=get_insight_priority("connection", "offline"),
-                recommendation=rec, insight_type="connection",
+                connection_state="Offline",
                 zone_name=zone_name,
-            ))
-
+            )
+            insights.append(
+                Insight(
+                    priority=get_insight_priority("connection", "offline"),
+                    recommendation=rec,
+                    insight_type="connection",
+                    zone_name=zone_name,
+                ),
+            )
 
 
 def get_cross_zone_insights(
-    hass,
-    coordinator,
-    zone_insights: dict[str, list],
-) -> list:
+    hass: HomeAssistant,
+    coordinator: TadoDataUpdateCoordinator,
+    zone_insights: dict[str, list[Any]],
+) -> list[Any]:
     """Get cross-zone aggregation insights.
 
     Checks for whole-house mold risk, multiple open windows,
@@ -511,7 +600,7 @@ def get_cross_zone_insights(
     Returns:
         List of cross-zone Insight objects.
     """
-    cross_insights: list = []
+    cross_insights: list[Any] = []
 
     try:
         coord_data = coordinator.data or {}
@@ -539,40 +628,46 @@ def get_cross_zone_insights(
             if mold_insight:
                 cross_insights.append(mold_insight)
 
-        # Cross-zone window predicted
-        if hass:
-            zone_window_states: dict[str, bool] = {}
-            for zone_name in zone_insights:
-                slug = zone_name.lower().replace(" ", "_")
-                wp_state = hass.states.get(f"binary_sensor.{slug}_window_predicted")
-                if wp_state:
-                    zone_window_states[zone_name] = wp_state.state == "on"
-            window_insight = aggregate_cross_zone_window_predicted(zone_window_states)
-            if window_insight:
-                cross_insights.append(window_insight)
+        # Cross-zone window predicted — from coordinator.entity_data
+        zone_window_states: dict[str, bool] = {}
+        if zones_info:
+            for z in zones_info:
+                z_name = z.get("name", f"Zone {z.get('id')}")
+                z_id = str(z.get("id"))
+                wp_data = coordinator.get_entity_data(z_id, "window_predicted")
+                if wp_data:
+                    zone_window_states[z_name] = wp_data.get("state") == "on"
+        window_insight = aggregate_cross_zone_window_predicted(zone_window_states)
+        if window_insight:
+            cross_insights.append(window_insight)
 
-        # Cross-zone condensation
-        if hass and zones_info:
+        # Cross-zone condensation — from coordinator.entity_data
+        if zones_info:
             zone_cond_states: dict[str, str] = {}
             for z in zones_info:
                 z_name = z.get("name", f"Zone {z.get('id')}")
-                slug = z_name.lower().replace(" ", "_")
-                cond_state = hass.states.get(f"sensor.{slug}_condensation_risk")
-                if cond_state and cond_state.state not in ("unavailable", "unknown"):
-                    zone_cond_states[z_name] = cond_state.state
+                z_id = str(z.get("id"))
+                cond_data = coordinator.get_entity_data(z_id, "condensation_risk")
+                if cond_data:
+                    cond_state = cond_data.get("state", "None")
+                    if cond_state not in ("unavailable", "unknown"):
+                        zone_cond_states[z_name] = cond_state
             cond_insight = aggregate_cross_zone_condensation(zone_cond_states)
             if cond_insight:
                 cross_insights.append(cond_insight)
 
-        # Cross-zone efficiency comparison
-        if hass and zones_info:
+        # Cross-zone efficiency comparison — from HeatingCycleCoordinator
+        hcc = coordinator.heating_cycle_coordinator
+        if hcc and zones_info:
             zone_heating_rates: dict[str, float] = {}
             for z in zones_info:
                 z_name = z.get("name", f"Zone {z.get('id')}")
-                slug = z_name.lower().replace(" ", "_")
-                hr_val = _safe_float(hass.states.get(f"sensor.{slug}_avg_heating_rate"))
-                if hr_val is not None:
-                    zone_heating_rates[z_name] = hr_val
+                z_id = str(z.get("id"))
+                zone_hcc_data = hcc.get_zone_data(z_id)
+                if zone_hcc_data:
+                    hr_val = zone_hcc_data.get("heating_rate")
+                    if hr_val is not None:
+                        zone_heating_rates[z_name] = hr_val
             eff_insight = calculate_cross_zone_efficiency_insight(zone_heating_rates)
             if eff_insight:
                 cross_insights.append(eff_insight)
@@ -612,11 +707,10 @@ def get_cross_zone_insights(
     return cross_insights
 
 
-
 def get_hub_insights(
-    hass,
-    coordinator,
-) -> list:
+    hass: HomeAssistant,
+    coordinator: TadoDataUpdateCoordinator,
+) -> list[Any]:
     """Get hub-level insights (API quota, weather, presence).
 
     Args:
@@ -626,7 +720,7 @@ def get_hub_insights(
     Returns:
         List of hub-level Insight objects.
     """
-    hub_insights: list = []
+    hub_insights: list[Any] = []
 
     try:
         coord_data = coordinator.data or {}
@@ -650,7 +744,8 @@ def get_hub_insights(
 
             if remaining is not None and calls_per_hour is not None:
                 insight = calculate_api_quota_planning_insight(
-                    remaining_calls=remaining, total_calls=total,
+                    remaining_calls=remaining,
+                    total_calls=total,
                     calls_per_hour=calls_per_hour,
                     hours_until_reset=hours_until_reset,
                 )
@@ -669,7 +764,8 @@ def get_hub_insights(
                 if len(outdoor_temp_history) >= 48:
                     avg_7d = sum(outdoor_temp_history) / len(outdoor_temp_history)
                 insight = calculate_weather_impact_insight(
-                    current_outdoor_temp=outdoor_temp, avg_outdoor_temp_7d=avg_7d,
+                    current_outdoor_temp=outdoor_temp,
+                    avg_outdoor_temp_7d=avg_7d,
                 )
                 if insight:
                     hub_insights.append(insight)
@@ -685,14 +781,19 @@ def get_hub_insights(
                     prev_avg = sum(outdoor_temp_history[:mid]) / mid
                     curr_avg = sum(outdoor_temp_history[mid:]) / (len(outdoor_temp_history) - mid)
                     season_insight = calculate_heating_season_advisory_insight(
-                        current_avg_7d=curr_avg, previous_avg_7d=prev_avg,
+                        current_avg_7d=curr_avg,
+                        previous_avg_7d=prev_avg,
                     )
                     if season_insight:
                         hub_insights.append(season_insight)
 
                 # Solar gain / Solar AC load
                 _collect_solar_insights(
-                    hass, coordinator, weather, outdoor_temp, hub_insights,
+                    hass,
+                    coordinator,
+                    weather,
+                    outdoor_temp,
+                    hub_insights,
                 )
 
         # --- Away + heating active / Home + all off ---
@@ -705,7 +806,8 @@ def get_hub_insights(
                 {
                     "name": md.get("name", "Unknown"),
                     "location_enabled": (md.get("settings") or {}).get(
-                        "geoTrackingEnabled", True,
+                        "geoTrackingEnabled",
+                        True,
                     ),
                 }
                 for md in mobile_devices
@@ -723,9 +825,12 @@ def get_hub_insights(
     return hub_insights
 
 
-
 def _collect_solar_insights(
-    hass, coordinator, weather: dict, outdoor_temp: float, hub_insights: list,
+    hass: HomeAssistant,
+    coordinator: TadoDataUpdateCoordinator,
+    weather: dict[str, Any],
+    outdoor_temp: float,
+    hub_insights: list[Any],
 ) -> None:
     """Collect solar gain and solar AC load insights."""
     solar_pct = (weather.get("solarIntensity") or {}).get("percentage")
@@ -759,20 +864,22 @@ def _collect_solar_insights(
 
     sg_insight = calculate_solar_gain_insight(
         solar_intensity_pct=solar_pct,
-        heating_zones_active=heating_active if heating_active else None,
+        heating_zones_active=heating_active or None,
     )
     if sg_insight:
         hub_insights.append(sg_insight)
 
     sac_insight = calculate_solar_ac_load_insight(
         solar_intensity_pct=solar_pct,
-        ac_zones_active=ac_active if ac_active else None,
+        ac_zones_active=ac_active or None,
     )
     if sac_insight:
         hub_insights.append(sac_insight)
 
 
-def _collect_presence_insights(hass, coordinator, hub_insights: list) -> None:
+def _collect_presence_insights(
+    hass: HomeAssistant, coordinator: TadoDataUpdateCoordinator, hub_insights: list[Any],
+) -> None:
     """Collect away+heating and home+all-off insights."""
     coord_data = coordinator.data or {}
     home_state_data = coord_data.get("home_state")
@@ -806,10 +913,13 @@ def _collect_presence_insights(hass, coordinator, hub_insights: list) -> None:
             pct = hp.get("percentage", 0)
             z_name = zone_name_map.get(zid, f"Zone {zid}")
             if pct > 0:
-                active_zones.append({
-                    "zone_name": z_name, "power_pct": pct,
-                    "zone_type": s.get("type", "HEATING"),
-                })
+                active_zones.append(
+                    {
+                        "zone_name": z_name,
+                        "power_pct": pct,
+                        "zone_type": s.get("type", "HEATING"),
+                    },
+                )
         sd = zd.get("sensorDataPoints") or {}
         t = (sd.get("insideTemperature") or {}).get("celsius")
         tgt = (s.get("temperature") or {}).get("celsius")
@@ -822,21 +932,23 @@ def _collect_presence_insights(hass, coordinator, hub_insights: list) -> None:
 
     away_insight = calculate_away_heating_active_insight(
         presence=presence,
-        active_zones=active_zones if active_zones else None,
+        active_zones=active_zones or None,
     )
     if away_insight:
         hub_insights.append(away_insight)
 
     home_off_insight = calculate_home_all_off_insight(
-        presence=presence, all_zones_off=all_off,
-        coldest_zone_name=coldest_name, coldest_zone_temp=coldest_temp,
+        presence=presence,
+        all_zones_off=all_off,
+        coldest_zone_name=coldest_name,
+        coldest_zone_temp=coldest_temp,
         coldest_zone_target=coldest_target,
     )
     if home_off_insight:
         hub_insights.append(home_off_insight)
 
 
-def _collect_api_spike_insight(coord_data, hub_insights: list) -> None:
+def _collect_api_spike_insight(coord_data: dict[str, Any], hub_insights: list[Any]) -> None:
     """Collect API usage spike insight."""
     history_raw = coord_data.get("api_call_history")
     if not history_raw or not isinstance(history_raw, dict):
@@ -845,7 +957,7 @@ def _collect_api_spike_insight(coord_data, hub_insights: list) -> None:
     all_calls = [call for calls in history_raw.values() for call in calls]
     cph = calculate_calls_per_hour(all_calls) if all_calls else None
 
-    now = datetime.now()
+    now = datetime.now(UTC)
     today_key = now.strftime("%Y-%m-%d")
     today_calls = history_raw.get(today_key, [])
     current_hour_calls = 0
@@ -853,7 +965,7 @@ def _collect_api_spike_insight(coord_data, hub_insights: list) -> None:
         ts = call.get("timestamp") or call.get("time", "")
         if ts:
             try:
-                call_time = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+                call_time = datetime.fromisoformat(ts)
                 if call_time.hour == now.hour:
                     current_hour_calls += 1
             except (ValueError, TypeError):
@@ -861,7 +973,8 @@ def _collect_api_spike_insight(coord_data, hub_insights: list) -> None:
 
     if cph is not None and current_hour_calls > 0:
         spike_insight = calculate_api_usage_spike_insight(
-            current_hour_calls=current_hour_calls, avg_calls_per_hour=cph,
+            current_hour_calls=current_hour_calls,
+            avg_calls_per_hour=cph,
         )
         if spike_insight:
             hub_insights.append(spike_insight)

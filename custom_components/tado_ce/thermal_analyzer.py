@@ -1,11 +1,12 @@
-"""Second-order thermal dynamics analyzer.
+"""Tado CE second-order thermal dynamics analyzer — heating acceleration and approach behavior.
 
-Analyzes heating acceleration and approach behavior for improved preheat estimation.
+Heating acceleration and approach behavior analysis for improved preheat estimation.
 """
+
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .heating_models import HeatingCycle, TemperatureReading
@@ -25,7 +26,7 @@ class ThermalAnalyzer:
     - Overshoot prediction (approach factor)
     """
 
-    def __init__(self, min_cycles: int = 3):
+    def __init__(self, min_cycles: int = 3) -> None:
         """Initialize analyzer.
 
         Args:
@@ -35,8 +36,8 @@ class ThermalAnalyzer:
 
     def calculate_acceleration(
         self,
-        cycles: List["HeatingCycle"]
-    ) -> Optional[float]:
+        cycles: list[HeatingCycle],
+    ) -> float | None:
         """Calculate average heating acceleration.
 
         Acceleration = d(rate)/dt = (rate_end - rate_start) / duration
@@ -52,7 +53,8 @@ class ThermalAnalyzer:
         """
         # Filter to only valid heating cycles
         valid_cycles = [
-            c for c in cycles
+            c
+            for c in cycles
             if c.completed
             and c.start_temp is not None
             and c.start_temp < c.target_temp - 0.1  # At least 0.1°C heating needed
@@ -76,15 +78,15 @@ class ThermalAnalyzer:
         _LOGGER.debug(
             "Calculated acceleration from %d cycles: %.2f °C/h²",
             len(accelerations),
-            avg_acceleration
+            avg_acceleration,
         )
 
         return round(avg_acceleration, 2)
 
     def _calculate_cycle_acceleration(
         self,
-        cycle: "HeatingCycle"
-    ) -> Optional[float]:
+        cycle: HeatingCycle,
+    ) -> float | None:
         """Calculate acceleration for a single cycle.
 
         We measure acceleration by comparing:
@@ -108,14 +110,11 @@ class ThermalAnalyzer:
 
         # Calculate final rate (last third, but before setpoint)
         # Filter out readings that are at or above target
-        final_readings = [
-            r for r in readings[2*third:]
-            if r.temp < cycle.target_temp - 0.1
-        ]
+        final_readings = [r for r in readings[2 * third :] if r.temp < cycle.target_temp - 0.1]
 
         if len(final_readings) < 2:
             # Use all readings from last third if filtering removed too many
-            final_readings = readings[2*third:]
+            final_readings = readings[2 * third :]
 
         final_rate = self._calculate_rate_from_readings(final_readings)
 
@@ -142,8 +141,8 @@ class ThermalAnalyzer:
 
     def _calculate_rate_from_readings(
         self,
-        readings: List["TemperatureReading"]
-    ) -> Optional[float]:
+        readings: list[TemperatureReading],
+    ) -> float | None:
         """Calculate heating rate from a list of readings.
 
         Returns:
@@ -159,7 +158,7 @@ class ThermalAnalyzer:
         n = len(readings)
         sum_t = sum(times)
         sum_temp = sum(temps)
-        sum_t_temp = sum(t * temp for t, temp in zip(times, temps))
+        sum_t_temp = sum(t * temp for t, temp in zip(times, temps, strict=True))
         sum_t2 = sum(t * t for t in times)
 
         denominator = n * sum_t2 - sum_t * sum_t
@@ -174,8 +173,8 @@ class ThermalAnalyzer:
 
     def calculate_approach_factor(
         self,
-        cycles: List["HeatingCycle"]
-    ) -> Optional[float]:
+        cycles: list[HeatingCycle],
+    ) -> float | None:
         """Calculate approach deceleration factor.
 
         Measures how much the heating rate decreases as temperature
@@ -194,7 +193,8 @@ class ThermalAnalyzer:
         """
         # Filter to only valid heating cycles
         valid_cycles = [
-            c for c in cycles
+            c
+            for c in cycles
             if c.completed
             and c.start_temp is not None
             and c.start_temp < c.target_temp - 0.1  # At least 0.1°C heating needed
@@ -218,15 +218,15 @@ class ThermalAnalyzer:
         _LOGGER.debug(
             "Calculated approach factor from %d cycles: %.1f%%",
             len(factors),
-            avg_factor * 100
+            avg_factor * 100,
         )
 
         return round(avg_factor * 100, 1)
 
     def _calculate_cycle_approach_factor(
         self,
-        cycle: "HeatingCycle"
-    ) -> Optional[float]:
+        cycle: HeatingCycle,
+    ) -> float | None:
         """Calculate approach factor using hybrid industrial standard method.
 
         Primary method: Normalized Rate Ratio (first-half vs second-half average rate)
@@ -250,7 +250,7 @@ class ThermalAnalyzer:
         if len(readings) < 6 or cycle.start_temp is None:
             _LOGGER.debug(
                 "Approach factor skip: insufficient readings (%d) or no start_temp",
-                len(readings)
+                len(readings),
             )
             return None
 
@@ -259,7 +259,7 @@ class ThermalAnalyzer:
         if temp_delta < 0.5:  # Less than 0.5°C change
             _LOGGER.debug(
                 "Approach factor skip: temp_delta %.2f°C < 0.5°C threshold",
-                temp_delta
+                temp_delta,
             )
             return None
 
@@ -270,7 +270,9 @@ class ThermalAnalyzer:
             # Validation: If we have high quality data, validate with exponential fit
             if len(readings) >= 20:
                 exp_factor = self._calculate_approach_factor_exponential(
-                    cycle, readings, temp_delta
+                    cycle,
+                    readings,
+                    temp_delta,
                 )
                 if exp_factor is not None:
                     # If exponential validation differs significantly, log warning
@@ -278,7 +280,9 @@ class ThermalAnalyzer:
                     if diff > 0.3:
                         _LOGGER.debug(
                             "Approach factor validation: rate_ratio=%.2f, exponential=%.2f, diff=%.2f",
-                            factor, exp_factor, diff
+                            factor,
+                            exp_factor,
+                            diff,
                         )
                         # Use weighted average when both methods work but differ
                         # Weight primary method more (70/30)
@@ -291,10 +295,10 @@ class ThermalAnalyzer:
 
     def _calculate_approach_factor_rate_ratio(
         self,
-        cycle: "HeatingCycle",
-        readings: list["TemperatureReading"],
-        temp_delta: float
-    ) -> Optional[float]:
+        cycle: HeatingCycle,
+        readings: list[TemperatureReading],
+        temp_delta: float,
+    ) -> float | None:
         """Calculate approach factor using first-half vs second-half rate ratio.
 
         Industrial standard method: Compare average heating rate in first half
@@ -315,7 +319,7 @@ class ThermalAnalyzer:
         MIN_RATE_THRESHOLD = 0.001
 
         # Find midpoint by temperature, not time
-        mid_temp = cycle.start_temp + temp_delta * 0.5
+        mid_temp = cycle.start_temp + temp_delta * 0.5  # type: ignore[operator]
 
         # Split readings into first half and second half by temperature
         first_half = [r for r in readings if r.temp < mid_temp]
@@ -324,7 +328,8 @@ class ThermalAnalyzer:
         if len(first_half) < MIN_READINGS_PER_HALF or len(second_half) < MIN_READINGS_PER_HALF:
             _LOGGER.debug(
                 "Rate ratio skip: insufficient readings in halves (first=%d, second=%d)",
-                len(first_half), len(second_half)
+                len(first_half),
+                len(second_half),
             )
             return None
 
@@ -343,7 +348,7 @@ class ThermalAnalyzer:
         if rate_first <= MIN_RATE_THRESHOLD:
             _LOGGER.debug(
                 "Rate ratio skip: first half rate (%.6f) below threshold",
-                rate_first
+                rate_first,
             )
             return None
 
@@ -358,15 +363,17 @@ class ThermalAnalyzer:
 
         _LOGGER.debug(
             "Rate ratio method: first_rate=%.4f, second_rate=%.4f, factor=%.2f",
-            rate_first, rate_second, factor
+            rate_first,
+            rate_second,
+            factor,
         )
 
         return factor
 
     def _calculate_average_rate(
         self,
-        readings: list["TemperatureReading"]
-    ) -> Optional[float]:
+        readings: list[TemperatureReading],
+    ) -> float | None:
         """Calculate average heating rate over a set of readings.
 
         Uses total temperature change / total time for robustness.
@@ -391,10 +398,10 @@ class ThermalAnalyzer:
 
     def _calculate_approach_factor_exponential(
         self,
-        cycle: "HeatingCycle",
-        readings: list["TemperatureReading"],
-        temp_delta: float
-    ) -> Optional[float]:
+        cycle: HeatingCycle,
+        readings: list[TemperatureReading],
+        temp_delta: float,
+    ) -> float | None:
         """Calculate approach factor using exponential curve fitting.
 
         Fits data to Newton's Law of Cooling: T(t) = T_target - (T_target - T_start) * exp(-t/τ)
@@ -437,7 +444,8 @@ class ThermalAnalyzer:
 
         # Filter readings that are below target (for valid log)
         valid_data = [
-            (t, temp) for t, temp in zip(times, temps)
+            (t, temp)
+            for t, temp in zip(times, temps, strict=True)
             if temp < target - 0.1  # Need some margin
         ]
 
@@ -446,6 +454,7 @@ class ThermalAnalyzer:
 
         # Calculate ln(target - temp) for linearization
         import math
+
         try:
             log_diffs = []
             log_times = []
@@ -462,7 +471,7 @@ class ThermalAnalyzer:
             n = len(log_diffs)
             sum_t = sum(log_times)
             sum_log = sum(log_diffs)
-            sum_t_log = sum(t * log for t, log in zip(log_times, log_diffs))
+            sum_t_log = sum(t * log for t, log in zip(log_times, log_diffs, strict=True))
             sum_t2 = sum(t * t for t in log_times)
 
             denominator = n * sum_t2 - sum_t * sum_t
@@ -498,7 +507,9 @@ class ThermalAnalyzer:
 
             _LOGGER.debug(
                 "Exponential method: tau=%.1f min, expected_tau=%.1f min, factor=%.2f",
-                tau, expected_tau, factor
+                tau,
+                expected_tau,
+                factor,
             )
 
             return factor
@@ -509,10 +520,10 @@ class ThermalAnalyzer:
 
     def _calculate_approach_factor_point_based(
         self,
-        cycle: "HeatingCycle",
-        readings: list["TemperatureReading"],
-        temp_delta: float
-    ) -> Optional[float]:
+        cycle: HeatingCycle,
+        readings: list[TemperatureReading],
+        temp_delta: float,
+    ) -> float | None:
         """Calculate approach factor using point-based sampling (legacy fallback).
 
         Compare heating rate at 50% of temperature delta vs 90% of delta.
@@ -529,8 +540,8 @@ class ThermalAnalyzer:
         MIN_RATE_THRESHOLD = 0.001
 
         # Find readings at ~50% and ~90% of temperature delta
-        temp_50 = cycle.start_temp + temp_delta * 0.5
-        temp_90 = cycle.start_temp + temp_delta * 0.9
+        temp_50 = cycle.start_temp + temp_delta * 0.5  # type: ignore[operator]
+        temp_90 = cycle.start_temp + temp_delta * 0.9  # type: ignore[operator]
 
         # Get readings around these temperatures
         readings_50 = self._get_readings_near_temp(readings, temp_50, tolerance=0.3)
@@ -539,7 +550,8 @@ class ThermalAnalyzer:
         if len(readings_50) < 2 or len(readings_90) < 2:
             _LOGGER.debug(
                 "Point-based skip: insufficient readings at 50%% (%d) or 90%% (%d)",
-                len(readings_50), len(readings_90)
+                len(readings_50),
+                len(readings_90),
             )
             return None
 
@@ -549,21 +561,22 @@ class ThermalAnalyzer:
         if rate_50 is None or rate_90 is None:
             _LOGGER.debug(
                 "Point-based skip: could not calculate rates (rate_50=%s, rate_90=%s)",
-                rate_50, rate_90
+                rate_50,
+                rate_90,
             )
             return None
 
         if abs(rate_50) < MIN_RATE_THRESHOLD:
             _LOGGER.debug(
                 "Point-based skip: rate_50 (%.6f) below threshold",
-                rate_50
+                rate_50,
             )
             return None
 
         if rate_50 <= 0:
             _LOGGER.debug(
                 "Point-based skip: rate_50 (%.4f) is not positive",
-                rate_50
+                rate_50,
             )
             return None
 
@@ -575,29 +588,28 @@ class ThermalAnalyzer:
 
         _LOGGER.debug(
             "Point-based method: rate_50=%.4f, rate_90=%.4f, factor=%.2f",
-            rate_50, rate_90, factor
+            rate_50,
+            rate_90,
+            factor,
         )
 
         return factor
 
     def _get_readings_near_temp(
         self,
-        readings: List["TemperatureReading"],
+        readings: list[TemperatureReading],
         target_temp: float,
-        tolerance: float = 0.3
-    ) -> List["TemperatureReading"]:
+        tolerance: float = 0.3,
+    ) -> list[TemperatureReading]:
         """Get readings near a target temperature."""
-        return [
-            r for r in readings
-            if abs(r.temp - target_temp) <= tolerance
-        ]
+        return [r for r in readings if abs(r.temp - target_temp) <= tolerance]
 
     def estimate_overshoot(
         self,
         current_temp: float,
         target_temp: float,
         heating_rate: float,
-        approach_factor: float
+        approach_factor: float,
     ) -> float:
         """Estimate temperature overshoot based on approach dynamics.
 
@@ -637,9 +649,9 @@ class ThermalAnalyzer:
         target_temp: float,
         avg_heating_rate: float,
         inertia_time: float,
-        acceleration: Optional[float] = None,
-        approach_factor: Optional[float] = None
-    ) -> Optional[float]:
+        acceleration: float | None = None,
+        approach_factor: float | None = None,
+    ) -> float | None:
         """Get improved preheat time estimate using second-order analysis.
 
         Args:

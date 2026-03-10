@@ -1,0 +1,1244 @@
+{
+  "entity": {
+    "binary_sensor": {
+      "home": {
+        "name": "[CE] Zuhause",
+        "state_attributes": {
+          "tado_mode": {
+            "name": "Tado-Modus"
+          },
+          "presence_locked": {
+            "name": "Anwesenheit gesperrt"
+          },
+          "data_source": {
+            "name": "Datenquelle"
+          }
+        }
+      },
+      "window": {
+        "name": "Fenster",
+        "state_attributes": {
+          "detected_time": {
+            "name": "Erkennungszeit"
+          },
+          "expiry_time": {
+            "name": "Ablaufzeit"
+          }
+        }
+      },
+      "preheat_now": {
+        "name": "[CE] Jetzt vorheizen",
+        "state_attributes": {
+          "recommended_start": {
+            "name": "Empfohlener Start"
+          },
+          "target_time": {
+            "name": "Zielzeit"
+          },
+          "target_temperature": {
+            "name": "Zieltemperatur"
+          },
+          "current_temperature": {
+            "name": "Aktuelle Temperatur"
+          },
+          "duration_minutes": {
+            "name": "Dauer (Minuten)"
+          },
+          "confidence": {
+            "name": "Konfidenz"
+          },
+          "zone_type": {
+            "name": "Zonentyp"
+          }
+        }
+      },
+      "window_predicted": {
+        "name": "[CE] Fenster vorhergesagt",
+        "state_attributes": {
+          "confidence": {
+            "name": "Konfidenz"
+          },
+          "temp_drop": {
+            "name": "Temperaturabfall"
+          },
+          "time_window_minutes": {
+            "name": "Zeitfenster (Minuten)"
+          },
+          "recommendation": {
+            "name": "Empfehlung"
+          },
+          "zone_type": {
+            "name": "Zonentyp"
+          },
+          "readings_count": {
+            "name": "Anzahl Messwerte"
+          },
+          "anomaly_readings": {
+            "name": "Anomale Messwerte"
+          }
+        }
+      }
+    },
+    "button": {
+      "resume_all": {
+        "name": "[CE] Alle fortsetzen"
+      },
+      "refresh_ac": {
+        "name": "[CE] Klimaanlage aktualisieren"
+      },
+      "refresh_schedule": {
+        "name": "[CE] Zeitplan aktualisieren"
+      },
+      "boost": {
+        "name": "Boost"
+      },
+      "smart_boost": {
+        "name": "[CE] Smart Boost"
+      }
+    },
+    "calendar": {
+      "schedule": {
+        "name": "[CE] Zeitplan"
+      }
+    },
+    "climate": {
+      "heating": {
+        "state_attributes": {
+          "overlay_type": {
+            "name": "Overlay-Typ"
+          },
+          "heating_power": {
+            "name": "Heizleistung"
+          },
+          "zone_id": {
+            "name": "Zonen-ID"
+          },
+          "offset_celsius": {
+            "name": "Offset (°C)"
+          }
+        }
+      },
+      "ac": {
+        "state_attributes": {
+          "overlay_type": {
+            "name": "Overlay-Typ"
+          },
+          "ac_power_percentage": {
+            "name": "Klimaleistung (%)"
+          },
+          "zone_id": {
+            "name": "Zonen-ID"
+          },
+          "zone_type": {
+            "name": "Zonentyp"
+          }
+        }
+      }
+    },
+    "device_tracker": {
+      "mobile_device": {
+        "state_attributes": {
+          "device_id": {
+            "name": "Geräte-ID"
+          },
+          "platform": {
+            "name": "Plattform"
+          },
+          "os_version": {
+            "name": "Betriebssystemversion"
+          },
+          "model": {
+            "name": "Modell"
+          },
+          "bearing": {
+            "name": "Richtung"
+          },
+          "relative_distance": {
+            "name": "Relative Entfernung"
+          }
+        }
+      }
+    },
+    "number": {
+      "min_temp": {
+        "name": "[CE] Min. Temp."
+      },
+      "max_temp": {
+        "name": "[CE] Max. Temp."
+      },
+      "temp_offset": {
+        "name": "[CE] Temp.-Offset"
+      },
+      "surface_offset": {
+        "name": "[CE] Oberflächen-Offset"
+      },
+      "ufh_buffer": {
+        "name": "[CE] FBH-Puffer"
+      }
+    },
+    "sensor": {
+      "temperature": {
+        "name": "Temp."
+      },
+      "humidity": {
+        "name": "Luftfeuchtigkeit"
+      },
+      "heating_power": {
+        "name": "Heizung"
+      },
+      "ac_power": {
+        "name": "Klimaanlage"
+      },
+      "boiler_flow_temp": {
+        "name": "[CE] Kesselvorlauftemp."
+      },
+      "target": {
+        "name": "[CE] Ziel",
+        "state_attributes": {
+          "next_change": {
+            "name": "Nächste Änderung"
+          },
+          "next_temperature": {
+            "name": "Nächste Temperatur"
+          }
+        }
+      },
+      "overlay": {
+        "name": "[CE] Overlay",
+        "state_attributes": {
+          "source_zone": {
+            "name": "Quellzone"
+          }
+        }
+      },
+      "power": {
+        "name": "[CE] Leistung"
+      },
+      "outside_temp": {
+        "name": "Außentemperatur",
+        "state_attributes": {
+          "timestamp": {
+            "name": "Zeitstempel"
+          }
+        }
+      },
+      "solar_intensity": {
+        "name": "Sonneneinstrahlung",
+        "state_attributes": {
+          "timestamp": {
+            "name": "Zeitstempel"
+          }
+        }
+      },
+      "weather": {
+        "name": "Wetter",
+        "state_attributes": {
+          "raw_state": {
+            "name": "Rohzustand"
+          },
+          "timestamp": {
+            "name": "Zeitstempel"
+          }
+        }
+      },
+      "battery": {
+        "name": "Batterie",
+        "state_attributes": {
+          "device_serial": {
+            "name": "Geräteseriennummer"
+          },
+          "device_type": {
+            "name": "Gerätetyp"
+          },
+          "firmware_version": {
+            "name": "Firmwareversion"
+          },
+          "connection_state": {
+            "name": "Verbindungsstatus"
+          },
+          "connection_timestamp": {
+            "name": "Verbindungszeitstempel"
+          },
+          "recommendation": {
+            "name": "Empfehlung"
+          }
+        }
+      },
+      "connection": {
+        "name": "Verbindung",
+        "state_attributes": {
+          "device_serial": {
+            "name": "Geräteseriennummer"
+          },
+          "device_type": {
+            "name": "Gerätetyp"
+          },
+          "firmware_version": {
+            "name": "Firmwareversion"
+          },
+          "last_seen": {
+            "name": "Zuletzt gesehen"
+          },
+          "recommendation": {
+            "name": "Empfehlung"
+          }
+        }
+      },
+      "home_id": {
+        "name": "[CE] Haus-ID"
+      },
+      "api_usage": {
+        "name": "[CE] API-Nutzung",
+        "state_attributes": {
+          "limit": {
+            "name": "Limit"
+          },
+          "remaining": {
+            "name": "Verbleibend"
+          },
+          "percentage_used": {
+            "name": "Prozent genutzt"
+          },
+          "last_updated": {
+            "name": "Zuletzt aktualisiert"
+          },
+          "status": {
+            "name": "Status"
+          },
+          "test_mode": {
+            "name": "Testmodus"
+          }
+        }
+      },
+      "api_reset": {
+        "name": "[CE] API-Reset",
+        "state_attributes": {
+          "time_until_reset": {
+            "name": "Zeit bis Reset"
+          },
+          "reset_seconds": {
+            "name": "Reset-Sekunden"
+          },
+          "reset_at": {
+            "name": "Reset um"
+          },
+          "last_reset": {
+            "name": "Letzter Reset"
+          },
+          "status": {
+            "name": "Status"
+          },
+          "next_poll": {
+            "name": "Nächste Abfrage"
+          },
+          "current_interval_minutes": {
+            "name": "Aktuelles Intervall (Min.)"
+          },
+          "test_mode": {
+            "name": "Testmodus"
+          }
+        }
+      },
+      "api_limit": {
+        "name": "[CE] API-Limit"
+      },
+      "api_status": {
+        "name": "[CE] API-Status",
+        "state_attributes": {
+          "remaining_calls": {
+            "name": "Verbleibende Aufrufe"
+          },
+          "total_calls": {
+            "name": "Gesamtaufrufe"
+          },
+          "reset_time": {
+            "name": "Reset-Zeit"
+          },
+          "recommendation": {
+            "name": "Empfehlung"
+          }
+        }
+      },
+      "token_status": {
+        "name": "[CE] Token-Status"
+      },
+      "zone_count": {
+        "name": "[CE] Zonenanzahl",
+        "state_attributes": {
+          "heating_zones": {
+            "name": "Heizzonen"
+          },
+          "hot_water_zones": {
+            "name": "Warmwasserzonen"
+          },
+          "ac_zones": {
+            "name": "Klimazonen"
+          }
+        }
+      },
+      "last_sync": {
+        "name": "[CE] Letzte Sync"
+      },
+      "next_sync": {
+        "name": "[CE] Nächste Sync",
+        "state_attributes": {
+          "countdown": {
+            "name": "Countdown"
+          },
+          "current_interval_minutes": {
+            "name": "Aktuelles Intervall (Min.)"
+          }
+        }
+      },
+      "polling_interval": {
+        "name": "[CE] Abfrageintervall",
+        "state_attributes": {
+          "source": {
+            "name": "Quelle"
+          },
+          "day_interval": {
+            "name": "Tagesintervall"
+          },
+          "night_interval": {
+            "name": "Nachtintervall"
+          },
+          "is_night_mode": {
+            "name": "Nachtmodus"
+          },
+          "test_mode": {
+            "name": "Testmodus"
+          }
+        }
+      },
+      "call_history": {
+        "name": "[CE] Aufrufverlauf",
+        "state_attributes": {
+          "history": {
+            "name": "Verlauf"
+          },
+          "history_period_days": {
+            "name": "Verlaufszeitraum (Tage)"
+          },
+          "oldest_call": {
+            "name": "Ältester Aufruf"
+          },
+          "newest_call": {
+            "name": "Neuester Aufruf"
+          },
+          "calls_per_hour": {
+            "name": "Aufrufe pro Stunde"
+          },
+          "calls_today": {
+            "name": "Aufrufe heute"
+          },
+          "most_called_endpoint": {
+            "name": "Meistgenutzter Endpunkt"
+          }
+        }
+      },
+      "api_breakdown": {
+        "name": "[CE] API-Aufschlüsselung",
+        "state_attributes": {
+          "breakdown_24h": {
+            "name": "Aufschlüsselung (24h)"
+          },
+          "breakdown_today": {
+            "name": "Aufschlüsselung (heute)"
+          },
+          "breakdown_total": {
+            "name": "Aufschlüsselung (gesamt)"
+          },
+          "top_3_types": {
+            "name": "Top 3 Typen"
+          },
+          "chart_data": {
+            "name": "Diagrammdaten"
+          }
+        }
+      },
+      "home_insights": {
+        "name": "[CE] Haus-Einblicke",
+        "state_attributes": {
+          "summary": {
+            "name": "Zusammenfassung"
+          },
+          "actions_needed": {
+            "name": "Erforderliche Aktionen"
+          },
+          "zones_ok": {
+            "name": "Zonen OK"
+          },
+          "top_priority": {
+            "name": "Höchste Priorität"
+          },
+          "top_recommendation": {
+            "name": "Wichtigste Empfehlung"
+          },
+          "zones_with_issues": {
+            "name": "Zonen mit Problemen"
+          },
+          "cross_zone_insights": {
+            "name": "Zonenübergreifende Einblicke"
+          },
+          "persistent_insights": {
+            "name": "Dauerhafte Einblicke"
+          },
+          "insight_health_score": {
+            "name": "Einblick-Gesundheitswert"
+          },
+          "weekly_digest": {
+            "name": "Wochenzusammenfassung"
+          }
+        }
+      },
+      "insights": {
+        "name": "[CE] Einblicke",
+        "state_attributes": {
+          "top_priority": {
+            "name": "Höchste Priorität"
+          },
+          "top_recommendation": {
+            "name": "Wichtigste Empfehlung"
+          },
+          "insight_types": {
+            "name": "Einblicktypen"
+          },
+          "recommendations": {
+            "name": "Empfehlungen"
+          }
+        }
+      },
+      "schedule_deviation": {
+        "name": "[CE] Zeitplanabweichung",
+        "state_attributes": {
+          "current_temperature": {
+            "name": "Aktuelle Temperatur"
+          },
+          "historical_average": {
+            "name": "Historischer Durchschnitt"
+          },
+          "sample_count": {
+            "name": "Stichprobenanzahl"
+          },
+          "summary": {
+            "name": "Zusammenfassung"
+          },
+          "zone_type": {
+            "name": "Zonentyp"
+          },
+          "recommendation": {
+            "name": "Empfehlung"
+          }
+        }
+      },
+      "next_schedule": {
+        "name": "[CE] Nächster Zeitplan",
+        "state_attributes": {
+          "next_temperature": {
+            "name": "Nächste Temperatur"
+          },
+          "is_heating_on": {
+            "name": "Heizung an"
+          },
+          "is_tomorrow": {
+            "name": "Morgen"
+          },
+          "minutes_until": {
+            "name": "Minuten bis"
+          },
+          "zone_type": {
+            "name": "Zonentyp"
+          }
+        }
+      },
+      "next_sched_temp": {
+        "name": "[CE] Nächste Plantemp.",
+        "state_attributes": {
+          "schedule_time": {
+            "name": "Zeitplanzeit"
+          },
+          "is_heating_on": {
+            "name": "Heizung an"
+          },
+          "current_temperature": {
+            "name": "Aktuelle Temperatur"
+          },
+          "temperature_difference": {
+            "name": "Temperaturdifferenz"
+          },
+          "zone_type": {
+            "name": "Zonentyp"
+          }
+        }
+      },
+      "preheat_advisor": {
+        "name": "[CE] Vorheiz-Berater",
+        "state_attributes": {
+          "current_temperature": {
+            "name": "Aktuelle Temperatur"
+          },
+          "target_temperature": {
+            "name": "Zieltemperatur"
+          },
+          "target_time": {
+            "name": "Zielzeit"
+          },
+          "duration_minutes": {
+            "name": "Dauer (Minuten)"
+          },
+          "heating_rate": {
+            "name": "Heizrate"
+          },
+          "confidence": {
+            "name": "Konfidenz"
+          },
+          "summary": {
+            "name": "Zusammenfassung"
+          },
+          "zone_type": {
+            "name": "Zonentyp"
+          },
+          "cooling_rate": {
+            "name": "Abkühlrate"
+          },
+          "predicted_crossover_time": {
+            "name": "Voraussichtliche Kreuzungszeit"
+          },
+          "is_cooling_prediction": {
+            "name": "Abkühlvorhersage"
+          }
+        }
+      },
+      "comfort_target": {
+        "name": "[CE] Komfortziel",
+        "state_attributes": {
+          "current_temperature": {
+            "name": "Aktuelle Temperatur"
+          },
+          "outdoor_temperature": {
+            "name": "Außentemperatur"
+          },
+          "humidity": {
+            "name": "Luftfeuchtigkeit"
+          },
+          "comfort_model": {
+            "name": "Komfortmodell"
+          },
+          "deviation_from_comfort": {
+            "name": "Abweichung vom Komfort"
+          },
+          "zone_type": {
+            "name": "Zonentyp"
+          }
+        }
+      },
+      "thermal_inertia": {
+        "name": "[CE] Thermische Trägheit",
+        "state_attributes": {
+          "cycle_count": {
+            "name": "Zyklenanzahl"
+          },
+          "completed_count": {
+            "name": "Abgeschlossene Zyklen"
+          },
+          "confidence_score": {
+            "name": "Konfidenzwert"
+          }
+        }
+      },
+      "heating_rate": {
+        "name": "[CE] Heizrate",
+        "state_attributes": {
+          "cycle_count": {
+            "name": "Zyklenanzahl"
+          },
+          "completed_count": {
+            "name": "Abgeschlossene Zyklen"
+          },
+          "confidence_score": {
+            "name": "Konfidenzwert"
+          }
+        }
+      },
+      "preheat_time": {
+        "name": "[CE] Vorheizzeit",
+        "state_attributes": {
+          "current_temp": {
+            "name": "Aktuelle Temperatur"
+          },
+          "target_temp": {
+            "name": "Zieltemperatur"
+          },
+          "cycle_count": {
+            "name": "Zyklenanzahl"
+          },
+          "completed_count": {
+            "name": "Abgeschlossene Zyklen"
+          },
+          "confidence_score": {
+            "name": "Konfidenzwert"
+          }
+        }
+      },
+      "confidence": {
+        "name": "[CE] Konfidenz",
+        "state_attributes": {
+          "cycle_count": {
+            "name": "Zyklenanzahl"
+          },
+          "completed_count": {
+            "name": "Abgeschlossene Zyklen"
+          },
+          "recommendation": {
+            "name": "Empfehlung"
+          }
+        }
+      },
+      "heat_accel": {
+        "name": "[CE] Heizbeschleunigung"
+      },
+      "approach_factor": {
+        "name": "[CE] Annäherungsfaktor",
+        "state_attributes": {
+          "cycle_count": {
+            "name": "Zyklenanzahl"
+          },
+          "completed_count": {
+            "name": "Abgeschlossene Zyklen"
+          }
+        }
+      },
+      "mold_risk": {
+        "name": "[CE] Schimmelrisiko",
+        "state": {
+          "critical": "Kritisch",
+          "high": "Hoch",
+          "medium": "Mittel",
+          "low": "Niedrig"
+        },
+        "state_attributes": {
+          "room_temperature": {
+            "name": "Raumtemperatur"
+          },
+          "effective_temperature": {
+            "name": "Effektive Temperatur"
+          },
+          "humidity": {
+            "name": "Luftfeuchtigkeit"
+          },
+          "dew_point": {
+            "name": "Taupunkt"
+          },
+          "margin": {
+            "name": "Abstand"
+          },
+          "mold_risk_percentage": {
+            "name": "Schimmelrisiko (%)"
+          },
+          "temperature_source": {
+            "name": "Temperaturquelle",
+            "state": {
+              "surface_estimation": "Oberflächenschätzung",
+              "room_average": "Raumdurchschnitt"
+            }
+          },
+          "outdoor_temperature": {
+            "name": "Außentemperatur"
+          },
+          "surface_temperature": {
+            "name": "Oberflächentemperatur"
+          },
+          "surface_temp_offset": {
+            "name": "Oberflächen-Temp.-Offset"
+          },
+          "zone_type": {
+            "name": "Zonentyp"
+          },
+          "recommendation": {
+            "name": "Empfehlung"
+          }
+        }
+      },
+      "mold_risk_pct": {
+        "name": "[CE] Schimmelrisiko %",
+        "state_attributes": {
+          "room_temperature": {
+            "name": "Raumtemperatur"
+          },
+          "effective_temperature": {
+            "name": "Effektive Temperatur"
+          },
+          "humidity": {
+            "name": "Luftfeuchtigkeit"
+          },
+          "dew_point": {
+            "name": "Taupunkt"
+          },
+          "temperature_source": {
+            "name": "Temperaturquelle"
+          },
+          "zone_type": {
+            "name": "Zonentyp"
+          }
+        }
+      },
+      "condensation_risk": {
+        "name": "[CE] Kondensation",
+        "state_attributes": {
+          "room_temperature": {
+            "name": "Raumtemperatur"
+          },
+          "humidity": {
+            "name": "Luftfeuchtigkeit"
+          },
+          "indoor_dew_point": {
+            "name": "Innentaupunkt"
+          },
+          "surface_temperature": {
+            "name": "Oberflächentemperatur"
+          },
+          "outdoor_temperature": {
+            "name": "Außentemperatur"
+          },
+          "margin": {
+            "name": "Abstand"
+          },
+          "window_type": {
+            "name": "Fenstertyp"
+          },
+          "u_value": {
+            "name": "U-Wert"
+          },
+          "zone_type": {
+            "name": "Zonentyp"
+          },
+          "recommendation": {
+            "name": "Empfehlung"
+          },
+          "outdoor_humidity": {
+            "name": "Außenluftfeuchtigkeit"
+          },
+          "outdoor_dew_point": {
+            "name": "Außentaupunkt"
+          },
+          "window_outer_surface_temp": {
+            "name": "Fenster-Außenoberflächentemp."
+          }
+        }
+      },
+      "surface_temp": {
+        "name": "[CE] Oberflächentemp.",
+        "state_attributes": {
+          "room_temperature": {
+            "name": "Raumtemperatur"
+          },
+          "outdoor_temperature": {
+            "name": "Außentemperatur"
+          },
+          "window_type": {
+            "name": "Fenstertyp"
+          },
+          "u_value": {
+            "name": "U-Wert"
+          },
+          "offset_applied": {
+            "name": "Angewandter Offset"
+          },
+          "calculation_method": {
+            "name": "Berechnungsmethode"
+          },
+          "zone_type": {
+            "name": "Zonentyp"
+          }
+        }
+      },
+      "dew_point": {
+        "name": "[CE] Taupunkt",
+        "state_attributes": {
+          "room_temperature": {
+            "name": "Raumtemperatur"
+          },
+          "humidity": {
+            "name": "Luftfeuchtigkeit"
+          },
+          "calculation_method": {
+            "name": "Berechnungsmethode"
+          },
+          "zone_type": {
+            "name": "Zonentyp"
+          }
+        }
+      },
+      "comfort_level": {
+        "name": "[CE] Komfortniveau",
+        "state_attributes": {
+          "temperature": {
+            "name": "Temperatur"
+          },
+          "humidity": {
+            "name": "Luftfeuchtigkeit"
+          },
+          "outdoor_temperature": {
+            "name": "Außentemperatur"
+          },
+          "comfort_target": {
+            "name": "Komfortziel"
+          },
+          "comfort_model": {
+            "name": "Komfortmodell"
+          },
+          "dew_point": {
+            "name": "Taupunkt"
+          },
+          "zone_type": {
+            "name": "Zonentyp"
+          },
+          "recommendation": {
+            "name": "Empfehlung"
+          }
+        }
+      }
+    },
+    "select": {
+      "presence_mode": {
+        "name": "Anwesenheitsmodus",
+        "state": {
+          "auto": "Auto (Geofencing)",
+          "home": "Zuhause",
+          "away": "Abwesend"
+        },
+        "state_attributes": {
+          "presence": {
+            "name": "Aktuelle Anwesenheit"
+          },
+          "presence_locked": {
+            "name": "Anwesenheit gesperrt"
+          },
+          "automatic_geofencing": {
+            "name": "Automatisches Geofencing"
+          },
+          "api_calls_per_change": {
+            "name": "API-Aufrufe pro Änderung"
+          }
+        }
+      },
+      "overlay_mode": {
+        "name": "Overlay-Modus",
+        "state": {
+          "tado_mode": "Tado-Modus",
+          "next_time_block": "Nächster Zeitblock",
+          "manual": "Manuell"
+        },
+        "state_attributes": {
+          "description": {
+            "name": "Beschreibung"
+          },
+          "tado_mode_info": {
+            "name": "Tado-Modus Info"
+          },
+          "next_time_block_info": {
+            "name": "Nächster Zeitblock Info"
+          },
+          "timer_info": {
+            "name": "Timer Info"
+          },
+          "manual_info": {
+            "name": "Manuell Info"
+          },
+          "api_calls_per_change": {
+            "name": "API-Aufrufe pro Änderung"
+          }
+        }
+      },
+      "timer_duration": {
+        "name": "[CE] Overlay-Timer",
+        "state_attributes": {
+          "description": {
+            "name": "Beschreibung"
+          },
+          "unit": {
+            "name": "Einheit"
+          },
+          "api_calls_per_change": {
+            "name": "API-Aufrufe pro Änderung"
+          }
+        }
+      },
+      "heat_emitter": {
+        "name": "[CE] Heizkörpertyp"
+      },
+      "smart_comfort": {
+        "name": "[CE] Smart Comfort"
+      },
+      "window_type": {
+        "name": "[CE] Fenstertyp"
+      },
+      "zone_overlay_mode": {
+        "name": "[CE] Overlay-Modus"
+      },
+      "zone_timer_duration": {
+        "name": "[CE] Overlay-Timer"
+      }
+    },
+    "switch": {
+      "early_start": {
+        "name": "Frühstart",
+        "state_attributes": {
+          "zone_id": {
+            "name": "Zonen-ID"
+          },
+          "zone": {
+            "name": "Zone"
+          },
+          "description": {
+            "name": "Beschreibung"
+          }
+        }
+      },
+      "child_lock": {
+        "name": "Kindersicherung",
+        "state_attributes": {
+          "serial": {
+            "name": "Seriennummer"
+          },
+          "device_type": {
+            "name": "Gerätetyp"
+          },
+          "zone": {
+            "name": "Zone"
+          }
+        }
+      },
+      "adaptive_preheat": {
+        "name": "[CE] Adaptives Vorheizen"
+      }
+    },
+    "water_heater": {
+      "hot_water": {
+        "state_attributes": {
+          "overlay_type": {
+            "name": "Overlay-Typ"
+          },
+          "zone_id": {
+            "name": "Zonen-ID"
+          }
+        }
+      }
+    }
+  },
+  "selector": {
+    "smart_comfort_mode": {
+      "options": {
+        "none": "Keine (deaktiviert)",
+        "light": "Leicht",
+        "moderate": "Moderat",
+        "aggressive": "Aggressiv"
+      }
+    },
+    "mold_risk_window_type": {
+      "options": {
+        "single_pane": "Einfachverglasung (U=5,0)",
+        "double_pane": "Doppelverglasung (U=2,7)",
+        "triple_pane": "Dreifachverglasung (U=1,0)",
+        "passive_house": "Passivhaus (U=0,8)"
+      }
+    }
+  },
+  "exceptions": {
+    "entity_not_found": {
+      "message": "Entität {entity_id} nicht in der Entitätsregistrierung gefunden"
+    },
+    "entity_not_tado_ce": {
+      "message": "Entität {entity_id} ist keine Tado CE Entität (Plattform={platform})"
+    },
+    "entity_no_config_entry": {
+      "message": "Entität {entity_id} hat keine Konfigurationseintragsverknüpfung"
+    },
+    "entry_not_loaded": {
+      "message": "Kein Tado CE Eintrag geladen für {entity_id} (config_entry_id={config_entry_id})"
+    },
+    "device_entry_not_loaded": {
+      "message": "Gerät {device_serial} gefunden, aber sein Konfigurationseintrag ist nicht geladen"
+    },
+    "device_not_found": {
+      "message": "Gerät {device_serial} nicht in der Geräteregistrierung gefunden. Überprüfen Sie die Seriennummer."
+    },
+    "no_entries_loaded": {
+      "message": "Keine Tado CE Einträge geladen"
+    },
+    "multiple_entries": {
+      "message": "Mehrere Tado-Häuser konfiguriert ({home_ids}). Bitte verwenden Sie einen Dienst, der eine bestimmte Entität anspricht."
+    },
+    "api_quota_critically_low": {
+      "message": "API-Kontingent kritisch niedrig – Aktion blockiert. Bitte warten Sie auf den API-Reset."
+    }
+  },
+  "issues": {
+    "auth_token_expired": {
+      "title": "Tado CE: Authentifizierung abgelaufen",
+      "description": "Das Aktualisierungstoken für Zuhause **{home_id}** ist abgelaufen. Bitte konfigurieren Sie die Integration neu.\n\nGehen Sie zu **Einstellungen → Geräte & Dienste → Tado CE → Neu konfigurieren**."
+    },
+    "deprecated_yaml_config": {
+      "title": "Tado CE: Veralteter Konfigurationsschlüssel",
+      "description": "Der Konfigurationsschlüssel **{key}** ist veraltet und wird in einer zukünftigen Version entfernt. Bitte aktualisieren Sie Ihre Konfiguration."
+    }
+  },
+  "config": {
+    "step": {
+      "user": {
+        "title": "Tado CE Einrichtung",
+        "description": "Klicken Sie auf Absenden, um den Autorisierungsprozess zu starten."
+      },
+      "authorize": {
+        "title": "Tado autorisieren",
+        "description": "**Schritt 1:** Klicken Sie auf den Link, um die Tado-Anmeldung zu öffnen:\n\n**[Hier klicken zum Autorisieren]({url})**\n\n**Schritt 2:** Melden Sie sich bei Ihrem Tado-Konto an und autorisieren Sie die Verbindung.\n\n**Schritt 3:** Nachdem Sie \"Erfolgreich verbunden\" auf der Tado-Website sehen, klicken Sie unten auf Absenden."
+      },
+      "select_home": {
+        "title": "Zuhause auswählen",
+        "description": "Mehrere Tado-Häuser gefunden. Bitte wählen Sie aus.",
+        "data": {
+          "home": "Zuhause"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Tado CE erneut authentifizieren",
+        "description": "Ihre Tado-Authentifizierung ist abgelaufen. Klicken Sie auf Absenden, um die erneute Authentifizierung zu starten."
+      },
+      "reauth_authorize": {
+        "title": "Tado autorisieren",
+        "description": "**Schritt 1:** Klicken Sie auf den Link, um die Tado-Anmeldung zu öffnen:\n\n**[Hier klicken zum Autorisieren]({url})**\n\n**Schritt 2:** Melden Sie sich bei Ihrem Tado-Konto an und autorisieren Sie die Verbindung.\n\n**Schritt 3:** Nachdem Sie \"Erfolgreich verbunden\" auf der Tado-Website sehen, klicken Sie unten auf Absenden."
+      },
+      "reconfigure": {
+        "title": "Tado CE erneut authentifizieren",
+        "description": "Klicken Sie auf Absenden, um die erneute Authentifizierung zu starten."
+      },
+      "reconfigure_authorize": {
+        "title": "Tado autorisieren",
+        "description": "**Schritt 1:** Klicken Sie auf den Link, um die Tado-Anmeldung zu öffnen:\n\n**[Hier klicken zum Autorisieren]({url})**\n\n**Schritt 2:** Melden Sie sich bei Ihrem Tado-Konto an und autorisieren Sie die Verbindung.\n\n**Schritt 3:** Nachdem Sie \"Erfolgreich verbunden\" auf der Tado-Website sehen, klicken Sie unten auf Absenden."
+      },
+      "reconfigure_select_home": {
+        "title": "Zuhause auswählen",
+        "description": "Ihr vorheriges Zuhause ist nicht mehr verfügbar. Bitte wählen Sie ein neues.",
+        "data": {
+          "home": "Zuhause"
+        }
+      }
+    },
+    "progress": {
+      "poll": "Warten auf Autorisierung... Bitte schließen Sie die Anmeldung in Ihrem Browser ab."
+    },
+    "abort": {
+      "already_configured": "Tado CE ist bereits konfiguriert",
+      "timeout": "Autorisierung abgelaufen. Bitte versuchen Sie es erneut.",
+      "authorization_failed": "Autorisierung fehlgeschlagen. Bitte versuchen Sie es erneut.",
+      "no_homes": "Keine Tado-Häuser für dieses Konto gefunden.",
+      "reauth_successful": "Erneute Authentifizierung erfolgreich! Ihre Anmeldedaten wurden aktualisiert.",
+      "reconfigure_successful": "Erneute Authentifizierung erfolgreich! Ihre neuen Anmeldedaten wurden gespeichert."
+    },
+    "error": {
+      "cannot_connect": "Verbindung zu Tado fehlgeschlagen. Bitte überprüfen Sie Ihre Internetverbindung.",
+      "auth_pending": "Autorisierung noch nicht abgeschlossen. Bitte autorisieren Sie zuerst auf der Tado-Website.",
+      "authorization_failed": "Autorisierung fehlgeschlagen. Bitte versuchen Sie es von vorne."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Tado CE Optionen",
+        "description": "Tado CE Integrationseinstellungen konfigurieren.",
+        "sections": {
+          "tado_ce_exclusive": {
+            "name": "Tado CE Exklusiv",
+            "description": "Funktionen exklusiv für die Tado CE Integration",
+            "data": {
+              "smart_comfort_enabled": "Smart Comfort Analyse",
+              "thermal_analytics_enabled": "Thermische Analyse",
+              "thermal_analytics_zones": "Thermische Analyse Zonen",
+              "adaptive_preheat_enabled": "Adaptives Vorheizen",
+              "schedule_calendar_enabled": "Zeitplan-Kalender",
+              "zone_configuration_enabled": "Zonenkonfiguration",
+              "test_mode_enabled": "Testmodus (100 API-Aufrufe Limit)"
+            },
+            "data_description": {
+              "smart_comfort_enabled": "Vorheiz-Berater, Schimmelrisiko, Komfortsensoren",
+              "thermal_analytics_enabled": "Thermische Trägheit, Heizrate, Effizienzsensoren",
+              "thermal_analytics_zones": "Zonen für thermische Analyse auswählen",
+              "adaptive_preheat_enabled": "Heizung automatisch zur empfohlenen Vorheizzeit starten",
+              "schedule_calendar_enabled": "Heizpläne als Kalendereinträge anzeigen (schreibgeschützt)",
+              "zone_configuration_enabled": "Zoneneinstellungen: Heizkörpertyp, Overlay-Modus, Temperaturlimits",
+              "test_mode_enabled": "100 API-Aufrufe Limit zum Testen des Quotenschutzes simulieren"
+            }
+          },
+          "tado_data": {
+            "name": "Tado Daten",
+            "description": "Zusätzliche Daten von der Tado API",
+            "data": {
+              "weather_enabled": "Wettersensoren",
+              "home_state_sync_enabled": "Zuhause/Abwesend Synchronisation",
+              "mobile_devices_enabled": "Mobilgeräte-Tracking",
+              "mobile_devices_frequent_sync": "Mobilgeräte häufig synchronisieren",
+              "offset_enabled": "Temperatur-Offset"
+            },
+            "data_description": {
+              "weather_enabled": "Außentemperatur und Sonneneinstrahlung (+1 API-Aufruf pro Sync)",
+              "home_state_sync_enabled": "Zuhause/Abwesend-Status synchronisieren (+1 API-Aufruf pro Sync)",
+              "mobile_devices_enabled": "Mobilgeräte für Geofencing verfolgen (+1 API-Aufruf pro Vollsync)",
+              "mobile_devices_frequent_sync": "Mobilgeräte bei jedem Abruf synchronisieren",
+              "offset_enabled": "Offset-Attribut zu Klimaentitäten hinzufügen (+1 API-Aufruf pro Gerät)"
+            }
+          },
+          "settings": {
+            "name": "Smart Comfort",
+            "data": {
+              "outdoor_temp_entity": "Außentemperatur-Entität",
+              "hot_water_timer_duration": "Warmwasser-Timer (Minuten)",
+              "smart_comfort_mode": "Smart Comfort Modus",
+              "use_feels_like": "Gefühlte Temperatur verwenden",
+              "mold_risk_window_type": "Fenstertyp",
+              "smart_comfort_history_days": "Temperaturverlauf (Tage)",
+              "heating_cycle_history_days": "Thermische Analyse Verlauf (Tage)",
+              "heating_cycle_min_cycles": "Mindestzyklen für Analyse",
+              "heating_cycle_inertia_threshold": "Trägheitserkennungsschwelle"
+            },
+            "data_description": {
+              "outdoor_temp_entity": "Temperatursensor für Wetterkompensation (z.B. weather.home)",
+              "hot_water_timer_duration": "Standarddauer beim Einschalten des Warmwassers (5-1440 Min.)",
+              "smart_comfort_mode": "Passt Zieltemperatur basierend auf Außenbedingungen an",
+              "use_feels_like": "Gefühlte Temperatur statt tatsächlicher verwenden",
+              "mold_risk_window_type": "Fenstertyp für Schimmelrisiko-Oberflächentemperaturberechnung",
+              "smart_comfort_history_days": "Tage des Temperaturverlaufs für Ratenberechnung (1-30)",
+              "heating_cycle_history_days": "Tage des Heizzyklusverlaufs (1-30)",
+              "heating_cycle_min_cycles": "Mindestabgeschlossene Zyklen vor Anzeige der Analyse (1-10)",
+              "heating_cycle_inertia_threshold": "Temperaturschwelle zur Erkennung des Trägheitsendes (0,05-0,5°C)"
+            }
+          },
+          "polling_api": {
+            "name": "Abfrage & API",
+            "data": {
+              "day_start_hour": "Tagesbeginn (Stunde)",
+              "night_start_hour": "Nachtbeginn (Stunde)",
+              "custom_day_interval": "Benutzerdefiniertes Tagesintervall (Minuten)",
+              "custom_night_interval": "Benutzerdefiniertes Nachtintervall (Minuten)",
+              "refresh_debounce_seconds": "Aktualisierungs-Entprellung (Sekunden)",
+              "api_history_retention_days": "API-Verlauf Aufbewahrung (Tage)",
+              "quota_reserve_enabled": "Quotenreserve-Schutz"
+            },
+            "data_description": {
+              "day_start_hour": "Stunde, zu der die Tagesperiode beginnt (0-23, Standard: 7)",
+              "night_start_hour": "Stunde, zu der die Nachtperiode beginnt (0-23, Standard: 23)",
+              "custom_day_interval": "Smart Polling für den Tag überschreiben (1-1440 Min., leer für Auto)",
+              "custom_night_interval": "Smart Polling für die Nacht überschreiben (1-1440 Min., leer für Auto)",
+              "refresh_debounce_seconds": "Verzögerung vor Aktualisierung nach Statusänderungen (1-60s)",
+              "api_history_retention_days": "Tage zur Aufbewahrung des API-Aufrufverlaufs (0 = unbegrenzt)",
+              "quota_reserve_enabled": "Abfrage pausieren bei niedrigem Kontingent."
+            }
+          }
+        }
+      }
+    },
+    "error": {
+      "interval_out_of_range": "Abfrageintervall muss zwischen 1 und 1440 Minuten liegen",
+      "invalid_number": "Bitte geben Sie eine gültige Zahl ein"
+    }
+  }
+}

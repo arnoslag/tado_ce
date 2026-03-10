@@ -1,10 +1,10 @@
-"""Tado CE custom exceptions.
+"""Tado CE custom exceptions — auth errors, sync errors, API failures.
 
-Typed exceptions for async_sync() error handling.
-Enables coordinator to distinguish auth failures from network failures:
 - TadoAuthError → ConfigEntryAuthFailed (triggers HA reauth flow)
 - TadoSyncError → UpdateFailed (coordinator retries on next poll)
 """
+
+from __future__ import annotations
 
 
 class TadoAuthError(Exception):

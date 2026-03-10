@@ -1,18 +1,11 @@
-"""Polling interval management for Tado CE.
-
-This module handles adaptive polling interval calculation based on:
-- Remaining API quota
-- Day/Night periods
-- Reset time proximity
-- User custom intervals
-"""
+"""Tado CE adaptive polling interval management — burst mode, cooldown, quota-aware."""
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 import logging
-from datetime import datetime, timedelta, timezone
+from typing import TYPE_CHECKING, Any
 
-from .config_manager import ConfigurationManager
 from .const import (
     DEFAULT_DAY_INTERVAL,
     DEFAULT_NIGHT_INTERVAL,
@@ -24,7 +17,13 @@ from .const import (
     QUOTA_RESERVE_PERCENT,
 )
 
+if TYPE_CHECKING:
+    from .config_manager import ConfigurationManager
+
 _LOGGER = logging.getLogger(__name__)
+
+# Debug logging threshold — log when quota drops below this
+_VERY_LOW_QUOTA_REMAINING = 10
 
 
 def _get_calls_per_sync(config_manager: ConfigurationManager) -> int:
@@ -43,21 +42,20 @@ def _get_calls_per_sync(config_manager: ConfigurationManager) -> int:
     if config_manager.get_weather_enabled():
         calls += 1  # weather API call
 
-    if (config_manager.get_mobile_devices_enabled() and
-            config_manager.get_mobile_devices_frequent_sync()):
+    if config_manager.get_mobile_devices_enabled() and config_manager.get_mobile_devices_frequent_sync():
         calls += 1  # mobileDevices API call
 
     return calls
 
 
-def _calculate_adaptive_interval(ratelimit_data: dict, config_manager: ConfigurationManager) -> int:
+def _calculate_adaptive_interval(ratelimit_data: dict[str, Any], config_manager: ConfigurationManager) -> int:
     """Calculate adaptive polling interval based on remaining quota, Day/Night period, and Reset Time.
 
     Pure adaptive polling - distributes remaining calls over remaining time.
     Works universally for ANY quota tier (100, 5000, 20000, etc.)
 
     Simplified - reads directly from ratelimit_data which already contains
-    simulated values when Test Mode is ON (Single Source of Truth in ratelimit.json).
+    simulated values when Test Mode is ON.
 
     Day/Night aware adaptive polling:
     - Night period: Fixed MAX_POLLING_INTERVAL (120 min) to conserve quota
@@ -75,7 +73,6 @@ def _calculate_adaptive_interval(ratelimit_data: dict, config_manager: Configura
     """
     from homeassistant.util import dt as dt_util
 
-    # Read directly from ratelimit_data (already simulated when Test Mode ON)
     remaining = ratelimit_data.get("remaining", 100)
     test_mode = ratelimit_data.get("test_mode", False)
 
@@ -89,12 +86,12 @@ def _calculate_adaptive_interval(ratelimit_data: dict, config_manager: Configura
     # Test Mode polling stuck if this is not handled
     if not test_mode and last_reset_utc:
         try:
-            last_reset = datetime.fromisoformat(last_reset_utc.replace('Z', '+00:00'))
+            last_reset = datetime.fromisoformat(last_reset_utc)
             if last_reset.tzinfo is None:
-                last_reset = last_reset.replace(tzinfo=timezone.utc)
+                last_reset = last_reset.replace(tzinfo=UTC)
 
             next_reset = last_reset + timedelta(hours=24)
-            now_utc = datetime.now(timezone.utc)
+            now_utc = datetime.now(UTC)
 
             # If next_reset is in the past, add 24h until it's in the future
             while next_reset <= now_utc:
@@ -103,7 +100,7 @@ def _calculate_adaptive_interval(ratelimit_data: dict, config_manager: Configura
             calculated_reset_seconds = int((next_reset - now_utc).total_seconds())
             if calculated_reset_seconds > 0:
                 reset_seconds = calculated_reset_seconds
-        except Exception as e:
+        except (ValueError, TypeError) as e:
             _LOGGER.debug("Failed to calculate dynamic reset_seconds: %s", e)
 
     reset_hours = reset_seconds / 3600
@@ -119,12 +116,12 @@ def _calculate_adaptive_interval(ratelimit_data: dict, config_manager: Configura
     if effective_remaining <= 0:
         _LOGGER.debug(
             "Tado CE: No remaining quota (effective_remaining=%s). Using max interval: %s min",
-            effective_remaining, MAX_POLLING_INTERVAL
+            effective_remaining,
+            MAX_POLLING_INTERVAL,
         )
         return MAX_POLLING_INTERVAL
 
     # Day/Night aware adaptive polling with Reset Time consideration
-    # Get current time and Day/Night settings
     now = dt_util.now()
     current_hour = now.hour
     day_start = config_manager.get_day_start_hour()
@@ -150,7 +147,8 @@ def _calculate_adaptive_interval(ratelimit_data: dict, config_manager: Configura
         if day_quota <= 0 or effective_hours <= 0:
             _LOGGER.debug(
                 "Tado CE: No quota available (day_quota=%.1f, effective_hours=%.1f). Using max interval.",
-                day_quota, effective_hours
+                day_quota,
+                effective_hours,
             )
             return MAX_POLLING_INTERVAL
 
@@ -169,8 +167,16 @@ def _calculate_adaptive_interval(ratelimit_data: dict, config_manager: Configura
             "  Usable quota: %.0f\n"
             "  Calculated: %.1f min → Adaptive: %s min\n"
             "  Reset in: %.1fh | Test Mode: %s",
-            day_start, effective_hours, time_boundary, remaining, effective_remaining,
-            usable_quota, effective_minutes / day_quota, interval_minutes, reset_hours, test_mode,
+            day_start,
+            effective_hours,
+            time_boundary,
+            remaining,
+            effective_remaining,
+            usable_quota,
+            effective_minutes / day_quota,
+            interval_minutes,
+            reset_hours,
+            test_mode,
         )
 
         return interval_minutes
@@ -207,10 +213,14 @@ def _calculate_adaptive_interval(ratelimit_data: dict, config_manager: Configura
                 "  Remaining: %s calls (usable: %.1f) <= Night calls needed (%.1f)\n"
                 "  Using MAX_POLLING_INTERVAL (%s min) for all periods\n"
                 "  Test Mode: %s",
-                remaining, usable_remaining, night_calls, MAX_POLLING_INTERVAL, test_mode,
+                remaining,
+                usable_remaining,
+                night_calls,
+                MAX_POLLING_INTERVAL,
+                test_mode,
             )
             if not is_day:
-                return None  # Night period - use default/custom night interval
+                return None  # type: ignore[return-value]  # Night period - use default/custom night interval
             return MAX_POLLING_INTERVAL
 
         # Calculate Day interval
@@ -226,10 +236,17 @@ def _calculate_adaptive_interval(ratelimit_data: dict, config_manager: Configura
                 "  Day calls available: %.1f at %.1f min\n"
                 "  Returning None (use default/custom night interval)\n"
                 "  Test Mode: %s",
-                day_start, remaining, effective_remaining, usable_remaining,
-                night_calls, MAX_POLLING_INTERVAL, day_calls, day_interval, test_mode,
+                day_start,
+                remaining,
+                effective_remaining,
+                usable_remaining,
+                night_calls,
+                MAX_POLLING_INTERVAL,
+                day_calls,
+                day_interval,
+                test_mode,
             )
-            return None
+            return None  # type: ignore[return-value]
 
         # Day period - use calculated day_interval
         day_interval = int(max(MIN_POLLING_INTERVAL, min(MAX_POLLING_INTERVAL, day_interval)))
@@ -241,8 +258,16 @@ def _calculate_adaptive_interval(ratelimit_data: dict, config_manager: Configura
             "  Night duration: %sh → %.1f calls at %s min\n"
             "  Day duration: %sh → %.1f calls at %s min\n"
             "  Reset in: %.1fh | Test Mode: %s",
-            remaining, effective_remaining, night_duration, night_calls, MAX_POLLING_INTERVAL,
-            day_duration, day_calls, day_interval, reset_hours, test_mode,
+            remaining,
+            effective_remaining,
+            night_duration,
+            night_calls,
+            MAX_POLLING_INTERVAL,
+            day_duration,
+            day_calls,
+            day_interval,
+            reset_hours,
+            test_mode,
         )
 
         return day_interval
@@ -269,7 +294,6 @@ def _calculate_adaptive_interval(ratelimit_data: dict, config_manager: Configura
     # Because quota will reset and we'll have fresh quota for Night.
 
     # Night period returns None to signal "use default/custom night interval"
-    # Previously returned MAX_POLLING_INTERVAL which incorrectly overrode user's custom night interval
     if not is_day:
         _LOGGER.debug(
             "Tado CE Adaptive Polling (Night):\n"
@@ -278,9 +302,12 @@ def _calculate_adaptive_interval(ratelimit_data: dict, config_manager: Configura
             "  Remaining: %s calls\n"
             "  Returning None (use default/custom night interval)\n"
             "  Test Mode: %s",
-            day_start, reset_hours, remaining, test_mode,
+            day_start,
+            reset_hours,
+            remaining,
+            test_mode,
         )
-        return None  # Signal to use default/custom night interval
+        return None  # type: ignore[return-value]  # Signal to use default/custom night interval
 
     # Day period: calculate adaptive interval
     # Determine effective time window (until Reset or Night Start, whichever is sooner)
@@ -295,7 +322,7 @@ def _calculate_adaptive_interval(ratelimit_data: dict, config_manager: Configura
         # Use custom night interval if set, otherwise MAX_POLLING_INTERVAL
         custom_night = config_manager.get_custom_night_interval()
         night_interval_for_calc = custom_night if custom_night is not None else MAX_POLLING_INTERVAL
-        night_calls_needed = (night_duration * 60) / night_interval_for_calc
+        night_calls_needed = (night_duration * 60) / night_interval_for_calc  # type: ignore[assignment]
         time_boundary = f"Night Start ({hours_until_night}h)"
 
     day_quota = max(0, usable_quota - night_calls_needed)
@@ -303,7 +330,8 @@ def _calculate_adaptive_interval(ratelimit_data: dict, config_manager: Configura
     if day_quota <= 0 or effective_hours <= 0:
         _LOGGER.debug(
             "Tado CE: No Day quota available (day_quota=%.1f, effective_hours=%.1f). Using max interval.",
-            day_quota, effective_hours
+            day_quota,
+            effective_hours,
         )
         return MAX_POLLING_INTERVAL
 
@@ -324,18 +352,27 @@ def _calculate_adaptive_interval(ratelimit_data: dict, config_manager: Configura
         "  Usable quota: %.0f → Day quota: %.0f\n"
         "  Calculated: %.1f min → Adaptive: %s min\n"
         "  Reset in: %.1fh | Test Mode: %s",
-        time_boundary, effective_hours, night_calls_needed, remaining, effective_remaining,
-        usable_quota, day_quota, effective_minutes / day_quota, interval_minutes, reset_hours, test_mode,
+        time_boundary,
+        effective_hours,
+        night_calls_needed,
+        remaining,
+        effective_remaining,
+        usable_quota,
+        day_quota,
+        effective_minutes / day_quota,
+        interval_minutes,
+        reset_hours,
+        test_mode,
     )
 
     # Log at DEBUG level if quota is very low
-    if remaining < 10:
+    if remaining < _VERY_LOW_QUOTA_REMAINING:
         _LOGGER.debug("Tado CE: Low quota (%s remaining). Using interval: %s min", remaining, interval_minutes)
 
     return interval_minutes
 
 
-def should_pause_polling(ratelimit_data: dict, config_manager: ConfigurationManager) -> tuple[bool, str]:
+def should_pause_polling(ratelimit_data: dict[str, Any], config_manager: ConfigurationManager) -> tuple[bool, str]:
     """Check if polling should be paused to reserve quota for manual operations.
 
     Pauses polling when quota is critically low to ensure users can still
@@ -360,28 +397,29 @@ def should_pause_polling(ratelimit_data: dict, config_manager: ConfigurationMana
     test_mode = ratelimit_data.get("test_mode", False)
     _LOGGER.debug(
         "Tado CE: should_pause_polling called with used=%s, remaining=%s, test_mode=%s",
-        ratelimit_data.get('used'), ratelimit_data.get('remaining'), test_mode
+        ratelimit_data.get("used"),
+        ratelimit_data.get("remaining"),
+        test_mode,
     )
 
     # Check if reset time has passed - if so, resume polling to detect reset
     last_reset_utc = ratelimit_data.get("last_reset_utc")
     if last_reset_utc:
         try:
-            last_reset = datetime.fromisoformat(last_reset_utc.replace('Z', '+00:00'))
+            last_reset = datetime.fromisoformat(last_reset_utc)
             next_reset = last_reset + timedelta(hours=24)
-            now_utc = datetime.now(timezone.utc)
+            now_utc = datetime.now(UTC)
 
             # If next reset time has passed, resume polling to detect actual reset
             if now_utc >= next_reset:
                 _LOGGER.info(
                     "Tado CE: Reset time has passed (expected %s UTC). Resuming polling to detect actual reset.",
-                    next_reset.strftime('%H:%M')
+                    next_reset.strftime("%H:%M"),
                 )
                 return False, ""
-        except Exception as e:
+        except (ValueError, TypeError) as e:
             _LOGGER.debug("Failed to check reset time: %s", e)
 
-    # Read directly from ratelimit_data (already simulated when Test Mode ON)
     # No need to recalculate - save_ratelimit() stores the correct values
     remaining = ratelimit_data.get("remaining", 100)
     daily_limit = ratelimit_data.get("limit", 100)
@@ -391,7 +429,10 @@ def should_pause_polling(ratelimit_data: dict, config_manager: ConfigurationMana
 
     _LOGGER.debug(
         "Tado CE: should_pause_polling check - remaining=%s, limit=%s, threshold=%s, should_pause=%s",
-        remaining, daily_limit, reserve_threshold, remaining <= reserve_threshold
+        remaining,
+        daily_limit,
+        reserve_threshold,
+        remaining <= reserve_threshold,
     )
 
     # Check if we should pause
@@ -445,7 +486,7 @@ def is_daytime(config_manager: ConfigurationManager) -> bool:
     return hour >= day_start or hour < night_start
 
 
-def get_polling_interval(config_manager: ConfigurationManager, cached_ratelimit: dict | None = None) -> int:
+def get_polling_interval(config_manager: ConfigurationManager, cached_ratelimit: dict[str, Any] | None = None) -> int:
     """Get polling interval based on configuration and API rate limit.
 
     Uses adaptive polling based on remaining quota and time until reset.
@@ -488,7 +529,7 @@ def get_polling_interval(config_manager: ConfigurationManager, cached_ratelimit:
         if ratelimit_data:
             adaptive_interval = _calculate_adaptive_interval(ratelimit_data, config_manager)
 
-    except Exception as e:
+    except (ValueError, TypeError, AttributeError) as e:
         _LOGGER.debug("Could not calculate adaptive polling interval, using default: %s", e)
 
     # Decision logic - respect user custom override for high-quota users
@@ -505,24 +546,25 @@ def get_polling_interval(config_manager: ConfigurationManager, cached_ratelimit:
                 _LOGGER.warning(
                     "Tado CE: Custom interval (%s min) would exceed quota. "
                     "Using adaptive interval (%s min) to protect remaining calls.",
-                    custom_interval, adaptive_interval,
+                    custom_interval,
+                    adaptive_interval,
                 )
                 return adaptive_interval
         # Custom interval is safe (or no ratelimit data), use it
         _LOGGER.info(
             "Tado CE: Using custom %s interval: %s min",
-            'day' if daytime else 'night', custom_interval,
+            "day" if daytime else "night",
+            custom_interval,
         )
         return custom_interval
-    elif adaptive_interval is not None:
+    if adaptive_interval is not None:
         # No custom interval set - use pure adaptive (Day/Night aware)
         return adaptive_interval
-    else:
-        # Fallback to default intervals
-        return DEFAULT_DAY_INTERVAL if daytime else DEFAULT_NIGHT_INTERVAL
+    # Fallback to default intervals
+    return DEFAULT_DAY_INTERVAL if daytime else DEFAULT_NIGHT_INTERVAL
 
 
-def _log_quota_warning_if_needed(interval: int, daytime: bool, config_manager: ConfigurationManager):
+def _log_quota_warning_if_needed(interval: int, daytime: bool, config_manager: ConfigurationManager) -> None:
     """Log warning if custom interval would exceed API quota.
 
     Args:
@@ -530,7 +572,6 @@ def _log_quota_warning_if_needed(interval: int, daytime: bool, config_manager: C
         daytime: Whether it's currently daytime
         config_manager: Configuration manager
     """
-    # Calculate calls per day with this interval
     # Assuming 2-3 API calls per sync (zoneStates + weather if enabled)
     weather_enabled = config_manager.get_weather_enabled()
     calls_per_sync = 2 if weather_enabled else 1
@@ -554,5 +595,7 @@ def _log_quota_warning_if_needed(interval: int, daytime: bool, config_manager: C
             "Tado CE: Custom polling intervals may exceed API quota for 100-call tier. "
             "Estimated %.0f calls/day with day=%sm, night=%sm. "
             "Consider increasing intervals or check if you have a higher quota tier (5000/20000).",
-            total_calls, day_interval, night_interval,
+            total_calls,
+            day_interval,
+            night_interval,
         )

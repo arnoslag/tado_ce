@@ -1,23 +1,33 @@
-"""Optimistic state management helpers.
+"""Tado CE optimistic state management helpers — 3-layer stale data defense.
 
-3-Layer Optimistic Defense Strategy:
-  Layer 1: Coordinator-level freshness tracking (mark_entity_fresh)
-  Layer 2: Sequence numbers (get_next_sequence) for ordering
-  Layer 3: Expected state confirmation (compare API vs expected)
-
-Functions:
-  clear_optimistic_state(entity) — clears all optimistic tracking fields
-  set_optimistic_state(entity, ...) — sets optimistic state for climate entities
-  resolve_optimistic_vs_api(entity, ...) — Layer 2/3 comparison logic
+3-layer defense strategy for preventing stale API data from overwriting
+user-initiated state changes.
 """
+
 from __future__ import annotations
 
 import logging
 import time
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
-    from homeassistant.components.climate import HVACAction, HVACMode
+    from homeassistant.components.climate import HVACAction, HVACMode  # type: ignore[attr-defined]
+
+    from .coordinator import TadoDataUpdateCoordinator
+
+
+@runtime_checkable
+class OptimisticClimateEntity(Protocol):
+    """Protocol for climate entities that support optimistic state tracking."""
+
+    coordinator: TadoDataUpdateCoordinator
+    entity_id: str
+    _zone_name: str
+    _optimistic_state: dict[str, Any] | None
+    _optimistic_sequence: int | None
+    _expected_hvac_mode: HVACMode | None
+    _expected_hvac_action: HVACAction | None
+
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -37,7 +47,7 @@ _OPTIMISTIC_FIELDS = (
 )
 
 
-def clear_optimistic_state(entity: Any) -> None:
+def clear_optimistic_state(entity: object) -> None:
     """Clear all optimistic state tracking fields on an entity.
 
     Works for any entity type — only clears fields that exist on the entity.
@@ -56,7 +66,7 @@ def clear_optimistic_state(entity: Any) -> None:
 
 
 async def set_optimistic_state(
-    entity: Any,
+    entity: OptimisticClimateEntity,
     hvac_mode: HVACMode,
     hvac_action: HVACAction,
     target_temp: float | None = None,
@@ -84,7 +94,7 @@ async def set_optimistic_state(
         "target_temperature": target_temp,
         "hvac_mode": hvac_mode,
         "hvac_action": hvac_action,
-        "timestamp": time.time(),
+        "timestamp": time.monotonic(),
     }
     if extra_attrs:
         state_dict.update(extra_attrs)
@@ -101,12 +111,15 @@ async def set_optimistic_state(
 
     _LOGGER.debug(
         "%s: Set optimistic state: mode=%s, action=%s, seq=%s",
-        entity._zone_name, hvac_mode, hvac_action, entity._optimistic_sequence,
+        entity._zone_name,
+        hvac_mode,
+        hvac_action,
+        entity._optimistic_sequence,
     )
 
 
 def resolve_optimistic_vs_api(
-    entity: Any,
+    entity: OptimisticClimateEntity,
     api_hvac_mode: HVACMode,
     api_hvac_action: HVACAction,
 ) -> bool:
@@ -134,23 +147,24 @@ def resolve_optimistic_vs_api(
         return False
 
     # Check if API has confirmed our expected state
-    if (
-        api_hvac_mode == entity._expected_hvac_mode
-        and api_hvac_action == entity._expected_hvac_action
-    ):
+    if api_hvac_mode == entity._expected_hvac_mode and api_hvac_action == entity._expected_hvac_action:
         # API confirmed — clear optimistic state
         _LOGGER.debug(
             "%s: API confirmed optimistic state (mode=%s, action=%s), clearing",
-            entity._zone_name, api_hvac_mode, api_hvac_action,
+            entity._zone_name,
+            api_hvac_mode,
+            api_hvac_action,
         )
         clear_optimistic_state(entity)
         return False
 
     # API hasn't caught up yet — preserve optimistic state
     _LOGGER.debug(
-        "%s: Preserving optimistic state "
-        "(expected mode=%s, action=%s; API shows mode=%s, action=%s)",
-        entity._zone_name, entity._expected_hvac_mode,
-        entity._expected_hvac_action, api_hvac_mode, api_hvac_action,
+        "%s: Preserving optimistic state (expected mode=%s, action=%s; API shows mode=%s, action=%s)",
+        entity._zone_name,
+        entity._expected_hvac_mode,
+        entity._expected_hvac_action,
+        api_hvac_mode,
+        api_hvac_action,
     )
     return True

@@ -1,39 +1,40 @@
-"""Unified data models for Tado CE.
+"""Tado CE unified data models — InsightTemperatureReading, shared dataclasses."""
 
-Consolidates the three separate TemperatureReading dataclasses that
-existed across heating_models.py, insights.py, and
-smart_comfort.py into distinctly-named classes.
-"""
 from __future__ import annotations
 
 from dataclasses import dataclass, fields
 from datetime import datetime
-from typing import Optional, get_type_hints
+from typing import Any, get_type_hints
 
 
 class _SerializableMixin:
     """Mixin for dataclasses with datetime fields — provides to_dict/from_dict."""
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         """Serialize to dictionary for JSON storage."""
         d = {}
-        for f in fields(self):
+        for f in fields(self):  # type: ignore[arg-type]
             v = getattr(self, f.name)
             d[f.name] = v.isoformat() if isinstance(v, datetime) else v
         return d
 
     @classmethod
-    def from_dict(cls, data: dict):
+    def from_dict(cls, data: dict[str, Any]) -> SmartComfortReading:
         """Deserialize from dictionary."""
         hints = get_type_hints(cls)
         kwargs = {}
-        for f in fields(cls):
+        for f in fields(cls):  # type: ignore[arg-type]
             v = data.get(f.name)
             if v is not None and hints.get(f.name) is datetime:
                 v = datetime.fromisoformat(v)
+                # Ensure timezone-aware (UTC) for consistent comparisons
+                if v.tzinfo is None:
+                    from datetime import UTC
+
+                    v = v.replace(tzinfo=UTC)
             if v is not None:
                 kwargs[f.name] = v
-        return cls(**kwargs)
+        return cls(**kwargs)  # type: ignore[return-value]
 
 
 @dataclass
@@ -55,7 +56,7 @@ class InsightTemperatureReading:
     """
 
     temperature: float
-    humidity: Optional[float]
+    humidity: float | None
     timestamp: datetime
 
 
@@ -69,4 +70,4 @@ class SmartComfortReading(_SerializableMixin):
     timestamp: datetime
     temperature: float
     is_heating: bool  # True if HVAC is actively heating/cooling
-    target_temperature: Optional[float] = None
+    target_temperature: float | None = None

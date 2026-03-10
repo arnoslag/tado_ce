@@ -3,17 +3,22 @@
 <div align="center">
 
 <!-- Platform Badges -->
-![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2026.2.3-blue?style=for-the-badge&logo=home-assistant) ![Tado](https://img.shields.io/badge/Tado-V2%2FV3%2FV3%2B-orange?style=for-the-badge) ![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg?style=for-the-badge)
+![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2026.3.1-blue?style=for-the-badge&logo=home-assistant) ![Python](https://img.shields.io/badge/Python-3.13%2B-blue?style=for-the-badge&logo=python&logoColor=white) ![Tado](https://img.shields.io/badge/Tado-V2%2FV3%2FV3%2B-orange?style=for-the-badge) ![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg?style=for-the-badge)
 
 <!-- Status Badges -->
-![Version](https://img.shields.io/badge/Version-2.3.1-purple?style=for-the-badge) ![License](https://img.shields.io/badge/License-AGPL--3.0-blue?style=for-the-badge) ![Maintained](https://img.shields.io/badge/Maintained-Yes-green.svg?style=for-the-badge) ![Unit Tests](https://img.shields.io/badge/Unit-768-blue?style=for-the-badge) ![Property Tests](https://img.shields.io/badge/Property-435-purple?style=for-the-badge) ![E2E Tests](https://img.shields.io/badge/E2E-190-green?style=for-the-badge)
+![Version](https://img.shields.io/badge/Version-3.0.0-purple?style=for-the-badge) ![License](https://img.shields.io/badge/License-AGPL--3.0-blue?style=for-the-badge) ![Maintained](https://img.shields.io/badge/Maintained-Yes-green.svg?style=for-the-badge) ![Tests](https://img.shields.io/badge/Tests-3238-blue?style=for-the-badge) ![Coverage](https://img.shields.io/badge/Coverage-99%25-brightgreen?style=for-the-badge)
 
 <!-- Community Badges -->
 ![GitHub stars](https://img.shields.io/github/stars/hiall-fyi/tado_ce?style=for-the-badge&logo=github) ![GitHub forks](https://img.shields.io/github/forks/hiall-fyi/tado_ce?style=for-the-badge&logo=github) ![GitHub issues](https://img.shields.io/github/issues/hiall-fyi/tado_ce?style=for-the-badge&logo=github) ![GitHub last commit](https://img.shields.io/github/last-commit/hiall-fyi/tado_ce?style=for-the-badge&logo=github)
 
-**A comprehensive Tado integration with smart API management, comfort analytics, and environment monitoring.**
+<!-- Support -->
+[![Buy Me A Coffee](https://img.shields.io/badge/Support-Buy%20Me%20A%20Coffee-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/hiallfyi)
 
-[Quick Start](#-quick-start) • [Features](#-features) • [Configuration](#-configuration-options) • [Troubleshooting](#-troubleshooting) • [Discussions](https://github.com/hiall-fyi/tado_ce/discussions)
+**A comprehensive Tado integration with actionable insights, smart API management, comfort analytics, and environment monitoring.**
+
+**Made with ❤️ by Joe Yiu ([@hiall-fyi](https://github.com/hiall-fyi))**
+
+[Quick Start](#-quick-start) • [Features](#-features) • [What's New in v3.0.0](#-whats-new-in-v300) • [Configuration](#-configuration-options) • [Troubleshooting](#-troubleshooting) • [Discussions](https://github.com/hiall-fyi/tado_ce/discussions)
 
 </div>
 
@@ -23,7 +28,7 @@
 
 Tado CE was created in response to Tado's 2025 API rate limits (100-20,000 calls/day depending on plan). The official Home Assistant integration doesn't show your actual API usage, leaving users unaware until they get blocked.
 
-What started as an API management solution has evolved into a **comprehensive smart climate integration** with real-time rate limit tracking, smart day/night polling, comfort analytics, environment monitoring, and enhanced controls for heating, AC, and hot water.
+What started as an API management solution has grown into a **full smart climate platform** — actionable insights that tell you what's wrong and what to do about it, thermal analytics that learn how your rooms heat, preheat advisors that prevent temperature drops before they happen, mold risk monitoring, multi-home support, and enhanced controls the official integration doesn't offer.
 
 ---
 
@@ -51,7 +56,7 @@ cp -r tado_ce /config/custom_components/
 
 1. Go to **Settings > Devices & Services > Add Integration**
 2. Search for **Tado CE** and click **Submit**
-3. Visit `https://login.tado.com/device` and enter the code shown
+3. Click the authorization link shown, or visit the URL displayed and enter the code
 4. Authorize in your browser, then click **Submit**
 5. If you have multiple homes, select which one to use
 
@@ -82,18 +87,59 @@ Full climate, AC, and hot water control with timer support, geofencing, presence
 
 Tado CE provides comprehensive smart climate control with:
 
-- **API Management** - Real-time rate limit tracking, reset time detection, call history, test mode, sync monitoring
-- **Smart Polling** - Adaptive real-time polling based on remaining API quota, custom intervals, monitoring sensors
-- **Thermal Analytics** - Heating rate analysis, preheat estimates, thermal inertia, confidence scoring
-- **Smart Comfort** - Historical patterns, preheat advisor, schedule sensors, AI recommendations
-- **Enhanced Controls** - Smart boost, hot water timer, immediate refresh, temperature offset
-- **Environment Monitoring** - Mold risk assessment, comfort level tracking, condensation risk (AC)
-- **Actionable Insights** - Per-zone and home-wide intelligent recommendations with priority-based alerts, 21 insight types across 7 categories (v2.3.0)
-- **Per-Zone Configuration** - Individual overlay modes, temperature limits, UFH settings per zone (v2.1.0)
-- **Zone Features Toggles** - Control which entity types are created for a minimal or full setup (v2.1.0)
-- **Optional Features** - Schedule calendar, boiler flow temperature, device tracking, home state sync
+- **Multi-Home Support** — Multiple Tado accounts/homes in a single HA instance with full data isolation
+- **Actionable Insights** — Per-zone and home-wide intelligent recommendations with priority escalation, correlation/deduplication, history tracking, health score, and 21+ insight types across 7 categories
+- **API Management** — Real-time rate limit tracking, reset time detection, call history, test mode, sync monitoring
+- **Smart Polling** — Adaptive real-time polling based on remaining API quota, custom intervals, monitoring sensors
+- **Environment Monitoring** — Mold risk assessment, comfort level tracking, condensation risk (AC)
+- **Smart Comfort** — Historical patterns, preheat advisor with cooling rate prediction, schedule sensors, AI recommendations
+- **Thermal Analytics** — Heating rate analysis, preheat estimates, thermal inertia, confidence scoring
+- **Enhanced Controls** — Smart boost, hot water timer (min 1 min), immediate refresh, temperature offset
+- **Per-Zone Configuration** — Individual overlay modes, temperature limits, UFH settings per zone
+- **Zone Features Toggles** — Control which entity types are created for a minimal or full setup
+- **Multi-Language** — Config flow and options UI in 7 languages (English, German, Spanish, French, Italian, Dutch, Portuguese)
+- **Optional Features** — Schedule calendar, boiler flow temperature, device tracking, home state sync
 
 See [FEATURES_GUIDE.md](FEATURES_GUIDE.md) for detailed documentation, configuration instructions, and usage scenarios for all features.
+
+---
+
+## 🆕 What's New in v3.0.0
+
+**Multi-Home Support, Actionable Insights Full Feature Set, Code Quality Platinum**
+
+v3.0.0 is a ground-up rewrite — 84 files changed, 31,655 insertions, 21,842 deletions. Every source file was reviewed and most were rewritten. Total churn: 53,497 lines.
+
+**New Features:**
+- **Multi-Home Support** ([#110](https://github.com/hiall-fyi/tado_ce/issues/110), [#145](https://github.com/hiall-fyi/tado_ce/issues/145)) — Multiple Tado accounts/homes in one HA instance. Each config entry fully isolated with its own coordinator, API client, and data. All state via `ConfigEntry.runtime_data`.
+- **Insight Smarter Summary** — Action-based summaries instead of generic counts (e.g., "Replace batteries: Guest, Lounge — Mold risk: Bedroom")
+- **Insight Correlation** — Related insights within a zone merged into single actions
+- **Insight History & Trending** — Persistent tracking across HA restarts, duration-aware messages, weekly digest
+- **Insight Priority Escalation** — Auto-escalation based on persistence (battery low > 7d → high, > 14d → critical)
+- **Insight Health Score** — 0-100 home health score based on active insights and severity
+- **Preheat Cooling Rate Prediction** ([Discussion #163](https://github.com/hiall-fyi/tado_ce/discussions/163)) — Preheat Advisor now considers cooling trends when room is above target, estimating when temperature will drop below target and calculating proactive preheat start time
+- **Human-Readable Weekly Digest** — Home Insights `weekly_digest` attribute now shows a readable summary string instead of raw dict/YAML dump
+- **Centralized Physics Constants** — Mold risk, condensation, Magnus-Tetens, ASHRAE comfort, and window U-value constants consolidated into `calculations.py`. Risk classification extracted as pure functions
+
+**Bug Fixes:**
+- Auth URL showing 404 page ([#104](https://github.com/hiall-fyi/tado_ce/issues/104))
+- Window sensor now detects open windows without Auto-Assist ([#157](https://github.com/hiall-fyi/tado_ce/issues/157))
+- Preheat Now sensor no longer triggers a day early ([#164](https://github.com/hiall-fyi/tado_ce/issues/164))
+- Timer minimum duration lowered to 1 minute ([#162](https://github.com/hiall-fyi/tado_ce/issues/162))
+
+**Code Quality:**
+- 34 → 62 source files (monolith split into focused modules)
+- 3,238 tests across 80 test files with 99% code coverage
+- mypy strict: 667 → 0 errors
+- ruff: 2,295 → 0 violations
+- Return type annotations: 480 → 896 (+87%)
+- f-string log calls: 584 → 0, lazy `%s` calls: 18 → 412
+- `hass.data[DOMAIN]` refs: 35 → 0, `ConfigEntry.runtime_data`: 0 → 38
+- 7 languages (was English only)
+
+**Upgrading:** Direct upgrade from v2.3.1 supported. Migration runs automatically. No breaking changes. After a successful upgrade, you can optionally delete [12 legacy files](CHANGELOG.md) that were renamed or merged in v3.0.0.
+
+See [CHANGELOG.md](CHANGELOG.md) for full details.
 
 ---
 
@@ -116,25 +162,18 @@ See [FEATURES_GUIDE.md](FEATURES_GUIDE.md) for detailed configuration guides and
 
 ## Entities
 
-Quick overview of entities created by Tado CE:
+Quick overview of entities created by Tado CE (75 entity types — see [ENTITIES.md](ENTITIES.md) for full reference):
 
-- **Hub**: API usage/reset/sync sensors, weather sensors, away mode switch, resume all schedules button
-- **Per Zone**: Climate control, temperature/humidity, heating power, mode, battery, connection
-- **Environment**: Mold risk, comfort level (always enabled)
-- **Actionable Insights**: Per-zone insights sensor + home-wide aggregation with cross-zone analysis (always enabled)
-- **Smart Comfort**: Heating/cooling rates, time-to-target, efficiency, preheat advisor, schedule sensors (opt-in)
-- **Hot Water**: Water heater with AUTO/HEAT/OFF modes, timer buttons (30/60/90 min)
+- **Hub**: API usage/reset/sync sensors, weather sensors, home insights, presence mode, overlay mode, resume all button
+- **Per Zone**: Climate control, temperature/humidity, heating power, overlay status, battery, connection
+- **Environment**: Mold risk, comfort level, surface temperature, dew point, condensation risk (AC)
+- **Actionable Insights**: Per-zone insights + home-wide aggregation with correlation, history tracking, priority escalation, and health score
+- **Smart Comfort**: Heating/cooling rates, time-to-target, preheat advisor (with cooling rate prediction), schedule sensors (opt-in)
+- **Thermal Analytics**: Thermal inertia, heating rate, preheat time, confidence scoring (heating zones)
+- **Hot Water**: Water heater with AUTO/HEAT/OFF modes, timer buttons (min 1 min)
+- **Per-Zone Config**: Overlay mode, temperature limits, UFH buffer, window type, surface temp offset per zone
 - **Switches**: Child lock, early start per zone
-
-**New in v2.0.0**: 
-- **API Monitoring Sensors**: Next/Last Sync, Polling Interval, Call History, API Call Breakdown - no templates required!
-- **Thermal Analytics**: Heating rate analysis, thermal inertia, preheat estimates with confidence scoring (TRV zones only)
-- **Quota Reserve Protection**: Automatically pauses polling when quota critically low (≤5% or ≤5 calls), reserves quota for manual operations, auto-resumes after API reset
-
-**New in v2.1.0**:
-- **Per-Zone Configuration**: Heating type, overlay mode, temperature limits, UFH buffer, temp offset per zone
-- **Condensation Risk Sensor**: Dew point-based condensation warning for AC zones
-- **Zone Features Toggles**: Control entity visibility (diagnostics, controls, boost, environment, thermal, zone config)
+- **Zone Features Toggles**: Control which entity types are created for a minimal or full setup
 
 ---
 
@@ -142,8 +181,8 @@ Quick overview of entities created by Tado CE:
 
 | Service | Description |
 |---------|-------------|
-| `set_climate_timer` | Set heating/cooling with timer, until next schedule (`overlay: next_time_block`), or indefinitely (`overlay: manual`). `time_period` optional when `overlay` specified (v2.3.0) |
-| `set_water_heater_timer` | Turn on hot water with timer |
+| `set_climate_timer` | Set heating/cooling with timer (min 1 min), until next schedule (`overlay: next_time_block`), or indefinitely (`overlay: manual`). `time_period` optional when `overlay` specified |
+| `set_water_heater_timer` | Turn on hot water with timer (min 1 min) |
 | `resume_schedule` | Delete overlay, return to schedule |
 | `set_climate_temperature_offset` | Calibrate device temperature (-10 to +10°C) |
 | `get_temperature_offset` | Fetch current offset (Tado CE exclusive) |
@@ -229,6 +268,17 @@ Tado X devices use Matter over Thread - use the [Home Assistant Matter integrati
 | Rotating Tokens | If token expires, re-authentication required |
 | No Schedule Management | Use Tado app for schedule changes |
 | No Historical Data | Would consume too many API calls |
+
+---
+
+## Uninstall
+
+1. Go to **Settings > Devices & Services > Tado CE**
+2. Click the **three-dot menu** (⋮) and select **Delete**
+3. Restart Home Assistant
+4. If installed via HACS: open **HACS > Integrations**, find Tado CE, click the three-dot menu and **Remove**
+5. If installed manually: delete the `custom_components/tado_ce/` folder
+6. Restart Home Assistant again
 
 ---
 
@@ -334,19 +384,7 @@ Contributions welcome!
 
 [![Star History Chart](https://api.star-history.com/svg?repos=hiall-fyi/tado_ce&type=Date)](https://star-history.com/#hiall-fyi/tado_ce&Date)
 
----
-
-### Support This Project
-
-[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-Support-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/hiallfyi)
-
-**Made with ❤️ by Joe Yiu ([@hiall-fyi](https://github.com/hiall-fyi))**
-
 </div>
-
----
-
-**Version**: 2.3.1 | **Last Updated**: 2026-02-26 | **Tested On**: Home Assistant 2026.2.3
 
 ---
 

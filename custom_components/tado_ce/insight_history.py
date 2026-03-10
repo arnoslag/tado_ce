@@ -1,16 +1,28 @@
 """Tado CE Insight History Tracker — persistence for insight duration and trending."""
+
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 import json
 import logging
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any
 
-import aiofiles
-import aiofiles.os
+try:
+    from .helpers import parse_iso_datetime
+except ImportError:
+
+    def parse_iso_datetime(iso_str: str) -> datetime:
+        """Parse ISO datetime string, ensuring UTC timezone (fallback)."""
+        dt = datetime.fromisoformat(iso_str)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=UTC)
+        return dt
+
 
 if TYPE_CHECKING:
+    from homeassistant.core import HomeAssistant
+
     from .insights import Insight
 
 _LOGGER = logging.getLogger(__name__)
@@ -18,14 +30,6 @@ _LOGGER = logging.getLogger(__name__)
 STORAGE_VERSION = "1.0"
 # Grace period: if an insight disappears for less than this, treat as same occurrence
 REAPPEARANCE_GRACE_HOURS = 1
-
-
-def _parse_dt(iso_str: str) -> datetime:
-    """Parse ISO datetime string, ensuring UTC timezone."""
-    dt = datetime.fromisoformat(iso_str)
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt
 
 
 class InsightHistoryTracker:
@@ -37,22 +41,24 @@ class InsightHistoryTracker:
     for hub-level insights) and tracks first_seen, last_seen, base_priority,
     and occurrence_count.
 
-    Follows the same storage pattern as ThermalStorage — direct aiofiles
-    read/write, atomic writes via temp file + rename.
+    Follows the same storage pattern as ThermalStorage — sync file I/O
+    via hass.async_add_executor_job, atomic writes via temp file + rename.
     """
 
-    def __init__(self, hass, home_id: str):
+    def __init__(self, hass: HomeAssistant, home_id: str) -> None:
         """Initialize tracker."""
         self._hass = hass
         self._home_id = home_id
-        self._storage_path = Path(hass.config.path(
-            f".storage/tado_ce/insight_history_{home_id}.json"
-        ))
-        self._entries: dict[str, dict] = {}
+        self._storage_path = Path(
+            hass.config.path(
+                f".storage/tado_ce/insight_history_{home_id}.json",
+            ),
+        )
+        self._entries: dict[str, dict[str, Any]] = {}
         self._dirty = False
 
     @property
-    def entries(self) -> dict[str, dict]:
+    def entries(self) -> dict[str, dict[str, Any]]:
         """Return current entries (read-only access for testing)."""
         return self._entries
 
@@ -62,29 +68,35 @@ class InsightHistoryTracker:
         Returns:
             Number of entries loaded.
         """
-        path_exists = await aiofiles.os.path.exists(self._storage_path)
+        path_exists = await self._hass.async_add_executor_job(
+            self._storage_path.exists,
+        )
         if not path_exists:
             _LOGGER.debug("No insight history file found, starting fresh")
             return 0
 
         try:
-            async with aiofiles.open(self._storage_path, "r") as f:
-                raw = await f.read()
+            raw = await self._hass.async_add_executor_job(
+                self._storage_path.read_text,
+            )
             data = json.loads(raw)
             self._entries = data.get("entries", {})
             _LOGGER.debug(
-                "Loaded insight history: %d entries", len(self._entries)
+                "Loaded insight history: %d entries",
+                len(self._entries),
             )
             return len(self._entries)
         except (json.JSONDecodeError, KeyError, TypeError) as e:
             _LOGGER.warning(
-                "Corrupt insight history file, starting fresh: %s", e
+                "Corrupt insight history file, starting fresh: %s",
+                e,
             )
             self._entries = {}
             return 0
         except Exception as e:
             _LOGGER.warning(
-                "Failed to load insight history, starting fresh: %s", e
+                "Failed to load insight history, starting fresh: %s",
+                e,
             )
             self._entries = {}
             return 0
@@ -99,32 +111,39 @@ class InsightHistoryTracker:
             return True
 
         try:
-            await aiofiles.os.makedirs(
-                str(self._storage_path.parent), exist_ok=True
+            await self._hass.async_add_executor_job(
+                lambda: self._storage_path.parent.mkdir(parents=True, exist_ok=True),
             )
 
             data = {
                 "version": STORAGE_VERSION,
-                "saved_at": datetime.now(timezone.utc).isoformat(),
+                "saved_at": datetime.now(UTC).isoformat(),
                 "entries": self._entries,
             }
 
             temp_path = self._storage_path.with_suffix(".tmp")
-            async with aiofiles.open(temp_path, "w") as f:
-                await f.write(json.dumps(data, indent=2))
+            content = json.dumps(data, indent=2)
+            await self._hass.async_add_executor_job(
+                temp_path.write_text,
+                content,
+            )
 
-            await aiofiles.os.replace(str(temp_path), str(self._storage_path))
+            await self._hass.async_add_executor_job(
+                temp_path.replace,
+                self._storage_path,
+            )
 
             self._dirty = False
             _LOGGER.debug(
-                "Saved insight history: %d entries", len(self._entries)
+                "Saved insight history: %d entries",
+                len(self._entries),
             )
             return True
-        except Exception as e:
-            _LOGGER.error("Failed to save insight history: %s", e)
+        except Exception:
+            _LOGGER.exception("Failed to save insight history")
             return False
 
-    def update(self, current_insights: list["Insight"], now: datetime) -> None:
+    def update(self, current_insights: list[Insight], now: datetime) -> None:
         """Update history with current poll cycle's insights.
 
         For each current insight:
@@ -156,8 +175,8 @@ class InsightHistoryTracker:
                     "first_seen": now_iso,
                     "last_seen": now_iso,
                     "base_priority": insight.priority.value
-                        if hasattr(insight.priority, "value")
-                        else int(insight.priority),
+                    if hasattr(insight.priority, "value")
+                    else int(insight.priority),
                     "occurrence_count": 1,
                 }
                 self._dirty = True
@@ -169,7 +188,7 @@ class InsightHistoryTracker:
             if key not in current_keys:
                 last_seen_str = self._entries[key].get("last_seen", "")
                 try:
-                    last_seen = _parse_dt(last_seen_str)
+                    last_seen = parse_iso_datetime(last_seen_str)
                     if last_seen <= grace_cutoff:
                         keys_to_remove.append(key)
                 except (ValueError, TypeError):
@@ -180,8 +199,10 @@ class InsightHistoryTracker:
             self._dirty = True
 
     def get_duration(
-        self, insight_type: str, zone_name: Optional[str] = None
-    ) -> Optional[timedelta]:
+        self,
+        insight_type: str,
+        zone_name: str | None = None,
+    ) -> timedelta | None:
         """Get how long an insight has been active.
 
         Args:
@@ -197,13 +218,13 @@ class InsightHistoryTracker:
             return None
 
         try:
-            first = _parse_dt(entry["first_seen"])
-            last = _parse_dt(entry["last_seen"])
+            first = parse_iso_datetime(entry["first_seen"])
+            last = parse_iso_datetime(entry["last_seen"])
             return last - first
         except (ValueError, KeyError, TypeError):
             return None
 
-    def get_persistent_insights(self, threshold_hours: int = 24) -> list[dict]:
+    def get_persistent_insights(self, threshold_hours: int = 24) -> list[dict[str, Any]]:
         """Return insights active for >= threshold_hours.
 
         Returns:
@@ -214,8 +235,8 @@ class InsightHistoryTracker:
 
         for key, entry in self._entries.items():
             try:
-                first = _parse_dt(entry["first_seen"])
-                last = _parse_dt(entry["last_seen"])
+                first = parse_iso_datetime(entry["first_seen"])
+                last = parse_iso_datetime(entry["last_seen"])
                 duration = last - first
                 if duration >= threshold:
                     parts = key.split(":", 1)
@@ -223,12 +244,14 @@ class InsightHistoryTracker:
                     zone_name = parts[1] if len(parts) > 1 else None
                     if zone_name == "_hub":
                         zone_name = None
-                    result.append({
-                        "insight_type": insight_type,
-                        "zone_name": zone_name,
-                        "duration_hours": round(duration.total_seconds() / 3600, 1),
-                        "base_priority": entry.get("base_priority", 0),
-                    })
+                    result.append(
+                        {
+                            "insight_type": insight_type,
+                            "zone_name": zone_name,
+                            "duration_hours": round(duration.total_seconds() / 3600, 1),
+                            "base_priority": entry.get("base_priority", 0),
+                        },
+                    )
             except (ValueError, KeyError, TypeError):
                 continue
 
@@ -245,12 +268,12 @@ class InsightHistoryTracker:
         Returns:
             Number of entries removed.
         """
-        cutoff = datetime.now(timezone.utc) - timedelta(days=max_age_days)
+        cutoff = datetime.now(UTC) - timedelta(days=max_age_days)
         keys_to_remove = []
 
         for key, entry in self._entries.items():
             try:
-                last_seen = _parse_dt(entry["last_seen"])
+                last_seen = parse_iso_datetime(entry["last_seen"])
                 if last_seen < cutoff:
                     keys_to_remove.append(key)
             except (ValueError, KeyError, TypeError):
@@ -267,6 +290,6 @@ class InsightHistoryTracker:
         return len(keys_to_remove)
 
     @staticmethod
-    def _make_key(insight_type: str, zone_name: Optional[str]) -> str:
+    def _make_key(insight_type: str, zone_name: str | None) -> str:
         """Create storage key from insight_type and zone_name."""
         return f"{insight_type}:{zone_name or '_hub'}"

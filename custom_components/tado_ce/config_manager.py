@@ -1,18 +1,23 @@
-"""Configuration Manager for Tado CE Integration.
+"""Tado CE Configuration Manager — config entry settings access and persistence.
 
 Manages user configuration settings stored in Home Assistant config entry.
 """
+
+from __future__ import annotations
+
 import json
 import logging
+from pathlib import Path
 import shutil
 import tempfile
 import threading
-from pathlib import Path
-from typing import Dict, Optional, Tuple
+from typing import TYPE_CHECKING, Any
 
-from homeassistant.config_entries import ConfigEntry
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
-from .const import CONFIG_FILE
+    from homeassistant.config_entries import ConfigEntry
+    from homeassistant.core import HomeAssistant
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -48,7 +53,7 @@ MIN_INTERVAL_MINUTES = 1
 MAX_INTERVAL_MINUTES = 1440  # 24 hours
 MIN_RETENTION_DAYS = 0  # 0 = forever
 MAX_RETENTION_DAYS = 365
-MIN_TIMER_DURATION = 5  # minutes
+MIN_TIMER_DURATION = 1  # minutes
 MAX_TIMER_DURATION = 1440  # 24 hours
 MIN_SMART_COMFORT_HISTORY_DAYS = 1
 MAX_SMART_COMFORT_HISTORY_DAYS = 30
@@ -57,7 +62,7 @@ MAX_SMART_COMFORT_HISTORY_DAYS = 30
 class ConfigurationManager:
     """Manages configuration settings for Tado CE integration."""
 
-    def __init__(self, config_entry: ConfigEntry, hass=None):
+    def __init__(self, config_entry: ConfigEntry, hass: HomeAssistant = None) -> None:  # type: ignore[assignment]
         """Initialize configuration manager with config entry.
 
         Args:
@@ -65,11 +70,11 @@ class ConfigurationManager:
             hass: Home Assistant instance (optional, for async file operations)
         """
         self._config_entry = config_entry
-        self._options = config_entry.options if config_entry.options else {}
+        self._options: Mapping[str, Any] = config_entry.options or {}
         self._hass = hass
         # Don't sync on init to avoid blocking - will be synced when needed
 
-    def _get_option(self, key: str, default):
+    def _get_option(self, key: str, default: Any) -> Any:
         """Get option value with real-time update support.
 
         Reads directly from config_entry.options to get real-time value
@@ -87,7 +92,7 @@ class ConfigurationManager:
         return self._options.get(key, default)
 
     @staticmethod
-    def validate_hour(hour: int, field_name: str) -> Tuple[bool, Optional[str]]:
+    def validate_hour(hour: int, field_name: str) -> tuple[bool, str | None]:
         """Validate hour value (0-23).
 
         Args:
@@ -106,7 +111,7 @@ class ConfigurationManager:
         return True, None
 
     @staticmethod
-    def validate_interval(interval: Optional[int], field_name: str) -> Tuple[bool, Optional[str]]:
+    def validate_interval(interval: int | None, field_name: str) -> tuple[bool, str | None]:
         """Validate polling interval (1-1440 minutes or None).
 
         Args:
@@ -128,7 +133,7 @@ class ConfigurationManager:
         return True, None
 
     @staticmethod
-    def validate_retention_days(days: int) -> Tuple[bool, Optional[str]]:
+    def validate_retention_days(days: int) -> tuple[bool, str | None]:
         """Validate retention days (0-365).
 
         Args:
@@ -146,7 +151,7 @@ class ConfigurationManager:
         return True, None
 
     @staticmethod
-    def validate_day_night_hours(day_start: int, night_start: int) -> Tuple[bool, Optional[str]]:
+    def validate_day_night_hours(day_start: int, night_start: int) -> tuple[bool, str | None]:
         """Validate day/night hour combination.
 
         Args:
@@ -171,7 +176,7 @@ class ConfigurationManager:
         # Both hours are valid (same value = uniform mode, which is allowed)
         return True, None
 
-    def validate_config_updates(self, updates: Dict) -> Tuple[bool, Optional[str]]:
+    def validate_config_updates(self, updates: dict[str, Any]) -> tuple[bool, str | None]:
         """Validate configuration updates before applying.
 
         Args:
@@ -180,50 +185,49 @@ class ConfigurationManager:
         Returns:
             Tuple of (is_valid, error_message)
         """
-        # Get current values for validation
         current_day_start = self.get_day_start_hour()
         current_night_start = self.get_night_start_hour()
 
         # Check day_start_hour
-        if 'day_start_hour' in updates:
-            valid, error = self.validate_hour(updates['day_start_hour'], 'day_start_hour')
+        if "day_start_hour" in updates:
+            valid, error = self.validate_hour(updates["day_start_hour"], "day_start_hour")
             if not valid:
                 return False, error
-            current_day_start = updates['day_start_hour']
+            current_day_start = updates["day_start_hour"]
 
         # Check night_start_hour
-        if 'night_start_hour' in updates:
-            valid, error = self.validate_hour(updates['night_start_hour'], 'night_start_hour')
+        if "night_start_hour" in updates:
+            valid, error = self.validate_hour(updates["night_start_hour"], "night_start_hour")
             if not valid:
                 return False, error
-            current_night_start = updates['night_start_hour']
+            current_night_start = updates["night_start_hour"]
 
         # Validate day/night combination
-        if 'day_start_hour' in updates or 'night_start_hour' in updates:
+        if "day_start_hour" in updates or "night_start_hour" in updates:
             valid, error = self.validate_day_night_hours(current_day_start, current_night_start)
             if not valid:
                 return False, error
 
         # Check custom_day_interval
-        if 'custom_day_interval' in updates:
-            valid, error = self.validate_interval(updates['custom_day_interval'], 'custom_day_interval')
+        if "custom_day_interval" in updates:
+            valid, error = self.validate_interval(updates["custom_day_interval"], "custom_day_interval")
             if not valid:
                 return False, error
 
         # Check custom_night_interval
-        if 'custom_night_interval' in updates:
-            valid, error = self.validate_interval(updates['custom_night_interval'], 'custom_night_interval')
+        if "custom_night_interval" in updates:
+            valid, error = self.validate_interval(updates["custom_night_interval"], "custom_night_interval")
             if not valid:
                 return False, error
 
         # Check api_history_retention_days
-        if 'api_history_retention_days' in updates:
-            valid, error = self.validate_retention_days(updates['api_history_retention_days'])
+        if "api_history_retention_days" in updates:
+            valid, error = self.validate_retention_days(updates["api_history_retention_days"])
             if not valid:
                 return False, error
 
         # Check boolean fields
-        for field in ['weather_enabled', 'mobile_devices_enabled', 'test_mode_enabled']:
+        for field in ["weather_enabled", "mobile_devices_enabled", "test_mode_enabled"]:
             if field in updates and not isinstance(updates[field], bool):
                 return False, f"{field} must be a boolean"
 
@@ -235,7 +239,7 @@ class ConfigurationManager:
         Returns:
             True if weather sensors should be created, False otherwise
         """
-        return self._get_option('weather_enabled', DEFAULT_WEATHER_ENABLED)
+        return self._get_option("weather_enabled", DEFAULT_WEATHER_ENABLED)  # type: ignore[no-any-return]
 
     def get_mobile_devices_enabled(self) -> bool:
         """Check if mobile device tracking is enabled.
@@ -243,7 +247,7 @@ class ConfigurationManager:
         Returns:
             True if mobile device tracking should be active, False otherwise
         """
-        return self._get_option('mobile_devices_enabled', DEFAULT_MOBILE_DEVICES_ENABLED)
+        return self._get_option("mobile_devices_enabled", DEFAULT_MOBILE_DEVICES_ENABLED)  # type: ignore[no-any-return]
 
     def get_mobile_devices_frequent_sync(self) -> bool:
         """Check if mobile devices should be synced every quick sync.
@@ -251,7 +255,7 @@ class ConfigurationManager:
         Returns:
             True if mobile devices should sync frequently, False for full sync only
         """
-        return self._get_option('mobile_devices_frequent_sync', DEFAULT_MOBILE_DEVICES_FREQUENT_SYNC)
+        return self._get_option("mobile_devices_frequent_sync", DEFAULT_MOBILE_DEVICES_FREQUENT_SYNC)  # type: ignore[no-any-return]
 
     def get_offset_enabled(self) -> bool:
         """Check if temperature offset attribute is enabled on climate entities.
@@ -259,7 +263,7 @@ class ConfigurationManager:
         Returns:
             True if offset_celsius attribute should be added to climate entities
         """
-        return self._get_option('offset_enabled', DEFAULT_OFFSET_ENABLED)
+        return self._get_option("offset_enabled", DEFAULT_OFFSET_ENABLED)  # type: ignore[no-any-return]
 
     def get_home_state_sync_enabled(self) -> bool:
         """Check if home state sync is enabled (for away mode switch and climate presets).
@@ -267,7 +271,7 @@ class ConfigurationManager:
         Returns:
             True if home state should be synced, False to save API calls
         """
-        return self._get_option('home_state_sync_enabled', False)
+        return self._get_option("home_state_sync_enabled", False)  # type: ignore[no-any-return]
 
     def get_test_mode_enabled(self) -> bool:
         """Check if Test Mode is enabled (enforce 100 API limit).
@@ -277,7 +281,7 @@ class ConfigurationManager:
         Returns:
             True if Test Mode is active, False otherwise
         """
-        return self._get_option('test_mode_enabled', DEFAULT_TEST_MODE_ENABLED)
+        return self._get_option("test_mode_enabled", DEFAULT_TEST_MODE_ENABLED)  # type: ignore[no-any-return]
 
     def get_quota_reserve_enabled(self) -> bool:
         """Check if Quota Reserve Protection is enabled.
@@ -289,7 +293,7 @@ class ConfigurationManager:
         Returns:
             True if Quota Reserve Protection is active (default), False otherwise
         """
-        return self._get_option('quota_reserve_enabled', DEFAULT_QUOTA_RESERVE_ENABLED)
+        return self._get_option("quota_reserve_enabled", DEFAULT_QUOTA_RESERVE_ENABLED)  # type: ignore[no-any-return]
 
     def get_day_start_hour(self) -> int:
         """Get configured day start hour (default 7am).
@@ -297,7 +301,7 @@ class ConfigurationManager:
         Returns:
             Hour (0-23) when day period starts
         """
-        hour = self._get_option('day_start_hour', DEFAULT_DAY_START_HOUR)
+        hour = self._get_option("day_start_hour", DEFAULT_DAY_START_HOUR)
         # Convert float to int (HA options may return float)
         if isinstance(hour, float):
             hour = int(hour)
@@ -313,7 +317,7 @@ class ConfigurationManager:
         Returns:
             Hour (0-23) when night period starts
         """
-        hour = self._get_option('night_start_hour', DEFAULT_NIGHT_START_HOUR)
+        hour = self._get_option("night_start_hour", DEFAULT_NIGHT_START_HOUR)
         # Convert float to int (HA options may return float)
         if isinstance(hour, float):
             hour = int(hour)
@@ -323,13 +327,13 @@ class ConfigurationManager:
             return DEFAULT_NIGHT_START_HOUR
         return hour
 
-    def get_custom_day_interval(self) -> Optional[int]:
+    def get_custom_day_interval(self) -> int | None:
         """Get custom day polling interval in minutes.
 
         Returns:
             Polling interval in minutes (1-1440), or None if not configured
         """
-        interval = self._get_option('custom_day_interval', None)
+        interval = self._get_option("custom_day_interval", None)
         if interval is None:
             return None
 
@@ -352,13 +356,13 @@ class ConfigurationManager:
             return None
         return interval
 
-    def get_custom_night_interval(self) -> Optional[int]:
+    def get_custom_night_interval(self) -> int | None:
         """Get custom night polling interval in minutes.
 
         Returns:
             Polling interval in minutes (1-1440), or None if not configured
         """
-        interval = self._get_option('custom_night_interval', None)
+        interval = self._get_option("custom_night_interval", None)
         if interval is None:
             return None
 
@@ -387,7 +391,7 @@ class ConfigurationManager:
         Returns:
             Number of days to retain history (0 = keep forever, default 14)
         """
-        days = self._get_option('api_history_retention_days', DEFAULT_API_HISTORY_RETENTION_DAYS)
+        days = self._get_option("api_history_retention_days", DEFAULT_API_HISTORY_RETENTION_DAYS)
         # Convert float to int (HA options may return float)
         if isinstance(days, float):
             days = int(days)
@@ -395,7 +399,8 @@ class ConfigurationManager:
         if not isinstance(days, int) or days < 0 or days > 365:
             _LOGGER.warning(
                 "Invalid api_history_retention_days: %s, using default %s",
-                days, DEFAULT_API_HISTORY_RETENTION_DAYS
+                days,
+                DEFAULT_API_HISTORY_RETENTION_DAYS,
             )
             return DEFAULT_API_HISTORY_RETENTION_DAYS
         return days
@@ -406,7 +411,7 @@ class ConfigurationManager:
         Returns:
             Timer duration in minutes (5-1440, default 60)
         """
-        duration = self._get_option('hot_water_timer_duration', DEFAULT_HOT_WATER_TIMER_DURATION)
+        duration = self._get_option("hot_water_timer_duration", DEFAULT_HOT_WATER_TIMER_DURATION)
         # Convert float to int (HA options may return float)
         if isinstance(duration, float):
             duration = int(duration)
@@ -414,7 +419,8 @@ class ConfigurationManager:
         if not isinstance(duration, int) or duration < MIN_TIMER_DURATION or duration > MAX_TIMER_DURATION:
             _LOGGER.warning(
                 "Invalid hot_water_timer_duration: %s, using default %s",
-                duration, DEFAULT_HOT_WATER_TIMER_DURATION
+                duration,
+                DEFAULT_HOT_WATER_TIMER_DURATION,
             )
             return DEFAULT_HOT_WATER_TIMER_DURATION
         return duration
@@ -428,7 +434,7 @@ class ConfigurationManager:
         Returns:
             Debounce delay in seconds (1-60, default 15)
         """
-        delay = self._get_option('refresh_debounce_seconds', DEFAULT_REFRESH_DEBOUNCE_SECONDS)
+        delay = self._get_option("refresh_debounce_seconds", DEFAULT_REFRESH_DEBOUNCE_SECONDS)
 
         # Handle both int (from NumberSelector), float, and string (legacy) input
         if isinstance(delay, float):
@@ -441,7 +447,8 @@ class ConfigurationManager:
             except ValueError:
                 _LOGGER.warning(
                     "Invalid refresh_debounce_seconds: %s, using default %s",
-                    delay, DEFAULT_REFRESH_DEBOUNCE_SECONDS
+                    delay,
+                    DEFAULT_REFRESH_DEBOUNCE_SECONDS,
                 )
                 return DEFAULT_REFRESH_DEBOUNCE_SECONDS
 
@@ -449,7 +456,8 @@ class ConfigurationManager:
         if not isinstance(delay, int) or delay < 1 or delay > 60:
             _LOGGER.warning(
                 "Invalid refresh_debounce_seconds: %s, using default %s",
-                delay, DEFAULT_REFRESH_DEBOUNCE_SECONDS
+                delay,
+                DEFAULT_REFRESH_DEBOUNCE_SECONDS,
             )
             return DEFAULT_REFRESH_DEBOUNCE_SECONDS
         return delay
@@ -462,7 +470,7 @@ class ConfigurationManager:
         Returns:
             True if Schedule Calendar should be created, False otherwise
         """
-        return self._get_option('schedule_calendar_enabled', DEFAULT_SCHEDULE_CALENDAR_ENABLED)
+        return self._get_option("schedule_calendar_enabled", DEFAULT_SCHEDULE_CALENDAR_ENABLED)  # type: ignore[no-any-return]
 
     def get_smart_comfort_enabled(self) -> bool:
         """Check if Smart Comfort analytics is enabled.
@@ -473,7 +481,7 @@ class ConfigurationManager:
         Returns:
             True if Smart Comfort sensors should be created, False otherwise
         """
-        return self._get_option('smart_comfort_enabled', DEFAULT_SMART_COMFORT_ENABLED)
+        return self._get_option("smart_comfort_enabled", DEFAULT_SMART_COMFORT_ENABLED)  # type: ignore[no-any-return]
 
     def get_outdoor_temp_entity(self) -> str:
         """Get the outdoor temperature entity for weather compensation.
@@ -484,7 +492,7 @@ class ConfigurationManager:
         Returns:
             Entity ID string, or empty string if not configured
         """
-        return self._get_option('outdoor_temp_entity', DEFAULT_OUTDOOR_TEMP_ENTITY)
+        return self._get_option("outdoor_temp_entity", DEFAULT_OUTDOOR_TEMP_ENTITY)  # type: ignore[no-any-return]
 
     def get_smart_comfort_mode(self) -> str:
         """Get the Smart Comfort mode preset.
@@ -498,8 +506,10 @@ class ConfigurationManager:
             Preset name: 'none', 'light', 'moderate', or 'aggressive'
         """
         # Check new key first, fallback to legacy weather_compensation for backward compatibility
-        return self._get_option('smart_comfort_mode',
-                                 self._get_option('weather_compensation', DEFAULT_WEATHER_COMPENSATION))
+        return self._get_option(  # type: ignore[no-any-return]
+            "smart_comfort_mode",
+            self._get_option("weather_compensation", DEFAULT_WEATHER_COMPENSATION),
+        )
 
     def get_weather_compensation(self) -> str:
         """Get the weather compensation preset (legacy, use get_smart_comfort_mode instead).
@@ -520,7 +530,7 @@ class ConfigurationManager:
         Returns:
             True to use feels-like temperature, False for actual temperature
         """
-        return self._get_option('use_feels_like', DEFAULT_USE_FEELS_LIKE)
+        return self._get_option("use_feels_like", DEFAULT_USE_FEELS_LIKE)  # type: ignore[no-any-return]
 
     def get_smart_comfort_history_days(self) -> int:
         """Get Smart Comfort temperature history retention in days.
@@ -531,7 +541,7 @@ class ConfigurationManager:
         Returns:
             Number of days (1-30, default 7)
         """
-        days = self._get_option('smart_comfort_history_days', DEFAULT_SMART_COMFORT_HISTORY_DAYS)
+        days = self._get_option("smart_comfort_history_days", DEFAULT_SMART_COMFORT_HISTORY_DAYS)
         if isinstance(days, float):
             days = int(days)
         if isinstance(days, int) and MIN_SMART_COMFORT_HISTORY_DAYS <= days <= MAX_SMART_COMFORT_HISTORY_DAYS:
@@ -547,18 +557,20 @@ class ConfigurationManager:
         Returns:
             Window type: 'single_pane', 'double_pane', 'triple_pane', or 'passive_house'
         """
-        window_type = self._get_option('mold_risk_window_type', DEFAULT_MOLD_RISK_WINDOW_TYPE)
+        window_type = self._get_option("mold_risk_window_type", DEFAULT_MOLD_RISK_WINDOW_TYPE)
 
         # Validate against known window types
         from .const import WINDOW_U_VALUES
+
         if window_type not in WINDOW_U_VALUES:
             _LOGGER.warning(
                 "Invalid mold_risk_window_type: %s, using default %s",
-                window_type, DEFAULT_MOLD_RISK_WINDOW_TYPE
+                window_type,
+                DEFAULT_MOLD_RISK_WINDOW_TYPE,
             )
             return DEFAULT_MOLD_RISK_WINDOW_TYPE
 
-        return window_type
+        return window_type  # type: ignore[no-any-return]
 
     def get_ufh_buffer_minutes(self) -> int:
         """Get UFH (Underfloor Heating) buffer minutes.
@@ -568,7 +580,7 @@ class ConfigurationManager:
         Returns:
             Buffer minutes (0-120, default 0 = disabled)
         """
-        minutes = self._get_option('ufh_buffer_minutes', 0)
+        minutes = self._get_option("ufh_buffer_minutes", 0)
         if isinstance(minutes, float):
             minutes = int(minutes)
         if isinstance(minutes, int) and 0 <= minutes <= 120:
@@ -583,7 +595,7 @@ class ConfigurationManager:
         Returns:
             List of zone ID strings, empty list if none configured
         """
-        zones = self._get_option('ufh_zones', [])
+        zones = self._get_option("ufh_zones", [])
         if isinstance(zones, list):
             return [str(z) for z in zones]
         return []
@@ -597,7 +609,7 @@ class ConfigurationManager:
         Returns:
             True if Adaptive Preheat is enabled, False otherwise
         """
-        return self._get_option('adaptive_preheat_enabled', False)
+        return self._get_option("adaptive_preheat_enabled", False)  # type: ignore[no-any-return]
 
     def get_adaptive_preheat_zones(self) -> list[str]:
         """Get list of zone IDs enabled for Adaptive Preheat.
@@ -608,7 +620,7 @@ class ConfigurationManager:
         Returns:
             List of zone ID strings, empty list = all zones
         """
-        zones = self._get_option('adaptive_preheat_zones', [])
+        zones = self._get_option("adaptive_preheat_zones", [])
         if isinstance(zones, list):
             return [str(z) for z in zones]
         return []
@@ -622,7 +634,7 @@ class ConfigurationManager:
         Returns:
             Minimum cycles (1-10, default 3)
         """
-        cycles = self._get_option('heating_cycle_min_cycles', 3)
+        cycles = self._get_option("heating_cycle_min_cycles", 3)
         if isinstance(cycles, float):
             cycles = int(cycles)
         if isinstance(cycles, int) and 1 <= cycles <= 10:
@@ -637,7 +649,7 @@ class ConfigurationManager:
         Returns:
             Number of days (7-90, default 30)
         """
-        days = self._get_option('heating_cycle_history_days', 30)
+        days = self._get_option("heating_cycle_history_days", 30)
         if isinstance(days, float):
             days = int(days)
         if isinstance(days, int) and 7 <= days <= 90:
@@ -653,14 +665,10 @@ class ConfigurationManager:
         Returns:
             Threshold in °C (0.05-0.5, default 0.1)
         """
-        threshold = self._get_option('heating_cycle_inertia_threshold', 0.1)
+        threshold = self._get_option("heating_cycle_inertia_threshold", 0.1)
         if isinstance(threshold, (int, float)) and 0.05 <= threshold <= 0.5:
             return float(threshold)
         return 0.1
-
-    # =========================================================================
-    # Zone Features Toggles
-    # =========================================================================
 
     def get_zone_diagnostics_enabled(self) -> bool:
         """Check if Zone Diagnostics entities are enabled.
@@ -672,7 +680,7 @@ class ConfigurationManager:
         Returns:
             True if Zone Diagnostics entities should be created
         """
-        return self._get_option('zone_diagnostics_enabled', True)
+        return self._get_option("zone_diagnostics_enabled", True)  # type: ignore[no-any-return]
 
     def get_device_controls_enabled(self) -> bool:
         """Check if Device Controls entities are enabled.
@@ -684,7 +692,7 @@ class ConfigurationManager:
         Returns:
             True if Device Controls entities should be created
         """
-        return self._get_option('device_controls_enabled', True)
+        return self._get_option("device_controls_enabled", True)  # type: ignore[no-any-return]
 
     def get_boost_buttons_enabled(self) -> bool:
         """Check if Boost Buttons are enabled.
@@ -696,7 +704,7 @@ class ConfigurationManager:
         Returns:
             True if Boost Buttons should be created
         """
-        return self._get_option('boost_buttons_enabled', True)
+        return self._get_option("boost_buttons_enabled", True)  # type: ignore[no-any-return]
 
     def get_environment_sensors_enabled(self) -> bool:
         """Check if Environment Sensors are enabled.
@@ -708,7 +716,7 @@ class ConfigurationManager:
         Returns:
             True if Environment Sensors should be created
         """
-        return self._get_option('environment_sensors_enabled', True)
+        return self._get_option("environment_sensors_enabled", True)  # type: ignore[no-any-return]
 
     def get_thermal_analytics_enabled(self) -> bool:
         """Check if Thermal Analytics sensors are enabled.
@@ -720,7 +728,7 @@ class ConfigurationManager:
         Returns:
             True if Thermal Analytics sensors should be created
         """
-        return self._get_option('thermal_analytics_enabled', True)
+        return self._get_option("thermal_analytics_enabled", True)  # type: ignore[no-any-return]
 
     def get_thermal_analytics_zones(self) -> list[str]:
         """Get list of zone IDs enabled for Thermal Analytics.
@@ -732,7 +740,7 @@ class ConfigurationManager:
         Returns:
             List of zone ID strings. Empty list = all zones with heatingPower.
         """
-        zones = self._get_option('thermal_analytics_zones', [])
+        zones = self._get_option("thermal_analytics_zones", [])
         if isinstance(zones, list):
             return [str(z) for z in zones]
         return []
@@ -748,7 +756,7 @@ class ConfigurationManager:
         Returns:
             True if Zone Configuration entities should be created
         """
-        return self._get_option('zone_configuration_enabled', True)
+        return self._get_option("zone_configuration_enabled", True)  # type: ignore[no-any-return]
 
     def sync_all_to_config_json(self) -> None:
         """Sync all configuration values to config.json for tado_api.py to read.
@@ -767,99 +775,90 @@ class ConfigurationManager:
         # CRITICAL: Lock entire operation to prevent race conditions
         with _config_write_lock:
             config_data = {
-                'weather_enabled': self.get_weather_enabled(),
-                'mobile_devices_enabled': self.get_mobile_devices_enabled(),
-                'mobile_devices_frequent_sync': self.get_mobile_devices_frequent_sync(),
-                'offset_enabled': self.get_offset_enabled(),
-                'test_mode_enabled': self.get_test_mode_enabled(),
-                'day_start_hour': self.get_day_start_hour(),
-                'night_start_hour': self.get_night_start_hour(),
-                'custom_day_interval': self.get_custom_day_interval(),
-                'custom_night_interval': self.get_custom_night_interval(),
-                'api_history_retention_days': self.get_api_history_retention_days(),
-                'hot_water_timer_duration': self.get_hot_water_timer_duration(),
+                "weather_enabled": self.get_weather_enabled(),
+                "mobile_devices_enabled": self.get_mobile_devices_enabled(),
+                "mobile_devices_frequent_sync": self.get_mobile_devices_frequent_sync(),
+                "offset_enabled": self.get_offset_enabled(),
+                "test_mode_enabled": self.get_test_mode_enabled(),
+                "day_start_hour": self.get_day_start_hour(),
+                "night_start_hour": self.get_night_start_hour(),
+                "custom_day_interval": self.get_custom_day_interval(),
+                "custom_night_interval": self.get_custom_night_interval(),
+                "api_history_retention_days": self.get_api_history_retention_days(),
+                "hot_water_timer_duration": self.get_hot_water_timer_duration(),
             }
 
-            # Get home_id from config_entry for per-home file path
             home_id = None
-            if self._config_entry and hasattr(self._config_entry, 'data'):
+            if self._config_entry and hasattr(self._config_entry, "data"):
                 home_id = self._config_entry.data.get("home_id")
 
-            # Determine config file path(s)
-            # Write to per-home file if home_id available,
-            # AND always write to global CONFIG_FILE for backward compat
+            # Determine config file path — per-home only
             from .const import get_data_file
-            config_paths = [CONFIG_FILE]
+
             if home_id:
-                per_home_path = get_data_file("config", str(home_id))
-                if per_home_path != CONFIG_FILE:
-                    config_paths.insert(0, per_home_path)
+                config_paths = [get_data_file("config", str(home_id))]
+            else:
+                # No home_id — write to DATA_DIR/config.json as last resort
+                from .const import DATA_DIR
+
+                config_paths = [DATA_DIR / "config.json"]
 
             temp_path = None
 
             try:
-                # Load existing config from primary path (per-home if available)
+                # Load existing config from primary path
                 primary_path = config_paths[0]
                 if primary_path.exists():
                     try:
-                        with open(primary_path, 'r') as f:
+                        with primary_path.open() as f:
                             existing_config = json.load(f)
 
                         # Validate structure
                         if not isinstance(existing_config, dict):
                             raise ValueError("Config must be a dictionary")
 
-                    except (json.JSONDecodeError, ValueError) as e:
-                        _LOGGER.error("Corrupt config detected: %s. Creating backup and resetting.", e)
+                    except (json.JSONDecodeError, ValueError):
+                        _LOGGER.exception("Corrupt config detected. Creating backup and resetting.")
                         # Backup corrupt file
-                        backup_path = primary_path.with_suffix('.json.corrupt')
+                        backup_path = primary_path.with_suffix(".json.corrupt")
                         shutil.copy(primary_path, backup_path)
                         _LOGGER.info("Corrupt config backed up to %s", backup_path)
-                        existing_config = {}
-                elif CONFIG_FILE.exists() and primary_path != CONFIG_FILE:
-                    # Per-home file doesn't exist yet, seed from global
-                    try:
-                        with open(CONFIG_FILE, 'r') as f:
-                            existing_config = json.load(f)
-                        if not isinstance(existing_config, dict):
-                            existing_config = {}
-                    except (json.JSONDecodeError, ValueError):
                         existing_config = {}
                 else:
                     existing_config = {}
 
                 # CRITICAL: Preserve refresh_token and home_id
                 # These are managed by api_client.py and tado_api.py, NOT by config_manager
-                preserved_refresh_token = existing_config.get('refresh_token')
-                preserved_home_id = existing_config.get('home_id')
+                preserved_refresh_token = existing_config.get("refresh_token")
+                preserved_home_id = existing_config.get("home_id")
 
                 # Merge with existing config
                 existing_config.update(config_data)
 
                 # CRITICAL: Restore preserved values (never overwrite with None)
                 if preserved_refresh_token is not None:
-                    existing_config['refresh_token'] = preserved_refresh_token
-                elif 'refresh_token' not in existing_config:
+                    existing_config["refresh_token"] = preserved_refresh_token
+                elif "refresh_token" not in existing_config:
                     # Only set to None if it doesn't exist at all
-                    existing_config['refresh_token'] = None
+                    existing_config["refresh_token"] = None
 
                 if preserved_home_id is not None:
-                    existing_config['home_id'] = preserved_home_id
+                    existing_config["home_id"] = preserved_home_id
                 elif home_id:
-                    existing_config['home_id'] = str(home_id)
-                elif 'home_id' not in existing_config:
+                    existing_config["home_id"] = str(home_id)
+                elif "home_id" not in existing_config:
                     # Only set to None if it doesn't exist at all
-                    existing_config['home_id'] = None
+                    existing_config["home_id"] = None
 
                 # Write to all config paths (per-home + global)
                 for config_path in config_paths:
                     config_path.parent.mkdir(parents=True, exist_ok=True)
 
                     with tempfile.NamedTemporaryFile(
-                        mode='w',
+                        mode="w",
                         dir=config_path.parent,
                         delete=False,
-                        suffix='.tmp'
+                        suffix=".tmp",
                     ) as tmp_file:
                         json.dump(existing_config, tmp_file, indent=2)
                         tmp_file.flush()
@@ -867,13 +866,13 @@ class ConfigurationManager:
 
                     # Verify temp file
                     if not Path(temp_path).exists():
-                        raise IOError(f"Temp file was not created: {temp_path}")
+                        raise OSError(f"Temp file was not created: {temp_path}")
 
                     temp_size = Path(temp_path).stat().st_size
                     if temp_size == 0:
-                        raise IOError("Temp file is empty")
+                        raise OSError("Temp file is empty")
                     if temp_size > 1024 * 1024:  # 1MB limit
-                        raise IOError(f"Temp file too large: {temp_size} bytes")
+                        raise OSError(f"Temp file too large: {temp_size} bytes")
 
                     # Atomic rename
                     shutil.move(temp_path, config_path)
@@ -881,18 +880,18 @@ class ConfigurationManager:
 
                 _LOGGER.debug("Configuration synced to config.json (atomic write verified)")
 
-            except Exception as e:
-                _LOGGER.error("Failed to sync configuration to config.json: %s", e)
+            except Exception:
+                _LOGGER.exception("Failed to sync configuration to config.json")
 
-                # CRITICAL FIX: Clean up temp file if it exists
+                # Clean up temp file if it exists
                 if temp_path and Path(temp_path).exists():
                     try:
                         Path(temp_path).unlink()
                         _LOGGER.debug("Cleaned up temp file: %s", temp_path)
-                    except OSError as cleanup_error:
-                        _LOGGER.error("Failed to cleanup temp file %s: %s", temp_path, cleanup_error)
+                    except OSError:
+                        _LOGGER.exception("Failed to cleanup temp file %s", temp_path)
 
-                # CRITICAL FIX: Re-raise to notify caller
+                # Re-raise to notify caller
                 raise
 
     async def async_sync_all_to_config_json(self) -> None:
@@ -903,93 +902,22 @@ class ConfigurationManager:
             # Fallback to sync if no hass instance
             self.sync_all_to_config_json()
 
-    async def async_update_config(self, updates: dict) -> Tuple[bool, Optional[str]]:
-        """Update configuration with new values (async).
-
-        Args:
-            updates: Dictionary of configuration keys and values to update
-
-        Returns:
-            Tuple of (success, error_message)
-        """
-        # Validate updates first
-        valid, error = self.validate_config_updates(updates)
-        if not valid:
-            _LOGGER.error("Configuration validation failed: %s", error)
-            return False, error
-
-        try:
-            # Merge updates with existing options
-            new_options = {**self._options, **updates}
-
-            # Update the config entry (this is async)
-            self._hass.config_entries.async_update_entry(
-                self._config_entry,
-                options=new_options
-            )
-            self._options = new_options
-
-            # Sync to config.json (async)
-            await self.async_sync_all_to_config_json()
-
-            _LOGGER.info("Configuration updated: %s", list(updates.keys()))
-            return True, None
-        except Exception as e:
-            error_msg = f"Failed to update configuration: {e}"
-            _LOGGER.error(error_msg)
-            return False, error_msg
-
-    def update_config(self, updates: dict) -> Tuple[bool, Optional[str]]:
-        """Update configuration with new values (sync - deprecated).
-
-        DEPRECATED: Use async_update_config() instead.
-        This method is kept for backward compatibility but should not be used.
-
-        Args:
-            updates: Dictionary of configuration keys and values to update
-
-        Returns:
-            Tuple of (success, error_message)
-        """
-        _LOGGER.warning("update_config() is deprecated, use async_update_config() instead")
-
-        # Validate updates first
-        valid, error = self.validate_config_updates(updates)
-        if not valid:
-            _LOGGER.error("Configuration validation failed: %s", error)
-            return False, error
-
-        try:
-            # Merge updates with existing options
-            new_options = {**self._options, **updates}
-            self._options = new_options
-
-            # Sync to config.json only (can't update config entry synchronously)
-            self.sync_all_to_config_json()
-
-            _LOGGER.warning("Configuration synced to file only, config entry not updated (use async_update_config)")
-            return True, None
-        except Exception as e:
-            error_msg = f"Failed to update configuration: {e}"
-            _LOGGER.error(error_msg)
-            return False, error_msg
-
-    def get_all_config(self) -> dict:
+    def get_all_config(self) -> dict[str, Any]:
         """Get all configuration values.
 
         Returns:
             Dictionary containing all configuration settings
         """
         return {
-            'weather_enabled': self.get_weather_enabled(),
-            'mobile_devices_enabled': self.get_mobile_devices_enabled(),
-            'mobile_devices_frequent_sync': self.get_mobile_devices_frequent_sync(),
-            'offset_enabled': self.get_offset_enabled(),
-            'test_mode_enabled': self.get_test_mode_enabled(),
-            'day_start_hour': self.get_day_start_hour(),
-            'night_start_hour': self.get_night_start_hour(),
-            'custom_day_interval': self.get_custom_day_interval(),
-            'custom_night_interval': self.get_custom_night_interval(),
-            'api_history_retention_days': self.get_api_history_retention_days(),
-            'hot_water_timer_duration': self.get_hot_water_timer_duration(),
+            "weather_enabled": self.get_weather_enabled(),
+            "mobile_devices_enabled": self.get_mobile_devices_enabled(),
+            "mobile_devices_frequent_sync": self.get_mobile_devices_frequent_sync(),
+            "offset_enabled": self.get_offset_enabled(),
+            "test_mode_enabled": self.get_test_mode_enabled(),
+            "day_start_hour": self.get_day_start_hour(),
+            "night_start_hour": self.get_night_start_hour(),
+            "custom_day_interval": self.get_custom_day_interval(),
+            "custom_night_interval": self.get_custom_night_interval(),
+            "api_history_retention_days": self.get_api_history_retention_days(),
+            "hot_water_timer_duration": self.get_hot_water_timer_duration(),
         }

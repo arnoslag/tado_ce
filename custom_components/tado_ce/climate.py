@@ -1,54 +1,71 @@
-"""Tado CE Climate Platform — Supports Heating and AC zones.
+"""Tado CE Climate Platform — heating and AC zones.
 
-Modules:
-- climate.py: async_setup_entry (this file)
-- climate_maps.py: HVAC mode maps, fan maps, get_zone_capabilities, build_fan_mapping
+Sub-modules:
+- climate_maps.py: HVAC mode maps, fan maps
 - climate_heating.py: TadoClimate (heating zones)
 - climate_ac.py: TadoACClimate (AC zones)
 """
-import logging
 
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+from __future__ import annotations
+
+import logging
+from typing import TYPE_CHECKING, Any
 
 from .climate_ac import TadoACClimate
 from .climate_heating import TadoClimate
-from .climate_maps import get_zone_capabilities
+
+if TYPE_CHECKING:
+    from homeassistant.core import HomeAssistant
+    from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+
+    from .coordinator import TadoConfigEntry
 
 _LOGGER = logging.getLogger(__name__)
+
+PARALLEL_UPDATES = 1
 
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: TadoConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
-):
+) -> None:
     """Set up Tado CE climate from a config entry."""
     coordinator = entry.runtime_data
-    data_loader = coordinator.data_loader
     home_id = coordinator.home_id
-    zone_names = await hass.async_add_executor_job(data_loader.get_zone_names)
-    zone_types = await hass.async_add_executor_job(data_loader.get_zone_types)
-    zone_caps = await hass.async_add_executor_job(get_zone_capabilities, data_loader)
+    # Build zone data from coordinator
+    zones_info = coordinator.data.get("zones_info") or []
+    zone_names = {str(z.get("id")): z.get("name", f"Zone {z.get('id')}") for z in zones_info}
+    zone_types = {str(z.get("id")): z.get("type", "HEATING") for z in zones_info}
+
+    # Build zone capabilities (AC zones need detailed caps)
+    ac_caps = coordinator.data.get("ac_capabilities") or {}
+    zone_caps: dict[str, dict[str, Any]] = {}
+    for z in zones_info:
+        zid = str(z.get("id"))
+        ztype = z.get("type")
+        if ztype == "AIR_CONDITIONING" and zid in ac_caps:
+            zone_caps[zid] = {"type": ztype, "ac_capabilities": ac_caps[zid]}
+        else:
+            zone_caps[zid] = {"type": ztype, "capabilities": z.get("capabilities") or {}}
 
     climates = []
     try:
-        zones_data = await hass.async_add_executor_job(data_loader.load_zones_file)
+        zones_data = coordinator.data.get("zones") or {}
         if zones_data:
             # Use 'or {}' pattern for null safety
-            zone_states = zones_data.get('zoneStates') or {}
-            for zone_id, zone_data in zone_states.items():
-                zone_type = zone_types.get(zone_id, 'HEATING')
+            zone_states = zones_data.get("zoneStates") or {}
+            for zone_id in zone_states:
+                zone_type = zone_types.get(zone_id, "HEATING")
                 zone_name = zone_names.get(zone_id, f"Zone {zone_id}")
                 caps = zone_caps.get(zone_id, {})
 
-                if zone_type == 'HEATING':
+                if zone_type == "HEATING":
                     climates.append(TadoClimate(coordinator, zone_id, zone_name, home_id))
-                elif zone_type == 'AIR_CONDITIONING':
-                    climates.append(TadoACClimate(coordinator, zone_id, zone_name, caps, home_id))
-    except Exception as e:
-        _LOGGER.error("Failed to load zones for climate: %s", e)
+                elif zone_type == "AIR_CONDITIONING":
+                    climates.append(TadoACClimate(coordinator, zone_id, zone_name, caps, home_id))  # type: ignore[arg-type]
+    except (KeyError, TypeError, AttributeError):
+        _LOGGER.exception("Failed to load zones for climate")
 
     async_add_entities(climates, True)
     _LOGGER.info("Tado CE climates loaded: %s", len(climates))

@@ -1,16 +1,13 @@
-"""Tado CE Select Platform (Presence Mode).
+"""Tado CE Select Platform — Presence Mode, Overlay Mode, Timer Duration."""
 
-Select entity for presence mode control with "Auto" option to resume geofencing.
-"""
+from __future__ import annotations
+
 import logging
 import time
-from datetime import timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.select import SelectEntity
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .action_helpers import (
@@ -19,7 +16,6 @@ from .action_helpers import (
 from .action_helpers import (
     is_within_optimistic_window as _is_within_optimistic_window,
 )
-from .optimistic import clear_optimistic_state
 from .const import (
     OVERLAY_MODE_DEFAULT,
     OVERLAY_MODE_DEFAULT_DISPLAY,
@@ -31,22 +27,26 @@ from .const import (
 )
 from .device_manager import get_hub_device_info
 from .helpers import async_trigger_immediate_refresh
+from .optimistic_helpers import clear_optimistic_state
 
 if TYPE_CHECKING:
-    from .coordinator import TadoDataUpdateCoordinator
+    from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+
+    from .coordinator import TadoConfigEntry, TadoDataUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
-SCAN_INTERVAL = timedelta(seconds=30)
+
+PARALLEL_UPDATES = 1
 
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: TadoConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up Tado CE select entities from a config entry."""
     _LOGGER.debug("Tado CE select: Setting up...")
-    coordinator: TadoDataUpdateCoordinator = entry.runtime_data
+    coordinator = entry.runtime_data
     home_id = coordinator.home_id
 
     entities = []
@@ -56,18 +56,19 @@ async def async_setup_entry(
 
     # Add Overlay Mode select
     # 0 API calls - purely local setting
-    entities.append(TadoOverlayModeSelect(coordinator, home_id))
+    entities.append(TadoOverlayModeSelect(coordinator, home_id))  # type: ignore[arg-type]
 
     # Add Timer Duration select (for Timer overlay mode)
     # 0 API calls - purely local setting
-    entities.append(TadoTimerDurationSelect(coordinator, home_id))
+    entities.append(TadoTimerDurationSelect(coordinator, home_id))  # type: ignore[arg-type]
 
     if entities:
-        async_add_entities(entities, True)  # noqa: FBT003
+        async_add_entities(entities, True)
         _LOGGER.info("Tado CE select entities loaded: %s", len(entities))
 
     # Zone configuration select entities (per-zone settings)
-    from .zone_config import async_setup_zone_config_select  # noqa: PLC0415
+    from .zone_config import async_setup_zone_config_select
+
     await async_setup_zone_config_select(hass, entry, async_add_entities)
 
 
@@ -75,7 +76,6 @@ class TadoPresenceModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sel
     """TadoPresenceModeSelect."""
 
     _attr_has_entity_name = True
-
 
     """Tado CE Presence Mode Select Entity.
 
@@ -89,20 +89,18 @@ class TadoPresenceModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sel
     Uses 1 API call per change.
     """
 
-    _attr_options = ["Auto", "Home", "Away"]  # noqa: RUF012
+    _attr_options = ["Auto", "Home", "Away"]
     _attr_translation_key = "presence_mode"
 
-    def __init__(self, coordinator: "TadoDataUpdateCoordinator", home_id: str) -> None:
+    def __init__(self, coordinator: TadoDataUpdateCoordinator, home_id: str) -> None:
         """Initialize."""
         super().__init__(coordinator)
-        # Convenience alias — used by action_helpers that still accept entry_id
         self._entry_id = coordinator.config_entry.entry_id
         self._attr_unique_id = f"tado_ce_{home_id}_presence_mode"
-        self._attr_name = "[CE] Presence Mode"
+        self._attr_translation_key = "presence_mode"
         self._attr_current_option = "Auto"
         self._attr_available = True
         self._attr_device_info = get_hub_device_info(home_id)
-        self.entity_id = "select.tado_ce_presence_mode"
 
         # State tracking
         self._presence = "HOME"
@@ -112,8 +110,6 @@ class TadoPresenceModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sel
         self._optimistic_set_at: float | None = None
         self._optimistic_sequence: int | None = None
         self._expected_mode: str | None = None
-
-    # ========== Helper Methods ==========
 
     def _is_within_optimistic_window(self) -> bool:
         """Check if we're within the optimistic update window."""
@@ -126,10 +122,8 @@ class TadoPresenceModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sel
         """
         clear_optimistic_state(self)
 
-    # ========== End Helper Methods ==========
-
     @property
-    def icon(self) -> None:
+    def icon(self) -> str | None:
         """Return icon based on current mode."""
         if self._attr_current_option == "Auto":
             return "mdi:home-account"
@@ -139,7 +133,7 @@ class TadoPresenceModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sel
         return "mdi:home-export-outline"
 
     @property
-    def extra_state_attributes(self) -> None:
+    def extra_state_attributes(self) -> dict[str, Any] | None:
         """Return extra state attributes."""
         return {
             "presence": self._presence,
@@ -158,7 +152,7 @@ class TadoPresenceModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sel
         self.async_write_ha_state()
 
     @callback
-    def update(self) -> None:  # noqa: C901, PLR0912
+    def update(self) -> None:
         """Update state from home_state.json.
 
         3-layer defense - preserve optimistic state if within window
@@ -169,11 +163,9 @@ class TadoPresenceModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sel
             _LOGGER.debug("Presence Mode: Preserving optimistic state (within window)")
             return
 
-        # Window expired, clear optimistic tracking
         if self._optimistic_set_at is not None:
             self._optimistic_set_at = None
 
-        # Load from coordinator cache (async-loaded, no file I/O)
         try:
             coord_data = self.coordinator.data or {}
             home_state = coord_data.get("home_state")
@@ -200,7 +192,8 @@ class TadoPresenceModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sel
                     # Preserve optimistic state - API hasn't caught up yet
                     _LOGGER.debug(
                         "Presence Mode: Preserving optimistic state (expected=%s, api=%s)",
-                        self._expected_mode, api_mode,
+                        self._expected_mode,
+                        api_mode,
                     )
                     return
 
@@ -216,7 +209,7 @@ class TadoPresenceModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sel
             else:
                 self._attr_current_option = "Away"
 
-        except Exception as e:  # noqa: BLE001
+        except (AttributeError, TypeError, KeyError) as e:
             _LOGGER.warning("Failed to update presence mode: %s", e)
             # Keep last known state
 
@@ -226,17 +219,15 @@ class TadoPresenceModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sel
         Bootstrap Reserve check
         Full 3-layer optimistic update
         """
-        # Bootstrap Reserve - block action when quota critically low
         await _check_bootstrap_reserve(self.hass, "Presence Mode", entry_id=self._entry_id)
 
-        # Store previous state for rollback
         old_mode = self._attr_current_option
         old_presence = self._presence
         old_locked = self._presence_locked
 
         # Layer 1 & 2: Optimistic update BEFORE API call
         self._attr_current_option = option
-        self._optimistic_set_at = time.time()
+        self._optimistic_set_at = time.monotonic()
         self._optimistic_sequence = self.coordinator.get_next_sequence()
 
         # Layer 3: Set expected state
@@ -261,7 +252,9 @@ class TadoPresenceModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sel
 
         if success:
             _LOGGER.info("Set presence mode to %s", option)
-            await async_trigger_immediate_refresh(self.hass, self.entity_id, f"presence_mode_{option}", include_home_state=True)  # noqa: E501
+            await async_trigger_immediate_refresh(
+                self.hass, self.entity_id, f"presence_mode_{option}", include_home_state=True,
+            )
         else:
             # Rollback on failure
             _LOGGER.warning("ROLLBACK: Presence mode %s failed", option)
@@ -272,16 +265,10 @@ class TadoPresenceModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sel
             self.async_write_ha_state()
 
 
-
-# ============================================================
-# Overlay Mode Select
-# ============================================================
-
 class TadoOverlayModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], SelectEntity):
     """TadoOverlayModeSelect."""
 
     _attr_has_entity_name = True
-
 
     """Tado CE Overlay Mode Select Entity.
 
@@ -303,21 +290,19 @@ class TadoOverlayModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sele
     _attr_options = OVERLAY_MODE_OPTIONS
     _attr_translation_key = "overlay_mode"
 
-    def __init__(self, coordinator: "TadoDataUpdateCoordinator", home_id: str) -> None:
+    def __init__(self, coordinator: TadoDataUpdateCoordinator, home_id: str) -> None:
         """Initialize."""
         super().__init__(coordinator)
-        # Convenience alias — used by action_helpers that still accept entry_id
         self._entry_id = coordinator.config_entry.entry_id
         self._attr_unique_id = f"tado_ce_{home_id}_overlay_mode"
-        self._attr_name = "[CE] Overlay Mode"
+        self._attr_translation_key = "overlay_mode"
         self._attr_current_option = OVERLAY_MODE_DEFAULT_DISPLAY
         self._attr_available = True
         self._attr_device_info = get_hub_device_info(home_id)
         self._attr_icon = "mdi:timer-cog-outline"
-        self.entity_id = "select.tado_ce_overlay_mode"
 
     @property
-    def extra_state_attributes(self) -> None:
+    def extra_state_attributes(self) -> dict[str, Any] | None:
         """Return extra state attributes."""
         return {
             "description": "Controls how long manual temperature changes last",
@@ -346,7 +331,7 @@ class TadoOverlayModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sele
         try:
             overlay_mode = self.coordinator.overlay_mode or OVERLAY_MODE_DEFAULT
             self._attr_current_option = OVERLAY_MODE_REVERSE_MAP.get(overlay_mode, OVERLAY_MODE_DEFAULT_DISPLAY)
-        except Exception as e:  # noqa: BLE001
+        except (AttributeError, TypeError) as e:
             _LOGGER.warning("Failed to get overlay mode from cache: %s", e)
             # Keep current option
 
@@ -373,7 +358,6 @@ class TadoTimerDurationSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Se
 
     _attr_has_entity_name = True
 
-
     """Tado CE Timer Duration Select Entity.
 
     Controls how long Timer overlay mode lasts.
@@ -385,22 +369,20 @@ class TadoTimerDurationSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Se
     _attr_options = TIMER_DURATION_OPTIONS
     _attr_translation_key = "timer_duration"
 
-    def __init__(self, coordinator: "TadoDataUpdateCoordinator", home_id: str) -> None:
+    def __init__(self, coordinator: TadoDataUpdateCoordinator, home_id: str) -> None:
         """Initialize."""
         super().__init__(coordinator)
-        # Convenience alias — used by action_helpers that still accept entry_id
         self._entry_id = coordinator.config_entry.entry_id
         self._attr_unique_id = f"tado_ce_{home_id}_overlay_timer"
-        self._attr_name = "[CE] Overlay Timer"
+        self._attr_translation_key = "timer_duration"
         self._attr_current_option = str(TIMER_DURATION_DEFAULT)
         self._attr_available = True
         self._attr_device_info = get_hub_device_info(home_id)
         self._attr_icon = "mdi:timer"
         self._attr_unit_of_measurement = "min"
-        self.entity_id = "select.tado_ce_overlay_timer_duration"
 
     @property
-    def extra_state_attributes(self) -> None:
+    def extra_state_attributes(self) -> dict[str, Any] | None:
         """Return extra state attributes."""
         return {
             "description": "Duration for Timer overlay mode",
@@ -423,7 +405,7 @@ class TadoTimerDurationSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Se
         try:
             duration = self.coordinator.timer_duration or TIMER_DURATION_DEFAULT
             self._attr_current_option = str(duration)
-        except Exception as e:  # noqa: BLE001
+        except (AttributeError, TypeError) as e:
             _LOGGER.warning("Failed to get timer duration from cache: %s", e)
 
     async def async_select_option(self, option: str) -> None:

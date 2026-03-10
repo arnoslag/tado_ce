@@ -1,18 +1,18 @@
-"""Device Manager for Tado CE Integration.
+"""Tado CE Device Manager — DeviceInfo generation for hub and zone devices.
 
-This module manages device creation and entity assignment for the Tado CE integration.
-It provides functions to generate device info for both the hub device and individual zone devices.
-
-CRITICAL: This module must be called from async context with proper executor handling.
-The load_version() function performs blocking I/O and should be
-called via hass.async_add_executor_job() during integration setup.
+Generates DeviceInfo for hub and zone devices.
+load_version() performs blocking I/O — call via hass.async_add_executor_job().
 """
+
+from __future__ import annotations
+
+from functools import lru_cache
 import json
 import logging
-from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
-from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.entity import DeviceInfo  # type: ignore[attr-defined]
 
 from .const import DOMAIN, MANUFACTURER
 
@@ -26,14 +26,18 @@ def load_version() -> str:
     This function performs blocking file I/O and MUST be called via
     hass.async_add_executor_job() from async context during integration setup.
 
+    Global @lru_cache is safe here because manifest.json version is immutable
+    at runtime — all config entries share the same integration version.
+    The cache is only invalidated on HA restart (module reload).
+
     Returns:
         str: The version string, or "unknown" if not available.
     """
     try:
         manifest_path = Path(__file__).parent / "manifest.json"
-        with open(manifest_path) as f:
+        with manifest_path.open() as f:
             manifest = json.load(f)
-            return manifest.get("version", "unknown")
+            return manifest.get("version", "unknown")  # type: ignore[no-any-return]
     except Exception as e:
         _LOGGER.warning("Failed to load version from manifest: %s", e)
         return "unknown"
@@ -136,7 +140,7 @@ def get_zone_type_display(zone_type: str) -> str:
     return zone_type_map.get(zone_type, "Unknown Zone")
 
 
-def get_device_name_suffix(zone_id: str, device_serial: str, device_type: str, zones_info: list) -> str:
+def get_device_name_suffix(zone_id: str, device_serial: str, device_type: str, zones_info: list[Any]) -> str:
     """Get device name suffix for zones with multiple devices.
 
     When a zone has multiple physical devices (e.g., 1 sensor + 2 valves), entity names
@@ -157,21 +161,22 @@ def get_device_name_suffix(zone_id: str, device_serial: str, device_type: str, z
         - Multiple devices, same type: " VA02 (1)", " VA02 (2)"
     """
     # Find the zone
-    zone = next((z for z in zones_info if str(z.get('id')) == str(zone_id)), None)
+    zone = next((z for z in zones_info if str(z.get("id")) == str(zone_id)), None)
     if not zone:
         return ""
 
-    devices = zone.get('devices', [])
+    # Tado API may return null for 'devices'; 'or []' handles None correctly
+    devices = zone.get("devices") or []
     if len(devices) <= 1:
         return ""  # Single device - no suffix needed
 
     # Multiple devices - check if there are multiple of the same type
-    same_type_devices = [d for d in devices if d.get('deviceType') == device_type]
+    same_type_devices = [d for d in devices if d.get("deviceType") == device_type]
 
     if len(same_type_devices) > 1:
         # Multiple devices of same type - add index
         try:
-            index = next(i + 1 for i, d in enumerate(same_type_devices) if d.get('shortSerialNo') == device_serial)
+            index = next(i + 1 for i, d in enumerate(same_type_devices) if d.get("shortSerialNo") == device_serial)
             return f" {device_type} ({index})"
         except StopIteration:
             return f" {device_type}"

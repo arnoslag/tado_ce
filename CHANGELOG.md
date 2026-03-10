@@ -2,6 +2,41 @@
 
 All notable changes to Tado CE will be documented in this file.
 
+## [3.0.0] - 2026-03-10
+
+**Multi-Home Support, Actionable Insights Full Feature Set, Code Quality Platinum**
+
+### Features
+- **Multi-Home Support** ([#110](https://github.com/hiall-fyi/tado_ce/issues/110) - @robvol87, [#145](https://github.com/hiall-fyi/tado_ce/issues/145) - @Blankf) — Multiple Tado accounts/homes in a single HA instance. Each config entry is fully isolated with its own coordinator, API client, data loader, and cleanup. All state stored via `ConfigEntry.runtime_data` — no shared `hass.data[DOMAIN]` flat dict. Full code audit across 62 source files confirmed zero data isolation issues.
+  - Per-home data files (`zones_{home_id}.json`, `ratelimit_{home_id}.json`, etc.) — since v1.7.0
+  - Per-home unique_id (`tado_ce_{home_id}`) for config entries — since v1.7.0
+  - Home selection in config flow — since v1.3.0
+  - Per-home ZoneConfigManager and APICallTracker — since v2.0.0
+  - Per-entry client instances, coordinator, and cleanup — since v2.0.0+
+- **Insight Smarter Summary** — Home insights sensor now produces action-based summaries instead of generic counts. Top-priority insight drives summary text (e.g., "Replace batteries: Guest, Lounge — Mold risk: Bedroom"). Actions grouped by type across zones.
+- **Insight Correlation / Deduplication** — Related insights within a zone are merged into a single action. Mold risk + humidity trend + condensation → "humidity problem". Configurable correlation groups in `CORRELATION_GROUPS`. Cross-zone insights excluded from correlation.
+- **Insight History & Trending** — Persistent tracking of insight appearance/disappearance in `.storage/tado_ce/insight_history_{home_id}.json` (survives HA restarts). Duration-aware messages appended to recommendations ("persisting for 3 days"). Weekly digest attribute with most frequent insight types and 7-day rolling window.
+- **Insight Priority Escalation** — Auto-escalation rules based on persistence duration. Battery low > 7 days → high, > 14 days → critical. Mold risk > 3 days → high, > 7 days → critical. Monotonic escalation (never downgrades). Capped at CRITICAL. Configurable via `ESCALATION_RULES`.
+- **Insight Health Score** — Numeric 0-100 score reflecting overall home health based on active insight count and severity. Exposed as `insight_health_score` attribute on Home Insights sensor.
+- **Preheat Cooling Rate Prediction** ([Discussion #163](https://github.com/hiall-fyi/tado_ce/discussions/163) - @thefern69) — Preheat Advisor now considers cooling trends when room is above target temperature. Instead of showing "Ready", it estimates when temperature will drop below target using `estimate_cooling_crossover()` and calculates a proactive preheat start time. New attributes: `cooling_rate`, `predicted_crossover_time`, `is_cooling_prediction`.
+
+### Improvements
+- **Heating Rate Unit Corrected to °C/h** — Heating rate sensor now reports in °C/h (was incorrectly labelled °C/min in v2.3.1 docs). The underlying calculation always used °C/h internally; this aligns the sensor unit and documentation.
+- **Centralized Physics Constants** — Mold risk thresholds (3/5/7°C margin), condensation risk thresholds (heating and AC), Magnus-Tetens constants, ASHRAE comfort model parameters, and window U-values all consolidated into `calculations.py` as named constants. Previously, mold risk and condensation thresholds were inline magic numbers in `sensor_environment.py`, making them easy to diverge across code paths.
+- **Risk Classification Functions** — `classify_mold_risk_by_margin()` and `classify_condensation_risk()` extracted as pure functions in `calculations.py`. Both heating and AC condensation paths now use the same function with zone-type dispatch, eliminating duplicated threshold logic.
+- **Removed Wind Chill / Heat Index Constants** — Wind chill (Environment Canada) and heat index formula constants removed from `const.py`. Weather sensor simplified to use Tado API data directly.
+- **Lowered Timer Minimum Duration to 1 Minute** ([#162](https://github.com/hiall-fyi/tado_ce/issues/162) - @joaomacp) — `set_climate_timer` and `set_water_heater_timer` now accept durations as low as 1 minute (previously 5 minutes), matching the official Tado integration. Hot water timer duration config option also updated.
+- **Major Codebase Refactor** — 84 files changed across 31,655 insertions and 21,842 deletions. Monolithic files split into focused modules (34 → 62 source files). 29 new modules, 9 renamed, 3 removed. Smaller files are easier to maintain, review, and test.
+- **Expanded Test Suite** — 3,238 tests across 80 test files with 99% code coverage (up from ~1,841 tests across 108 test files in v2.3.1, where coverage was not tracked). Tests rewritten from scratch including property-based tests (PBT). Covers all entity platforms, services, config flow, migration, insights, polling, and thermal analytics.
+- **Strict Type Safety** — mypy strict mode passes across all 62 source files with zero errors. Catches type bugs at development time before they reach users.
+- **Comprehensive Linting** — ruff with 12 rule groups enabled, zero violations. Removes unused imports, simplifies code paths, and enforces consistent style.
+- **Multi-Language Translations** — Config flow and options UI now available in 7 languages: English, German, Spanish, French, Italian, Dutch, and Portuguese (v2.3.1 was English only).
+
+### Bug Fixes
+- **Fixed Auth URL Showing 404 Page** ([#104](https://github.com/hiall-fyi/tado_ce/issues/104)) — Config flow authorization previously showed a fallback line "Or go to URL and enter code" pointing to `https://login.tado.com/device` which returns 404. Removed the fallback line entirely — users now only see the direct authorization link (`verification_uri_complete` with embedded user code). Also added missing reauth translation entries to all 7 language files.
+- **Fixed Window Sensor Not Detecting Open Windows Without Auto-Assist** ([#157](https://github.com/hiall-fyi/tado_ce/issues/157) - @tanerpaca) — Window sensor only checked `openWindow` (requires Auto-Assist or manual confirmation), completely ignoring `openWindowDetected` (initial cloud detection). Users without Auto-Assist subscription had a sensor that would never turn on. Now checks both `openWindow` and `openWindowDetected`, so automations fire as soon as Tado's cloud detects an open window.
+- **Fixed Preheat Now Sensor Triggering a Day Early** ([#164](https://github.com/hiall-fyi/tado_ce/issues/164) - @thefern69) — Preheat Advisor only passed the time portion ("HH:MM") to downstream sensors without date context. If the schedule was Monday 06:00 and preheat start was 04:15, the sensor would trigger on Sunday — a full day early. Now passes complete datetime instead of time-only.
+
 ## [2.3.1] - 2026-02-26
 
 ### Bug Fixes

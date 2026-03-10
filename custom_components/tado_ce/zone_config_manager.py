@@ -1,11 +1,18 @@
-"""Zone configuration manager - handles per-zone settings storage and entities."""
+"""Tado CE zone configuration manager — per-zone settings storage and listener pattern."""
+
+from __future__ import annotations
+
+from contextlib import suppress
 import json
 import logging
-from typing import Any, Callable
-
-from homeassistant.core import HomeAssistant
+from typing import TYPE_CHECKING, Any
 
 from .const import DATA_DIR, DEFAULT_ZONE_CONFIG, WINDOW_U_VALUES
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from homeassistant.core import HomeAssistant
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -17,7 +24,7 @@ class ZoneConfigManager:
     and provides listener pattern for config changes.
     """
 
-    def __init__(self, hass: HomeAssistant, home_id: str):
+    def __init__(self, hass: HomeAssistant, home_id: str) -> None:
         """Initialize zone config manager.
 
         Args:
@@ -27,7 +34,7 @@ class ZoneConfigManager:
         self._hass = hass
         self._home_id = home_id
         self._config_file = DATA_DIR / f"zone_config_{home_id}.json"
-        self._config: dict[str, dict] = {}
+        self._config: dict[str, dict[str, Any]] = {}
         self._listeners: list[Callable[[str, str, Any], None]] = []
 
     async def async_load(self) -> None:
@@ -35,14 +42,15 @@ class ZoneConfigManager:
 
         Uses executor_job to avoid blocking I/O.
         """
-        def _load() -> dict:
+
+        def _load() -> dict[str, Any]:
             if self._config_file.exists():
                 try:
-                    with open(self._config_file, 'r') as f:
+                    with self._config_file.open() as f:
                         data = json.load(f)
-                        return data.get("zones", {})
-                except (json.JSONDecodeError, IOError) as e:
-                    _LOGGER.error("Failed to load zone config: %s", e)
+                        return data.get("zones", {})  # type: ignore[no-any-return]
+                except (OSError, json.JSONDecodeError):
+                    _LOGGER.exception("Failed to load zone config")
                     return {}
             return {}
 
@@ -55,18 +63,19 @@ class ZoneConfigManager:
         Uses executor_job to avoid blocking I/O.
         Creates parent directory if needed.
         """
+
         def _save() -> None:
             try:
                 self._config_file.parent.mkdir(parents=True, exist_ok=True)
-                with open(self._config_file, 'w') as f:
+                with self._config_file.open("w") as f:
                     json.dump({"version": 1, "zones": self._config}, f, indent=2)
-            except IOError as e:
-                _LOGGER.error("Failed to save zone config: %s", e)
+            except OSError:
+                _LOGGER.exception("Failed to save zone config")
 
         await self._hass.async_add_executor_job(_save)
         _LOGGER.debug("Saved zone config for %s zones", len(self._config))
 
-    def get_zone_config(self, zone_id: str) -> dict:
+    def get_zone_config(self, zone_id: str) -> dict[str, Any]:
         """Get configuration for a zone, with defaults.
 
         Args:
@@ -117,8 +126,8 @@ class ZoneConfigManager:
             for listener in self._listeners:
                 try:
                     listener(zone_id, key, value)
-                except Exception as e:
-                    _LOGGER.error("Error in zone config listener: %s", e)
+                except Exception:
+                    _LOGGER.exception("Error in zone config listener")
 
     def add_listener(self, callback: Callable[[str, str, Any], None]) -> Callable[[], None]:
         """Add a listener for config changes.
@@ -131,12 +140,10 @@ class ZoneConfigManager:
         """
         self._listeners.append(callback)
 
-        def _remove_listener():
+        def _remove_listener() -> None:
             """Remove listener with race condition protection."""
-            try:
+            with suppress(ValueError):
                 self._listeners.remove(callback)
-            except ValueError:
-                pass  # Already removed
 
         return _remove_listener
 
@@ -164,7 +171,7 @@ class ZoneConfigManager:
         Returns:
             Offset in °C (negative = colder surface, positive = warmer)
         """
-        return self.get_zone_value(zone_id, "surface_temp_offset", 0.0)
+        return self.get_zone_value(zone_id, "surface_temp_offset", 0.0)  # type: ignore[no-any-return]
 
     def get_effective_target_temp(self, zone_id: str, target_temp: float) -> float:
         """Get effective target temperature with offset applied.
@@ -177,9 +184,9 @@ class ZoneConfigManager:
             Target temperature with offset applied
         """
         offset = self.get_zone_value(zone_id, "temp_offset", 0.0)
-        return target_temp + offset
+        return target_temp + offset  # type: ignore[no-any-return]
 
     @property
-    def zones(self) -> dict[str, dict]:
+    def zones(self) -> dict[str, dict[str, Any]]:
         """Get all zone configurations."""
         return self._config.copy()

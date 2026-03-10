@@ -1,16 +1,22 @@
-"""Shared helper functions for Tado CE sensor entities.
+"""Tado CE sensor helper functions — outdoor temperature, effective temperature, surface RH."""
 
-- get_outdoor_temperature(): outdoor temperature lookup from configured entity
-"""
 from __future__ import annotations
 
 import logging
-from typing import Optional
+from typing import TYPE_CHECKING, Any
+
+from .calculations import calculate_surface_temperature
+
+if TYPE_CHECKING:
+    from homeassistant.core import HomeAssistant
+
+    from .config_manager import ConfigurationManager
+    from .zone_config_manager import ZoneConfigManager
 
 _LOGGER = logging.getLogger(__name__)
 
 
-def get_outdoor_temperature(hass, entity_id: str, use_feels_like: bool = False) -> Optional[float]:
+def get_outdoor_temperature(hass: HomeAssistant, entity_id: str, use_feels_like: bool = False) -> float | None:
     """Get outdoor temperature from a configured entity.
 
     Supports both weather entities (reads 'temperature' attribute) and
@@ -59,12 +65,12 @@ def get_outdoor_temperature(hass, entity_id: str, use_feels_like: bool = False) 
 
 
 def get_effective_temperature(
-    hass,
+    hass: HomeAssistant,
     zone_id: str,
     room_temp: float,
-    config_manager=None,
-    zone_config_manager=None,
-) -> tuple:
+    config_manager: ConfigurationManager = None,  # type: ignore[assignment]
+    zone_config_manager: ZoneConfigManager = None,  # type: ignore[assignment]
+) -> tuple[Any, ...]:
     """Get effective temperature for mold risk calculation.
 
     2-tier strategy:
@@ -87,7 +93,9 @@ def get_effective_temperature(
             return fallback
 
         outdoor_temp = get_outdoor_temperature(
-            hass, outdoor_entity, config_manager.get_use_feels_like()
+            hass,
+            outdoor_entity,
+            config_manager.get_use_feels_like(),
         )
         if outdoor_temp is None:
             return fallback
@@ -102,15 +110,11 @@ def get_effective_temperature(
             surface_offset = 0.0
 
         # Calculate surface temperature using heat transfer physics
-        # Inline the formula to avoid circular import of _calculate_surface_temperature
-        # T_surface = T_indoor - U * (T_indoor - T_outdoor) / h_internal
-        # h_internal ≈ 7.7 W/(m²·K) for still air (BS EN ISO 6946)
-        h_internal = 7.7
-        surface_temp = round(room_temp - u_value * (room_temp - outdoor_temp) / h_internal, 1)
+        surface_temp = calculate_surface_temperature(room_temp, outdoor_temp, u_value)
 
         # Apply calibration offset
         if surface_offset != 0.0:
-            surface_temp = round(surface_temp + surface_offset, 1)
+            surface_temp = surface_temp + surface_offset
             source = "Calibrated"
         else:
             source = "Estimated"
@@ -122,26 +126,5 @@ def get_effective_temperature(
         return fallback
 
 
-def calculate_surface_rh(effective_temp: float, dew_point: float) -> Optional[int]:
-    """Calculate relative humidity at the window surface.
-
-    Uses the Magnus-Tetens formula for saturation vapour pressure.
-    Mold typically grows when surface RH exceeds ~70-80 %.
-
-    Args:
-        effective_temp: Surface (or room) temperature in °C
-        dew_point: Dew point temperature in °C
-
-    Returns:
-        Surface relative humidity as integer percentage (0-100), or None on error
-    """
-    import math
-
-    try:
-        def _svp(temp: float) -> float:
-            return 6.112 * math.exp((17.67 * temp) / (temp + 243.5))
-
-        surface_rh = (_svp(dew_point) / _svp(effective_temp)) * 100
-        return round(min(100, max(0, surface_rh)))
-    except Exception:
-        return None
+# calculate_surface_rh is imported from .calculations at module level for backward compatibility.
+from .calculations import calculate_surface_rh as calculate_surface_rh

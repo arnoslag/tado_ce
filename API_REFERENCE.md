@@ -1,17 +1,20 @@
-# Tado CE - API Reference
+# Tado CE — API Reference
 
-This document explains how Tado CE interacts with the Tado API, including call types, what data each call fetches, and how to optimize your API usage.
+How Tado CE interacts with the Tado API, including call types, data flow, and optimization tips.
+
+> **Entity ID note:** All examples use **v2.3.1 entity_ids** (preserved for migrated users).
+> Fresh v3.0.0 installs get different entity_ids — see [ENTITIES.md](ENTITIES.md) for the mapping.
 
 ---
 
 ## API Call Types
 
-Tado CE tracks all API calls with a code system for easy identification:
+Tado CE tracks all API calls with a code system:
 
 | Code | Type | Description | Configurable |
 |------|------|-------------|--------------|
-| 1 | zoneStates | Current state of all zones (temperature, humidity, heating status, overlay status) | No (required) |
-| 2 | weather | Outdoor weather data from Tado (temperature, solar intensity, weather state) | Yes |
+| 1 | zoneStates | Current state of all zones (temperature, humidity, heating status, overlay) | No (required) |
+| 2 | weather | Outdoor weather data (temperature, solar intensity, weather state) | Yes |
 | 3 | zones | Zone configuration (names, types, devices) | No (required) |
 | 4 | mobileDevices | Geofencing device locations | Yes |
 | 5 | overlay | Manual overrides (set/delete temperature or mode changes) | N/A (action-triggered) |
@@ -23,14 +26,12 @@ Tado CE tracks all API calls with a code system for easy identification:
 
 | Code | Type | Why Required |
 |------|------|--------------|
-| 1 | zoneStates | Core data - temperature, humidity, heating status for all zones |
-| 3 | zones | Zone configuration, needed at startup to identify your devices |
-
-Disabling these would break basic functionality like temperature readings and heating control.
+| 1 | zoneStates | Core data — temperature, humidity, heating status for all zones |
+| 3 | zones | Zone configuration, needed at startup to identify devices |
 
 ### Configurable Calls
 
-These can be toggled in **Settings > Devices & Services > Tado CE > Configure**:
+Toggle in Settings → Devices & Services → Tado CE → Configure:
 
 | Code | Type | Option | API Savings |
 |------|------|--------|-------------|
@@ -42,24 +43,22 @@ These can be toggled in **Settings > Devices & Services > Tado CE > Configure**:
 
 | Code | Type | Behavior |
 |------|------|----------|
-| 8 | capabilities | Fetched once per AC zone, cached locally. Re-fetched via "Refresh AC Capabilities" button, which also signals AC climate entities to reload capabilities and rebuild fan mapping without HA restart (v2.3.1) |
+| 8 | capabilities | Fetched once per AC zone, cached locally. Re-fetch via "Refresh AC Capabilities" button (also reloads fan mapping without HA restart) |
 
 ### Action-Triggered Calls
 
 | Code | Type | When Triggered |
 |------|------|----------------|
 | 5 | overlay | When you change temperature/mode via Tado CE services |
-| 6 | presenceLock | When you change Presence Mode (Home/Away/Auto) via Tado CE |
+| 6 | presenceLock | When you change Presence Mode (Home/Away/Auto) |
 
-These are not polling calls - they only happen when you take an action.
+Not polling calls — only happen when you take an action.
 
 ---
 
 ## What is "Overlay"?
 
-An **overlay** is Tado's term for a manual override. When you change the temperature or mode away from the schedule, Tado creates an "overlay" on top of the schedule.
-
-### Overlay Types
+An **overlay** is Tado's term for a manual override on top of the schedule.
 
 | Type | Behavior |
 |------|----------|
@@ -67,96 +66,49 @@ An **overlay** is Tado's term for a manual override. When you change the tempera
 | TIMER | Reverts after X minutes |
 | TADO_MODE | Reverts at next schedule change (Next Block) |
 
-### How Overlay Relates to API Calls
-
-- **Code 5** tracks **write** operations only (`set_zone_overlay`, `delete_zone_overlay`)
-- The overlay **status** (whether a zone has a manual override) comes from **Code 1** (zoneStates), not a separate call
-- If you use HomeKit or another system for climate control, you won't trigger Code 5 calls through Tado CE
+**How overlay relates to API calls:**
+- Code 5 tracks **write** operations only (`set_zone_overlay`, `delete_zone_overlay`)
+- Overlay **status** (whether a zone has an override) comes from Code 1 (zoneStates), not a separate call
+- Climate changes via HomeKit or other systems don't trigger Code 5 through Tado CE
 
 ---
 
 ## Sync Types
 
-Tado CE uses two sync types to balance data freshness with API efficiency:
+Two sync types balance data freshness with API efficiency:
 
 ### Quick Sync
 
-Runs frequently (based on your polling interval). Fetches:
-- zoneStates (Code 1) - always
-- homeState (Code 7) - if enabled
+Runs frequently (based on polling interval):
+- zoneStates (Code 1) — always
+- homeState (Code 7) — if enabled
 
-**Typical calls per quick sync:** 1-2
+Typical: 1–2 calls per quick sync.
 
 ### Full Sync
 
-Runs every 6 h. Fetches everything from quick sync plus:
+Runs every 6 hours. Everything from quick sync plus:
 - zones (Code 3)
-- weather (Code 2) - if enabled
-- mobileDevices (Code 4) - if enabled
+- weather (Code 2) — if enabled
+- mobileDevices (Code 4) — if enabled
 
-**Typical calls per full sync:** 2-5 (depending on options)
+Typical: 2–5 calls per full sync (depending on options).
 
 ---
 
 ## Call History
 
-All API calls are recorded in the `sensor.tado_ce_api_usage` entity attributes:
+API calls are recorded in `sensor.tado_ce_call_history` attributes:
 
 ```yaml
 call_history:
-  - "2026-01-28 10:30:15 - Code 1 (zoneStates)"
-  - "2026-01-28 10:30:16 - Code 7 (homeState)"
-  - "2026-01-28 10:00:15 - Code 1 (zoneStates)"
+  - "2026-03-08 10:30:15 - Code 1 (zoneStates)"
+  - "2026-03-08 10:30:16 - Code 7 (homeState)"
 ```
 
-### Viewing Call History
+**Viewing:** Developer Tools → States → search `sensor.tado_ce_call_history` → expand Attributes.
 
-1. Go to **Developer Tools > States**
-2. Search for `sensor.tado_ce_api_usage`
-3. Expand **Attributes** to see `call_history`
-
-### History Retention
-
-Configure via **Options > API History Retention** (default: 14 d, 0 = forever)
-
----
-
-## Optimizing API Usage
-
-### For HomeKit Users
-
-If you control climate via HomeKit:
-- Disable **Weather Sensors** (unless using Smart Comfort)
-- Disable **Mobile Device Tracking** (unless using device trackers)
-- Disable **Home State Sync** (unless using Tado geofencing)
-
-You won't trigger Code 5 (overlay) calls since climate changes go through HomeKit, not Tado CE.
-
-### For 100 Calls/Day Limit
-
-With all optional syncs disabled:
-- Quick sync: 1 call (zoneStates only)
-- Full sync: 2 calls (zoneStates + zones)
-
-This gives you maximum headroom for manual actions and automations.
-
-### For 1000 Calls/Day Limit
-
-A comfortable middle ground. Enable the features you need:
-- Weather Sensors and Home State Sync are low-cost (1 call each per sync)
-- Smart Day/Night polling keeps you well within budget
-- Typical usage with default settings: ~90-180 calls/day
-
-### For Auto-Assist Users (20,000 calls/day)
-
-You can enable all features without concern:
-- Weather Sensors
-- Mobile Device Tracking
-- Home State Sync
-- Smart Comfort Analytics
-- Schedule Calendar
-
-Even with 5-minute polling, you'll use ~576 calls/day (well under 20,000 limit).
+**Retention:** Configure via Options → Polling & API → "API History Retention" (default: 14 days, 0 = forever).
 
 ---
 
@@ -168,18 +120,87 @@ Tado CE reads rate limit information from API response headers:
 |--------|-------------|
 | `X-RateLimit-Limit` | Your daily limit (100/1000/20000) |
 | `X-RateLimit-Remaining` | Calls remaining today |
-| `X-RateLimit-Reset` | Reset time (note: often inaccurate) |
+| `X-RateLimit-Reset` | Reset time (often inaccurate from Tado) |
 
 ### Reset Time Detection
 
-Tado CE uses multiple strategies to detect your actual reset time:
+Tado CE uses multiple strategies since the API's `X-RateLimit-Reset` header often points to midnight UTC (incorrect):
 
-1. **Detected Reset** - When remaining increases significantly, record the time
-2. **HA History** - Check sensor history for usage drops
-3. **Extrapolation** - Calculate from usage rate and call history
-4. **First Call Mode** - Fallback using historical first-call times
+1. **Detected Reset** — when remaining increases significantly, record the time
+2. **HA History** — check sensor history for usage drops
+3. **Extrapolation** — calculate from usage rate and call history
+4. **First Call Mode** — fallback using historical first-call times
 
-The API's `X-RateLimit-Reset` header often points to midnight UTC, which is incorrect. Tado CE calculates the actual reset time based on observed behavior.
+---
+
+## Optimizing API Usage
+
+### For HomeKit Users
+
+- Disable Weather Sensors (unless using Smart Comfort)
+- Disable Mobile Device Tracking (unless using device trackers)
+- Disable Home State Sync (unless using Tado geofencing)
+
+Climate changes via HomeKit don't trigger Code 5 (overlay) calls through Tado CE.
+
+### For 100 Calls/Day Limit
+
+With all optional syncs disabled:
+- Quick sync: 1 call (zoneStates only)
+- Full sync: 2 calls (zoneStates + zones)
+
+Maximum headroom for manual actions and automations.
+
+### For 1000 Calls/Day Limit
+
+Enable features as needed:
+- Weather Sensors and Home State Sync are low-cost (1 call each per sync)
+- Smart Day/Night polling keeps you well within budget
+- Typical usage with default settings: ~90–180 calls/day
+
+### For Auto-Assist Users (20,000 calls/day)
+
+Enable all features without concern. Even with 5-minute polling, ~576 calls/day (well under 20,000).
+
+---
+
+## Data Storage
+
+Tado CE stores data in `/config/.storage/tado_ce/`. All per-home files include `{home_id}` suffix for multi-home isolation.
+
+### Per-Home Data Files
+
+| File | Contents |
+|------|----------|
+| `config_{home_id}.json` | OAuth tokens, home configuration |
+| `ratelimit_{home_id}.json` | Current rate limit status, reset time |
+| `zones_{home_id}.json` | Latest zone states snapshot |
+| `zones_info_{home_id}.json` | Zone configuration (names, types, devices) |
+| `weather_{home_id}.json` | Latest weather data |
+| `home_state_{home_id}.json` | Home presence state |
+| `mobile_devices_{home_id}.json` | Mobile device locations |
+| `offsets_{home_id}.json` | Temperature offset data per zone |
+| `ac_capabilities_{home_id}.json` | Cached AC zone capabilities |
+| `schedules_{home_id}.json` | Cached heating schedules |
+| `api_call_history_{home_id}.json` | Historical API calls for tracking |
+| `thermal_analytics_cache_{home_id}.json` | Thermal analytics data (heating cycles, rates) |
+| `zone_config_{home_id}.json` | Per-zone configuration settings |
+| `insight_history_{home_id}.json` | Insight appearance/disappearance tracking |
+
+### Legacy Files (pre-v3.0.0)
+
+| File | Status |
+|------|--------|
+| `config.json` | Migrated to `config_{home_id}.json` |
+| `zones.json` | Migrated to `zones_{home_id}.json` |
+| `zones_info.json` | Migrated to `zones_info_{home_id}.json` |
+| `ratelimit.json` | Migrated to `ratelimit_{home_id}.json` |
+| `smart_comfort_cache_{home_id}.json` | Merged into `thermal_analytics_cache_{home_id}.json` |
+| `heating_cycle_history_{home_id}.json` | Merged into `thermal_analytics_cache_{home_id}.json` |
+
+Legacy files without `{home_id}` suffix are auto-migrated on first v3.0.0 startup.
+
+These files persist across restarts and upgrades.
 
 ---
 
@@ -187,47 +208,31 @@ The API's `X-RateLimit-Reset` header often points to midnight UTC, which is inco
 
 ### High API Usage
 
-1. Check **call_history** attribute for unexpected calls
+1. Check `sensor.tado_ce_call_history` attributes for unexpected calls
 2. Disable optional syncs you don't need
 3. Increase polling intervals via custom day/night settings
 
 ### Missing Data
 
-If certain data isn't updating:
 1. Check if the relevant sync option is enabled
 2. Check logs for API errors
 3. Verify you haven't hit your rate limit
 
 ### Call History Not Recording
 
-1. Ensure **API History Retention** > 0
+1. Ensure API History Retention > 0
 2. Check logs for file I/O errors
 3. Verify `/config/.storage/tado_ce/` directory exists
 
 ---
 
-## Data Storage
-
-Tado CE stores API-related data in `/config/.storage/tado_ce/`:
-
-| File | Contents |
-|------|----------|
-| `ratelimit_{home_id}.json` | Current rate limit status, reset time |
-| `api_call_history_{home_id}.json` | Historical API calls for tracking |
-| `ac_capabilities_{home_id}.json` | Cached AC zone capabilities |
-| `schedules_{home_id}.json` | Cached heating schedules |
-
-These files persist across restarts and upgrades.
-
----
-
 ## Related Documentation
 
-- [README.md](README.md) - Main documentation
-- [ENTITIES.md](ENTITIES.md) - Complete entity reference
-- [ROADMAP.md](ROADMAP.md) - Planned features
+- [ENTITIES.md](ENTITIES.md) — Complete entity reference (75 entities)
+- [FEATURES_GUIDE.md](FEATURES_GUIDE.md) — Features, configuration, and usage scenarios
+- [README.md](README.md) — Installation and setup
+- [ROADMAP.md](ROADMAP.md) — Planned features and ideas
 
 ---
 
-**Version**: 2.3.1  
-**Last Updated**: 2026-02-26
+**Last Updated:** v3.0.0 (2026-03-10)

@@ -1,8 +1,9 @@
 """Tado CE Weather Sensors — outside temperature, solar, weather state."""
+
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -22,14 +23,16 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class TadoOutsideTemperatureSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], SensorEntity):
+    """Represent a Tado outside temperature sensor."""
+
     _attr_has_entity_name = True
 
     """Outside temperature from Tado weather data."""
 
-    def __init__(self, coordinator: "TadoDataUpdateCoordinator"):
+    def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
+        """Initialize the Outside Temperature Sensor."""
         super().__init__(coordinator)
-        self._attr_name = "Outside Temp"
-        self.entity_id = "sensor.tado_ce_outside_temperature"
+        self._attr_translation_key = "outside_temp"
         self._attr_unique_id = f"tado_ce_{coordinator.home_id}_outside_temp"
         self._attr_device_class = SensorDeviceClass.TEMPERATURE
         self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
@@ -39,7 +42,8 @@ class TadoOutsideTemperatureSensor(CoordinatorEntity["TadoDataUpdateCoordinator"
         self._timestamp = None
 
     @property
-    def extra_state_attributes(self):
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return extra state attributes."""
         return {"timestamp": self._timestamp}
 
     @callback
@@ -48,29 +52,33 @@ class TadoOutsideTemperatureSensor(CoordinatorEntity["TadoDataUpdateCoordinator"
         self.async_write_ha_state()
 
     @callback
-    def update(self):
+    def update(self) -> None:
+        """Update entity state from coordinator data."""
         try:
             data = (self.coordinator.data or {}).get("weather")
             if data:
-                temp_data = data.get('outsideTemperature') or {}
-                self._attr_native_value = temp_data.get('celsius')
-                self._timestamp = temp_data.get('timestamp')
+                temp_data = data.get("outsideTemperature") or {}
+                self._attr_native_value = temp_data.get("celsius")
+                self._timestamp = temp_data.get("timestamp")
                 self._attr_available = self._attr_native_value is not None
             else:
                 self._attr_available = False
         except Exception:
+            _LOGGER.debug("Failed to update outside temperature sensor")
             self._attr_available = False
 
 
 class TadoSolarIntensitySensor(CoordinatorEntity["TadoDataUpdateCoordinator"], SensorEntity):
+    """Represent a Tado solar intensity sensor."""
+
     _attr_has_entity_name = True
 
     """Solar intensity from Tado weather data."""
 
-    def __init__(self, coordinator: "TadoDataUpdateCoordinator"):
+    def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
+        """Initialize the Solar Intensity Sensor."""
         super().__init__(coordinator)
-        self._attr_name = "Solar Intensity"
-        self.entity_id = "sensor.tado_ce_solar_intensity"
+        self._attr_translation_key = "solar_intensity"
         self._attr_unique_id = f"tado_ce_{coordinator.home_id}_solar_intensity"
         self._attr_icon = "mdi:white-balance-sunny"
         self._attr_native_unit_of_measurement = PERCENTAGE
@@ -80,7 +88,8 @@ class TadoSolarIntensitySensor(CoordinatorEntity["TadoDataUpdateCoordinator"], S
         self._timestamp = None
 
     @property
-    def extra_state_attributes(self):
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return extra state attributes."""
         return {"timestamp": self._timestamp}
 
     @callback
@@ -89,29 +98,33 @@ class TadoSolarIntensitySensor(CoordinatorEntity["TadoDataUpdateCoordinator"], S
         self.async_write_ha_state()
 
     @callback
-    def update(self):
+    def update(self) -> None:
+        """Update entity state from coordinator data."""
         try:
             data = (self.coordinator.data or {}).get("weather")
             if data:
-                solar_data = data.get('solarIntensity') or {}
-                self._attr_native_value = solar_data.get('percentage')
-                self._timestamp = solar_data.get('timestamp')
+                solar_data = data.get("solarIntensity") or {}
+                self._attr_native_value = solar_data.get("percentage")
+                self._timestamp = solar_data.get("timestamp")
                 self._attr_available = self._attr_native_value is not None
             else:
                 self._attr_available = False
         except Exception:
+            _LOGGER.debug("Failed to update solar intensity sensor")
             self._attr_available = False
 
 
 class TadoWeatherStateSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], SensorEntity):
+    """Represent a Tado weather state sensor."""
+
     _attr_has_entity_name = True
 
     """Weather state from Tado weather data."""
 
-    def __init__(self, coordinator: "TadoDataUpdateCoordinator"):
+    def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
+        """Initialize the Weather State Sensor."""
         super().__init__(coordinator)
-        self._attr_name = "Weather"
-        self.entity_id = "sensor.tado_ce_weather_state"
+        self._attr_translation_key = "weather"
         self._attr_unique_id = f"tado_ce_{coordinator.home_id}_weather_state"
         self._attr_icon = "mdi:weather-partly-cloudy"
         self._attr_available = False
@@ -120,7 +133,8 @@ class TadoWeatherStateSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], Sen
         self._timestamp = None
 
     @property
-    def icon(self):
+    def icon(self) -> str | None:
+        """Return the icon for the entity."""
         icons = {
             "SUN": "mdi:weather-sunny",
             "CLOUDY": "mdi:weather-cloudy",
@@ -136,10 +150,11 @@ class TadoWeatherStateSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], Sen
             "THUNDERSTORMS": "mdi:weather-lightning",
             "WINDY": "mdi:weather-windy",
         }
-        return icons.get(self._raw_state, "mdi:weather-partly-cloudy")
+        return icons.get(self._raw_state, "mdi:weather-partly-cloudy")  # type: ignore[call-overload, no-any-return]
 
     @property
-    def extra_state_attributes(self):
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return extra state attributes."""
         return {
             "raw_state": self._raw_state,
             "timestamp": self._timestamp,
@@ -151,16 +166,18 @@ class TadoWeatherStateSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], Sen
         self.async_write_ha_state()
 
     @callback
-    def update(self):
+    def update(self) -> None:
+        """Update entity state from coordinator data."""
         try:
             data = (self.coordinator.data or {}).get("weather")
             if data:
-                weather_data = data.get('weatherState') or {}
-                self._raw_state = weather_data.get('value')
-                self._timestamp = weather_data.get('timestamp')
-                self._attr_native_value = WEATHER_STATE_MAP.get(self._raw_state, self._raw_state)
+                weather_data = data.get("weatherState") or {}
+                self._raw_state = weather_data.get("value")
+                self._timestamp = weather_data.get("timestamp")
+                self._attr_native_value = WEATHER_STATE_MAP.get(self._raw_state, self._raw_state)  # type: ignore[arg-type]
                 self._attr_available = self._attr_native_value is not None
             else:
                 self._attr_available = False
         except Exception:
+            _LOGGER.debug("Failed to update weather state sensor")
             self._attr_available = False

@@ -1,32 +1,34 @@
-"""Tado CE Device Tracker (Presence Detection)."""
+"""Tado CE Device Tracker — mobile device presence detection."""
+
 from __future__ import annotations
 
 import logging
-from datetime import timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-from homeassistant.components.device_tracker import SourceType
+from homeassistant.components.device_tracker import SourceType  # type: ignore[attr-defined]
 from homeassistant.components.device_tracker.config_entry import TrackerEntity
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .device_manager import get_hub_device_info
 
 if TYPE_CHECKING:
-    from .coordinator import TadoDataUpdateCoordinator
+    from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+
+    from .coordinator import TadoConfigEntry, TadoDataUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
-SCAN_INTERVAL = timedelta(seconds=30)
+
+PARALLEL_UPDATES = 0
 
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: TadoConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
-):
+) -> None:
     """Set up Tado CE device trackers from a config entry."""
-    coordinator: TadoDataUpdateCoordinator = entry.runtime_data
+    coordinator = entry.runtime_data
     data_loader = coordinator.data_loader
     home_id = coordinator.home_id
     _LOGGER.debug("Tado CE device_tracker: Setting up...")
@@ -36,12 +38,12 @@ async def async_setup_entry(
 
     if mobile_devices:
         for device in mobile_devices:
-            device_id = device.get('id')
-            device_name = device.get('name', f"Device {device_id}")
-            settings = device.get('settings') or {}
+            device_id = device.get("id")
+            device_name = device.get("name", f"Device {device_id}")
+            settings = device.get("settings") or {}
 
             # Only create tracker if geo tracking is enabled
-            if settings.get('geoTrackingEnabled', False):
+            if settings.get("geoTrackingEnabled", False):
                 trackers.append(TadoDeviceTracker(coordinator, device_id, device_name, device, home_id))
             else:
                 _LOGGER.debug("Skipping %s - geoTrackingEnabled is False", device_name)
@@ -53,13 +55,21 @@ async def async_setup_entry(
         _LOGGER.debug("Tado CE: No devices with geo tracking enabled")
 
 
-class TadoDeviceTracker(TrackerEntity):
+class TadoDeviceTracker(CoordinatorEntity["TadoDataUpdateCoordinator"], TrackerEntity):
+    """Represent a Tado mobile device tracker entity."""
+
     _attr_has_entity_name = True
 
-    """Tado CE Device Tracker Entity."""
-
-    def __init__(self, coordinator: TadoDataUpdateCoordinator, device_id: int, device_name: str, device_data: dict, home_id: str):
-        self._coordinator = coordinator
+    def __init__(
+        self,
+        coordinator: TadoDataUpdateCoordinator,
+        device_id: int,
+        device_name: str,
+        device_data: dict[str, Any],
+        home_id: str,
+    ) -> None:
+        """Initialize the TadoDeviceTracker."""
+        super().__init__(coordinator)
         self._device_id = device_id
         self._device_name = device_name
         self._device_data = device_data
@@ -68,67 +78,67 @@ class TadoDeviceTracker(TrackerEntity):
         self._attr_unique_id = f"tado_ce_{home_id}_device_{device_id}"
         self._attr_available = False
         # Use hub device info for global entities
-        self._attr_device_info = get_hub_device_info(home_id)
+        self._attr_device_info = get_hub_device_info(home_id)  # type: ignore[assignment]
 
-        self._is_home = None
+        self._is_home: bool | None = None
         self._location = None
-        self._bearing = None
-        self._relative_distance = None
+        self._bearing: float | None = None
+        self._relative_distance: float | None = None
 
-    @property
-    def should_poll(self) -> bool:
-        """Enable polling to read updated mobile device data from JSON file.
-
-        TrackerEntity defaults should_poll=False (designed for push-based
-        integrations). Our file-based architecture requires polling so
-        update() is called every SCAN_INTERVAL to re-read the JSON file.
-        """
-        return True
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        self._update_from_coordinator()
+        self.async_write_ha_state()
 
     @property
     def source_type(self) -> SourceType:
+        """Return the source type of the tracker."""
         return SourceType.GPS
 
     @property
     def is_connected(self) -> bool:
+        """Return whether the device is connected."""
         return self._is_home is not None
 
     @property
     def location_name(self) -> str | None:
+        """Return the location name."""
         if self._is_home is True:
             return "home"
-        elif self._is_home is False:
+        if self._is_home is False:
             return "not_home"
         return None
 
     @property
-    def extra_state_attributes(self):
-        metadata = self._device_data.get('deviceMetadata') or {}
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return extra state attributes."""
+        metadata = self._device_data.get("deviceMetadata") or {}
         return {
             "device_id": self._device_id,
-            "platform": metadata.get('platform'),
-            "os_version": metadata.get('osVersion'),
-            "model": metadata.get('model'),
+            "platform": metadata.get("platform"),
+            "os_version": metadata.get("osVersion"),
+            "model": metadata.get("model"),
             "bearing": self._bearing,
             "relative_distance": self._relative_distance,
         }
 
     @callback
-    def update(self):
-        """Update device tracker state from JSON file."""
+    def _update_from_coordinator(self) -> None:
+        """Update device tracker state from coordinator data."""
         try:
-            devices = (self._coordinator.data or {}).get("mobile_devices")
+            devices = (self.coordinator.data or {}).get("mobile_devices")
 
             if devices:
                 for device in devices:
-                    if device.get('id') == self._device_id:
+                    if device.get("id") == self._device_id:
                         self._device_data = device
-                        location = device.get('location')
+                        location = device.get("location")
 
                         if location:
-                            self._is_home = location.get('atHome')
-                            self._bearing = (location.get('bearingFromHome') or {}).get('degrees')
-                            self._relative_distance = location.get('relativeDistanceFromHomeFence')
+                            self._is_home = location.get("atHome")
+                            self._bearing = (location.get("bearingFromHome") or {}).get("degrees")
+                            self._relative_distance = location.get("relativeDistanceFromHomeFence")
                         else:
                             # No location data - device might not have geo tracking
                             self._is_home = None
@@ -137,5 +147,6 @@ class TadoDeviceTracker(TrackerEntity):
                         return
 
             self._attr_available = False
-        except Exception:
+        except (KeyError, TypeError, AttributeError) as err:
+            _LOGGER.debug("Device tracker update failed for %s: %s", self._device_name, err)
             self._attr_available = False

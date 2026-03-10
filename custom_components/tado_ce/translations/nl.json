@@ -1,0 +1,1244 @@
+{
+  "entity": {
+    "binary_sensor": {
+      "home": {
+        "name": "[CE] Woning",
+        "state_attributes": {
+          "tado_mode": {
+            "name": "Tado-modus"
+          },
+          "presence_locked": {
+            "name": "Aanwezigheid vergrendeld"
+          },
+          "data_source": {
+            "name": "Gegevensbron"
+          }
+        }
+      },
+      "window": {
+        "name": "Raam",
+        "state_attributes": {
+          "detected_time": {
+            "name": "Detectietijd"
+          },
+          "expiry_time": {
+            "name": "Vervaltijd"
+          }
+        }
+      },
+      "preheat_now": {
+        "name": "[CE] Nu voorverwarmen",
+        "state_attributes": {
+          "recommended_start": {
+            "name": "Aanbevolen start"
+          },
+          "target_time": {
+            "name": "Doeltijd"
+          },
+          "target_temperature": {
+            "name": "Doeltemperatuur"
+          },
+          "current_temperature": {
+            "name": "Huidige temperatuur"
+          },
+          "duration_minutes": {
+            "name": "Duur (minuten)"
+          },
+          "confidence": {
+            "name": "Betrouwbaarheid"
+          },
+          "zone_type": {
+            "name": "Zonetype"
+          }
+        }
+      },
+      "window_predicted": {
+        "name": "[CE] Raam voorspeld",
+        "state_attributes": {
+          "confidence": {
+            "name": "Betrouwbaarheid"
+          },
+          "temp_drop": {
+            "name": "Temperatuurdaling"
+          },
+          "time_window_minutes": {
+            "name": "Tijdvenster (minuten)"
+          },
+          "recommendation": {
+            "name": "Aanbeveling"
+          },
+          "zone_type": {
+            "name": "Zonetype"
+          },
+          "readings_count": {
+            "name": "Aantal metingen"
+          },
+          "anomaly_readings": {
+            "name": "Afwijkende metingen"
+          }
+        }
+      }
+    },
+    "button": {
+      "resume_all": {
+        "name": "[CE] Alles hervatten"
+      },
+      "refresh_ac": {
+        "name": "[CE] Airco vernieuwen"
+      },
+      "refresh_schedule": {
+        "name": "[CE] Schema vernieuwen"
+      },
+      "boost": {
+        "name": "Boost"
+      },
+      "smart_boost": {
+        "name": "[CE] Smart Boost"
+      }
+    },
+    "calendar": {
+      "schedule": {
+        "name": "[CE] Schema"
+      }
+    },
+    "climate": {
+      "heating": {
+        "state_attributes": {
+          "overlay_type": {
+            "name": "Overlay-type"
+          },
+          "heating_power": {
+            "name": "Verwarmingsvermogen"
+          },
+          "zone_id": {
+            "name": "Zone-ID"
+          },
+          "offset_celsius": {
+            "name": "Offset (°C)"
+          }
+        }
+      },
+      "ac": {
+        "state_attributes": {
+          "overlay_type": {
+            "name": "Overlay-type"
+          },
+          "ac_power_percentage": {
+            "name": "Airco-vermogen (%)"
+          },
+          "zone_id": {
+            "name": "Zone-ID"
+          },
+          "zone_type": {
+            "name": "Zonetype"
+          }
+        }
+      }
+    },
+    "device_tracker": {
+      "mobile_device": {
+        "state_attributes": {
+          "device_id": {
+            "name": "Apparaat-ID"
+          },
+          "platform": {
+            "name": "Platform"
+          },
+          "os_version": {
+            "name": "Besturingssysteemversie"
+          },
+          "model": {
+            "name": "Model"
+          },
+          "bearing": {
+            "name": "Richting"
+          },
+          "relative_distance": {
+            "name": "Relatieve afstand"
+          }
+        }
+      }
+    },
+    "number": {
+      "min_temp": {
+        "name": "[CE] Min. temp."
+      },
+      "max_temp": {
+        "name": "[CE] Max. temp."
+      },
+      "temp_offset": {
+        "name": "[CE] Temp.-offset"
+      },
+      "surface_offset": {
+        "name": "[CE] Oppervlakte-offset"
+      },
+      "ufh_buffer": {
+        "name": "[CE] Vloerverwarming-buffer"
+      }
+    },
+    "sensor": {
+      "temperature": {
+        "name": "Temp."
+      },
+      "humidity": {
+        "name": "Luchtvochtigheid"
+      },
+      "heating_power": {
+        "name": "Verwarming"
+      },
+      "ac_power": {
+        "name": "Airco"
+      },
+      "boiler_flow_temp": {
+        "name": "[CE] Ketel-aanvoertemp."
+      },
+      "target": {
+        "name": "[CE] Doel",
+        "state_attributes": {
+          "next_change": {
+            "name": "Volgende wijziging"
+          },
+          "next_temperature": {
+            "name": "Volgende temperatuur"
+          }
+        }
+      },
+      "overlay": {
+        "name": "[CE] Overlay",
+        "state_attributes": {
+          "source_zone": {
+            "name": "Bronzone"
+          }
+        }
+      },
+      "power": {
+        "name": "[CE] Vermogen"
+      },
+      "outside_temp": {
+        "name": "Buitentemperatuur",
+        "state_attributes": {
+          "timestamp": {
+            "name": "Tijdstempel"
+          }
+        }
+      },
+      "solar_intensity": {
+        "name": "Zonintensiteit",
+        "state_attributes": {
+          "timestamp": {
+            "name": "Tijdstempel"
+          }
+        }
+      },
+      "weather": {
+        "name": "Weer",
+        "state_attributes": {
+          "raw_state": {
+            "name": "Ruwe status"
+          },
+          "timestamp": {
+            "name": "Tijdstempel"
+          }
+        }
+      },
+      "battery": {
+        "name": "Batterij",
+        "state_attributes": {
+          "device_serial": {
+            "name": "Apparaatserienummer"
+          },
+          "device_type": {
+            "name": "Apparaattype"
+          },
+          "firmware_version": {
+            "name": "Firmwareversie"
+          },
+          "connection_state": {
+            "name": "Verbindingsstatus"
+          },
+          "connection_timestamp": {
+            "name": "Verbindingstijdstempel"
+          },
+          "recommendation": {
+            "name": "Aanbeveling"
+          }
+        }
+      },
+      "connection": {
+        "name": "Verbinding",
+        "state_attributes": {
+          "device_serial": {
+            "name": "Apparaatserienummer"
+          },
+          "device_type": {
+            "name": "Apparaattype"
+          },
+          "firmware_version": {
+            "name": "Firmwareversie"
+          },
+          "last_seen": {
+            "name": "Laatst gezien"
+          },
+          "recommendation": {
+            "name": "Aanbeveling"
+          }
+        }
+      },
+      "home_id": {
+        "name": "[CE] Woning-ID"
+      },
+      "api_usage": {
+        "name": "[CE] API-gebruik",
+        "state_attributes": {
+          "limit": {
+            "name": "Limiet"
+          },
+          "remaining": {
+            "name": "Resterend"
+          },
+          "percentage_used": {
+            "name": "Percentage gebruikt"
+          },
+          "last_updated": {
+            "name": "Laatst bijgewerkt"
+          },
+          "status": {
+            "name": "Status"
+          },
+          "test_mode": {
+            "name": "Testmodus"
+          }
+        }
+      },
+      "api_reset": {
+        "name": "[CE] API-reset",
+        "state_attributes": {
+          "time_until_reset": {
+            "name": "Tijd tot reset"
+          },
+          "reset_seconds": {
+            "name": "Reset-seconden"
+          },
+          "reset_at": {
+            "name": "Reset om"
+          },
+          "last_reset": {
+            "name": "Laatste reset"
+          },
+          "status": {
+            "name": "Status"
+          },
+          "next_poll": {
+            "name": "Volgende polling"
+          },
+          "current_interval_minutes": {
+            "name": "Huidig interval (min)"
+          },
+          "test_mode": {
+            "name": "Testmodus"
+          }
+        }
+      },
+      "api_limit": {
+        "name": "[CE] API-limiet"
+      },
+      "api_status": {
+        "name": "[CE] API-status",
+        "state_attributes": {
+          "remaining_calls": {
+            "name": "Resterende aanroepen"
+          },
+          "total_calls": {
+            "name": "Totale aanroepen"
+          },
+          "reset_time": {
+            "name": "Resettijd"
+          },
+          "recommendation": {
+            "name": "Aanbeveling"
+          }
+        }
+      },
+      "token_status": {
+        "name": "[CE] Token-status"
+      },
+      "zone_count": {
+        "name": "[CE] Aantal zones",
+        "state_attributes": {
+          "heating_zones": {
+            "name": "Verwarmingszones"
+          },
+          "hot_water_zones": {
+            "name": "Warmwaterzones"
+          },
+          "ac_zones": {
+            "name": "Aircozones"
+          }
+        }
+      },
+      "last_sync": {
+        "name": "[CE] Laatste sync"
+      },
+      "next_sync": {
+        "name": "[CE] Volgende sync",
+        "state_attributes": {
+          "countdown": {
+            "name": "Aftelling"
+          },
+          "current_interval_minutes": {
+            "name": "Huidig interval (min)"
+          }
+        }
+      },
+      "polling_interval": {
+        "name": "[CE] Pollinginterval",
+        "state_attributes": {
+          "source": {
+            "name": "Bron"
+          },
+          "day_interval": {
+            "name": "Daginterval"
+          },
+          "night_interval": {
+            "name": "Nachtinterval"
+          },
+          "is_night_mode": {
+            "name": "Nachtmodus"
+          },
+          "test_mode": {
+            "name": "Testmodus"
+          }
+        }
+      },
+      "call_history": {
+        "name": "[CE] Aanroepgeschiedenis",
+        "state_attributes": {
+          "history": {
+            "name": "Geschiedenis"
+          },
+          "history_period_days": {
+            "name": "Geschiedenisperiode (dagen)"
+          },
+          "oldest_call": {
+            "name": "Oudste aanroep"
+          },
+          "newest_call": {
+            "name": "Nieuwste aanroep"
+          },
+          "calls_per_hour": {
+            "name": "Aanroepen per uur"
+          },
+          "calls_today": {
+            "name": "Aanroepen vandaag"
+          },
+          "most_called_endpoint": {
+            "name": "Meest aangeroepen endpoint"
+          }
+        }
+      },
+      "api_breakdown": {
+        "name": "[CE] API-uitsplitsing",
+        "state_attributes": {
+          "breakdown_24h": {
+            "name": "Uitsplitsing (24u)"
+          },
+          "breakdown_today": {
+            "name": "Uitsplitsing (vandaag)"
+          },
+          "breakdown_total": {
+            "name": "Uitsplitsing (totaal)"
+          },
+          "top_3_types": {
+            "name": "Top 3 typen"
+          },
+          "chart_data": {
+            "name": "Grafiekgegevens"
+          }
+        }
+      },
+      "home_insights": {
+        "name": "[CE] Woninginzichten",
+        "state_attributes": {
+          "summary": {
+            "name": "Samenvatting"
+          },
+          "actions_needed": {
+            "name": "Acties nodig"
+          },
+          "zones_ok": {
+            "name": "Zones OK"
+          },
+          "top_priority": {
+            "name": "Hoogste prioriteit"
+          },
+          "top_recommendation": {
+            "name": "Belangrijkste aanbeveling"
+          },
+          "zones_with_issues": {
+            "name": "Zones met problemen"
+          },
+          "cross_zone_insights": {
+            "name": "Zone-overschrijdende inzichten"
+          },
+          "persistent_insights": {
+            "name": "Aanhoudende inzichten"
+          },
+          "insight_health_score": {
+            "name": "Gezondheidsscore"
+          },
+          "weekly_digest": {
+            "name": "Wekelijks overzicht"
+          }
+        }
+      },
+      "insights": {
+        "name": "[CE] Inzichten",
+        "state_attributes": {
+          "top_priority": {
+            "name": "Hoogste prioriteit"
+          },
+          "top_recommendation": {
+            "name": "Belangrijkste aanbeveling"
+          },
+          "insight_types": {
+            "name": "Inzichttypen"
+          },
+          "recommendations": {
+            "name": "Aanbevelingen"
+          }
+        }
+      },
+      "schedule_deviation": {
+        "name": "[CE] Schema-afwijking",
+        "state_attributes": {
+          "current_temperature": {
+            "name": "Huidige temperatuur"
+          },
+          "historical_average": {
+            "name": "Historisch gemiddelde"
+          },
+          "sample_count": {
+            "name": "Aantal monsters"
+          },
+          "summary": {
+            "name": "Samenvatting"
+          },
+          "zone_type": {
+            "name": "Zonetype"
+          },
+          "recommendation": {
+            "name": "Aanbeveling"
+          }
+        }
+      },
+      "next_schedule": {
+        "name": "[CE] Volgend schema",
+        "state_attributes": {
+          "next_temperature": {
+            "name": "Volgende temperatuur"
+          },
+          "is_heating_on": {
+            "name": "Verwarming aan"
+          },
+          "is_tomorrow": {
+            "name": "Morgen"
+          },
+          "minutes_until": {
+            "name": "Minuten tot"
+          },
+          "zone_type": {
+            "name": "Zonetype"
+          }
+        }
+      },
+      "next_sched_temp": {
+        "name": "[CE] Volgende schematemp.",
+        "state_attributes": {
+          "schedule_time": {
+            "name": "Schematijd"
+          },
+          "is_heating_on": {
+            "name": "Verwarming aan"
+          },
+          "current_temperature": {
+            "name": "Huidige temperatuur"
+          },
+          "temperature_difference": {
+            "name": "Temperatuurverschil"
+          },
+          "zone_type": {
+            "name": "Zonetype"
+          }
+        }
+      },
+      "preheat_advisor": {
+        "name": "[CE] Voorverwarmingsadviseur",
+        "state_attributes": {
+          "current_temperature": {
+            "name": "Huidige temperatuur"
+          },
+          "target_temperature": {
+            "name": "Doeltemperatuur"
+          },
+          "target_time": {
+            "name": "Doeltijd"
+          },
+          "duration_minutes": {
+            "name": "Duur (minuten)"
+          },
+          "heating_rate": {
+            "name": "Verwarmingssnelheid"
+          },
+          "confidence": {
+            "name": "Betrouwbaarheid"
+          },
+          "summary": {
+            "name": "Samenvatting"
+          },
+          "zone_type": {
+            "name": "Zonetype"
+          },
+          "cooling_rate": {
+            "name": "Afkoelsnelheid"
+          },
+          "predicted_crossover_time": {
+            "name": "Voorspelde kruistijd"
+          },
+          "is_cooling_prediction": {
+            "name": "Afkoelvoorspelling"
+          }
+        }
+      },
+      "comfort_target": {
+        "name": "[CE] Comfortdoel",
+        "state_attributes": {
+          "current_temperature": {
+            "name": "Huidige temperatuur"
+          },
+          "outdoor_temperature": {
+            "name": "Buitentemperatuur"
+          },
+          "humidity": {
+            "name": "Luchtvochtigheid"
+          },
+          "comfort_model": {
+            "name": "Comfortmodel"
+          },
+          "deviation_from_comfort": {
+            "name": "Afwijking van comfort"
+          },
+          "zone_type": {
+            "name": "Zonetype"
+          }
+        }
+      },
+      "thermal_inertia": {
+        "name": "[CE] Thermische traagheid",
+        "state_attributes": {
+          "cycle_count": {
+            "name": "Aantal cycli"
+          },
+          "completed_count": {
+            "name": "Voltooide cycli"
+          },
+          "confidence_score": {
+            "name": "Betrouwbaarheidsscore"
+          }
+        }
+      },
+      "heating_rate": {
+        "name": "[CE] Verwarmingssnelheid",
+        "state_attributes": {
+          "cycle_count": {
+            "name": "Aantal cycli"
+          },
+          "completed_count": {
+            "name": "Voltooide cycli"
+          },
+          "confidence_score": {
+            "name": "Betrouwbaarheidsscore"
+          }
+        }
+      },
+      "preheat_time": {
+        "name": "[CE] Voorverwarmingstijd",
+        "state_attributes": {
+          "current_temp": {
+            "name": "Huidige temperatuur"
+          },
+          "target_temp": {
+            "name": "Doeltemperatuur"
+          },
+          "cycle_count": {
+            "name": "Aantal cycli"
+          },
+          "completed_count": {
+            "name": "Voltooide cycli"
+          },
+          "confidence_score": {
+            "name": "Betrouwbaarheidsscore"
+          }
+        }
+      },
+      "confidence": {
+        "name": "[CE] Betrouwbaarheid",
+        "state_attributes": {
+          "cycle_count": {
+            "name": "Aantal cycli"
+          },
+          "completed_count": {
+            "name": "Voltooide cycli"
+          },
+          "recommendation": {
+            "name": "Aanbeveling"
+          }
+        }
+      },
+      "heat_accel": {
+        "name": "[CE] Verwarmingsversnelling"
+      },
+      "approach_factor": {
+        "name": "[CE] Benaderingsfactor",
+        "state_attributes": {
+          "cycle_count": {
+            "name": "Aantal cycli"
+          },
+          "completed_count": {
+            "name": "Voltooide cycli"
+          }
+        }
+      },
+      "mold_risk": {
+        "name": "[CE] Schimmelrisico",
+        "state": {
+          "critical": "Kritiek",
+          "high": "Hoog",
+          "medium": "Gemiddeld",
+          "low": "Laag"
+        },
+        "state_attributes": {
+          "room_temperature": {
+            "name": "Kamertemperatuur"
+          },
+          "effective_temperature": {
+            "name": "Effectieve temperatuur"
+          },
+          "humidity": {
+            "name": "Luchtvochtigheid"
+          },
+          "dew_point": {
+            "name": "Dauwpunt"
+          },
+          "margin": {
+            "name": "Marge"
+          },
+          "mold_risk_percentage": {
+            "name": "Schimmelrisico (%)"
+          },
+          "temperature_source": {
+            "name": "Temperatuurbron",
+            "state": {
+              "surface_estimation": "Oppervlakteschatting",
+              "room_average": "Kamergemiddelde"
+            }
+          },
+          "outdoor_temperature": {
+            "name": "Buitentemperatuur"
+          },
+          "surface_temperature": {
+            "name": "Oppervlaktetemperatuur"
+          },
+          "surface_temp_offset": {
+            "name": "Oppervlaktetemp.-offset"
+          },
+          "zone_type": {
+            "name": "Zonetype"
+          },
+          "recommendation": {
+            "name": "Aanbeveling"
+          }
+        }
+      },
+      "mold_risk_pct": {
+        "name": "[CE] Schimmelrisico %",
+        "state_attributes": {
+          "room_temperature": {
+            "name": "Kamertemperatuur"
+          },
+          "effective_temperature": {
+            "name": "Effectieve temperatuur"
+          },
+          "humidity": {
+            "name": "Luchtvochtigheid"
+          },
+          "dew_point": {
+            "name": "Dauwpunt"
+          },
+          "temperature_source": {
+            "name": "Temperatuurbron"
+          },
+          "zone_type": {
+            "name": "Zonetype"
+          }
+        }
+      },
+      "condensation_risk": {
+        "name": "[CE] Condensatie",
+        "state_attributes": {
+          "room_temperature": {
+            "name": "Kamertemperatuur"
+          },
+          "humidity": {
+            "name": "Luchtvochtigheid"
+          },
+          "indoor_dew_point": {
+            "name": "Binnendauwpunt"
+          },
+          "surface_temperature": {
+            "name": "Oppervlaktetemperatuur"
+          },
+          "outdoor_temperature": {
+            "name": "Buitentemperatuur"
+          },
+          "margin": {
+            "name": "Marge"
+          },
+          "window_type": {
+            "name": "Raamtype"
+          },
+          "u_value": {
+            "name": "U-waarde"
+          },
+          "zone_type": {
+            "name": "Zonetype"
+          },
+          "recommendation": {
+            "name": "Aanbeveling"
+          },
+          "outdoor_humidity": {
+            "name": "Buitenluchtvochtigheid"
+          },
+          "outdoor_dew_point": {
+            "name": "Buitendauwpunt"
+          },
+          "window_outer_surface_temp": {
+            "name": "Raam buitenoppervlaktetemp."
+          }
+        }
+      },
+      "surface_temp": {
+        "name": "[CE] Oppervlaktetemp.",
+        "state_attributes": {
+          "room_temperature": {
+            "name": "Kamertemperatuur"
+          },
+          "outdoor_temperature": {
+            "name": "Buitentemperatuur"
+          },
+          "window_type": {
+            "name": "Raamtype"
+          },
+          "u_value": {
+            "name": "U-waarde"
+          },
+          "offset_applied": {
+            "name": "Offset toegepast"
+          },
+          "calculation_method": {
+            "name": "Berekeningsmethode"
+          },
+          "zone_type": {
+            "name": "Zonetype"
+          }
+        }
+      },
+      "dew_point": {
+        "name": "[CE] Dauwpunt",
+        "state_attributes": {
+          "room_temperature": {
+            "name": "Kamertemperatuur"
+          },
+          "humidity": {
+            "name": "Luchtvochtigheid"
+          },
+          "calculation_method": {
+            "name": "Berekeningsmethode"
+          },
+          "zone_type": {
+            "name": "Zonetype"
+          }
+        }
+      },
+      "comfort_level": {
+        "name": "[CE] Comfortniveau",
+        "state_attributes": {
+          "temperature": {
+            "name": "Temperatuur"
+          },
+          "humidity": {
+            "name": "Luchtvochtigheid"
+          },
+          "outdoor_temperature": {
+            "name": "Buitentemperatuur"
+          },
+          "comfort_target": {
+            "name": "Comfortdoel"
+          },
+          "comfort_model": {
+            "name": "Comfortmodel"
+          },
+          "dew_point": {
+            "name": "Dauwpunt"
+          },
+          "zone_type": {
+            "name": "Zonetype"
+          },
+          "recommendation": {
+            "name": "Aanbeveling"
+          }
+        }
+      }
+    },
+    "select": {
+      "presence_mode": {
+        "name": "Aanwezigheidsmodus",
+        "state": {
+          "auto": "Auto (Geofencing)",
+          "home": "Thuis",
+          "away": "Afwezig"
+        },
+        "state_attributes": {
+          "presence": {
+            "name": "Huidige aanwezigheid"
+          },
+          "presence_locked": {
+            "name": "Aanwezigheid vergrendeld"
+          },
+          "automatic_geofencing": {
+            "name": "Automatische geofencing"
+          },
+          "api_calls_per_change": {
+            "name": "API-aanroepen per wijziging"
+          }
+        }
+      },
+      "overlay_mode": {
+        "name": "Overlay-modus",
+        "state": {
+          "tado_mode": "Tado-modus",
+          "next_time_block": "Volgend tijdblok",
+          "manual": "Handmatig"
+        },
+        "state_attributes": {
+          "description": {
+            "name": "Beschrijving"
+          },
+          "tado_mode_info": {
+            "name": "Tado-modus info"
+          },
+          "next_time_block_info": {
+            "name": "Volgend tijdblok info"
+          },
+          "timer_info": {
+            "name": "Timer info"
+          },
+          "manual_info": {
+            "name": "Handmatig info"
+          },
+          "api_calls_per_change": {
+            "name": "API-aanroepen per wijziging"
+          }
+        }
+      },
+      "timer_duration": {
+        "name": "[CE] Overlay-timer",
+        "state_attributes": {
+          "description": {
+            "name": "Beschrijving"
+          },
+          "unit": {
+            "name": "Eenheid"
+          },
+          "api_calls_per_change": {
+            "name": "API-aanroepen per wijziging"
+          }
+        }
+      },
+      "heat_emitter": {
+        "name": "[CE] Type verwarming"
+      },
+      "smart_comfort": {
+        "name": "[CE] Smart Comfort"
+      },
+      "window_type": {
+        "name": "[CE] Raamtype"
+      },
+      "zone_overlay_mode": {
+        "name": "[CE] Overlay-modus"
+      },
+      "zone_timer_duration": {
+        "name": "[CE] Overlay-timer"
+      }
+    },
+    "switch": {
+      "early_start": {
+        "name": "Vroege start",
+        "state_attributes": {
+          "zone_id": {
+            "name": "Zone-ID"
+          },
+          "zone": {
+            "name": "Zone"
+          },
+          "description": {
+            "name": "Beschrijving"
+          }
+        }
+      },
+      "child_lock": {
+        "name": "Kinderslot",
+        "state_attributes": {
+          "serial": {
+            "name": "Serienummer"
+          },
+          "device_type": {
+            "name": "Apparaattype"
+          },
+          "zone": {
+            "name": "Zone"
+          }
+        }
+      },
+      "adaptive_preheat": {
+        "name": "[CE] Adaptief voorverwarmen"
+      }
+    },
+    "water_heater": {
+      "hot_water": {
+        "state_attributes": {
+          "overlay_type": {
+            "name": "Overlay-type"
+          },
+          "zone_id": {
+            "name": "Zone-ID"
+          }
+        }
+      }
+    }
+  },
+  "selector": {
+    "smart_comfort_mode": {
+      "options": {
+        "none": "Geen (uitgeschakeld)",
+        "light": "Licht",
+        "moderate": "Matig",
+        "aggressive": "Agressief"
+      }
+    },
+    "mold_risk_window_type": {
+      "options": {
+        "single_pane": "Enkelglas (U=5,0)",
+        "double_pane": "Dubbelglas (U=2,7)",
+        "triple_pane": "Driedubbel glas (U=1,0)",
+        "passive_house": "Passiefhuis (U=0,8)"
+      }
+    }
+  },
+  "exceptions": {
+    "entity_not_found": {
+      "message": "Entiteit {entity_id} niet gevonden in het entiteitsregister"
+    },
+    "entity_not_tado_ce": {
+      "message": "Entiteit {entity_id} is geen Tado CE entiteit (platform={platform})"
+    },
+    "entity_no_config_entry": {
+      "message": "Entiteit {entity_id} heeft geen configuratie-invoerkoppeling"
+    },
+    "entry_not_loaded": {
+      "message": "Geen Tado CE invoer geladen voor {entity_id} (config_entry_id={config_entry_id})"
+    },
+    "device_entry_not_loaded": {
+      "message": "Apparaat {device_serial} gevonden maar de configuratie-invoer is niet geladen"
+    },
+    "device_not_found": {
+      "message": "Apparaat {device_serial} niet gevonden in het apparaatregister. Controleer het serienummer."
+    },
+    "no_entries_loaded": {
+      "message": "Geen Tado CE invoeren geladen"
+    },
+    "multiple_entries": {
+      "message": "Meerdere Tado-woningen geconfigureerd ({home_ids}). Gebruik een service die een specifieke entiteit aanspreekt."
+    },
+    "api_quota_critically_low": {
+      "message": "API-quotum kritiek laag – actie geblokkeerd. Wacht op de API-reset."
+    }
+  },
+  "issues": {
+    "auth_token_expired": {
+      "title": "Tado CE: Authenticatie verlopen",
+      "description": "Het vernieuwingstoken voor woning **{home_id}** is verlopen. Herconfigureer de integratie.\n\nGa naar **Instellingen → Apparaten en services → Tado CE → Herconfigureren**."
+    },
+    "deprecated_yaml_config": {
+      "title": "Tado CE: Verouderde configuratiesleutel",
+      "description": "De configuratiesleutel **{key}** is verouderd en wordt in een toekomstige versie verwijderd. Werk uw configuratie bij."
+    }
+  },
+  "config": {
+    "step": {
+      "user": {
+        "title": "Tado CE Instellen",
+        "description": "Klik op Verzenden om het autorisatieproces te starten."
+      },
+      "authorize": {
+        "title": "Tado autoriseren",
+        "description": "**Stap 1:** Klik op de link om de Tado-login te openen:\n\n**[Klik hier om te autoriseren]({url})**\n\n**Stap 2:** Log in op je Tado-account en autoriseer de verbinding.\n\n**Stap 3:** Nadat je \"Succesvol verbonden\" ziet op de Tado-website, klik op Verzenden."
+      },
+      "select_home": {
+        "title": "Woning selecteren",
+        "description": "Meerdere Tado-woningen gevonden. Selecteer welke je wilt gebruiken.",
+        "data": {
+          "home": "Woning"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Tado CE opnieuw authenticeren",
+        "description": "Je Tado-authenticatie is verlopen. Klik op Verzenden om de herauthenticatie te starten."
+      },
+      "reauth_authorize": {
+        "title": "Tado autoriseren",
+        "description": "**Stap 1:** Klik op de link om de Tado-login te openen:\n\n**[Klik hier om te autoriseren]({url})**\n\n**Stap 2:** Log in op je Tado-account en autoriseer de verbinding.\n\n**Stap 3:** Nadat je \"Succesvol verbonden\" ziet op de Tado-website, klik op Verzenden."
+      },
+      "reconfigure": {
+        "title": "Tado CE opnieuw authenticeren",
+        "description": "Klik op Verzenden om de herauthenticatie te starten."
+      },
+      "reconfigure_authorize": {
+        "title": "Tado autoriseren",
+        "description": "**Stap 1:** Klik op de link om de Tado-login te openen:\n\n**[Klik hier om te autoriseren]({url})**\n\n**Stap 2:** Log in op je Tado-account en autoriseer de verbinding.\n\n**Stap 3:** Nadat je \"Succesvol verbonden\" ziet op de Tado-website, klik op Verzenden."
+      },
+      "reconfigure_select_home": {
+        "title": "Woning selecteren",
+        "description": "Je vorige woning is niet meer beschikbaar. Selecteer een nieuwe.",
+        "data": {
+          "home": "Woning"
+        }
+      }
+    },
+    "progress": {
+      "poll": "Wachten op autorisatie... Voltooi de login in je browser."
+    },
+    "abort": {
+      "already_configured": "Tado CE is al geconfigureerd",
+      "timeout": "Autorisatie verlopen. Probeer het opnieuw.",
+      "authorization_failed": "Autorisatie mislukt. Probeer het opnieuw.",
+      "no_homes": "Geen Tado-woningen gevonden voor dit account.",
+      "reauth_successful": "Herauthenticatie geslaagd! Je inloggegevens zijn bijgewerkt.",
+      "reconfigure_successful": "Herauthenticatie geslaagd! Je nieuwe inloggegevens zijn opgeslagen."
+    },
+    "error": {
+      "cannot_connect": "Kan geen verbinding maken met Tado. Controleer je internetverbinding.",
+      "auth_pending": "Autorisatie nog niet voltooid. Autoriseer eerst op de Tado-website.",
+      "authorization_failed": "Autorisatie mislukt. Begin opnieuw."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Tado CE Opties",
+        "description": "Configureer de Tado CE integratie-instellingen.",
+        "sections": {
+          "tado_ce_exclusive": {
+            "name": "Tado CE Exclusief",
+            "description": "Functies exclusief voor de Tado CE integratie",
+            "data": {
+              "smart_comfort_enabled": "Smart Comfort Analyse",
+              "thermal_analytics_enabled": "Thermische analyse",
+              "thermal_analytics_zones": "Thermische analyse zones",
+              "adaptive_preheat_enabled": "Adaptief voorverwarmen",
+              "schedule_calendar_enabled": "Schema-kalender",
+              "zone_configuration_enabled": "Zoneconfiguratie",
+              "test_mode_enabled": "Testmodus (100 API-aanroepen limiet)"
+            },
+            "data_description": {
+              "smart_comfort_enabled": "Voorverwarmingsadviseur, schimmelrisico, comfortsensoren",
+              "thermal_analytics_enabled": "Thermische traagheid, verwarmingssnelheid, efficiëntiesensoren",
+              "thermal_analytics_zones": "Selecteer zones voor thermische analyse",
+              "adaptive_preheat_enabled": "Verwarming automatisch starten op aanbevolen voorverwarmingstijd",
+              "schedule_calendar_enabled": "Verwarmingsschema's weergeven als kalenderitems (alleen-lezen)",
+              "zone_configuration_enabled": "Zone-instellingen: type verwarming, overlay-modus, temperatuurlimieten",
+              "test_mode_enabled": "Simuleer een limiet van 100 API-aanroepen om quotabescherming te testen"
+            }
+          },
+          "tado_data": {
+            "name": "Tado Gegevens",
+            "description": "Extra gegevens van de Tado API",
+            "data": {
+              "weather_enabled": "Weersensoren",
+              "home_state_sync_enabled": "Thuis/Afwezig synchronisatie",
+              "mobile_devices_enabled": "Mobiele apparaten volgen",
+              "mobile_devices_frequent_sync": "Mobiele apparaten frequent synchroniseren",
+              "offset_enabled": "Temperatuuroffset"
+            },
+            "data_description": {
+              "weather_enabled": "Buitentemperatuur en zonintensiteit (+1 API-aanroep per sync)",
+              "home_state_sync_enabled": "Thuis/afwezig-status synchroniseren (+1 API-aanroep per sync)",
+              "mobile_devices_enabled": "Mobiele apparaten volgen voor geofencing (+1 API-aanroep per volledige sync)",
+              "mobile_devices_frequent_sync": "Mobiele apparaten bij elke polling synchroniseren",
+              "offset_enabled": "Offset-attribuut toevoegen aan klimaatentiteiten (+1 API-aanroep per apparaat)"
+            }
+          },
+          "settings": {
+            "name": "Smart Comfort",
+            "data": {
+              "outdoor_temp_entity": "Buitentemperatuur-entiteit",
+              "hot_water_timer_duration": "Warmwatertimer (minuten)",
+              "smart_comfort_mode": "Smart Comfort modus",
+              "use_feels_like": "Gevoelstemperatuur gebruiken",
+              "mold_risk_window_type": "Raamtype",
+              "smart_comfort_history_days": "Temperatuurgeschiedenis (dagen)",
+              "heating_cycle_history_days": "Thermische analyse geschiedenis (dagen)",
+              "heating_cycle_min_cycles": "Minimale cycli voor analyse",
+              "heating_cycle_inertia_threshold": "Drempel traagheidsdetectie"
+            },
+            "data_description": {
+              "outdoor_temp_entity": "Temperatuursensor voor weercompensatie (bijv. weather.home)",
+              "hot_water_timer_duration": "Standaardduur bij inschakelen warm water (5-1440 min)",
+              "smart_comfort_mode": "Past doeltemperatuur aan op basis van buitenomstandigheden",
+              "use_feels_like": "Gebruik gevoelstemperatuur in plaats van werkelijke",
+              "mold_risk_window_type": "Raamtype voor schimmelrisico oppervlaktetemperatuurberekening",
+              "smart_comfort_history_days": "Dagen temperatuurgeschiedenis voor snelheidsberekening (1-30)",
+              "heating_cycle_history_days": "Dagen verwarmingscyclusgeschiedenis (1-30)",
+              "heating_cycle_min_cycles": "Minimale voltooide cycli voor analyse (1-10)",
+              "heating_cycle_inertia_threshold": "Temperatuurdrempel voor detectie einde traagheid (0,05-0,5°C)"
+            }
+          },
+          "polling_api": {
+            "name": "Polling & API",
+            "data": {
+              "day_start_hour": "Startuur dag",
+              "night_start_hour": "Startuur nacht",
+              "custom_day_interval": "Aangepast daginterval (minuten)",
+              "custom_night_interval": "Aangepast nachtinterval (minuten)",
+              "refresh_debounce_seconds": "Verversing-debounce (seconden)",
+              "api_history_retention_days": "API-geschiedenis bewaren (dagen)",
+              "quota_reserve_enabled": "Quotareservebescherming"
+            },
+            "data_description": {
+              "day_start_hour": "Uur waarop de dagperiode begint (0-23, standaard: 7)",
+              "night_start_hour": "Uur waarop de nachtperiode begint (0-23, standaard: 23)",
+              "custom_day_interval": "Slimme polling voor overdag overschrijven (1-1440 min, leeg voor auto)",
+              "custom_night_interval": "Slimme polling voor 's nachts overschrijven (1-1440 min, leeg voor auto)",
+              "refresh_debounce_seconds": "Vertraging voor verversing na statuswijzigingen (1-60s)",
+              "api_history_retention_days": "Dagen om API-aanroepgeschiedenis te bewaren (0 = onbeperkt)",
+              "quota_reserve_enabled": "Polling pauzeren bij laag quotum."
+            }
+          }
+        }
+      }
+    },
+    "error": {
+      "interval_out_of_range": "Pollinginterval moet tussen 1 en 1440 minuten zijn",
+      "invalid_number": "Voer een geldig getal in"
+    }
+  }
+}

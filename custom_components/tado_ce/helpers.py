@@ -1,41 +1,70 @@
-"""Helper functions for Tado CE.
+"""Tado CE helper functions — optimistic update window, overlay termination config.
 
-This module contains shared helper functions used across multiple entities:
-- Immediate refresh triggering
-- Optimistic update window calculation
-- Overlay termination configuration
+Optimistic update window calculation and overlay termination configuration.
 """
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
+
+from .const import OVERLAY_MODE_DEFAULT, TIMER_DURATION_DEFAULT
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
+    from .coordinator import TadoDataUpdateCoordinator
+
 _LOGGER = logging.getLogger(__name__)
 
 
-def _get_coordinator(hass: HomeAssistant, entry_id: str):
+def _get_coordinator(hass: HomeAssistant, entry_id: str) -> TadoDataUpdateCoordinator:
     """Get coordinator from entry_id, or None."""
     try:
         entry = hass.config_entries.async_get_entry(entry_id)
-        if entry and hasattr(entry, 'runtime_data') and entry.runtime_data is not None:
-            return entry.runtime_data
+        if entry and hasattr(entry, "runtime_data") and entry.runtime_data is not None:
+            return entry.runtime_data  # type: ignore[no-any-return]
     except (AttributeError, TypeError):
         pass
-    return None
+    return None  # type: ignore[return-value]
 
 
+def parse_iso_datetime(iso_str: str) -> datetime:
+    """Parse an ISO 8601 datetime string to a timezone-aware UTC datetime.
 
-async def async_trigger_immediate_refresh(  # noqa: PLR0913
+    Handles:
+    - 'Z' suffix (Zulu/UTC)
+    - Naive datetimes (assumed UTC)
+    - Already timezone-aware datetimes
+
+    Args:
+        iso_str: ISO 8601 datetime string.
+
+    Returns:
+        Timezone-aware datetime in UTC.
+
+    Raises:
+        ValueError: If the string cannot be parsed as ISO 8601.
+        TypeError: If iso_str is not a string.
+
+    """
+    if not isinstance(iso_str, str):
+        msg = f"Expected str, got {type(iso_str).__name__}"
+        raise TypeError(msg)
+    dt = datetime.fromisoformat(iso_str)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    return dt
+
+
+async def async_trigger_immediate_refresh(
     hass: HomeAssistant,
     entity_id: str,
     reason: str,
-    force: bool = False,  # noqa: FBT001, FBT002
-    skip_debounce: bool = False,  # noqa: FBT001, FBT002
-    include_home_state: bool = False,  # noqa: FBT001, FBT002
+    force: bool = False,
+    skip_debounce: bool = False,
+    include_home_state: bool = False,
 ) -> None:
     """Trigger immediate refresh after state change.
 
@@ -49,24 +78,24 @@ async def async_trigger_immediate_refresh(  # noqa: PLR0913
 
     """
     try:
-        from homeassistant.helpers import entity_registry as er  # noqa: PLC0415
+        from homeassistant.helpers import entity_registry as er
 
         entity_registry = er.async_get(hass)
         entity_entry = entity_registry.async_get(entity_id)
         if entity_entry and entity_entry.config_entry_id:
             coordinator = _get_coordinator(hass, entity_entry.config_entry_id)
             if coordinator and coordinator.refresh_handler:
-                    await coordinator.refresh_handler.trigger_refresh(
-                        entity_id, reason, force=force,
-                        skip_debounce=skip_debounce,
-                        include_home_state=include_home_state,
-                    )
-                    return
+                await coordinator.refresh_handler.trigger_refresh(
+                    entity_id,
+                    reason,
+                    force=force,
+                    skip_debounce=skip_debounce,
+                    include_home_state=include_home_state,
+                )
+                return
         _LOGGER.warning("No refresh handler found for entity %s", entity_id)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _LOGGER.warning("Failed to trigger immediate refresh: %s", e)
-
-
 
 
 def get_optimistic_window(hass: HomeAssistant, entry_id: str | None = None) -> float:
@@ -88,14 +117,12 @@ def get_optimistic_window(hass: HomeAssistant, entry_id: str | None = None) -> f
             coordinator = _get_coordinator(hass, entry_id)
             if coordinator and coordinator.config_manager:
                 return float(coordinator.config_manager.get_refresh_debounce_seconds()) + 2.0
-    except Exception:  # noqa: BLE001, S110
-        pass
+    except (AttributeError, TypeError, ValueError) as err:
+        _LOGGER.debug("Failed to get optimistic window from config: %s", err)
     return 17.0  # Default: 15s debounce + 2s buffer
 
 
-
-
-def get_overlay_termination(hass: HomeAssistant, entry_id: str | None = None) -> dict:
+def get_overlay_termination(hass: HomeAssistant, entry_id: str | None = None) -> dict[str, Any]:
     """Get the termination dict for overlay API calls.
 
     Args:
@@ -107,14 +134,14 @@ def get_overlay_termination(hass: HomeAssistant, entry_id: str | None = None) ->
         Note: Tado API only accepts MANUAL, TADO_MODE, TIMER (not NEXT_TIME_BLOCK)
 
     """
-    mode = "TADO_MODE"
-    duration = 60
+    mode = OVERLAY_MODE_DEFAULT
+    duration = TIMER_DURATION_DEFAULT
     if entry_id:
         try:
             coordinator = _get_coordinator(hass, entry_id)
             if coordinator:
-                mode = coordinator.overlay_mode or "TADO_MODE"
-                duration = coordinator.timer_duration or 60
+                mode = coordinator.overlay_mode or OVERLAY_MODE_DEFAULT
+                duration = coordinator.timer_duration or TIMER_DURATION_DEFAULT
         except (AttributeError, TypeError):
             pass
 
@@ -129,9 +156,7 @@ def get_overlay_termination(hass: HomeAssistant, entry_id: str | None = None) ->
     return {"type": mode}
 
 
-
-
-def get_zone_overlay_termination(hass: HomeAssistant, zone_id: str, entry_id: str | None = None) -> dict:
+def get_zone_overlay_termination(hass: HomeAssistant, zone_id: str, entry_id: str | None = None) -> dict[str, Any]:
     """Get the termination dict for overlay API calls with per-zone support.
 
     Priority:
@@ -173,7 +198,7 @@ def get_zone_overlay_termination(hass: HomeAssistant, zone_id: str, entry_id: st
 
             # Handle Timer mode with duration
             if api_mode == "TIMER":
-                duration = zone_config_manager.get_zone_value(zone_id, "timer_duration", 60)
+                duration = zone_config_manager.get_zone_value(zone_id, "timer_duration", TIMER_DURATION_DEFAULT)
                 return {"type": "TIMER", "durationInSeconds": duration * 60}
 
             return {"type": api_mode}
@@ -182,14 +207,13 @@ def get_zone_overlay_termination(hass: HomeAssistant, zone_id: str, entry_id: st
     return get_overlay_termination(hass, entry_id=entry_id)
 
 
-
 def build_timer_termination(
     duration_minutes: int | None = None,
     overlay: str | None = None,
-    hass: HomeAssistant = None,
+    hass: HomeAssistant | None = None,
     zone_id: str | None = None,
     entry_id: str | None = None,
-) -> dict:
+) -> dict[str, Any]:
     """Build termination dict for set_timer / set_overlay calls.
 
     Consolidates the duplicated termination-building logic from:

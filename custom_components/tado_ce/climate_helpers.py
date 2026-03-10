@@ -1,15 +1,15 @@
-"""Climate helper functions.
+"""Tado CE climate helper functions — offset and preset mode updates."""
 
-Functions:
-  update_offset(coordinator, zone_id) — reads temperature offset from cached file
-  update_preset_mode(coordinator) — reads home/away presence from home_state.json
-"""
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from collections.abc import Coroutine
+
+    from homeassistant.components.climate import HVACAction, HVACMode  # type: ignore[attr-defined]
+
     from .coordinator import TadoDataUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -41,9 +41,9 @@ def update_offset(
 
         offsets = (coordinator.data or {}).get("offsets")
         if offsets:
-            return offsets.get(zone_id)
+            return offsets.get(zone_id)  # type: ignore[no-any-return]
         return None
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         # Keep existing offset value on error — caller handles fallback
         return None
 
@@ -62,25 +62,25 @@ def update_preset_mode(coordinator: TadoDataUpdateCoordinator) -> str | None:
         PRESET_HOME or PRESET_AWAY string, or None if unavailable
 
     """
-    from homeassistant.components.climate import PRESET_AWAY, PRESET_HOME
+    from homeassistant.components.climate import PRESET_AWAY, PRESET_HOME  # type: ignore[attr-defined]
 
     try:
         home_state = (coordinator.data or {}).get("home_state")
         if home_state:
             presence = home_state.get("presence", "HOME")
             return PRESET_HOME if presence == "HOME" else PRESET_AWAY
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         # Keep last known preset mode — caller handles fallback
-        pass
+        _LOGGER.debug("Failed to determine preset mode from home state")
     return None
 
 
 async def api_call_with_rollback(
-    entity,
-    api_coro,
+    entity: Any,
+    api_coro: Coroutine,  # type: ignore[type-arg]
     *,
-    hvac_mode,
-    hvac_action,
+    hvac_mode: HVACMode,
+    hvac_action: HVACAction,
     overlay_type: str | None = "MANUAL",
     target_temp: float | None = None,
     reason: str,
@@ -130,7 +130,7 @@ async def api_call_with_rollback(
             api_success = await api_coro
     except TimeoutError:
         _LOGGER.warning("TIMEOUT: %s %s timed out", entity._zone_name, reason)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _LOGGER.warning("ERROR: %s %s failed (%s)", entity._zone_name, reason, e)
 
     if api_success:

@@ -1,7 +1,9 @@
-"""Heating cycle detection logic."""
+"""Tado CE heating cycle detection logic — start/end detection, state machine."""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime, timedelta
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Optional
 
 from .heating_models import HeatingCycle, HeatingCycleConfig, TemperatureReading
 
@@ -14,15 +16,18 @@ MAX_CYCLE_DURATION = timedelta(hours=6)
 class HeatingCycleDetector:
     """Detect heating cycle start, end, and interruptions for a single zone."""
 
-    def __init__(self, zone_id: str, config: HeatingCycleConfig):
+    def __init__(self, zone_id: str, config: HeatingCycleConfig) -> None:
         """Initialize detector for a specific zone."""
         self._zone_id = zone_id
         self._config = config
-        self._active_cycle: Optional[HeatingCycle] = None
-        self._last_target_temp: Optional[float] = None
+        self._active_cycle: HeatingCycle | None = None
+        self._last_target_temp: float | None = None
 
     def check_setpoint_change(
-        self, new_target: float, timestamp: datetime, current_temp: float = None
+        self,
+        new_target: float,
+        timestamp: datetime,
+        current_temp: float | None = None,
     ) -> bool:
         """Check if setpoint increased (potential cycle start).
 
@@ -39,7 +44,7 @@ class HeatingCycleDetector:
             self._zone_id,
             self._last_target_temp,
             new_target,
-            current_temp
+            current_temp,
         )
 
         # First time initialization after HA restart
@@ -50,11 +55,10 @@ class HeatingCycleDetector:
             # zone is already heating - start a cycle
             if current_temp is not None and current_temp < new_target - 0.1:
                 _LOGGER.info(
-                    "Zone %s: Detected active heating after restart "
-                    "(current=%.1f°C < target=%.1f°C), starting cycle",
+                    "Zone %s: Detected active heating after restart (current=%.1f°C < target=%.1f°C), starting cycle",
                     self._zone_id,
                     current_temp,
-                    new_target
+                    new_target,
                 )
                 self._active_cycle = HeatingCycle(
                     zone_id=self._zone_id,
@@ -78,7 +82,7 @@ class HeatingCycleDetector:
                 "Zone %s: Setpoint increased from %.1f to %.1f, starting new cycle",
                 self._zone_id,
                 self._last_target_temp,
-                new_target
+                new_target,
             )
             if self._active_cycle:
                 # Interrupt existing cycle
@@ -86,7 +90,7 @@ class HeatingCycleDetector:
                 self._active_cycle.interrupt_reason = "manual_setpoint_change"
                 _LOGGER.debug(
                     "Zone %s: Interrupted active cycle due to setpoint change",
-                    self._zone_id
+                    self._zone_id,
                 )
 
             # Start new cycle
@@ -108,7 +112,7 @@ class HeatingCycleDetector:
             _LOGGER.info(
                 "Zone %s: Started new heating cycle, target=%.1f°C",
                 self._zone_id,
-                new_target
+                new_target,
             )
             return True
 
@@ -126,20 +130,19 @@ class HeatingCycleDetector:
             _LOGGER.debug(
                 "Zone %s: Set cycle start_temp=%.1f°C",
                 self._zone_id,
-                temp
+                temp,
             )
 
         # Add temperature reading (with limit to prevent memory leak)
         if len(self._active_cycle.temperature_readings) < 100:
             self._active_cycle.temperature_readings.append(
-                TemperatureReading(time=timestamp, temp=temp)
+                TemperatureReading(time=timestamp, temp=temp),
             )
         else:
-            # Update last reading in-place when at limit.
-            # Previously dropped new readings, causing check_cycle_complete()
-            # to use a frozen temperature — cycle never completed after ~50 min.
+            # Update last reading in-place when at limit
             self._active_cycle.temperature_readings[-1] = TemperatureReading(
-                time=timestamp, temp=temp
+                time=timestamp,
+                temp=temp,
             )
 
         # Detect first rise (inertia detection)
@@ -152,10 +155,10 @@ class HeatingCycleDetector:
                     "Zone %s: Detected first rise at %.1f°C (+%.2f°C)",
                     self._zone_id,
                     temp,
-                    temp_increase
+                    temp_increase,
                 )
 
-    def check_cycle_complete(self) -> Optional[HeatingCycle]:
+    def check_cycle_complete(self) -> HeatingCycle | None:
         """Check if active cycle is complete.
 
         Returns:
@@ -170,7 +173,7 @@ class HeatingCycleDetector:
         current_temp = self._active_cycle.temperature_readings[-1].temp
         if current_temp >= self._active_cycle.target_temp:
             # Target reached
-            self._active_cycle.end_time = datetime.now(timezone.utc)
+            self._active_cycle.end_time = datetime.now(UTC)
 
             # Validate: Only mark as completed if there was actual heating
             # (start_temp < target_temp and meaningful temperature rise)
@@ -184,25 +187,22 @@ class HeatingCycleDetector:
                 self._active_cycle = None
 
                 _LOGGER.info(
-                    "Zone %s: Cycle completed, duration=%.1f min, "
-                    "start=%.1f°C, target=%.1f°C",
+                    "Zone %s: Cycle completed, duration=%.1f min, start=%.1f°C, target=%.1f°C",
                     self._zone_id,
-                    (completed.end_time - completed.start_time).total_seconds() / 60,
+                    (completed.end_time - completed.start_time).total_seconds() / 60,  # type: ignore[operator]
                     start_temp,
-                    target_temp
+                    target_temp,
                 )
                 return completed
-            else:
-                # Invalid cycle - was already at or above target, discard
-                _LOGGER.debug(
-                    "Zone %s: Discarding cycle - start_temp (%.1f°C) >= target (%.1f°C), "
-                    "no actual heating occurred",
-                    self._zone_id,
-                    start_temp if start_temp else 0,
-                    target_temp
-                )
-                self._active_cycle = None
-                return None
+            # Invalid cycle - was already at or above target, discard
+            _LOGGER.debug(
+                "Zone %s: Discarding cycle - start_temp (%.1f°C) >= target (%.1f°C), no actual heating occurred",
+                self._zone_id,
+                start_temp or 0,
+                target_temp,
+            )
+            self._active_cycle = None
+            return None
 
         return None
 
@@ -215,16 +215,16 @@ class HeatingCycleDetector:
         if not self._active_cycle:
             return False
 
-        age = datetime.now(timezone.utc) - self._active_cycle.start_time
+        age = datetime.now(UTC) - self._active_cycle.start_time
         if age > MAX_CYCLE_DURATION:
             self._active_cycle.interrupted = True
             self._active_cycle.interrupt_reason = "timeout"
-            self._active_cycle.end_time = datetime.now(timezone.utc)
+            self._active_cycle.end_time = datetime.now(UTC)
 
             _LOGGER.warning(
                 "Zone %s: Cycle timed out after %.1f hours",
                 self._zone_id,
-                age.total_seconds() / 3600
+                age.total_seconds() / 3600,
             )
 
             self._active_cycle = None
@@ -240,9 +240,9 @@ class HeatingCycleDetector:
         _LOGGER.info(
             "Zone %s: Resumed active cycle from %s",
             self._zone_id,
-            cycle.start_time.isoformat()
+            cycle.start_time.isoformat(),
         )
 
-    def get_active_cycle(self) -> Optional[HeatingCycle]:
+    def get_active_cycle(self) -> HeatingCycle | None:
         """Get currently active cycle."""
         return self._active_cycle

@@ -1,17 +1,23 @@
-"""Coordinator for heating cycle analysis across all zones."""
-import asyncio
-import logging
-from datetime import datetime, timezone
-from typing import Optional
+"""Tado CE heating cycle coordinator — cross-zone analysis."""
 
-from homeassistant.core import HomeAssistant
+from __future__ import annotations
+
+import asyncio
+from datetime import UTC, datetime
+import logging
+from typing import TYPE_CHECKING, Any
+
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .heating_analyzer import HeatingCycleAnalyzer
 from .heating_detector import HeatingCycleDetector
-from .heating_models import HeatingCycle, HeatingCycleConfig
 from .heating_storage import HeatingCycleStorage
 from .thermal_analyzer import ThermalAnalyzer
+
+if TYPE_CHECKING:
+    from homeassistant.core import HomeAssistant
+
+    from .heating_models import HeatingCycle, HeatingCycleConfig
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -27,7 +33,7 @@ class HeatingCycleCoordinator(DataUpdateCoordinator):
         hass: HomeAssistant,
         home_id: str,
         config: HeatingCycleConfig,
-    ):
+    ) -> None:
         """Initialize coordinator."""
         super().__init__(
             hass,
@@ -41,11 +47,11 @@ class HeatingCycleCoordinator(DataUpdateCoordinator):
         self._analyzer = HeatingCycleAnalyzer(config.min_cycles)
         self._second_order = ThermalAnalyzer(config.min_cycles)
         self._detectors: dict[str, HeatingCycleDetector] = {}
-        self._zone_data: dict[str, dict] = {}  # Analysis data (heating rate, cycles, etc.)
-        self._zone_states: dict[str, dict] = {}  # Cached zone states (current_temp, target_temp)
+        self._zone_data: dict[str, dict[str, Any]] = {}  # Analysis data (heating rate, cycles, etc.)
+        self._zone_states: dict[str, dict[str, Any]] = {}  # Cached zone states (current_temp, target_temp)
         self._lock = asyncio.Lock()
 
-    async def _async_update_data(self) -> dict:
+    async def _async_update_data(self) -> dict[str, Any]:
         """Update data - required by DataUpdateCoordinator.
 
         This coordinator uses manual updates only, so this method
@@ -54,7 +60,7 @@ class HeatingCycleCoordinator(DataUpdateCoordinator):
         return self._zone_data
 
     async def async_setup(self) -> None:
-        """Setup coordinator - load storage and resume active cycles."""
+        """Set up coordinator - load storage and resume active cycles."""
         _LOGGER.debug("HeatingCycleCoordinator: Starting async_setup for home %s", self._home_id)
 
         await self._storage.async_load()
@@ -70,7 +76,7 @@ class HeatingCycleCoordinator(DataUpdateCoordinator):
             _LOGGER.debug(
                 "Resumed active cycle for zone %s from %s",
                 zone_id,
-                cycle.start_time.isoformat()
+                cycle.start_time.isoformat(),
             )
 
         # Load historical data for all zones with completed cycles
@@ -89,8 +95,11 @@ class HeatingCycleCoordinator(DataUpdateCoordinator):
         return self._detectors[zone_id]
 
     async def on_zone_update(
-        self, zone_id: str, target_temp: float, current_temp: float,
-        timestamp: Optional[datetime] = None
+        self,
+        zone_id: str,
+        target_temp: float,
+        current_temp: float,
+        timestamp: datetime | None = None,
     ) -> None:
         """Handle zone update event - ATOMIC operation for setpoint and temperature.
 
@@ -107,13 +116,13 @@ class HeatingCycleCoordinator(DataUpdateCoordinator):
             timestamp: Time of the update
         """
         if timestamp is None:
-            timestamp = datetime.now(timezone.utc)
+            timestamp = datetime.now(UTC)
 
         _LOGGER.debug(
             "Zone %s: Zone update received - target=%.1f°C, current=%.1f°C",
             zone_id,
             target_temp,
-            current_temp
+            current_temp,
         )
 
         # Cache zone states for sensors (avoids blocking I/O in native_value)
@@ -137,7 +146,7 @@ class HeatingCycleCoordinator(DataUpdateCoordinator):
                     "Zone %s: New cycle started, target=%.1f°C, current=%.1f°C",
                     zone_id,
                     target_temp,
-                    current_temp
+                    current_temp,
                 )
 
             # Step 2: Record temperature reading (only if cycle is active)
@@ -149,14 +158,16 @@ class HeatingCycleCoordinator(DataUpdateCoordinator):
                 await self._storage.save_cycle(zone_id, completed_cycle)
                 _LOGGER.info(
                     "Zone %s: Cycle completed and saved",
-                    zone_id
+                    zone_id,
                 )
-                # Trigger data update for sensors
                 await self._async_update_zone_data(zone_id)
 
     async def on_setpoint_change(
-        self, zone_id: str, new_target: float, current_temp: float = None,
-        timestamp: Optional[datetime] = None
+        self,
+        zone_id: str,
+        new_target: float,
+        current_temp: float | None = None,
+        timestamp: datetime | None = None,
     ) -> None:
         """Handle setpoint change event (legacy method, prefer on_zone_update).
 
@@ -167,13 +178,13 @@ class HeatingCycleCoordinator(DataUpdateCoordinator):
             timestamp: Time of the change
         """
         if timestamp is None:
-            timestamp = datetime.now(timezone.utc)
+            timestamp = datetime.now(UTC)
 
         _LOGGER.debug(
             "Zone %s: Setpoint change received: %.1f°C (current=%.1f°C)",
             zone_id,
             new_target,
-            current_temp if current_temp else 0
+            current_temp or 0,
         )
 
         async with self._lock:
@@ -184,20 +195,23 @@ class HeatingCycleCoordinator(DataUpdateCoordinator):
                 _LOGGER.debug(
                     "Zone %s: New cycle started, target=%.1f°C",
                     zone_id,
-                    new_target
+                    new_target,
                 )
 
     async def on_temperature_update(
-        self, zone_id: str, temp: float, timestamp: Optional[datetime] = None
+        self,
+        zone_id: str,
+        temp: float,
+        timestamp: datetime | None = None,
     ) -> None:
         """Handle temperature update event (legacy method, prefer on_zone_update)."""
         if timestamp is None:
-            timestamp = datetime.now(timezone.utc)
+            timestamp = datetime.now(UTC)
 
         _LOGGER.debug(
             "Zone %s: Temperature update received: %.2f°C",
             zone_id,
-            temp
+            temp,
         )
 
         async with self._lock:
@@ -210,9 +224,8 @@ class HeatingCycleCoordinator(DataUpdateCoordinator):
                 await self._storage.save_cycle(zone_id, completed_cycle)
                 _LOGGER.info(
                     "Zone %s: Cycle completed and saved",
-                    zone_id
+                    zone_id,
                 )
-                # Trigger data update for sensors
                 await self._async_update_zone_data(zone_id)
 
     async def check_timeouts(self) -> None:
@@ -221,7 +234,6 @@ class HeatingCycleCoordinator(DataUpdateCoordinator):
             for zone_id, detector in self._detectors.items():
                 if detector.check_cycle_timeout():
                     _LOGGER.warning("Zone %s: Cycle timed out", zone_id)
-                    # Trigger data update for sensors
                     await self._async_update_zone_data(zone_id)
 
     async def _async_update_zone_data(self, zone_id: str) -> None:
@@ -243,14 +255,14 @@ class HeatingCycleCoordinator(DataUpdateCoordinator):
                 "approach_factor": approach_factor,
             }
             _LOGGER.debug(
-                "Zone %s: Updated metrics - inertia=%.1f min, rate=%.3f °C/min, "
+                "Zone %s: Updated metrics - inertia=%.1f min, rate=%.2f °C/h, "
                 "accel=%s °C/h², approach=%s%%, confidence=%.2f",
                 zone_id,
                 metrics["inertia_time"],
                 metrics["heating_rate"],
                 acceleration,
                 approach_factor,
-                metrics["confidence_score"]
+                metrics["confidence_score"],
             )
         else:
             # Insufficient data
@@ -266,17 +278,17 @@ class HeatingCycleCoordinator(DataUpdateCoordinator):
             _LOGGER.debug(
                 "Zone %s: Insufficient data for analysis (%d cycles)",
                 zone_id,
-                len(cycles)
+                len(cycles),
             )
 
         # Notify listeners (sensors)
         self.async_set_updated_data(self._zone_data)
 
-    def get_zone_data(self, zone_id: str) -> Optional[dict]:
+    def get_zone_data(self, zone_id: str) -> dict[str, Any] | None:
         """Get analysis data for a zone."""
         return self._zone_data.get(zone_id)
 
-    def get_zone_state(self, zone_id: str) -> Optional[dict]:
+    def get_zone_state(self, zone_id: str) -> dict[str, Any] | None:
         """Get cached zone state (current_temp, target_temp).
 
         Returns cached state from last on_zone_update call.
@@ -291,7 +303,7 @@ class HeatingCycleCoordinator(DataUpdateCoordinator):
         """Get completed cycles for a zone within rolling window."""
         return await self._storage.get_cycles(zone_id, self._config.rolling_window_days)
 
-    def get_active_cycle(self, zone_id: str) -> Optional[HeatingCycle]:
+    def get_active_cycle(self, zone_id: str) -> HeatingCycle | None:
         """Get active cycle for a zone."""
         detector = self._detectors.get(zone_id)
         if detector:
@@ -299,8 +311,11 @@ class HeatingCycleCoordinator(DataUpdateCoordinator):
         return None
 
     def estimate_preheat_time(
-        self, zone_id: str, current_temp: float, target_temp: float
-    ) -> Optional[float]:
+        self,
+        zone_id: str,
+        current_temp: float,
+        target_temp: float,
+    ) -> float | None:
         """Estimate preheat time for a zone.
 
         Args:
@@ -316,4 +331,3 @@ class HeatingCycleCoordinator(DataUpdateCoordinator):
             return None
 
         return self._analyzer.estimate_preheat_time(current_temp, target_temp, metrics)
-

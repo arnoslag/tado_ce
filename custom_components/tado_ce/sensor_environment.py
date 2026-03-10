@@ -1,7 +1,9 @@
 """Tado CE Environment Sensors — mold risk, condensation, comfort level, etc."""
+
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -10,7 +12,19 @@ from homeassistant.components.sensor import (
 from homeassistant.const import UnitOfTemperature
 from homeassistant.core import callback
 
-
+from .calculations import (
+    calculate_ashrae_comfort_temp,
+    calculate_seasonal_comfort_target,
+    classify_condensation_risk,
+    classify_mold_risk_by_margin,
+)
+from .calculations import (
+    calculate_dew_point as _calculate_dew_point,
+)
+from .calculations import calculate_surface_rh as _calculate_surface_rh
+from .calculations import (
+    calculate_surface_temperature as _calculate_surface_temperature,
+)
 from .format_helpers import (
     format_comfort_model as _format_comfort_model,
 )
@@ -26,84 +40,62 @@ from .insights import (
     calculate_heating_condensation_recommendation,
     calculate_mold_risk_recommendation,
 )
-from .insights import (
-    calculate_dew_point as _calculate_dew_point,
-)
-from .sensor_helpers import calculate_surface_rh as _calculate_surface_rh
 from .sensor_helpers import get_effective_temperature as _get_effective_temp
 from .sensor_helpers import get_outdoor_temperature as _get_outdoor_temp
 from .sensor_zone import TadoZoneSensor
 
+if TYPE_CHECKING:
+    from homeassistant.core import HomeAssistant
+
+    from .config_manager import ConfigurationManager
+    from .coordinator import TadoDataUpdateCoordinator
+
 _LOGGER = logging.getLogger(__name__)
 
 
-def _extract_mold_risk_data(zone_data, hass, zone_id, coordinator):
+def _extract_mold_risk_data(
+    zone_data: dict[str, Any], hass: HomeAssistant, zone_id: str, coordinator: TadoDataUpdateCoordinator,
+) -> dict[str, Any]:
     """Extract shared mold risk data (humidity, temps, dew point) from zone data.
 
     Returns:
         Tuple of (humidity, room_temp, effective_temp, outdoor_temp, surface_temp,
                   temperature_source, surface_temp_offset, dew_point) or None if data unavailable.
     """
-    sensor_data = zone_data.get('sensorDataPoints') or {}
-    humidity = (sensor_data.get('humidity') or {}).get('percentage')
+    sensor_data = zone_data.get("sensorDataPoints") or {}
+    humidity = (sensor_data.get("humidity") or {}).get("percentage")
     if humidity is None:
-        return None
+        return None  # type: ignore[return-value]
 
-    room_temp = (sensor_data.get('insideTemperature') or {}).get('celsius')
+    room_temp = (sensor_data.get("insideTemperature") or {}).get("celsius")
     if room_temp is None:
-        return None
+        return None  # type: ignore[return-value]
 
-    (effective_temp, outdoor_temp, surface_temp,
-     temperature_source, surface_temp_offset) = _get_effective_temp(
-        hass, zone_id, room_temp,
+    (effective_temp, outdoor_temp, surface_temp, temperature_source, surface_temp_offset) = _get_effective_temp(
+        hass,
+        zone_id,
+        room_temp,
         config_manager=coordinator.config_manager,
         zone_config_manager=coordinator.zone_config_manager,
     )
 
     dew_point = _calculate_dew_point(room_temp, humidity)
 
-    return (humidity, room_temp, effective_temp, outdoor_temp, surface_temp,
-            temperature_source, surface_temp_offset, dew_point)
-
-def _calculate_surface_temperature(indoor_temp: float, outdoor_temp: float, u_value: float) -> float:
-    """Calculate window surface temperature using heat transfer physics.
-
-    Used for mold risk assessment with U-value estimation.
-
-    Formula: T_surface = T_indoor - (T_indoor - T_outdoor) × U / (U + h)
-    where:
-        U = window U-value (thermal transmittance, W/m²K)
-        h = interior surface heat transfer coefficient = 8 W/m²K
-
-    This formula accounts for:
-    - Window insulation properties (U-value)
-    - Indoor/outdoor temperature difference
-    - Interior surface heat transfer
-
-    Args:
-        indoor_temp: Indoor temperature in °C
-        outdoor_temp: Outdoor temperature in °C
-        u_value: Window U-value in W/m²K
-
-    Returns:
-        Estimated surface temperature in °C
-
-    References:
-        - ASHRAE 160 standard for surface temperature assessment
-        - Window condensation risk calculators
-    """
-    from .const import INTERIOR_SURFACE_HEAT_TRANSFER_COEFFICIENT
-
-    h = INTERIOR_SURFACE_HEAT_TRANSFER_COEFFICIENT
-
-    # Calculate surface temperature
-    temp_diff = indoor_temp - outdoor_temp
-    surface_temp = indoor_temp - (temp_diff * u_value / (u_value + h))
-
-    return round(surface_temp, 1)
+    return (
+        humidity,
+        room_temp,
+        effective_temp,
+        outdoor_temp,
+        surface_temp,  # type: ignore[return-value]
+        temperature_source,
+        surface_temp_offset,
+        dew_point,
+    )
 
 
 class TadoMoldRiskSensor(TadoZoneSensor):
+    """Represent a Tado mold risk level sensor."""
+
     _attr_has_entity_name = True
 
     """Mold risk indicator sensor.
@@ -124,12 +116,14 @@ class TadoMoldRiskSensor(TadoZoneSensor):
     State: Risk level text (Critical/High/Medium/Low)
     """
 
-    def __init__(self, coordinator, zone_id: str, zone_name: str, zone_type: str = "HEATING"):
+    def __init__(
+        self, coordinator: TadoDataUpdateCoordinator, zone_id: str, zone_name: str, zone_type: str = "HEATING",
+    ) -> None:
+        """Initialize the Mold Risk Sensor."""
         super().__init__(coordinator, zone_id, zone_name, zone_type)
-        self._attr_name = "[CE] Mold Risk"
+        self._attr_translation_key = "mold_risk"
         self._attr_unique_id = f"tado_ce_{coordinator.home_id}_zone_{zone_id}_mold_risk"
         self._attr_icon = "mdi:mushroom"
-        self._attr_translation_key = "mold_risk"  # Enable translations
 
         # Attributes
         self._room_temp: float | None = None  # Room temp from Tado sensor
@@ -141,15 +135,16 @@ class TadoMoldRiskSensor(TadoZoneSensor):
         self._outdoor_temp: float | None = None  # For surface temp calculation
         self._surface_temp: float | None = None  # Calculated surface temp
         self._surface_temp_offset: float = 0.0  # Calibration offset
-        self._recommendation: str = ""  # Actionable recommendation
+        self._recommendation: str = ""
 
     @property
-    def extra_state_attributes(self):
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return extra state attributes."""
         return {
-            "room_temperature": self._room_temp,  # Always show room temp
-            "effective_temperature": self._effective_temp,  # Temp used for calculation
+            "room_temperature": self._room_temp,
+            "effective_temperature": round(self._effective_temp, 1) if self._effective_temp is not None else None,
             "humidity": self._humidity,
-            "dew_point": self._dew_point,
+            "dew_point": round(self._dew_point, 1) if self._dew_point is not None else None,
             "margin": self._margin,
             "mold_risk_percentage": (
                 _calculate_surface_rh(self._effective_temp, self._dew_point)
@@ -158,25 +153,31 @@ class TadoMoldRiskSensor(TadoZoneSensor):
             ),  # RH at surface (mold risk %)
             "temperature_source": self._temperature_source,
             "outdoor_temperature": self._outdoor_temp,
-            "surface_temperature": self._surface_temp,
+            "surface_temperature": round(self._surface_temp, 1) if self._surface_temp is not None else None,
             "surface_temp_offset": self._surface_temp_offset,  # Calibration offset
             "zone_type": _format_zone_type(self._zone_type),
-            "recommendation": self._recommendation,  # Actionable recommendation
+            "recommendation": self._recommendation,
         }
 
     @property
-    def icon(self):
+    def icon(self) -> str | None:
         """Dynamic icon based on risk level."""
         if self._attr_native_value == "Critical":
             return "mdi:mushroom-outline"
-        elif self._attr_native_value == "High":
+        if self._attr_native_value == "High":
             return "mdi:alert-circle"
-        elif self._attr_native_value == "Medium":
+        if self._attr_native_value == "Medium":
             return "mdi:alert"
         return "mdi:check-circle"
 
     @callback
-    def update(self):
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        self.update()
+        self.async_write_ha_state()
+
+    @callback
+    def update(self) -> None:
         """Update mold risk based on temperature and humidity.
 
         Uses 2-tier temperature source strategy for more accurate assessment.
@@ -192,29 +193,29 @@ class TadoMoldRiskSensor(TadoZoneSensor):
                 self._attr_available = False
                 return
 
-            (self._humidity, self._room_temp, self._effective_temp, self._outdoor_temp,
-             self._surface_temp, self._temperature_source, self._surface_temp_offset,
-             self._dew_point) = result
+            (
+                self._humidity,
+                self._room_temp,
+                self._effective_temp,
+                self._outdoor_temp,
+                self._surface_temp,
+                self._temperature_source,
+                self._surface_temp_offset,
+                self._dew_point,
+            ) = result  # type: ignore[assignment]
 
             # Calculate margin (difference between effective/surface temperature and dew point)
-            self._margin = round(self._effective_temp - self._dew_point, 1)
+            margin_exact = self._effective_temp - self._dew_point  # type: ignore[operator]
+            self._margin = round(margin_exact, 1)  # Rounded for display only
 
-            # Determine risk level
-            if self._margin < 3:
-                self._attr_native_value = "Critical"
-            elif self._margin < 5:
-                self._attr_native_value = "High"
-            elif self._margin < 7:
-                self._attr_native_value = "Medium"
-            else:
-                self._attr_native_value = "Low"
+            # Determine risk level using exact margin to preserve monotonicity
+            self._attr_native_value = classify_mold_risk_by_margin(margin_exact)
 
-            # Calculate SMART actionable recommendation
             # Get target temperature from zone data for specific recommendations
             target_temp = None
             if zone_data:
-                setting = zone_data.get('setting') or {}
-                target_temp = (setting.get('temperature') or {}).get('celsius')
+                setting = zone_data.get("setting") or {}
+                target_temp = (setting.get("temperature") or {}).get("celsius")
 
             self._recommendation = calculate_mold_risk_recommendation(
                 risk_level=self._attr_native_value,
@@ -223,7 +224,7 @@ class TadoMoldRiskSensor(TadoZoneSensor):
                 surface_temp=self._effective_temp,
                 dew_point=self._dew_point,
                 current_temp=self._room_temp,
-                target_temp=target_temp
+                target_temp=target_temp,
             )
 
             self._attr_available = True
@@ -233,10 +234,9 @@ class TadoMoldRiskSensor(TadoZoneSensor):
             self._attr_available = False
 
 
-
-
-
 class TadoMoldRiskPercentageSensor(TadoZoneSensor):
+    """Represent a Tado mold risk percentage sensor."""
+
     _attr_has_entity_name = True
 
     """Mold risk percentage sensor - surface relative humidity.
@@ -253,9 +253,12 @@ class TadoMoldRiskPercentageSensor(TadoZoneSensor):
     Mold typically grows when surface RH exceeds ~70-80%.
     """
 
-    def __init__(self, coordinator, zone_id: str, zone_name: str, zone_type: str = "HEATING"):
+    def __init__(
+        self, coordinator: TadoDataUpdateCoordinator, zone_id: str, zone_name: str, zone_type: str = "HEATING",
+    ) -> None:
+        """Initialize the Mold Risk Percentage Sensor."""
         super().__init__(coordinator, zone_id, zone_name, zone_type)
-        self._attr_name = "[CE] Mold Risk %"
+        self._attr_translation_key = "mold_risk_pct"
         self._attr_unique_id = f"tado_ce_{coordinator.home_id}_zone_{zone_id}_mold_risk_pct"
         self._attr_icon = "mdi:water-percent"
         self._attr_device_class = SensorDeviceClass.HUMIDITY
@@ -272,18 +275,25 @@ class TadoMoldRiskPercentageSensor(TadoZoneSensor):
         self._surface_temp: float | None = None
 
     @property
-    def extra_state_attributes(self):
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return extra state attributes."""
         return {
             "room_temperature": self._room_temp,
-            "effective_temperature": self._effective_temp,
+            "effective_temperature": round(self._effective_temp, 1) if self._effective_temp is not None else None,
             "humidity": self._humidity,
-            "dew_point": self._dew_point,
+            "dew_point": round(self._dew_point, 1) if self._dew_point is not None else None,
             "temperature_source": self._temperature_source,
             "zone_type": _format_zone_type(self._zone_type),
         }
 
     @callback
-    def update(self):
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        self.update()
+        self.async_write_ha_state()
+
+    @callback
+    def update(self) -> None:
         """Update mold risk percentage based on temperature and humidity.
 
         Uses the same 2-tier temperature source strategy as TadoMoldRiskSensor.
@@ -299,9 +309,16 @@ class TadoMoldRiskPercentageSensor(TadoZoneSensor):
                 self._attr_available = False
                 return
 
-            (self._humidity, self._room_temp, self._effective_temp, self._outdoor_temp,
-             self._surface_temp, self._temperature_source, _,
-             self._dew_point) = result
+            (
+                self._humidity,
+                self._room_temp,
+                self._effective_temp,
+                self._outdoor_temp,
+                self._surface_temp,
+                self._temperature_source,
+                _,
+                self._dew_point,
+            ) = result  # type: ignore[assignment]
 
             # Calculate surface RH (mold risk percentage)
             surface_rh = (
@@ -321,10 +338,9 @@ class TadoMoldRiskPercentageSensor(TadoZoneSensor):
             self._attr_available = False
 
 
-
-
-
 class TadoCondensationRiskSensor(TadoZoneSensor):
+    """Represent a Tado condensation risk sensor."""
+
     _attr_has_entity_name = True
 
     """Condensation risk sensor for all climate zones.
@@ -347,12 +363,14 @@ class TadoCondensationRiskSensor(TadoZoneSensor):
     State: Risk level text (Critical/High/Medium/Low/None)
     """
 
-    def __init__(self, coordinator, zone_id: str, zone_name: str, zone_type: str = "AIR_CONDITIONING"):
+    def __init__(
+        self, coordinator: TadoDataUpdateCoordinator, zone_id: str, zone_name: str, zone_type: str = "AIR_CONDITIONING",
+    ) -> None:
+        """Initialize the Condensation Risk Sensor."""
         super().__init__(coordinator, zone_id, zone_name, zone_type)
-        self._attr_name = "[CE] Condensation"
+        self._attr_translation_key = "condensation_risk"
         self._attr_unique_id = f"tado_ce_{coordinator.home_id}_zone_{zone_id}_condensation"
         self._attr_icon = "mdi:water-alert"
-        self._attr_translation_key = "condensation_risk"
 
         # Common attributes
         self._room_temp: float | None = None
@@ -360,8 +378,7 @@ class TadoCondensationRiskSensor(TadoZoneSensor):
         self._margin: float | None = None
         self._window_type: str = "double_pane"
         self._u_value: float | None = None
-        self._recommendation: str = ""  # Actionable recommendation
-
+        self._recommendation: str = ""
         # AC-specific attributes
         self._outdoor_humidity: float | None = None
         self._outdoor_dew_point: float | None = None
@@ -373,13 +390,16 @@ class TadoCondensationRiskSensor(TadoZoneSensor):
         self._surface_temperature: float | None = None
 
     @property
-    def extra_state_attributes(self):
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return extra state attributes."""
         if self._zone_type == "HEATING":
             return {
                 "room_temperature": self._room_temp,
                 "humidity": self._indoor_humidity,
-                "indoor_dew_point": self._indoor_dew_point,
-                "surface_temperature": self._surface_temperature,
+                "indoor_dew_point": round(self._indoor_dew_point, 1) if self._indoor_dew_point is not None else None,
+                "surface_temperature": round(self._surface_temperature, 1)
+                if self._surface_temperature is not None
+                else None,
                 "outdoor_temperature": self._outdoor_temp,
                 "margin": self._margin,
                 "window_type": _format_window_type(self._window_type),
@@ -391,28 +411,36 @@ class TadoCondensationRiskSensor(TadoZoneSensor):
             "room_temperature": self._room_temp,
             "outdoor_temperature": self._outdoor_temp,
             "outdoor_humidity": self._outdoor_humidity,
-            "outdoor_dew_point": self._outdoor_dew_point,
-            "window_outer_surface_temp": self._window_outer_surface_temp,
+            "outdoor_dew_point": round(self._outdoor_dew_point, 1) if self._outdoor_dew_point is not None else None,
+            "window_outer_surface_temp": round(self._window_outer_surface_temp, 1)
+            if self._window_outer_surface_temp is not None
+            else None,
             "margin": self._margin,
             "window_type": _format_window_type(self._window_type),
             "u_value": self._u_value,
             "zone_type": _format_zone_type(self._zone_type),
-            "recommendation": self._recommendation,  # Actionable recommendation
+            "recommendation": self._recommendation,
         }
 
     @property
-    def icon(self):
+    def icon(self) -> str | None:
         """Dynamic icon based on risk level."""
         if self._attr_native_value == "Critical":
             return "mdi:water-alert"
-        elif self._attr_native_value == "High":
+        if self._attr_native_value == "High":
             return "mdi:alert-circle"
-        elif self._attr_native_value == "Medium":
+        if self._attr_native_value == "Medium":
             return "mdi:alert"
         return "mdi:check-circle"
 
     @callback
-    def update(self):
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        self.update()
+        self.async_write_ha_state()
+
+    @callback
+    def update(self) -> None:
         """Update condensation risk based on zone type.
 
         AC zones — outdoor dew point vs window outer surface temp.
@@ -425,8 +453,8 @@ class TadoCondensationRiskSensor(TadoZoneSensor):
                 return
 
             # Get room temperature (common to both zone types)
-            sensor_data = zone_data.get('sensorDataPoints') or {}
-            room_temp = (sensor_data.get('insideTemperature') or {}).get('celsius')
+            sensor_data = zone_data.get("sensorDataPoints") or {}
+            room_temp = (sensor_data.get("insideTemperature") or {}).get("celsius")
             if room_temp is None:
                 self._attr_available = False
                 return
@@ -444,12 +472,15 @@ class TadoCondensationRiskSensor(TadoZoneSensor):
             # Get window type from per-zone config or global config
             if zone_config_manager:
                 self._window_type = zone_config_manager.get_zone_value(
-                    self._zone_id, "window_type", "double_pane"
+                    self._zone_id,
+                    "window_type",
+                    "double_pane",
                 )
                 self._u_value = zone_config_manager.get_window_u_value(self._zone_id)
             else:
                 self._window_type = config_manager.get_mold_risk_window_type()
                 from .const import DEFAULT_WINDOW_TYPE, WINDOW_U_VALUES
+
                 self._u_value = WINDOW_U_VALUES.get(self._window_type, WINDOW_U_VALUES[DEFAULT_WINDOW_TYPE])
 
             if self._zone_type == "HEATING":
@@ -457,12 +488,21 @@ class TadoCondensationRiskSensor(TadoZoneSensor):
             else:
                 self._update_ac(config_manager)
 
+            self.coordinator.publish_entity_data(
+                self._zone_id,
+                "condensation_risk",
+                {
+                    "state": self._attr_native_value,
+                    "recommendation": self._recommendation,
+                },
+            )
+
         except Exception as e:
             _LOGGER.debug("Failed to update condensation risk for zone %s: %s", self._zone_id, e)
             self._attr_available = False
 
     @callback
-    def _update_heating(self, sensor_data: dict, config_manager) -> None:
+    def _update_heating(self, sensor_data: dict[str, Any], config_manager: ConfigurationManager) -> None:
         """Update condensation risk for HEATING zones.
 
         Physics: indoor humidity → indoor dew point → compare with window
@@ -470,7 +510,7 @@ class TadoCondensationRiskSensor(TadoZoneSensor):
         windows when surface temp drops below indoor dew point.
         """
         # Get indoor humidity from zone sensor data
-        humidity = (sensor_data.get('humidity') or {}).get('percentage')
+        humidity = (sensor_data.get("humidity") or {}).get("percentage")
         if humidity is None:
             self._attr_available = False
             return
@@ -478,7 +518,7 @@ class TadoCondensationRiskSensor(TadoZoneSensor):
         self._indoor_humidity = humidity
 
         # Calculate indoor dew point
-        self._indoor_dew_point = _calculate_dew_point(self._room_temp, humidity)
+        self._indoor_dew_point = _calculate_dew_point(self._room_temp, humidity)  # type: ignore[arg-type]
 
         # Get outdoor temperature for surface temp calculation
         # Fallback to room temp if outdoor not available (same as Mold Risk Tier 2)
@@ -492,37 +532,32 @@ class TadoCondensationRiskSensor(TadoZoneSensor):
 
         # Calculate window inner surface temperature (same formula as Mold Risk)
         self._surface_temperature = _calculate_surface_temperature(
-            self._room_temp, effective_outdoor, self._u_value
+            self._room_temp,  # type: ignore[arg-type]
+            effective_outdoor,  # type: ignore[arg-type]
+            self._u_value,  # type: ignore[arg-type]
         )
 
         # Apply surface_temp_offset if configured
         zone_config_manager = self.coordinator.zone_config_manager
         if zone_config_manager:
             offset = zone_config_manager.get_zone_value(
-                self._zone_id, "surface_temp_offset", 0.0
+                self._zone_id,
+                "surface_temp_offset",
+                0.0,
             )
             if offset:
-                self._surface_temperature = round(self._surface_temperature + float(offset), 1)
+                self._surface_temperature = self._surface_temperature + float(offset)
 
         # Margin = surface_temp - indoor_dew_point
         # Positive = safe, Negative = condensation occurring
-        self._margin = round(self._surface_temperature - self._indoor_dew_point, 1)
+        margin_exact = self._surface_temperature - self._indoor_dew_point
+        self._margin = round(margin_exact, 1)  # Rounded for display only
 
         # Heating zone risk levels (aligned with Mold Risk thresholds)
         # Real-world condensation occurs at higher margins than theoretical
         # because window edges/corners are 3-5°C colder than calculated average
-        if self._margin <= 1:
-            self._attr_native_value = "Critical"
-        elif self._margin <= 3:
-            self._attr_native_value = "High"
-        elif self._margin <= 5:
-            self._attr_native_value = "Medium"
-        elif self._margin <= 7:
-            self._attr_native_value = "Low"
-        else:
-            self._attr_native_value = "None"
+        self._attr_native_value = classify_condensation_risk(margin_exact, "HEATING")
 
-        # Calculate SMART actionable recommendation
         self._recommendation = calculate_heating_condensation_recommendation(
             risk_level=self._attr_native_value,
             zone_name=self._zone_name,
@@ -535,7 +570,7 @@ class TadoCondensationRiskSensor(TadoZoneSensor):
         self._attr_available = True
 
     @callback
-    def _update_ac(self, config_manager) -> None:
+    def _update_ac(self, config_manager: ConfigurationManager) -> None:
         """Update condensation risk for AC zones.
 
         Physics: outdoor humidity → outdoor dew point → compare with window
@@ -564,28 +599,23 @@ class TadoCondensationRiskSensor(TadoZoneSensor):
 
         # Calculate window outer surface temperature
         self._window_outer_surface_temp = _calculate_surface_temperature(
-            self._outdoor_temp, self._room_temp, self._u_value
+            self._outdoor_temp,
+            self._room_temp,  # type: ignore[arg-type]
+            self._u_value,  # type: ignore[arg-type]
         )
 
         # Calculate margin (difference between window outer surface temp and outdoor dew point)
-        self._margin = round(self._window_outer_surface_temp - self._outdoor_dew_point, 1)
+        margin_exact = self._window_outer_surface_temp - self._outdoor_dew_point
+        self._margin = round(margin_exact, 1)  # Rounded for display only
 
-        # AC zone risk levels (original thresholds)
-        if self._margin < 2:
-            self._attr_native_value = "Critical"
-        elif self._margin < 4:
-            self._attr_native_value = "High"
-        elif self._margin < 6:
-            self._attr_native_value = "Medium"
-        else:
-            self._attr_native_value = "Low"
+        # AC zone risk levels
+        self._attr_native_value = classify_condensation_risk(margin_exact, "AIR_CONDITIONING")
 
-        # Calculate SMART actionable recommendation
         zone_data = self._get_zone_data()
         ac_setpoint = None
         if zone_data:
-            setting = zone_data.get('setting') or {}
-            ac_setpoint = (setting.get('temperature') or {}).get('celsius')
+            setting = zone_data.get("setting") or {}
+            ac_setpoint = (setting.get("temperature") or {}).get("celsius")
 
         self._recommendation = calculate_condensation_recommendation(
             risk_level=self._attr_native_value,
@@ -597,7 +627,6 @@ class TadoCondensationRiskSensor(TadoZoneSensor):
 
         self._attr_available = True
 
-
     def _get_outdoor_humidity(self, entity_id: str) -> float | None:
         """Get outdoor humidity from weather entity."""
         if not self.hass or not entity_id:
@@ -605,20 +634,20 @@ class TadoCondensationRiskSensor(TadoZoneSensor):
 
         try:
             state = self.hass.states.get(entity_id)
-            if state is None or state.state in ('unknown', 'unavailable'):
+            if state is None or state.state in ("unknown", "unavailable"):
                 return None
 
-            if entity_id.startswith('weather.'):
-                humidity = state.attributes.get('humidity')
+            if entity_id.startswith("weather."):
+                humidity = state.attributes.get("humidity")
                 if humidity is not None:
                     return float(humidity)
 
             # For non-weather entities, try to find a companion humidity sensor
             # e.g., sensor.outdoor_temperature -> sensor.outdoor_humidity
-            if entity_id.startswith('sensor.') and 'temperature' in entity_id.lower():
-                humidity_entity = entity_id.lower().replace('temperature', 'humidity')
+            if entity_id.startswith("sensor.") and "temperature" in entity_id.lower():
+                humidity_entity = entity_id.lower().replace("temperature", "humidity")
                 humidity_state = self.hass.states.get(humidity_entity)
-                if humidity_state and humidity_state.state not in ('unknown', 'unavailable'):
+                if humidity_state and humidity_state.state not in ("unknown", "unavailable"):
                     try:
                         return float(humidity_state.state)
                     except (ValueError, TypeError):
@@ -632,12 +661,14 @@ class TadoCondensationRiskSensor(TadoZoneSensor):
         _LOGGER.debug(
             "Condensation risk: No outdoor humidity found for %s. "
             "Use a weather.* entity or ensure sensor.*_humidity exists.",
-            entity_id
+            entity_id,
         )
         return None
 
 
 class TadoSurfaceTemperatureSensor(TadoZoneSensor):
+    """Represent a Tado estimated surface temperature sensor."""
+
     _attr_has_entity_name = True
 
     """Surface temperature sensor for calibration workflows.
@@ -655,9 +686,12 @@ class TadoSurfaceTemperatureSensor(TadoZoneSensor):
     State: Calculated surface temperature in °C
     """
 
-    def __init__(self, coordinator, zone_id: str, zone_name: str, zone_type: str = "HEATING"):
+    def __init__(
+        self, coordinator: TadoDataUpdateCoordinator, zone_id: str, zone_name: str, zone_type: str = "HEATING",
+    ) -> None:
+        """Initialize the Surface Temperature Sensor."""
         super().__init__(coordinator, zone_id, zone_name, zone_type)
-        self._attr_name = "[CE] Surface Temp"
+        self._attr_translation_key = "surface_temp"
         self._attr_unique_id = f"tado_ce_{coordinator.home_id}_zone_{zone_id}_surface_temp"
         self._attr_icon = "mdi:thermometer-lines"
         self._attr_device_class = SensorDeviceClass.TEMPERATURE
@@ -673,7 +707,8 @@ class TadoSurfaceTemperatureSensor(TadoZoneSensor):
         self._calculation_method: str = "unknown"
 
     @property
-    def extra_state_attributes(self):
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return extra state attributes."""
         return {
             "room_temperature": self._room_temp,
             "outdoor_temperature": self._outdoor_temp,
@@ -685,7 +720,13 @@ class TadoSurfaceTemperatureSensor(TadoZoneSensor):
         }
 
     @callback
-    def update(self):
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        self.update()
+        self.async_write_ha_state()
+
+    @callback
+    def update(self) -> None:
         """Update surface temperature using 2-tier calculation strategy."""
         try:
             zone_data = self._get_zone_data()
@@ -694,8 +735,8 @@ class TadoSurfaceTemperatureSensor(TadoZoneSensor):
                 return
 
             # Get room temperature
-            sensor_data = zone_data.get('sensorDataPoints') or {}
-            room_temp = (sensor_data.get('insideTemperature') or {}).get('celsius')
+            sensor_data = zone_data.get("sensorDataPoints") or {}
+            room_temp = (sensor_data.get("insideTemperature") or {}).get("celsius")
             if room_temp is None:
                 self._attr_available = False
                 return
@@ -722,7 +763,9 @@ class TadoSurfaceTemperatureSensor(TadoZoneSensor):
 
             if outdoor_entity:
                 self._outdoor_temp = _get_outdoor_temp(
-                    self.hass, outdoor_entity, config_manager.get_use_feels_like()
+                    self.hass,
+                    outdoor_entity,
+                    config_manager.get_use_feels_like(),
                 )
 
                 if self._outdoor_temp is not None:
@@ -731,30 +774,35 @@ class TadoSurfaceTemperatureSensor(TadoZoneSensor):
 
                     if zone_config_manager:
                         self._window_type = zone_config_manager.get_zone_value(
-                            self._zone_id, "window_type", "double_pane"
+                            self._zone_id,
+                            "window_type",
+                            "double_pane",
                         )
                         self._u_value = zone_config_manager.get_window_u_value(self._zone_id)
                         self._offset_applied = zone_config_manager.get_surface_temp_offset(self._zone_id)
                     else:
                         self._window_type = config_manager.get_mold_risk_window_type()
                         self._u_value = WINDOW_U_VALUES.get(
-                            self._window_type, WINDOW_U_VALUES[DEFAULT_WINDOW_TYPE]
+                            self._window_type,
+                            WINDOW_U_VALUES[DEFAULT_WINDOW_TYPE],
                         )
                         self._offset_applied = 0.0
 
                     # Calculate surface temperature
                     surface_temp = _calculate_surface_temperature(
-                        room_temp, self._outdoor_temp, self._u_value
+                        room_temp,
+                        self._outdoor_temp,
+                        self._u_value,
                     )
 
                     # Apply offset (for calibration)
                     if self._offset_applied != 0.0:
-                        surface_temp = round(surface_temp + self._offset_applied, 1)
+                        surface_temp = surface_temp + self._offset_applied
                         self._calculation_method = "Calibrated"
                     else:
                         self._calculation_method = "Estimated"
 
-                    self._attr_native_value = surface_temp
+                    self._attr_native_value = round(surface_temp, 1)
                     self._attr_available = True
                     return
 
@@ -772,8 +820,9 @@ class TadoSurfaceTemperatureSensor(TadoZoneSensor):
             self._attr_available = False
 
 
-
 class TadoDewPointSensor(TadoZoneSensor):
+    """Represent a Tado dew point temperature sensor."""
+
     _attr_has_entity_name = True
 
     """Dew point temperature sensor for automation workflows.
@@ -791,9 +840,12 @@ class TadoDewPointSensor(TadoZoneSensor):
     State: Calculated dew point temperature in °C
     """
 
-    def __init__(self, coordinator, zone_id: str, zone_name: str, zone_type: str = "HEATING"):
+    def __init__(
+        self, coordinator: TadoDataUpdateCoordinator, zone_id: str, zone_name: str, zone_type: str = "HEATING",
+    ) -> None:
+        """Initialize the Dew Point Sensor."""
         super().__init__(coordinator, zone_id, zone_name, zone_type)
-        self._attr_name = "[CE] Dew Point"
+        self._attr_translation_key = "dew_point"
         self._attr_unique_id = f"tado_ce_{coordinator.home_id}_zone_{zone_id}_dew_point"
         self._attr_icon = "mdi:water-thermometer"
         self._attr_device_class = SensorDeviceClass.TEMPERATURE
@@ -805,7 +857,8 @@ class TadoDewPointSensor(TadoZoneSensor):
         self._humidity: float | None = None
 
     @property
-    def extra_state_attributes(self):
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return extra state attributes."""
         return {
             "room_temperature": self._room_temp,
             "humidity": self._humidity,
@@ -814,7 +867,13 @@ class TadoDewPointSensor(TadoZoneSensor):
         }
 
     @callback
-    def update(self):
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        self.update()
+        self.async_write_ha_state()
+
+    @callback
+    def update(self) -> None:
         """Update dew point based on room temperature and humidity."""
         try:
             zone_data = self._get_zone_data()
@@ -823,16 +882,16 @@ class TadoDewPointSensor(TadoZoneSensor):
                 return
 
             # Get temperature and humidity from zone data
-            sensor_data = zone_data.get('sensorDataPoints') or {}
-            self._room_temp = (sensor_data.get('insideTemperature') or {}).get('celsius')
-            self._humidity = (sensor_data.get('humidity') or {}).get('percentage')
+            sensor_data = zone_data.get("sensorDataPoints") or {}
+            self._room_temp = (sensor_data.get("insideTemperature") or {}).get("celsius")
+            self._humidity = (sensor_data.get("humidity") or {}).get("percentage")
 
             if self._room_temp is None or self._humidity is None:
                 self._attr_available = False
                 return
 
             # Calculate dew point using Magnus-Tetens formula
-            self._attr_native_value = _calculate_dew_point(self._room_temp, self._humidity)
+            self._attr_native_value = round(_calculate_dew_point(self._room_temp, self._humidity), 1)
             self._attr_available = True
 
         except Exception as e:
@@ -841,6 +900,8 @@ class TadoDewPointSensor(TadoZoneSensor):
 
 
 class TadoComfortLevelSensor(TadoZoneSensor):
+    """Represent a Tado comfort level sensor."""
+
     _attr_has_entity_name = True
 
     """Comfort level sensor using Adaptive Comfort model.
@@ -861,9 +922,12 @@ class TadoComfortLevelSensor(TadoZoneSensor):
     State: Combined comfort text (e.g., "Comfortable", "Cool Dry")
     """
 
-    def __init__(self, coordinator, zone_id: str, zone_name: str, zone_type: str = "HEATING"):
+    def __init__(
+        self, coordinator: TadoDataUpdateCoordinator, zone_id: str, zone_name: str, zone_type: str = "HEATING",
+    ) -> None:
+        """Initialize the Comfort Level Sensor."""
         super().__init__(coordinator, zone_id, zone_name, zone_type)
-        self._attr_name = "[CE] Comfort Level"
+        self._attr_translation_key = "comfort_level"
         self._attr_unique_id = f"tado_ce_{coordinator.home_id}_zone_{zone_id}_comfort_level"
         self._attr_icon = "mdi:air-filter"
 
@@ -874,39 +938,46 @@ class TadoComfortLevelSensor(TadoZoneSensor):
         self._comfort_temp: float | None = None
         self._comfort_model: str = "unknown"
         self._dew_point: float | None = None
-        self._recommendation: str = ""  # Actionable recommendation
+        self._recommendation: str = ""
 
     @property
-    def extra_state_attributes(self):
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return extra state attributes."""
         return {
             "temperature": self._temperature,
             "humidity": self._humidity,
             "outdoor_temperature": self._outdoor_temp,
             "comfort_target": self._comfort_temp,
             "comfort_model": _format_comfort_model(self._comfort_model),
-            "dew_point": self._dew_point,
+            "dew_point": round(self._dew_point, 1) if self._dew_point is not None else None,
             "zone_type": _format_zone_type(self._zone_type),
-            "recommendation": self._recommendation,  # Actionable recommendation
+            "recommendation": self._recommendation,
         }
 
     @property
-    def icon(self):
+    def icon(self) -> str | None:
         """Dynamic icon based on comfort level."""
         state = self._attr_native_value or ""
-        if "Freezing" in state or "Cold" in state:
+        if "Freezing" in state or "Cold" in state:  # type: ignore[operator]
             return "mdi:snowflake-alert"
-        elif "Cool" in state:
+        if "Cool" in state:  # type: ignore[operator]
             return "mdi:thermometer-low"
-        elif "Comfortable" in state:
+        if "Comfortable" in state:  # type: ignore[operator]
             return "mdi:emoticon-happy"
-        elif "Warm" in state:
+        if "Warm" in state:  # type: ignore[operator]
             return "mdi:thermometer-high"
-        elif "Hot" in state or "Sweltering" in state:
+        if "Hot" in state or "Sweltering" in state:  # type: ignore[operator]
             return "mdi:fire-alert"
         return "mdi:air-filter"
 
     @callback
-    def update(self):
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        self.update()
+        self.async_write_ha_state()
+
+    @callback
+    def update(self) -> None:
         """Update air comfort using adaptive comfort model."""
         try:
             zone_data = self._get_zone_data()
@@ -915,9 +986,9 @@ class TadoComfortLevelSensor(TadoZoneSensor):
                 return
 
             # Get temperature and humidity
-            sensor_data = zone_data.get('sensorDataPoints') or {}
-            self._temperature = (sensor_data.get('insideTemperature') or {}).get('celsius')
-            self._humidity = (sensor_data.get('humidity') or {}).get('percentage')
+            sensor_data = zone_data.get("sensorDataPoints") or {}
+            self._temperature = (sensor_data.get("insideTemperature") or {}).get("celsius")
+            self._humidity = (sensor_data.get("humidity") or {}).get("percentage")
 
             if self._temperature is None:
                 self._attr_available = False
@@ -951,15 +1022,22 @@ class TadoComfortLevelSensor(TadoZoneSensor):
 
             self._attr_native_value = comfort_level + humidity_suffix
 
-            # Calculate SMART actionable recommendation
-            # Get HVAC mode from climate entity if available
+            # Get HVAC mode from coordinator data (no cross-entity hass.states.get)
             hvac_mode = None
-            if self.hass:
-                # Try to find climate entity for this zone
-                climate_entity_id = f"climate.{self._zone_name.lower().replace(' ', '_')}"
-                climate_state = self.hass.states.get(climate_entity_id)
-                if climate_state:
-                    hvac_mode = climate_state.state
+            coord_data = self.coordinator.data or {}
+            zones_data = coord_data.get("zones") or {}
+            zone_states = zones_data.get("zoneStates") or {}
+            zone_state = zone_states.get(self._zone_id) or zone_states.get(str(self._zone_id))
+            if zone_state:
+                setting = zone_state.get("setting") or {}
+                power = setting.get("power")
+                overlay_type = zone_state.get("overlayType")
+                if power == "ON":
+                    hvac_mode = "heat" if overlay_type == "MANUAL" else "auto"
+                elif overlay_type == "MANUAL":
+                    hvac_mode = "off"
+                else:
+                    hvac_mode = "auto"
 
             self._recommendation = calculate_comfort_recommendation(
                 comfort_state=comfort_level,
@@ -967,7 +1045,7 @@ class TadoComfortLevelSensor(TadoZoneSensor):
                 current_temp=self._temperature,
                 target_temp=self._comfort_temp,
                 humidity=self._humidity,
-                hvac_mode=hvac_mode
+                hvac_mode=hvac_mode,
             )
 
             self._attr_available = True
@@ -975,7 +1053,6 @@ class TadoComfortLevelSensor(TadoZoneSensor):
         except Exception as e:
             _LOGGER.debug("Failed to update air comfort for zone %s: %s", self._zone_id, e)
             self._attr_available = False
-
 
     def _calculate_adaptive_comfort(self) -> str:
         """Calculate comfort using ASHRAE 55 Adaptive Comfort model.
@@ -987,99 +1064,64 @@ class TadoComfortLevelSensor(TadoZoneSensor):
             Comfort level text
         """
         # Calculate neutral comfort temperature
-        self._comfort_temp = round(0.31 * self._outdoor_temp + 17.8, 1)
+        self._comfort_temp = round(calculate_ashrae_comfort_temp(self._outdoor_temp), 1)  # type: ignore[arg-type]
 
         # Calculate deviation from comfort
-        deviation = self._temperature - self._comfort_temp
+        deviation = self._temperature - self._comfort_temp  # type: ignore[operator]
 
         # Determine comfort level based on deviation
         if deviation < -6:
             return "Freezing"
-        elif deviation < -4:
+        if deviation < -4:
             return "Cold"
-        elif deviation < -2:
+        if deviation < -2:
             return "Cool"
-        elif deviation <= 2:
+        if deviation <= 2:
             return "Comfortable"
-        elif deviation <= 4:
+        if deviation <= 4:
             return "Warm"
-        elif deviation <= 6:
+        if deviation <= 6:
             return "Hot"
-        else:
-            return "Sweltering"
+        return "Sweltering"
 
     def _calculate_seasonal_comfort(self) -> str:
         """Calculate comfort using latitude-based seasonal thresholds.
 
-        Adjusts thresholds based on:
-        - Hemisphere (north/south) for season detection
-        - Latitude for climate zone (higher latitude = lower thresholds)
+        Uses calculate_seasonal_comfort_target() for target temperature,
+        then applies deviation-based classification (same ranges as adaptive).
 
         Returns:
             Comfort level text
         """
-        from datetime import datetime
-
         # Get latitude from HA config
         latitude = 51.5  # Default to London if not available
         if self.hass:
             latitude = self.hass.config.latitude or 51.5
 
-        # Determine season based on month and hemisphere
-        month = datetime.now().month
-        is_southern = latitude < 0
+        from homeassistant.util import dt as dt_util
 
-        # Adjust month for southern hemisphere
-        if is_southern:
-            month = (month + 6 - 1) % 12 + 1
+        month = dt_util.now().month
 
-        # Season detection: Summer (6-8), Winter (12-2), Transition (3-5, 9-11)
-        is_summer = 6 <= month <= 8
-        is_winter = month >= 11 or month <= 2
+        comfort_target = calculate_seasonal_comfort_target(latitude, month)
+        self._comfort_temp = comfort_target
 
-        # Adjust thresholds based on latitude (climate zone)
-        # Higher latitude = people accustomed to lower temps
-        lat_abs = abs(latitude)
-        if lat_abs > 55:  # Nordic/Subarctic
-            lat_offset = -2
-        elif lat_abs > 45:  # Northern Europe/Canada
-            lat_offset = -1
-        elif lat_abs < 30:  # Subtropical
-            lat_offset = 2
-        elif lat_abs < 40:  # Mediterranean
-            lat_offset = 1
-        else:
-            lat_offset = 0
+        # Calculate deviation from comfort target
+        deviation = self._temperature - comfort_target  # type: ignore[operator]
 
-        # Base thresholds for indoor comfort (adjusted for latitude)
-        if is_summer:
-            thresholds = [19, 21, 23, 25, 27, 29]
-        elif is_winter:
-            thresholds = [15, 17, 19, 21, 23, 25]
-        else:  # Transition
-            thresholds = [16, 18, 20, 22, 24, 26]
-
-        # Apply latitude offset
-        thresholds = [t + lat_offset for t in thresholds]
-
-        # Store comfort target (middle of comfortable range)
-        self._comfort_temp = (thresholds[2] + thresholds[3]) / 2
-
-        # Determine comfort level
-        if self._temperature <= thresholds[0]:
+        # Determine comfort level based on deviation (same ranges as adaptive)
+        if deviation < -6:
             return "Freezing"
-        elif self._temperature <= thresholds[1]:
+        if deviation < -4:
             return "Cold"
-        elif self._temperature <= thresholds[2]:
+        if deviation < -2:
             return "Cool"
-        elif self._temperature <= thresholds[3]:
+        if deviation <= 2:
             return "Comfortable"
-        elif self._temperature <= thresholds[4]:
+        if deviation <= 4:
             return "Warm"
-        elif self._temperature <= thresholds[5]:
+        if deviation <= 6:
             return "Hot"
-        else:
-            return "Sweltering"
+        return "Sweltering"
 
     def _get_humidity_suffix(self) -> str:
         """Get humidity suffix for comfort display.
@@ -1092,9 +1134,6 @@ class TadoComfortLevelSensor(TadoZoneSensor):
 
         if self._humidity < 35:
             return " Dry"
-        elif self._humidity > 70:
+        if self._humidity > 70:
             return " Humid"
         return ""
-
-
-

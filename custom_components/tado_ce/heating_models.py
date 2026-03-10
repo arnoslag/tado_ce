@@ -1,7 +1,10 @@
-"""Data models for heating cycle analysis."""
+"""Tado CE heating cycle data models — HeatingCycle, TemperatureReading, config."""
+
+from __future__ import annotations
+
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional
+from typing import Any
 
 from .models import HeatingCycleReading
 
@@ -15,18 +18,17 @@ class HeatingCycle:
 
     zone_id: str
     start_time: datetime  # UTC
-    end_time: Optional[datetime]  # UTC, None if active
-    start_temp: Optional[float]  # Set on first temperature update
+    end_time: datetime | None  # UTC, None if active
+    start_temp: float | None  # Set on first temperature update
     target_temp: float
-    first_rise_time: Optional[datetime]  # UTC, when temp first increased by threshold
-    first_rise_temp: Optional[float]
+    first_rise_time: datetime | None  # UTC, when temp first increased by threshold
+    first_rise_temp: float | None
     temperature_readings: list[TemperatureReading]  # Limited to 100 readings max
     completed: bool
     interrupted: bool
-    interrupt_reason: Optional[str]
+    interrupt_reason: str | None
 
-
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         """Serialize to dictionary for JSON storage."""
         return {
             "zone_id": self.zone_id,
@@ -43,7 +45,7 @@ class HeatingCycle:
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> "HeatingCycle":
+    def from_dict(cls, data: dict[str, Any]) -> HeatingCycle:
         """Deserialize from dictionary."""
         return cls(
             zone_id=data["zone_id"],
@@ -53,7 +55,7 @@ class HeatingCycle:
             target_temp=data["target_temp"],
             first_rise_time=datetime.fromisoformat(data["first_rise_time"]) if data["first_rise_time"] else None,
             first_rise_temp=data["first_rise_temp"],
-            temperature_readings=[TemperatureReading.from_dict(r) for r in data["temperature_readings"]],
+            temperature_readings=[TemperatureReading.from_dict(r) for r in data["temperature_readings"]],  # type: ignore[misc]
             completed=data["completed"],
             interrupted=data["interrupted"],
             interrupt_reason=data["interrupt_reason"],

@@ -1,8 +1,12 @@
-"""Analysis of heating cycle data to extract metrics."""
-import logging
-from typing import Optional
+"""Tado CE heating cycle analysis — extract metrics from cycle data."""
 
-from .heating_models import HeatingCycle
+from __future__ import annotations
+
+import logging
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from .heating_models import HeatingCycle
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -10,11 +14,11 @@ _LOGGER = logging.getLogger(__name__)
 class HeatingCycleAnalyzer:
     """Analyze heating cycles to extract performance metrics."""
 
-    def __init__(self, min_cycles: int = 3):
+    def __init__(self, min_cycles: int = 3) -> None:
         """Initialize analyzer with minimum cycle requirement."""
         self._min_cycles = min_cycles
 
-    def analyze_cycles(self, cycles: list[HeatingCycle]) -> Optional[dict]:
+    def analyze_cycles(self, cycles: list[HeatingCycle]) -> dict[str, Any] | None:
         """Analyze completed cycles and return metrics.
 
         Args:
@@ -28,7 +32,8 @@ class HeatingCycleAnalyzer:
         # - start_temp < target_temp (actual heating occurred)
         # - positive temperature delta
         valid_cycles = [
-            c for c in cycles
+            c
+            for c in cycles
             if c.completed
             and c.start_temp is not None
             and c.start_temp < c.target_temp - 0.1  # At least 0.1°C heating needed
@@ -39,7 +44,7 @@ class HeatingCycleAnalyzer:
                 "Insufficient valid heating cycles for analysis: %d valid out of %d total (need %d)",
                 len(valid_cycles),
                 len(cycles),
-                self._min_cycles
+                self._min_cycles,
             )
             return None
 
@@ -53,13 +58,13 @@ class HeatingCycleAnalyzer:
                 inertia_minutes = (cycle.first_rise_time - cycle.start_time).total_seconds() / 60
                 inertia_times.append(inertia_minutes)
 
-            # Heating rate (°C/min)
+            # Heating rate (°C/h)
             if cycle.end_time and cycle.start_temp is not None:
-                duration_minutes = (cycle.end_time - cycle.start_time).total_seconds() / 60
+                duration_hours = (cycle.end_time - cycle.start_time).total_seconds() / 3600
                 temp_delta = cycle.target_temp - cycle.start_temp
                 # Only include positive heating rates
-                if duration_minutes > 0 and temp_delta > 0:
-                    rate = temp_delta / duration_minutes
+                if duration_hours > 0 and temp_delta > 0:
+                    rate = temp_delta / duration_hours
                     heating_rates.append(rate)
 
         if not inertia_times or not heating_rates:
@@ -74,12 +79,12 @@ class HeatingCycleAnalyzer:
         confidence = self._calculate_confidence(
             len(cycles),
             inertia_times,
-            heating_rates
+            heating_rates,
         )
 
         return {
             "inertia_time": round(avg_inertia, 1),  # minutes
-            "heating_rate": round(avg_heating_rate, 3),  # °C/min
+            "heating_rate": round(avg_heating_rate, 2),  # °C/h
             "confidence_score": round(confidence, 2),  # 0.0-1.0
             "cycle_count": len(cycles),
             "completed_count": len(cycles),
@@ -89,8 +94,8 @@ class HeatingCycleAnalyzer:
         self,
         current_temp: float,
         target_temp: float,
-        metrics: dict,
-    ) -> Optional[float]:
+        metrics: dict[str, Any],
+    ) -> float | None:
         """Estimate preheat time to reach target temperature.
 
         Args:
@@ -115,11 +120,13 @@ class HeatingCycleAnalyzer:
             return None
 
         # Preheat time = Inertia time + (ΔT / heating rate)
+        # Convert rate from °C/h to °C/min for consistent minute-based calculation
         temp_delta = target_temp - current_temp
-        heating_time = temp_delta / heating_rate
+        rate_per_min = heating_rate / 60
+        heating_time = temp_delta / rate_per_min
         total_time = inertia_time + heating_time
 
-        return round(total_time, 1)
+        return round(total_time, 1)  # type: ignore[no-any-return]
 
     def _calculate_confidence(
         self,
@@ -148,7 +155,7 @@ class HeatingCycleAnalyzer:
             mean_inertia = sum(inertia_times) / len(inertia_times)
             if mean_inertia > 0:
                 variance = sum((x - mean_inertia) ** 2 for x in inertia_times) / len(inertia_times)
-                std_dev = variance ** 0.5
+                std_dev = variance**0.5
                 cv_inertia = std_dev / mean_inertia
 
                 # Lower CV = higher confidence (CV < 0.2 = good, CV > 0.5 = poor)
@@ -159,7 +166,7 @@ class HeatingCycleAnalyzer:
             mean_rate = sum(heating_rates) / len(heating_rates)
             if mean_rate > 0:
                 variance = sum((x - mean_rate) ** 2 for x in heating_rates) / len(heating_rates)
-                std_dev = variance ** 0.5
+                std_dev = variance**0.5
                 cv_rate = std_dev / mean_rate
 
                 # Lower CV = higher confidence
@@ -167,4 +174,3 @@ class HeatingCycleAnalyzer:
 
         total_confidence = count_confidence + consistency_confidence
         return min(1.0, max(0.0, total_confidence))
-

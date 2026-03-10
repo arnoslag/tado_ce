@@ -1,16 +1,16 @@
-"""Tado CE DataUpdateCoordinator.
+"""Tado CE DataUpdateCoordinator — adaptive polling and entity update propagation.
 
-Uses HA's built-in DataUpdateCoordinator + CoordinatorEntity pattern
-for adaptive polling and entity update propagation.
+Adaptive polling and entity update propagation via HA's DataUpdateCoordinator.
 """
+
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime, timedelta
 import json
 import logging
 import sys
 import time
-from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.config_entries import ConfigEntry
@@ -20,15 +20,14 @@ from homeassistant.helpers.update_coordinator import (
     UpdateFailed,
 )
 
-import aiofiles
-import aiofiles.os
-
-from .const import DOMAIN, FULL_SYNC_INTERVAL_HOURS, get_data_file
+from .const import DOMAIN, FULL_SYNC_INTERVAL_HOURS, OVERLAY_MODE_DEFAULT, TIMER_DURATION_DEFAULT, get_data_file
 from .exceptions import TadoAuthError, TadoSyncError
 from .insight_history import InsightHistoryTracker
 from .polling import get_polling_interval, should_pause_polling
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from homeassistant.core import HomeAssistant
 
     from .adaptive_preheat import AdaptivePreheatManager
@@ -41,6 +40,9 @@ if TYPE_CHECKING:
     from .zone_config_manager import ZoneConfigManager
 
 _LOGGER = logging.getLogger(__name__)
+
+# Outdoor temperature history — 14 days × 24 hourly readings
+_OUTDOOR_TEMP_HISTORY_MAX = 336
 
 
 # HA official pattern — provides type safety for entry.runtime_data
@@ -75,7 +77,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             hass,
             _LOGGER,
             config_entry=entry,
-            name="%s (%s)" % (DOMAIN, config_manager.get_all_config().get("home_id", "default")),
+            name=f"{DOMAIN} ({config_manager.get_all_config().get('home_id', 'default')})",
             update_interval=timedelta(minutes=initial_interval),
         )
 
@@ -90,7 +92,8 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.adaptive_preheat_manager = adaptive_preheat_manager
 
         # RefreshHandler (self-reference resolves chicken-and-egg dependency)
-        from .refresh_handler import RefreshHandler  # noqa: PLC0415
+        from .refresh_handler import RefreshHandler
+
         self.refresh_handler = RefreshHandler(self)
 
         self.home_id: str = entry.data.get("home_id") or "default"
@@ -98,36 +101,81 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Freshness tracking
         self.entity_freshness: dict[str, float] = {}
         self._freshness_lock = asyncio.Lock()
+        self._freshness_cleanup_cancel: Callable[[], None] | None = None
         self._global_sequence: int = 0
 
+        # Heating cycle timeout cancel handle
+        self._heating_cycle_timeout_cancel: Callable[[], None] | None = None
+
         # Overlay/timer cache
-        self.overlay_mode: str = "TADO_MODE"
-        self.timer_duration: int = 60
+        self.overlay_mode: str = OVERLAY_MODE_DEFAULT
+        self.timer_duration: int = TIMER_DURATION_DEFAULT
 
         # Outdoor temp history (owned by coordinator, async I/O only)
         self._outdoor_temp_history: list[float] = []
         self._outdoor_temp_loaded: bool = False
+
+        # Shared entity data store — entities publish computed values here
+        # so other components (insight collector, adaptive preheat) can read
+        # without cross-entity hass.states.get() coupling.
+        # Structure: {zone_id: {"condensation_risk": {...}, "window_predicted": {...}, ...}}
+        self.entity_data: dict[str, dict[str, dict[str, Any]]] = {}
+
+        # Pending cleanup flags — set by options flow, consumed by migration
+        # after reload. Avoids transient hass.data[DOMAIN_*] keys.
+        self._pending_cleanup: dict[str, dict[str, bool]] = {}
 
         # Insight history tracker (persistent insight duration tracking)
         self.insight_history = InsightHistoryTracker(hass, self.home_id)
 
         # Full sync tracking
         self._last_full_sync: datetime | None = None
-        self._cached_ratelimit: dict | None = None
+        self._cached_ratelimit: dict[str, Any] | None = None
 
     @property
     def outdoor_temp_history(self) -> list[float]:
         """Return outdoor temp history (read-only access for sensors)."""
         return self._outdoor_temp_history
 
+    def publish_entity_data(self, zone_id: str, key: str, data: dict[str, Any]) -> None:
+        """Publish computed entity data for cross-component access.
+
+        Entities call this to share their computed values (e.g. condensation
+        risk, window predicted state) so insight collectors and other
+        components can read without hass.states.get() coupling.
+
+        Args:
+            zone_id: Zone ID string.
+            key: Data key (e.g. "condensation_risk", "window_predicted").
+            data: Dict of computed values (e.g. {"state": "High", "recommendation": "..."}).
+        """
+        if zone_id not in self.entity_data:
+            self.entity_data[zone_id] = {}
+        self.entity_data[zone_id][key] = data
+
+    def get_entity_data(self, zone_id: str, key: str) -> dict[str, Any] | None:
+        """Read published entity data for a zone.
+
+        Args:
+            zone_id: Zone ID string.
+            key: Data key (e.g. "condensation_risk", "window_predicted").
+
+        Returns:
+            Dict of computed values, or None if not published yet.
+        """
+        return self.entity_data.get(zone_id, {}).get(key)
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data from Tado API. Dynamically adjusts update_interval."""
+        # Track previous success state for recovery logging
+        was_failing = self.last_update_success is False
+
         # 1. Load ratelimit and check quota
         await self._async_load_ratelimit()
         if self._cached_ratelimit:
             should_pause, reason = should_pause_polling(
-                self._cached_ratelimit, self.config_manager
+                self._cached_ratelimit,
+                self.config_manager,
             )
             if should_pause:
                 _LOGGER.warning("Tado CE: %s", reason)
@@ -152,14 +200,21 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 home_state_sync_enabled=cm.get_home_state_sync_enabled(),
             )
         except TadoAuthError as e:
+            from .repairs import async_create_auth_issue
+
+            async_create_auth_issue(self.hass, self.home_id)
             raise ConfigEntryAuthFailed(
-                "Refresh token expired — user must re-authenticate"
+                "Refresh token expired — user must re-authenticate",
             ) from e
         except TadoSyncError as e:
-            raise UpdateFailed("Tado CE sync failed: %s" % e) from e
+            raise UpdateFailed(f"Tado CE sync failed: {e}") from e
 
         if do_full_sync:
-            self._last_full_sync = datetime.now()
+            self._last_full_sync = datetime.now(UTC)
+
+        # Log recovery after previous failure
+        if was_failing:
+            _LOGGER.info("Tado CE: Connection restored — sync successful after previous failure")
 
         # 4. Detect API reset time from history
         from .ratelimit import (
@@ -175,47 +230,33 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
             await async_update_ratelimit_reset_time(self.hass, detected_reset, self.home_id)
 
-        # 5. Load all data files in parallel (no inter-dependencies)
-        (
-            zone_data,
-            config_data,
-            home_state_data,
-            ratelimit_data,
-            api_call_history_data,
-            zones_info_data,
-            weather_data,
-            mobile_devices_data,
-            offsets_data,
-            schedules_data,
-            ac_capabilities,
-        ) = await asyncio.gather(
-            self.hass.async_add_executor_job(self.data_loader.load_zones_file),
-            self.hass.async_add_executor_job(self.data_loader.load_config_file),
-            self.hass.async_add_executor_job(self.data_loader.load_home_state_file),
-            self.hass.async_add_executor_job(self.data_loader.load_ratelimit_file),
-            self.hass.async_add_executor_job(self.data_loader.load_api_call_history_file),
-            self.hass.async_add_executor_job(self.data_loader.load_zones_info_file),
-            self.hass.async_add_executor_job(self.data_loader.load_weather_file),
-            self.hass.async_add_executor_job(self.data_loader.load_mobile_devices_file),
-            self.hass.async_add_executor_job(self.data_loader.load_offsets_file),
-            self.hass.async_add_executor_job(self.data_loader.load_schedules_file),
-            self.hass.async_add_executor_job(self.data_loader.load_ac_capabilities_file),
-        )
+        # 5. Read all data from in-memory cache (populated by api_client write-through)
+        zone_data = self.data_loader.get_cached("zones")
+        config_data = self.data_loader.get_cached("config")
+        home_state_data = self.data_loader.get_cached("home_state")
+        ratelimit_data = self.data_loader.get_cached("ratelimit")
+        api_call_history_data = self.data_loader.get_cached("api_call_history")
+        zones_info_data = self.data_loader.get_cached("zones_info")
+        weather_data = self.data_loader.get_cached("weather")
+        mobile_devices_data = self.data_loader.get_cached("mobile_devices")
+        offsets_data = self.data_loader.get_cached("offsets")
+        schedules_data = self.data_loader.get_cached("schedules")
+        ac_capabilities = self.data_loader.get_cached("ac_capabilities")
 
         # 5e. Accumulate outdoor temp history (depends on weather_data above)
         if weather_data:
-            outdoor_temp = (weather_data.get("outsideTemperature") or {}).get("celsius")
+            outdoor_temp = (weather_data.get("outsideTemperature") or {}).get("celsius")  # type: ignore[union-attr]
             if outdoor_temp is not None:
                 if not self._outdoor_temp_loaded:
                     loaded = await self.hass.async_add_executor_job(
-                        self.data_loader.load_outdoor_temp_history
+                        self.data_loader.load_outdoor_temp_history,
                     )
                     self._outdoor_temp_history = loaded
                     self._outdoor_temp_loaded = True
 
                 self._outdoor_temp_history.append(outdoor_temp)
-                if len(self._outdoor_temp_history) > 336:
-                    del self._outdoor_temp_history[:len(self._outdoor_temp_history) - 336]
+                if len(self._outdoor_temp_history) > _OUTDOOR_TEMP_HISTORY_MAX:
+                    del self._outdoor_temp_history[: len(self._outdoor_temp_history) - _OUTDOOR_TEMP_HISTORY_MAX]
 
                 await self.hass.async_add_executor_job(
                     self.data_loader.save_outdoor_temp_history,
@@ -224,18 +265,19 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         # 6. Notify HeatingCycleCoordinator of zone updates
         if self.heating_cycle_coordinator and zone_data:
-            zone_states = zone_data.get("zoneStates", {})
+            # Tado API may return null for 'zoneStates'; 'or {}' handles None correctly
+            zone_states = zone_data.get("zoneStates") or {}  # type: ignore[union-attr]
             for zone_id, data in zone_states.items():
                 try:
                     setting = data.get("setting") or {}
                     target_temp = (setting.get("temperature") or {}).get("celsius")
                     sensor_data = data.get("sensorDataPoints") or {}
-                    current_temp = (
-                        (sensor_data.get("insideTemperature") or {}).get("celsius")
-                    )
+                    current_temp = (sensor_data.get("insideTemperature") or {}).get("celsius")
                     if target_temp is not None and current_temp is not None:
                         await self.heating_cycle_coordinator.on_zone_update(
-                            zone_id, target_temp, current_temp,
+                            zone_id,
+                            target_temp,
+                            current_temp,
                         )
                 except Exception:
                     _LOGGER.debug("HeatingCycleCoordinator update failed for zone %s", zone_id)
@@ -261,26 +303,29 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "schedules": schedules_data or {},
         }
 
-
     def _should_do_full_sync(self) -> bool:
         """Check if full sync needed (vs quick). Runs on first poll + every N hours."""
         if self._last_full_sync is None:
             return True
-        hours_since = (datetime.now() - self._last_full_sync).total_seconds() / 3600
+        hours_since = (datetime.now(UTC) - self._last_full_sync).total_seconds() / 3600
         return hours_since >= FULL_SYNC_INTERVAL_HOURS
 
     async def _async_load_ratelimit(self) -> None:
         """Load ratelimit data via async I/O."""
         try:
             ratelimit_path = get_data_file("ratelimit", self.home_id)
-            if await aiofiles.os.path.exists(ratelimit_path):
-                async with aiofiles.open(ratelimit_path, "r") as f:
-                    content = await f.read()
-                    self._cached_ratelimit = json.loads(content)
-                    _LOGGER.debug(
-                        "Tado CE: async_load_ratelimit - loaded used=%s",
-                        self._cached_ratelimit.get("used"),
-                    )
+            path_exists = await self.hass.async_add_executor_job(
+                ratelimit_path.exists,
+            )
+            if path_exists:
+                content = await self.hass.async_add_executor_job(
+                    ratelimit_path.read_text,
+                )
+                self._cached_ratelimit = json.loads(content)
+                _LOGGER.debug(
+                    "Tado CE: async_load_ratelimit - loaded used=%s",
+                    self._cached_ratelimit.get("used"),
+                )
             else:
                 self._cached_ratelimit = None
         except Exception as e:
@@ -290,7 +335,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def mark_entity_fresh(self, entity_id: str) -> None:
         """Mark entity as having a recent API call."""
         async with self._freshness_lock:
-            self.entity_freshness[entity_id] = time.time()
+            self.entity_freshness[entity_id] = time.monotonic()
             _LOGGER.debug("Marked entity fresh: %s", entity_id)
 
     def is_entity_fresh(self, entity_id: str, debounce_seconds: int | None = None) -> bool:
@@ -299,7 +344,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return False
         if debounce_seconds is None:
             debounce_seconds = self.config_manager.get_refresh_debounce_seconds() + 2
-        elapsed = time.time() - self.entity_freshness[entity_id]
+        elapsed = time.monotonic() - self.entity_freshness[entity_id]
         if elapsed > debounce_seconds:
             del self.entity_freshness[entity_id]
             return False
@@ -316,18 +361,14 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def _cleanup_entity_freshness(self) -> None:
         """Remove expired freshness entries."""
         async with self._freshness_lock:
-            now = time.time()
-            expired = [
-                eid for eid, timestamp in self.entity_freshness.items()
-                if now - timestamp > 60
-            ]
+            now = time.monotonic()
+            expired = [eid for eid, timestamp in self.entity_freshness.items() if now - timestamp > 60]
             for eid in expired:
                 del self.entity_freshness[eid]
             if expired:
                 _LOGGER.debug("Cleaned up %d expired entity freshness entries", len(expired))
 
-    async def async_set_zone_overlay(
-        self, zone_id: str, setting: dict, termination: dict) -> bool:
+    async def async_set_zone_overlay(self, zone_id: str, setting: dict[str, Any], termination: dict[str, Any]) -> bool:
         """Set zone overlay then trigger immediate refresh."""
         result = await self.api_client.set_zone_overlay(zone_id, setting, termination)
         if result:

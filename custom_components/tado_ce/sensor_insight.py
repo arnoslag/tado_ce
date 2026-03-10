@@ -1,9 +1,10 @@
 """Tado CE Insight Sensors — home and zone actionable insights."""
+
 from __future__ import annotations
 
+from datetime import UTC, datetime
 import logging
-from datetime import datetime, timezone
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.core import callback
@@ -34,6 +35,8 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class TadoHomeInsightsSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], SensorEntity):
+    """Represent a Tado home-level actionable insights sensor."""
+
     _attr_has_entity_name = True
 
     """Hub-level sensor aggregating actionable insights from all zones.
@@ -49,26 +52,26 @@ class TadoHomeInsightsSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], Sen
     State: Total number of active insights (integer)
     """
 
-    def __init__(self, coordinator: "TadoDataUpdateCoordinator"):
+    def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
+        """Initialize the Home Insights Sensor."""
         super().__init__(coordinator)
-        self._attr_name = "[CE] Home Insights"
-        self.entity_id = "sensor.tado_ce_home_insights"
+        self._attr_translation_key = "home_insights"
         self._attr_unique_id = f"tado_ce_{coordinator.home_id}_home_insights"
         self._attr_device_info = get_hub_device_info(coordinator.home_id)
         self._attr_available = False
         self._attr_native_value = 0
-        self._aggregated: dict = {}
+        self._aggregated: dict[str, Any] = {}
         self._health_score: int = 100
         # Weekly digest cache — recompute only when date changes
-        self._weekly_digest: dict = {}
+        self._weekly_digest: str = ""
         self._weekly_digest_date: str = ""
         # Track per-zone heating anomaly start times for real duration measurement
         self._anomaly_start_times: dict[str, datetime] = {}
         # Per-zone humidity history for trend detection (in-memory only)
-        self._humidity_histories: dict[str, list] = {}
+        self._humidity_histories: dict[str, list[Any]] = {}
 
     @property
-    def icon(self):
+    def icon(self) -> str | None:
         """Dynamic icon based on top priority."""
         top = self._aggregated.get("top_priority", "none")
         if top == "critical":
@@ -82,7 +85,8 @@ class TadoHomeInsightsSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], Sen
         return "mdi:home-analytics"
 
     @property
-    def extra_state_attributes(self):
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return extra state attributes."""
         persistent = self.coordinator.insight_history.get_persistent_insights()
         return {
             "summary": self._aggregated.get("summary", ""),
@@ -103,16 +107,20 @@ class TadoHomeInsightsSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], Sen
         self.async_write_ha_state()
 
     @callback
-    def update(self):
+    def update(self) -> None:
         """Update home insights by collecting and aggregating zone data."""
         try:
             zone_insights = collect_zone_insights(
-                self.hass, self.coordinator,
-                self._anomaly_start_times, self._humidity_histories,
+                self.hass,
+                self.coordinator,
+                self._anomaly_start_times,
+                self._humidity_histories,
             )
 
             cross_zone = get_cross_zone_insights(
-                self.hass, self.coordinator, zone_insights,
+                self.hass,
+                self.coordinator,
+                zone_insights,
             )
 
             hub = get_hub_insights(self.hass, self.coordinator)
@@ -122,13 +130,12 @@ class TadoHomeInsightsSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], Sen
             if cross_zone:
                 zone_insights["_cross_zone"] = cross_zone
 
-            # Flatten all insights for history tracking
             all_insights = []
             for insights_list in zone_insights.values():
                 all_insights.extend(insights_list)
 
             # Update insight history with current poll cycle
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             self.coordinator.insight_history.update(all_insights, now)
 
             # Escalate priorities based on persistence duration
@@ -139,7 +146,7 @@ class TadoHomeInsightsSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], Sen
             idx = 0
             for zone_key in zone_insights:
                 count = len(zone_insights[zone_key])
-                zone_insights[zone_key] = escalated[idx:idx + count]
+                zone_insights[zone_key] = escalated[idx : idx + count]
                 idx += count
 
             # Append duration text for persistent insights (≥ 24h)
@@ -148,10 +155,10 @@ class TadoHomeInsightsSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], Sen
                     dur = history.get_duration(insight.insight_type, insight.zone_name)
                     if dur is not None and dur.total_seconds() >= 86400:
                         days = int(dur.total_seconds() // 86400)
-                        label = "1 day" if days == 1 else "%d days" % days
+                        label = "1 day" if days == 1 else f"{days} days"
                         zone_insights[zone_key][i] = Insight(
                             priority=insight.priority,
-                            recommendation="%s (persisting for %s)" % (insight.recommendation, label),
+                            recommendation=f"{insight.recommendation} (persisting for {label})",
                             insight_type=insight.insight_type,
                             zone_name=insight.zone_name,
                         )
@@ -166,7 +173,8 @@ class TadoHomeInsightsSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], Sen
             today = now.strftime("%Y-%m-%d")
             if today != self._weekly_digest_date:
                 self._weekly_digest = _build_weekly_digest(
-                    self.coordinator.insight_history, now,
+                    self.coordinator.insight_history,
+                    now,
                 )
                 self._weekly_digest_date = today
 
@@ -183,6 +191,8 @@ class TadoHomeInsightsSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], Sen
 
 
 class TadoZoneInsightsSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], SensorEntity):
+    """Represent a Tado zone-level actionable insights sensor."""
+
     _attr_has_entity_name = True
 
     """Per-zone sensor showing actionable insights for a single zone.
@@ -194,22 +204,23 @@ class TadoZoneInsightsSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], Sen
     State: Number of active insights for this zone (integer)
     """
 
-    def __init__(self, coordinator: "TadoDataUpdateCoordinator", zone_id: str, zone_name: str, zone_type: str):
+    def __init__(self, coordinator: TadoDataUpdateCoordinator, zone_id: str, zone_name: str, zone_type: str) -> None:
+        """Initialize the Zone Insights Sensor."""
         super().__init__(coordinator)
         self._zone_id = zone_id
         self._zone_name = zone_name
         self._zone_type = zone_type
-        self._attr_name = "[CE] Insights"
+        self._attr_translation_key = "insights"
         self._attr_unique_id = f"tado_ce_{coordinator.home_id}_zone_{zone_id}_insights"
         self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type, coordinator.home_id)
         self._attr_available = False
         self._attr_native_value = 0
-        self._insights: list = []
+        self._insights: list[Any] = []
         # Use dict for anomaly tracking (consistent with Home sensor)
         self._anomaly_start_times: dict[str, datetime] = {}
 
     @property
-    def icon(self):
+    def icon(self) -> str | None:
         """Dynamic icon based on top priority."""
         if not self._insights:
             return "mdi:lightbulb-outline"
@@ -226,7 +237,8 @@ class TadoZoneInsightsSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], Sen
         return "mdi:lightbulb-outline"
 
     @property
-    def extra_state_attributes(self):
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return extra state attributes."""
         if not self._insights:
             return {
                 "top_priority": "None",
@@ -248,7 +260,7 @@ class TadoZoneInsightsSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], Sen
         self.async_write_ha_state()
 
     @callback
-    def update(self):
+    def update(self) -> None:
         """Collect insights for this zone using shared collector."""
         try:
             coord_data = self.coordinator.data or {}

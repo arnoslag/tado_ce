@@ -1,1017 +1,451 @@
-# Tado CE Entities Reference
+# Tado CE — Entity Reference (v3.0.0)
 
-Complete list of all entities created by Tado CE integration.
+This document lists all 75 entities in Tado CE, organised by function.
 
-## 📋 v2.3.0 Changes
+## How to Read This Document
 
-### Expanded Actionable Insights
+**Two tables per section:**
 
-21 new insight types added across 7 categories, significantly expanding the intelligence of both zone and home insights sensors.
+1. **Friendly Names** — what you see in the HA UI
+2. **Entity IDs** — what you use in automations and YAML
 
-#### New Zone-Level Insights
-Added to `sensor.{zone}_insights` for each HEATING and AIR_CONDITIONING zone:
+**Column guide:**
 
-| Insight Type | Display Name | Description |
-|-------------|-------------|-------------|
-| `overlay_duration` | Overlay Duration | Alerts when manual override has been active for an extended period |
-| `frequent_override` | Frequent Override | Detects multiple manual overrides in a recent period |
-| `heating_off_cold` | Heating Off Cold | Heating is off but room temperature is below comfort threshold |
-| `early_start_disabled` | Early Start Disabled | Early start / preheat feature is not enabled for the zone |
-| `thermal_efficiency` | Thermal Efficiency | Zone heating efficiency is below expected threshold |
-| `schedule_gap` | Schedule Gap | Large gap in heating schedule leaving zone unheated |
-| `boiler_flow_anomaly` | Boiler Flow Anomaly | Boiler flow temperature outside expected range |
-| `humidity_trend` | Humidity Trend | Sustained rising humidity trend detected |
-| `device_limitation` | Device Limitation | Device hardware limitations affecting available features |
+| Column | Meaning |
+|--------|---------|
+| CE? | `[CE]` = CE Exclusive (not in official Tado integration) |
+| v2.3.1 Name | Friendly name in v2.3.1 |
+| v3.0 Name | Friendly name in v3.0.0 (all users, immediate) |
+| v2.3.1 entity_id | Entity ID in v2.3.1 (preserved for migrated users) |
+| v3.0 entity_id (fresh) | Entity ID for fresh v3.0.0 installs |
 
-Updated zone insight types list: mold risk, comfort, window predicted, battery, connection, preheat timing, schedule deviation, heating anomaly, condensation, overlay duration, frequent override, heating off cold, early start disabled, thermal efficiency, schedule gap, boiler flow anomaly, humidity trend, device limitation
+**Markers:**
 
-#### New Home-Level Insights
-Added to `sensor.tado_ce_home_insights`:
+| Marker | Meaning |
+|--------|---------|
+| ✓ | CE Exclusive — not available in HA official Tado integration |
+| ⬆ | Enhanced — Tado app feature that HA official lacks or CE implements better |
 
-**Cross-Zone Analysis:**
-| Insight Type | Display Name | Description |
-|-------------|-------------|-------------|
-| `cross_zone_condensation` | Cross-Zone Condensation | Multiple zones with condensation risk |
-| `cross_zone_efficiency` | Cross-Zone Efficiency | Significant efficiency variation between zones |
-| `temp_imbalance` | Temperature Imbalance | Large temperature difference between zones |
-| `humidity_imbalance` | Humidity Imbalance | Large humidity difference between zones |
+**Migration notes:**
+- Upgrading from v2.3.1 → v3.0.0 **preserves your entity_ids** — automations won't break
+- Friendly names change immediately for all users (code-driven via `strings.json`)
+- Fresh installs get HA auto-generated entity_ids from device name + friendly name
+- Multi-home fresh installs: HA auto-suffixes `_2`, `_3` etc. to avoid collision
 
-**Occupancy & Automation:**
-| Insight Type | Display Name | Description |
-|-------------|-------------|-------------|
-| `away_heating` | Away Heating | Home in Away mode but heating still active |
-| `home_all_off` | Home All Off | Everyone home but all heating/cooling off |
+**Device name → entity_id prefix mapping (fresh installs):**
 
-**Weather & Environment:**
-| Insight Type | Display Name | Description |
-|-------------|-------------|-------------|
-| `solar_gain` | Solar Gain | Solar gain detected, heating may be unnecessary |
-| `solar_ac_load` | Solar AC Load | Strong solar exposure increasing AC load |
-| `frost_risk` | Frost Risk | Outdoor temperature near freezing, frost protection needed |
-| `heating_season` | Heating Season | Seasonal heating guidance based on outdoor trends |
+| Device | Device Name | entity_id prefix |
+|--------|------------|-----------------|
+| Hub | Tado CE Hub | `{platform}.tado_ce_hub_` |
+| Zone | {zone_name} (e.g. Lounge) | `{platform}.lounge_` |
+| Schedule | Heating Schedule | `{platform}.heating_schedule_` |
 
-**Device & API Health:**
-| Insight Type | Display Name | Description |
-|-------------|-------------|-------------|
-| `geofencing_offline` | Geofencing Offline | Mobile device used for geofencing is offline |
-| `api_usage_spike` | API Usage Spike | Unusual spike in API call rate |
-
-#### User-Friendly Insight Display Names (v2.3.0)
-All insight type values in `insight_types` attributes now display in user-friendly format (e.g., "Mold Risk" instead of "mold_risk", "Overlay Duration" instead of "overlay_duration").
+**Zone examples use:** zone name = "Lounge", zone_id = 4, home_id = {home_id}
 
 ---
 
-## 📋 v2.2.0 Changes
+## Hub Sensors (17 entities)
 
-### Actionable Insights ([Discussion #112](https://github.com/hiall-fyi/tado_ce/discussions/112) - @tigro7)
+### Friendly Names
 
-#### Window Predicted Detection
-New binary sensor for early open window detection:
+| # | Function | CE? | v2.3.1 Name | v3.0 Name |
+|---|----------|-----|-------------|-----------|
+| 1 | Outdoor temperature | | Outside Temperature | Outside Temp |
+| 2 | Solar radiation | | Solar Intensity | Solar Intensity |
+| 3 | Weather condition | | Weather | Weather |
+| 4 | Boiler flow temp | ✓ | Boiler Flow Temperature | [CE] Boiler Flow Temp |
+| 5 | Home identifier | ✓ | Home ID | [CE] Home ID |
+| 6 | API calls used | ✓ | API Usage | [CE] API Usage |
+| 7 | API reset countdown | ✓ | API Reset | [CE] API Reset |
+| 8 | Daily API limit | ✓ | API Limit | [CE] API Limit |
+| 9 | API health | ✓ | API Status | [CE] API Status |
+| 10 | Auth token health | ✓ | Token Status | [CE] Token Status |
+| 11 | Zone count | ✓ | Zone Count | [CE] Zone Count |
+| 12 | Last sync time | ✓ | Last Sync | [CE] Last Sync |
+| 13 | Next sync time | ✓ | Next Sync | [CE] Next Sync |
+| 14 | Polling interval | ✓ | Polling Interval | [CE] Polling Interval |
+| 15 | API call history | ✓ | Call History | [CE] Call History |
+| 16 | API call breakdown | ✓ | API Call Breakdown | [CE] API Breakdown |
+| 17 | Home-wide insights | ✓ | Home Insights | [CE] Home Insights |
 
-- **Window Predicted** (`binary_sensor.{zone}_window_predicted`): Detects possible open window from rapid temperature drop
-  - **State**: `on` (window likely open), `off` (normal)
-  - **Attributes**: `confidence` (none/low/medium/high), `temp_drop`, `time_window_minutes`, `recommendation`, `readings_count`, `zone_type`
-  - Uses rolling temperature history to detect rapid drops
-  - CRITICAL: Never triggers when HVAC is actively heating/cooling (prevents false positives)
-  - Created for all HEATING and AIR_CONDITIONING zones
+### Entity IDs
 
-#### Recommendation Attributes
-New `recommendation` attribute added to existing sensors providing actionable guidance:
-
-**Environment Sensors:**
-- `sensor.{zone}_mold_risk` - Recommendations for ventilation, heating, dehumidifier based on risk level
-- `sensor.{zone}_comfort_level` - Suggestions for heating/cooling adjustments based on comfort state
-- `sensor.{zone}_condensation_risk` - Actions to prevent condensation on AC zones
-
-**Device Status Sensors:**
-- `sensor.{zone}_battery` - Battery replacement reminders when low/critical
-- `sensor.{zone}_connection` - Troubleshooting guidance when device offline
-
-**Hub Sensors:**
-- `sensor.tado_ce_api_status` - API quota management suggestions when usage is high
-- `sensor.tado_ce_home_insights` - Aggregated insights from all zones with priority ranking
-
-Recommendation is empty string when no action needed, or contains actionable text when issues detected.
-
-#### Zone Insights Sensor
-Per-zone insights sensor for each HEATING and AIR_CONDITIONING zone:
-
-- **Zone Insights** (`sensor.{zone}_insights`): Per-zone actionable insights summary
-  - **State**: Number of active insights for this zone (integer)
-  - **Attributes**: `top_priority`, `top_recommendation`, `insight_types`, `recommendations`
-  - Insight types: mold risk, comfort, window predicted, battery, connection, preheat timing, schedule deviation, heating anomaly
-  - Dynamic icon changes based on highest priority insight
-  - Created for all HEATING and AIR_CONDITIONING zones
-
-### Calibration Sensors ([#118](https://github.com/hiall-fyi/tado_ce/issues/118))
-New standalone sensors for calibration workflows and automation:
-
-- **Surface Temperature** (`sensor.{zone}_surface_temperature`): Calculated cold spot temperature
-  - **State**: Temperature in °C
-  - **Attributes**: `room_temperature`, `outdoor_temperature`, `window_type`, `u_value`, `offset_applied`, `calculation_method`
-  - Uses same 2-tier calculation as Mold Risk sensor (surface estimation or room average fallback)
-  - Primary use case: Real-time feedback when calibrating mold risk with laser thermometer
-
-- **Dew Point** (`sensor.{zone}_dew_point`): Calculated dew point temperature
-  - **State**: Temperature in °C
-  - **Attributes**: `room_temperature`, `humidity`, `calculation_method`
-  - Uses Magnus-Tetens formula (same as Mold Risk sensor)
-  - Primary use cases: Dehumidifier control automation, condensation prevention alerts
-
-Both sensors are controlled by the existing `environment_sensors_enabled` toggle.
-
-### User-Friendly Attribute Values
-Attribute values now display in user-friendly format instead of raw API values:
-- `zone_type`: "Heating" / "Air Conditioning" / "Hot Water" (was HEATING/AIR_CONDITIONING/HOT_WATER)
-- `window_type`: "Single Pane" / "Double Pane" / "Triple Pane" / "Passive House" (was snake_case)
-- `comfort_model`: "Adaptive" / "Seasonal" (was lowercase)
-
-### Advanced Insight Types (US-11 to US-20)
-Enhanced insight capabilities in `sensor.tado_ce_home_insights`:
-
-#### Mold Risk Delta Format (US-11/US-12)
-- Recommendations now include specific humidity/temperature deltas needed to reduce risk
-- Level transition guidance (e.g., "Reduce humidity by 5% to move from High to Medium risk")
-
-#### Comfort Level Time Frame (US-13)
-- Recommendations consider HVAC action context
-- Differentiates "heating in progress" vs "heating not reaching target"
-
-#### Preheat Timing Insight (US-14)
-- Alerts when preheat time exceeds schedule gap
-- Reads from `sensor.{zone}_preheat_time` and `sensor.{zone}_next_schedule_time`
-
-#### Schedule Deviation Insight (US-15)
-- Detects when actual temperature consistently deviates from schedule target
-- Triggers when deviation exceeds threshold over multiple readings
-- Provides guidance on schedule adjustments
-
-#### Heating Power Anomaly Detection (US-16)
-- Detects when heating power ≥80% but temperature change <0.5°C for 60+ minutes
-- Suggests checking radiator, TRV, or boiler issues
-
-#### Cross-Zone Mold Risk Aggregation (US-17)
-- Triggers when 3+ zones have Medium/High/Critical mold risk
-- Recommends whole-house dehumidifier or ventilation strategy
-
-#### Cross-Zone Window Detection (US-18)
-- Triggers when 2+ zones have `window_predicted=on` simultaneously
-- Shows consolidated zone list in recommendation
-
-#### API Quota Planning Insight (US-19)
-- Calculates projected quota exhaustion time from usage rate
-- Triggers when projected exhaustion <6 hours before reset
-- Suggests polling interval adjustment
-
-#### Weather Impact Insight (US-20)
-- Compares current outdoor temperature vs rolling average (up to 7 days of history)
-- Triggers when >5°C colder than rolling average, estimating increased heating demand
-- Estimates heating impact percentage (~4% per °C delta)
-- Requires ~24 minutes of readings to activate (48 samples at 30s poll interval)
-- History is in-memory only; resets on HA restart (blind period until 48 samples collected)
+| # | v2.3.1 entity_id | v3.0 entity_id (fresh) |
+|---|-------------------|------------------------|
+| 1 | `sensor.tado_ce_outside_temperature` | `sensor.tado_ce_hub_outside_temp` |
+| 2 | `sensor.tado_ce_solar_intensity` | `sensor.tado_ce_hub_solar_intensity` |
+| 3 | `sensor.tado_ce_weather_state` | `sensor.tado_ce_hub_weather` |
+| 4 | `sensor.tado_ce_boiler_flow_temperature` | `sensor.tado_ce_hub_ce_boiler_flow_temp` |
+| 5 | `sensor.tado_ce_home_id` | `sensor.tado_ce_hub_ce_home_id` |
+| 6 | `sensor.tado_ce_api_usage` | `sensor.tado_ce_hub_ce_api_usage` |
+| 7 | `sensor.tado_ce_api_reset` | `sensor.tado_ce_hub_ce_api_reset` |
+| 8 | `sensor.tado_ce_api_limit` | `sensor.tado_ce_hub_ce_api_limit` |
+| 9 | `sensor.tado_ce_api_status` | `sensor.tado_ce_hub_ce_api_status` |
+| 10 | `sensor.tado_ce_token_status` | `sensor.tado_ce_hub_ce_token_status` |
+| 11 | `sensor.tado_ce_zones_count` | `sensor.tado_ce_hub_ce_zone_count` |
+| 12 | `sensor.tado_ce_last_sync` | `sensor.tado_ce_hub_ce_last_sync` |
+| 13 | `sensor.tado_ce_next_sync` | `sensor.tado_ce_hub_ce_next_sync` |
+| 14 | `sensor.tado_ce_polling_interval` | `sensor.tado_ce_hub_ce_polling_interval` |
+| 15 | `sensor.tado_ce_call_history` | `sensor.tado_ce_hub_ce_call_history` |
+| 16 | `sensor.tado_ce_api_call_breakdown` | `sensor.tado_ce_hub_ce_api_breakdown` |
+| 17 | `sensor.tado_ce_home_insights` | `sensor.tado_ce_hub_ce_home_insights` |
 
 ---
 
-## 📋 v2.1.0 Changes
+## Hub Controls (5 entities)
 
-### Per-Zone Configuration Entities
-New configuration entities for each zone (controlled by `zone_configuration_enabled` toggle):
+### Friendly Names
 
-**Heating Zones Only:**
-- **Heating Type** (`select.{zone}_heating_type`): Select heating system type
-  - Options: `Radiator` (default), `Underfloor Heating`
-  - UFH zones get automatic buffer time for preheat calculations
-- **UFH Buffer** (`number.{zone}_ufh_buffer`): Extra preheat buffer for UFH zones (0-60 minutes)
-  - Only visible when Heating Type = Underfloor Heating
+| # | Function | CE? | v2.3.1 Name | v3.0 Name |
+|---|----------|-----|-------------|-----------|
+| 18 | Resume all schedules | ✓ | Resume All Schedules | [CE] Resume All |
+| 19 | Refresh AC cache | ✓ | Refresh AC Capabilities | [CE] Refresh AC |
+| 20 | Presence mode | ✓ | Presence Mode | [CE] Presence Mode |
+| 21 | Overlay mode | ✓ | Overlay Mode | [CE] Overlay Mode |
+| 22 | Overlay timer duration | ✓ | Overlay Timer Duration | [CE] Overlay Timer |
 
-**All Climate Zones (Heating + AC):**
-- **Adaptive Preheat** (`switch.{zone}_adaptive_preheat`): Enable/disable adaptive preheat for this zone
-- **Smart Comfort Mode** (`select.{zone}_smart_comfort_mode`): Per-zone weather compensation
-  - Options: `None`, `Light`, `Moderate`, `Aggressive`
-- **Window Type** (`select.{zone}_window_type`): Window insulation for mold risk calculation
-  - Options: `Single Pane`, `Double Pane`, `Triple Pane`, `Passive House`
-- **Zone Overlay Mode** (`select.{zone}_overlay_mode`): How temperature changes behave
-  - Options: `Tado Mode` (inherit global), `Next Time Block`, `Timer`, `Manual`
-- **Overlay Timer Duration** (`select.{zone}_overlay_timer_duration`): Duration when overlay mode = Timer
-  - Options: `15`, `30`, `45`, `60`, `90`, `120`, `180` minutes
-- **Min Temperature** (`number.{zone}_min_temp`): Minimum allowed temperature (5-25°C)
-- **Max Temperature** (`number.{zone}_max_temp`): Maximum allowed temperature (15-30°C)
-- **Temperature Offset** (`number.{zone}_temp_offset`): Temperature calibration offset (-3.0 to +3.0°C)
-- **Surface Temp Offset** (`number.{zone}_surface_temp_offset`): Mold risk calibration offset (-5.0 to +5.0°C)
-  - Use laser thermometer to measure actual cold spots, then set offset to match
-  - Negative = colder surface (more conservative mold risk)
-  - Positive = warmer surface (less conservative mold risk)
+### Entity IDs
 
-### Condensation Risk Sensor (AC Zones Only)
-- **Condensation Risk** (`sensor.{zone}_condensation_risk`): Risk of condensation when AC is cooling
-  - States: `None`, `Low`, `Medium`, `High`, `Critical`
-  - **Attributes**: `dew_point`, `room_temperature`, `humidity`, `ac_setpoint`
-  - Controlled by `environment_sensors_enabled` toggle
-
-### Zone Features Toggles (Options Flow)
-New toggles in Options → Tado CE Exclusive to control entity visibility:
-- **Thermal Analytics** (`thermal_analytics_enabled`): Thermal analytics sensors (default OFF)
-- **Zone Configuration** (`zone_configuration_enabled`): Per-zone config entities (default OFF)
-
-**Core Features (Always ON, not in UI):**
-- Zone Diagnostics: Battery, connection, heating power sensors
-- Device Controls: Child lock, early start switches
-- Boost Buttons: Boost and Smart Boost buttons
-- Environment Sensors: Mold risk, comfort level, condensation risk
+| # | v2.3.1 entity_id | v3.0 entity_id (fresh) |
+|---|-------------------|------------------------|
+| 18 | `button.tado_ce_resume_all_schedules` | `button.tado_ce_hub_ce_resume_all` |
+| 19 | `button.tado_ce_refresh_ac_capabilities` | `button.tado_ce_hub_ce_refresh_ac` |
+| 20 | `select.tado_ce_presence_mode` | `select.tado_ce_hub_ce_presence_mode` |
+| 21 | `select.tado_ce_overlay_mode` | `select.tado_ce_hub_ce_overlay_mode` |
+| 22 | `select.tado_ce_overlay_timer_duration` | `select.tado_ce_hub_ce_overlay_timer` |
 
 ---
 
-## 📋 v2.0.2 Changes
+## Hub Binary Sensor (1 entity)
 
-### Presence Mode Select (Breaking Change)
-- **Presence Mode** (`select.tado_ce_presence_mode`): Replaces `switch.tado_ce_away_mode`
-  - Options: `auto` (resume geofencing), `home`, `away`
-  - Migration required for automations using the old switch
+### Friendly Names
 
-### Overlay Mode Select
-- **Overlay Mode** (`select.tado_ce_overlay_mode`): Controls how long manual temperature changes last
-  - Options: `Tado Mode` (default), `Next Time Block`, `Manual`
+| # | Function | CE? | v2.3.1 Name | v3.0 Name |
+|---|----------|-----|-------------|-----------|
+| 23 | Home/Away status | ✓ | Home | [CE] Home |
 
----
+### Entity IDs
 
-## 📋 v2.0.1 Changes
-
-### Mold Risk Percentage Sensor
-- **Mold Risk Percentage** (`sensor.{zone}_mold_risk_percentage`): Surface relative humidity as percentage (0-100%) for historical tracking and graphing
-  - **Attributes**: `room_temperature`, `effective_temperature`, `humidity`, `dew_point`, `temperature_source`, `zone_type`
+| # | v2.3.1 entity_id | v3.0 entity_id (fresh) |
+|---|-------------------|------------------------|
+| 23 | `binary_sensor.tado_ce_home` | `binary_sensor.tado_ce_hub_ce_home` |
 
 ---
 
-## 📋 v2.0.0 Changes
+## Zone Sensors — Core (8 entities per zone)
 
-### Thermal Analytics (TRV Zones Only)
-New sensors automatically created for all HEATING zones with TRV devices:
-- **Thermal Inertia** (`sensor.{zone}_thermal_inertia`): Delay before temperature starts rising
-- **Avg Heating Rate** (`sensor.{zone}_avg_heating_rate`): Temperature increase per minute
-- **Preheat Time** (`sensor.{zone}_preheat_time`): Estimated minutes to reach target
-- **Analysis Confidence** (`sensor.{zone}_analysis_confidence`): Reliability score (0-100%)
-- **Heating Acceleration** (`sensor.{zone}_heating_acceleration`): Rate of change in heating speed
-- **Approach Factor** (`sensor.{zone}_approach_factor`): Deceleration near target
+### Friendly Names
 
-### API Monitoring Sensors
-New sensors for tracking API sync and polling:
-- **Next Sync** (`sensor.tado_ce_next_sync`): Next API sync time with countdown
-- **Polling Interval** (`sensor.tado_ce_polling_interval`): Current polling interval with source
-- **Call History** (`sensor.tado_ce_call_history`): API call history with statistics
-- **API Call Breakdown** (`sensor.tado_ce_api_call_breakdown`): API call breakdown by endpoint type
+| # | Function | CE? | v2.3.1 Name | v3.0 Name |
+|---|----------|-----|-------------|-----------|
+| 24 | Temperature | | Lounge Temperature | Lounge Temp |
+| 25 | Humidity | | Lounge Humidity | Lounge Humidity |
+| 26 | Heating power % | | Lounge Heating Power | Lounge Heating |
+| 27 | AC power % | | Lounge AC Power | Lounge AC |
+| 28 | Target temperature | ✓ | Lounge Target | Lounge [CE] Target |
+| 29 | Overlay status | ✓ | Lounge Mode | Lounge [CE] Overlay |
+| 30 | Hot water power | ✓ | Lounge Power | Lounge [CE] Power |
+| 31 | Schedule deviation | ✓ | Lounge Historical Deviation | Lounge [CE] Schedule Deviation |
 
-### Preheat Now Binary Sensor
-- **Preheat Now** (`binary_sensor.{zone}_preheat_now`): Time to start preheating (requires Smart Comfort)
+### Entity IDs
 
-### Smart Polling
-- **Adaptive polling interval**: Automatically adjusts based on remaining API quota
-- **Universal quota support**: Works with any API tier (100, 5000, 20000)
-- **Quota Reserve Protection**: Pauses polling when quota critically low (≤5% or ≤5 calls), reserves quota for manual operations, auto-resumes after reset time passes
-
-### Enhanced Mold Risk
-- **Surface temperature calculation**: Uses outdoor temp + window U-value for accurate cold spot detection
-- **Window type config**: Single Pane, Double Pane (default), Triple Pane, Passive House
-
-### Deprecated Sensors (Removed)
-The following Smart Comfort sensors were removed and replaced by Thermal Analytics:
-- `sensor.{zone}_heating_rate` → Use `sensor.{zone}_avg_heating_rate` (Thermal Analytics)
-- `sensor.{zone}_cooling_rate` → No direct replacement (heat loss analysis)
-- `sensor.{zone}_heating_efficiency` → Use `sensor.{zone}_analysis_confidence` (Thermal Analytics)
-- `sensor.{zone}_time_to_target` → Use `sensor.{zone}_preheat_time` (Thermal Analytics)
+| # | v2.3.1 entity_id | v3.0 entity_id (fresh) |
+|---|-------------------|------------------------|
+| 24 | `sensor.lounge_temperature` | `sensor.lounge_temp` |
+| 25 | `sensor.lounge_humidity` | `sensor.lounge_humidity` |
+| 26 | `sensor.lounge_heating` | `sensor.lounge_heating` |
+| 27 | `sensor.lounge_ac_power` | `sensor.lounge_ac` |
+| 28 | `sensor.lounge_target` | `sensor.lounge_ce_target` |
+| 29 | `sensor.lounge_mode` | `sensor.lounge_ce_overlay` |
+| 30 | `sensor.lounge_power` | `sensor.lounge_ce_power` |
+| 31 | `sensor.lounge_historical_deviation` | `sensor.lounge_ce_schedule_deviation` |
 
 ---
 
-## 📋 v1.9.4 Changes
+## Zone Sensors — Smart Comfort (4 entities per zone)
 
-### Boost Buttons (Heating Zones)
-New quick-access boost buttons for all HEATING zones:
-- **Boost Button** (`button.{zone}_boost`): Boost heating to 25°C for 30 minutes (mimics official Tado app)
-- **Smart Boost Button** (`button.{zone}_smart_boost`): Calculated duration based on heating rate data
+### Friendly Names
 
----
+| # | Function | CE? | v2.3.1 Name | v3.0 Name |
+|---|----------|-----|-------------|-----------|
+| 32 | Next schedule time | ✓ | Lounge Next Schedule | Lounge [CE] Next Schedule |
+| 33 | Next schedule temp | ✓ | Lounge Next Schedule Temp | Lounge [CE] Next Sched Temp |
+| 34 | Preheat advisor | ✓ | Lounge Preheat Advisor | Lounge [CE] Preheat Advisor |
+| 35 | Comfort target | ✓ | Lounge Smart Comfort Target | Lounge [CE] Comfort Target |
 
-## 📋 v1.9.0 Changes
+### Entity IDs
 
-### Environment Sensors (Always Enabled)
-New sensors automatically created for all HEATING and AIR_CONDITIONING zones:
-- **Mold Risk Sensor** (`sensor.{zone}_mold_risk`): Per-zone mold risk indicator based on temperature, humidity, and dew point calculation
-  - **Attributes**: `temperature`, `humidity`, `dew_point`, `temperature_source` (room/surface), `outdoor_temperature`, `surface_temperature`
-  - **v2.0.0**: Enhanced with 2-tier temperature calculation - uses outdoor temp + window U-value to estimate cold spot temperature at window edges (Tier 1), or falls back to room temperature (Tier 2)
-- **Mold Risk Percentage Sensor** (`sensor.{zone}_mold_risk_percentage`): Surface relative humidity as percentage (0-100%) for historical tracking and graphing (v2.0.1)
-  - **Attributes**: `room_temperature`, `effective_temperature`, `humidity`, `dew_point`, `temperature_source`, `zone_type`
-  - Uses same calculation as Mold Risk Sensor - mold typically grows when surface RH exceeds ~70-80%
-- **Comfort Level Sensor** (`sensor.{zone}_comfort_level`): Adaptive comfort level (Freezing/Cold/Cool/Comfortable/Warm/Hot/Sweltering + Dry/Humid suffix)
-
-### Smart Comfort Analytics (Opt-in)
-Enable in Options → Features → "Enable Smart Comfort Analytics":
-- **Heating Rate** (`sensor.{zone}_heating_rate`): °C/h when heating is active
-- **Cooling Rate** (`sensor.{zone}_cooling_rate`): °C/h when heating is off (heat loss rate)
-- **Time to Target** (`sensor.{zone}_time_to_target`): Estimated minutes to reach target (TRV zones only)
-- **Heating Efficiency** (`sensor.{zone}_heating_efficiency`): Compare current vs baseline rate
-- **Historical Temp** (`sensor.{zone}_historical_temp`): Compare current temp vs 7-day same-time average
-- **Preheat Advisor** (`sensor.{zone}_preheat_advisor`): Suggested preheat start time
-- **Smart Comfort Target** (`sensor.{zone}_smart_comfort_target`): Compensated target temperature
-
-### Schedule Sensors (Opt-in, with Smart Comfort)
-- **Next Schedule Time** (`sensor.{zone}_next_schedule_time`): When next scheduled change occurs
-- **Next Schedule Temp** (`sensor.{zone}_next_schedule_temp`): Target temperature of next block
-
-### UI/UX Improvements
-- **Reorganized Options**: Now grouped into Features, Polling Schedule, Smart Comfort, and Experimental sections
-- **Renamed "Advanced Settings" to "Experimental"**: Clearer naming
-- **Renamed "Open Window" to "Window"**: Shorter display name for binary sensor
-- **Renamed "Heating" to "Heating Power"**: Clearer sensor name for heating demand percentage (entity IDs unchanged)
+| # | v2.3.1 entity_id | v3.0 entity_id (fresh) |
+|---|-------------------|------------------------|
+| 32 | `sensor.lounge_next_schedule_time` | `sensor.lounge_ce_next_schedule` |
+| 33 | `sensor.lounge_next_schedule_temp` | `sensor.lounge_ce_next_sched_temp` |
+| 34 | `sensor.lounge_preheat_advisor` | `sensor.lounge_ce_preheat_advisor` |
+| 35 | `sensor.lounge_smart_comfort_target` | `sensor.lounge_ce_comfort_target` |
 
 ---
 
-## 📋 v1.8.3 Changes
+## Zone Sensors — Environment (6 entities per zone)
 
-### Hub Buttons
-- **Refresh AC Capabilities Button** (`button.tado_ce_refresh_ac_capabilities`): Manually refresh AC capabilities cache (AC zones only)
+### Friendly Names
 
----
+| # | Function | CE? | v2.3.1 Name | v3.0 Name |
+|---|----------|-----|-------------|-----------|
+| 36 | Mold risk level | ✓ | Lounge Mold Risk | Lounge [CE] Mold Risk |
+| 37 | Mold risk % | ✓ | Lounge Mold Risk Percentage | Lounge [CE] Mold Risk % |
+| 38 | Condensation risk | ✓ | Lounge Condensation Risk | Lounge [CE] Condensation |
+| 39 | Surface temperature | ✓ | Lounge Surface Temperature | Lounge [CE] Surface Temp |
+| 40 | Dew point | ✓ | Lounge Dew Point | Lounge [CE] Dew Point |
+| 41 | Comfort level | ✓ | Lounge Comfort Level | Lounge [CE] Comfort Level |
 
-## 📋 v1.8.0 Changes
+### Entity IDs
 
-### Schedule Calendar (Optional)
-- **Per-zone calendar entities**: View heating schedules from Tado app as calendar events
-- **Read-only**: Displays schedules, cannot modify from HA
-- **Enable in Options**: Creates calendar entities for each heating zone
-- **Refresh Schedule button**: Per-zone button to refresh schedule from Tado API
-
-### API Reset Sensor Enhancements
-- **New `reset_at` attribute**: Shows when next reset will happen (local time)
-- **New `last_reset` attribute**: Shows when last reset happened (local time)
-
----
-
-## 📋 v1.5.3 Changes
-
-### Hub Buttons
-- **Resume All Schedules Button** (`button.tado_ce_resume_all_schedules`): Delete all zone overlays and return to schedules
+| # | v2.3.1 entity_id | v3.0 entity_id (fresh) |
+|---|-------------------|------------------------|
+| 36 | `sensor.lounge_mold_risk` | `sensor.lounge_ce_mold_risk` |
+| 37 | `sensor.lounge_mold_risk_percentage` | `sensor.lounge_ce_mold_risk_pct` |
+| 38 | `sensor.lounge_condensation_risk` | `sensor.lounge_ce_condensation` |
+| 39 | `sensor.lounge_surface_temperature` | `sensor.lounge_ce_surface_temp` |
+| 40 | `sensor.lounge_dew_point` | `sensor.lounge_ce_dew_point` |
+| 41 | `sensor.lounge_comfort_level` | `sensor.lounge_ce_comfort_level` |
 
 ---
 
-## 📋 v1.5.0 Changes
+## Zone Sensors — Thermal Analytics (6 entities per heating zone)
 
-### Climate Entity Enhancements
-- **Optional `offset_celsius` attribute**: Enable in options to show temperature offset on climate entities
-- **Full AC support**: DRY/FAN modes, fan levels (Low/Medium/High/Auto), swing modes now properly supported
+### Friendly Names
 
-### Hot Water Temperature Control
-- **Auto-detected**: If your hot water zone supports temperature (e.g., hot water tanks), you can now see and set target temperature
-- **Works with V2 systems**: Verified working with Tado V2 thermostats
+| # | Function | CE? | v2.3.1 Name | v3.0 Name |
+|---|----------|-----|-------------|-----------|
+| 42 | Thermal inertia | ✓ | Lounge Thermal Inertia | Lounge [CE] Thermal Inertia |
+| 43 | Heating rate | ✓ | Lounge Avg Heating Rate | Lounge [CE] Heating Rate |
+| 44 | Preheat time | ✓ | Lounge Preheat Time | Lounge [CE] Preheat Time |
+| 45 | Analysis confidence | ✓ | Lounge Analysis Confidence | Lounge [CE] Confidence |
+| 46 | Heating acceleration | ✓ | Lounge Heating Acceleration | Lounge [CE] Heat Accel |
+| 47 | Approach factor | ✓ | Lounge Approach Factor | Lounge [CE] Approach Factor |
 
-### New Sensors
-- **Power sensor** (Hot water zones): Shows ON/OFF status
+### Entity IDs
 
-### New Service
-- **`tado_ce.get_temperature_offset`**: Fetch current offset for use in automations
-
-### Mobile Device Sync
-- **Frequent sync option**: Enable to sync mobile devices every quick sync (for presence automations)
-
----
-
-## 📋 v1.4.0 Changes
-
-### Boiler Flow Temperature Sensor
-- **Auto-detection**: Sensor only created if OpenTherm/eBUS data is available
-- **Moved to Hub device**: Now a Hub-level sensor (was incorrectly zone-level)
-- **New attribute**: `source_zone` shows which zone the data comes from
-- **No more "unavailable"**: Users without OpenTherm won't see this sensor
-
-### Climate Preset Mode Fix
-- Preset mode now correctly reflects Tado's actual home/away state
-- Works regardless of mobile device geo-tracking settings
+| # | v2.3.1 entity_id | v3.0 entity_id (fresh) |
+|---|-------------------|------------------------|
+| 42 | `sensor.lounge_thermal_inertia` | `sensor.lounge_ce_thermal_inertia` |
+| 43 | `sensor.lounge_avg_heating_rate` | `sensor.lounge_ce_heating_rate` |
+| 44 | `sensor.lounge_preheat_time` | `sensor.lounge_ce_preheat_time` |
+| 45 | `sensor.lounge_analysis_confidence` | `sensor.lounge_ce_confidence` |
+| 46 | `sensor.lounge_heating_acceleration` | `sensor.lounge_ce_heat_accel` |
+| 47 | `sensor.lounge_approach_factor` | `sensor.lounge_ce_approach_factor` |
 
 ---
 
-## 📋 v1.2.0 Changes
+## Zone Sensors — Insights (1 entity per zone)
 
-### Device Organization
-- **Zone-based devices**: Each zone now appears as a separate device
-- **Zone entities**: Assigned to their respective zone devices
-- **Hub entities**: Remain on the Tado CE Hub device
-- **Entity IDs**: Preserved - automations continue to work
+### Friendly Names
 
-### Entity Naming
-- **Zone entities**: No "Tado CE" prefix (e.g., "Living Room" instead of "Tado CE Living Room")
-- **Hub entities**: Retain "Tado CE" prefix for clarity
+| # | Function | CE? | v2.3.1 Name | v3.0 Name |
+|---|----------|-----|-------------|-----------|
+| 48 | Zone insights | ✓ | Lounge Insights | Lounge [CE] Insights |
 
----
+### Entity IDs
 
-## Hub Buttons (v1.5.3+)
-
-| Entity | Type | Description | API Calls |
-|--------|------|-------------|-----------|
-| `button.tado_ce_resume_all_schedules` | Button | Delete all zone overlays and return to schedules | 1 per zone |
-| `button.tado_ce_refresh_ac_capabilities` | Button | Refresh AC capabilities cache (v1.8.3, AC zones only) | 1 per AC zone |
-
-**Note (v1.8.3):** The Refresh AC Capabilities button only appears if you have AC zones. Use it to refresh cached capabilities after AC firmware updates or for troubleshooting.
+| # | v2.3.1 entity_id | v3.0 entity_id (fresh) |
+|---|-------------------|------------------------|
+| 48 | `sensor.lounge_insights` | `sensor.lounge_ce_insights` |
 
 ---
 
-## Per Zone - Boost Buttons (v1.9.4)
+## Zone Binary Sensors (3 entities per zone)
 
-Quick-access boost buttons for heating zones:
+### Friendly Names
 
-| Entity | Type | Description | API Calls |
-|--------|------|-------------|-----------|
-| `button.{zone}_boost` | Button | Boost heating to 25°C for 30 minutes | 1 per press |
-| `button.{zone}_smart_boost` | Button | Smart boost with calculated duration based on heating rate | 1 per press |
+| # | Function | CE? | v2.3.1 Name | v3.0 Name |
+|---|----------|-----|-------------|-----------|
+| 49 | Open window detected | | Lounge Window | Lounge Window |
+| 50 | Preheat trigger | ✓ | Lounge Preheat Now | Lounge [CE] Preheat Now |
+| 51 | Window predicted | ✓ | Lounge Window Predicted | Lounge [CE] Window Predicted |
 
-**Boost Button:**
-- Sets zone to maximum temperature (25°C)
-- Fixed 30-minute timer
-- Automatically resumes schedule after timer expires
-- Mimics official Tado app boost functionality
+### Entity IDs
 
-**Smart Boost Button:**
-- Uses heating rate data to calculate optimal boost duration
-- Target: Schedule's next target temperature (or current + 3°C if unavailable)
-- Duration: `(target - current) / heating_rate`
-- Capped between 15 minutes and 3 hours
-- Requires Smart Comfort Analytics or Thermal Analytics for heating rate data
+| # | v2.3.1 entity_id | v3.0 entity_id (fresh) |
+|---|-------------------|------------------------|
+| 49 | `binary_sensor.lounge_open_window` | `binary_sensor.lounge_window` |
+| 50 | `binary_sensor.lounge_preheat_now` | `binary_sensor.lounge_ce_preheat_now` |
+| 51 | `binary_sensor.lounge_window_predicted` | `binary_sensor.lounge_ce_window_predicted` |
 
 ---
 
-## Schedule Calendar (v1.8.0)
+## Device Sensors (2 entities per device)
 
-**Optional feature** - Enable in integration options.
+### Friendly Names
 
-| Entity | Type | Description | API Calls |
-|--------|------|-------------|-----------|
-| `calendar.{zone}` | Calendar | Heating schedule for zone | ~1 per zone on startup |
-| `button.{zone}_refresh_schedule` | Button | Refresh schedule from Tado API | ~1 per press |
+| # | Function | CE? | v2.3.1 Name | v3.0 Name |
+|---|----------|-----|-------------|-----------|
+| 52 | Battery status | ⬆ | Lounge SU1234 Battery | Lounge Battery |
+| 53 | Connection status | ⬆ | Lounge SU1234 Connection | Lounge Connection |
 
-**Note:** Calendar entities only created for HEATING zones. Schedules are cached locally and only fetched on startup or when Refresh Schedule button is pressed.
+> ⬆ HA official exposes battery/connection as binary sensors (on/off).
+> CE provides detailed sensor entities with state attributes (firmware, device type, recommendations).
+
+### Entity IDs
+
+| # | v2.3.1 entity_id | v3.0 entity_id (fresh) |
+|---|-------------------|------------------------|
+| 52 | `sensor.lounge_su1234_battery` | `sensor.lounge_battery` |
+| 53 | `sensor.lounge_su1234_connection` | `sensor.lounge_connection` |
 
 ---
 
-## Hub Sensors
-
-Global sensors for the Tado CE Hub device.
-
-| Entity | Type | Description |
-|--------|------|-------------|
-| `sensor.tado_ce_home_id` | Diagnostic | Your Tado home ID |
-| `sensor.tado_ce_api_usage` | Sensor | API calls used (e.g. "142/5000") |
-| `sensor.tado_ce_api_reset` | Sensor | Time until rate limit resets (e.g. "5h 30m") |
-| `sensor.tado_ce_api_limit` | Diagnostic | Your daily API call limit |
-| `sensor.tado_ce_api_status` | Diagnostic | API status (ok/warning/rate_limited/error) |
-
-#### API Status States
-
-| State | Meaning | Trigger |
-|-------|---------|---------|
-| `ok` | All good | API quota usage < 80% |
-| `warning` | High usage | API quota usage > 80% |
-| `rate_limited` | Quota exhausted | API quota = 0 remaining |
-| `error` | Connection issue | Failed to read rate limit data |
-| `unavailable` | Sensor not ready | During HA restart/reload |
-
-| `sensor.tado_ce_token_status` | Diagnostic | Token status (valid/expired) |
-| `sensor.tado_ce_zones_count` | Diagnostic | Number of zones configured |
-| `sensor.tado_ce_last_sync` | Diagnostic | Last successful sync timestamp |
-| `sensor.tado_ce_next_sync` | Diagnostic | Next scheduled sync timestamp (v2.0.0) |
-| `sensor.tado_ce_polling_interval` | Diagnostic | Current polling interval in minutes (v2.0.0) |
-| `sensor.tado_ce_call_history` | Diagnostic | API call history with statistics (v2.0.0) |
-| `sensor.tado_ce_api_call_breakdown` | Diagnostic | API call breakdown by endpoint type (v2.0.0) |
-| `sensor.tado_ce_home_insights` | Sensor | Aggregated actionable insights from all zones (v2.2.0) |
-
-### API Reset Sensor Attributes (v1.8.0)
-
-| Attribute | Example | Description |
-|-----------|---------|-------------|
-| `time_until_reset` | `5h 30m` | Human-readable countdown |
-| `reset_seconds` | `19800` | Seconds until reset |
-| `reset_at` | `2026-01-27 11:24:00` | When next reset will happen (local time) |
-| `last_reset` | `2026-01-26 11:24:00` | When last reset happened (local time) |
-| `status` | `ok` | API status |
-| `next_poll` | `2026-01-26 15:30:00` | Next scheduled poll time |
-| `current_interval_minutes` | `30` | Current polling interval |
-
-### Last Sync Sensor Attributes (v2.0.0)
-
-| Attribute | Example | Description |
-|-----------|---------|-------------|
-| `time_ago` | `5 minutes ago` | Human-readable time since last sync |
-| `sync_status` | `active` | Sync status (active/stale/unknown) |
-
-### Next Sync Sensor Attributes (v2.0.0)
-
-| Attribute | Example | Description |
-|-----------|---------|-------------|
-| `countdown` | `in 5 minutes` | Human-readable countdown to next sync |
-| `polling_interval_seconds` | `600` | Polling interval in seconds |
-| `polling_interval_human` | `10 minutes` | Human-readable polling interval |
-
-### Polling Interval Sensor Attributes (v2.0.0)
-
-| Attribute | Example | Description |
-|-----------|---------|-------------|
-| `interval_source` | `custom` | Interval source (custom/adaptive/default) |
-
-### Call History Sensor Attributes (v2.0.0)
-
-| Attribute | Example | Description |
-|-----------|---------|-------------|
-| `history` | `[...]` | Array of recent API calls (last 100) |
-| `history_period_days` | `14` | Number of days of history stored |
-| `oldest_call` | `2026-01-25 10:00:00` | Timestamp of oldest call |
-| `newest_call` | `2026-02-08 14:00:00` | Timestamp of newest call |
-| `calls_per_hour` | `15.2` | Average calls per hour (last 24h) |
-| `calls_today` | `245` | Total calls today (UTC day) |
-| `most_called_endpoint` | `zoneStates (1234 calls)` | Most frequently called endpoint |
-
-### API Call Breakdown Sensor Attributes (v2.0.0)
-
-| Attribute | Example | Description |
-|-----------|---------|-------------|
-| `breakdown_24h` | `{"zoneStates": 50, "home": 10}` | API calls by type in last 24 hours |
-| `breakdown_today` | `{"zoneStates": 30, "home": 5}` | API calls by type today (UTC day) |
-| `breakdown_total` | `{"zoneStates": 500, "home": 100}` | Total API calls by type (all history) |
-| `top_3_types` | `[{"type": "zoneStates", "count": 50}]` | Top 3 most called endpoint types |
-| `chart_data` | `[{"type": "zoneStates", "count": 50}]` | Formatted data for visualization |
-
-### Home Insights Sensor Attributes (v2.2.0)
-
-| Attribute | Example | Description |
-|-----------|---------|-------------|
-| `critical_count` | `0` | Number of critical priority insights |
-| `high_count` | `1` | Number of high priority insights |
-| `medium_count` | `2` | Number of medium priority insights |
-| `low_count` | `0` | Number of low priority insights |
-| `top_priority` | `high` | Highest priority level across all zones |
-| `top_recommendation` | `Dining: Humidity at 72%...` | Most urgent actionable recommendation |
-| `zones_with_issues` | `["Dining", "Bedroom"]` | List of zones with active insights |
-| `cross_zone_insights` | `["Multiple zones..."]` | Cross-zone aggregation insights (mold risk, window predicted) |
-
-## Weather Sensors
-
-**Note:** Weather sensors are **disabled by default** in v1.2.0 to save API calls. Enable in integration options if needed.
-
-| Entity | Type | Description | API Calls |
-|--------|------|-------------|-----------|
-| `sensor.tado_ce_outside_temperature` | Temperature | Outside temperature at your location | 1 per sync (when enabled) |
-| `sensor.tado_ce_solar_intensity` | Percentage | Solar intensity (0-100%) | Included in weather call |
-| `sensor.tado_ce_weather_state` | State | Current weather condition | Included in weather call |
-
-## Home/Away
-
-| Entity | Type | Description | API Calls |
-|--------|------|-------------|-----------|
-| `binary_sensor.tado_ce_home` | Binary Sensor | Home/Away status (read-only, from geofencing) | 0 |
-| `select.tado_ce_presence_mode` | Select | Presence mode: auto (geofencing), home, away | 1 per change |
-
-**v2.0.2 Breaking Change:** `switch.tado_ce_away_mode` replaced by `select.tado_ce_presence_mode`
-
-### Presence Mode Options
-
-| Option | Description |
-|--------|-------------|
-| `auto` | Resume geofencing (deletes presence lock) |
-| `home` | Manual Home mode (overrides geofencing) |
-| `away` | Manual Away mode (overrides geofencing) |
-
-### Understanding Geofencing vs Presence Mode
-
-**Important:** Geofencing is a Tado account-level setting configured in the Tado app, not in this integration.
-
-| Scenario | "Auto" Mode Behavior |
-|----------|---------------------|
-| Geofencing **enabled** in Tado app | Tado automatically switches Home/Away based on mobile device locations |
-| Geofencing **disabled** in Tado app | Stays in current state (typically Home) - no automatic switching |
-
-**How Presence Lock Works:**
-- **"home" or "away"**: Creates a presence lock that overrides geofencing. Even if geofencing is enabled, Tado won't automatically change the state.
-- **"auto"**: Deletes the presence lock. If geofencing is enabled, Tado resumes automatic control. If geofencing is disabled, nothing changes automatically.
-
-**Note:** The "Home/Away State Sync" option in Tado CE integration settings only controls whether the integration syncs the home/away state from Tado - it does not enable or disable geofencing itself.
-
-### Migration from v2.0.1
-
-```yaml
-# Old (v2.0.1)
-- service: switch.turn_on
-  target:
-    entity_id: switch.tado_ce_away_mode
-
-# New (v2.0.2)
-- service: select.select_option
-  target:
-    entity_id: select.tado_ce_presence_mode
-  data:
-    option: "away"
-```
-
-## Overlay Mode (v2.0.2)
-
-| Entity | Type | Description | API Calls |
-|--------|------|-------------|-----------|
-| `select.tado_ce_overlay_mode` | Select | Controls how long manual temperature changes last | 0 |
-
-### Overlay Mode Options
-
-| Option | Description |
-|--------|-------------|
-| `Tado Mode` | Follows per-device "Manual Control" settings in Tado app (default) |
-| `Next Time Block` | Override lasts until next scheduled change |
-| `Manual` | Infinite override until you manually change back |
-
-### How It Works
-
-When you change temperature via Home Assistant (climate.set_temperature), the overlay mode determines how long that change lasts:
-
-- **Tado Mode**: Respects the "Manual Control" setting you configured for each device in the Tado app
-- **Next Time Block**: Override ends when the next schedule block starts
-- **Manual**: Override stays until you manually switch back to Auto mode
-
-### Configuring in Tado App
-
-If using "Tado Mode", configure per-device behavior in the Tado app:
-1. Open Tado app → Settings → Rooms & Devices
-2. Select a device
-3. Manual Control → Choose "Until next automatic change", "Until you cancel", or "For a set time"
-
-## Per Zone - Climate
-
-**Device Organization (v1.2.0):** Each zone has its own device. Zone entities are assigned to their zone device.
-
-For each heating zone (e.g. "Lounge"), you get:
-
-| Entity | Type | Description | API Calls |
-|--------|------|-------------|-----------|
-| `climate.{zone}` | Climate | Full climate control | 1 per action |
-
-**Note:** Entity naming changed in v1.2.0 - no "tado_ce_" prefix for zone entities.
-
-### Climate Entity Attributes
-
-| Attribute | Description |
-|-----------|-------------|
-| `current_temperature` | Current room temperature |
-| `current_humidity` | Current room humidity |
-| `target_temperature` | Target temperature |
-| `hvac_mode` | Current mode (heat/off/auto) |
-| `hvac_action` | Current action (heating/idle/off) |
-| `preset_mode` | Home/Away preset |
-| `overlay_type` | Manual/Schedule/Timer |
-| `heating_power` | Heating demand (0-100%) |
-| `zone_id` | Tado zone ID |
-| `offset_celsius` | Temperature offset (v1.5.0, optional - enable in options) |
-
-### Climate Preset Modes
-
-| Preset | Description | API Calls |
-|--------|-------------|-----------|
-| `home` | Set presence to Home | 1 |
-| `away` | Set presence to Away | 1 |
-
-## Per Zone - Sensors
-
-For each zone, you get these sensors:
-
-| Entity | Type | Description |
-|--------|------|-------------|
-| `sensor.{zone}_temperature` | Temperature | Current temperature |
-| `sensor.{zone}_humidity` | Percentage | Current humidity |
-| `sensor.{zone}_heating` | Percentage | Heating Power (0-100%) |
-| `sensor.{zone}_power` | State | Power state (ON/OFF) (v1.5.0) |
-| `sensor.{zone}_target` | Temperature | Target temperature |
-| `sensor.{zone}_mode` | State | Mode (Manual/Schedule/Off) |
-| `sensor.{zone}_battery` | State | Battery status (NORMAL/LOW) |
-| `sensor.{zone}_connection` | State | Connection (Online/Offline) |
-| `sensor.{zone}_mold_risk` | State | Mold risk level (Low/Medium/High/Critical) (v1.9.0) |
-| `sensor.{zone}_mold_risk_percentage` | Percentage | Surface relative humidity % for historical tracking (v2.0.1) |
-| `sensor.{zone}_comfort_level` | State | Comfort level (Freezing/Cold/Cool/Comfortable/Warm/Hot/Sweltering) (v1.9.0) |
-| `sensor.{zone}_condensation_risk` | State | Condensation risk (None/Low/Medium/High/Critical) (v2.1.0, AC zones only) |
-| `sensor.{zone}_surface_temperature` | Temperature | Calculated cold spot surface temperature (v2.2.0) |
-| `sensor.{zone}_dew_point` | Temperature | Calculated dew point temperature (v2.2.0) |
-| `sensor.{zone}_insights` | Integer | Number of active insights for this zone (v2.2.0) |
-
-### v2.0.0: Thermal Analytics Sensors (HEATING zones only)
-
-Automatically created for all HEATING zones to provide improved preheat timing estimates with first-order and second-order thermal analysis:
-
-#### First-Order Analysis (Basic Metrics)
-
-| Entity | Type | Description |
-|--------|------|-------------|
-| `sensor.{zone}_thermal_inertia` | Time (minutes) | Thermal inertia time - delay before temperature starts rising after heating starts |
-| `sensor.{zone}_avg_heating_rate` | Rate (°C/min) | Average linear heating rate during active heating |
-| `sensor.{zone}_preheat_time` | Time (minutes) | Estimated time to reach target temperature from current temperature |
-| `sensor.{zone}_analysis_confidence` | Percentage | Confidence score (0-100%) indicating reliability of estimates |
-
-#### Second-Order Analysis (Advanced Metrics)
-
-| Entity | Type | Description |
-|--------|------|-------------|
-| `sensor.{zone}_heating_acceleration` | Rate (°C/h²) | How quickly the heating rate increases after heating starts |
-| `sensor.{zone}_approach_factor` | Percentage | How much the heating rate decreases near the setpoint (used to predict overshoot) |
-
-**How it works:**
-- Automatically tracks heating cycles (when setpoint increases and heating activates)
-- First-order analysis: calculates thermal inertia and average heating rate
-- Second-order analysis: calculates acceleration and approach behavior for improved predictions
-- Provides preheat time estimates based on historical data
-- Confidence score increases as more cycles are collected (minimum 3 cycles recommended)
-
-**Note:** Entity naming changed in v1.2.0 - no "tado_ce_" prefix for zone entities.
-
-## Per Zone - Binary Sensors
-
-| Entity | Type | Description |
-|--------|------|-------------|
-| `binary_sensor.{zone}_open_window` | Binary Sensor | Open window detected (from Tado API) |
-| `binary_sensor.{zone}_window_predicted` | Binary Sensor | Early open window detection (v2.2.0, local analysis) |
-| `binary_sensor.{zone}_preheat_now` | Binary Sensor | Time to start preheating (v2.0.0, requires Smart Comfort) |
-
-### Window Predicted Binary Sensor (v2.2.0)
-
-Detects possible open windows using local temperature analysis, providing early warning before Tado's cloud detection triggers (which typically takes 15-17 minutes).
-
-**Issue Reference:** [Discussion #112](https://github.com/hiall-fyi/tado_ce/discussions/112) - @tigro7
-
-**How it works:**
-1. Monitors rolling temperature history (last 10 minutes)
-2. Detects rapid temperature drops (≥1.5°C within 5 minutes)
-3. Uses humidity spike as secondary indicator
-4. CRITICAL: Does NOT trigger when HVAC is actively heating/cooling (prevents false positives)
-
-**Attributes:**
-| Attribute | Description |
-|-----------|-------------|
-| `confidence` | Detection confidence: `none`, `low`, `medium`, `high` |
-| `temp_drop` | Temperature drop detected (°C) |
-| `time_window_minutes` | Time window for detection (default: 5 min) |
-| `recommendation` | Actionable recommendation when window detected |
-| `zone_type` | Zone type (Heating / Air Conditioning) |
-| `readings_count` | Number of temperature readings in history |
-
-**Confidence Levels:**
-- `high`: ≥2.5°C drop, or ≥2.0°C with humidity spike
-- `medium`: ≥2.0°C drop, or ≥1.5°C with humidity spike
-- `low`: ≥1.5°C drop
-
-**Note:** This is a PREDICTIVE sensor - it does NOT replace Tado's confirmed Window binary sensor (`binary_sensor.{zone}_window`). Use both for comprehensive window detection.
-
-### Preheat Now Binary Sensor (v2.0.0)
-
-Turns ON when it's time to start preheating to reach target temperature by the scheduled time.
-
-**Requirements:**
-- Smart Comfort Analytics must be enabled in Options
-- Zone must have a valid schedule with upcoming heating block
-- Sufficient heating cycle data for preheat estimation
-
-**Attributes:**
-| Attribute | Description |
-|-----------|-------------|
-| `recommended_start` | When to start preheating (from Preheat Advisor, includes UFH buffer if configured) |
-| `target_time` | When target temperature should be reached |
-| `target_temperature` | Target temperature from schedule |
-| `current_temperature` | Current zone temperature |
-| `duration_minutes` | Estimated preheat duration (includes UFH buffer) |
-| `confidence` | Confidence level of preheat estimate |
-
-**UFH Buffer (Underfloor Heating):**
-Configure in Options → Thermal Analytics:
-- "UFH Buffer (minutes)" - Extra lead time for underfloor heating (0-60 min)
-- "UFH Zones" - Select which zones have underfloor heating. Leave empty to apply buffer to all zones.
-
-### Adaptive Preheat (v2.0.0)
-
-Automatically triggers heating when `preheat_now` binary sensor turns ON. Replaces Tado's cloud-based Early Start with local, user-controlled automation.
-
-**How it works:**
-1. Monitors `preheat_now` binary sensors for enabled zones
-2. When sensor turns ON, sets heating overlay with target temperature from schedule
-3. Uses `NEXT_TIME_BLOCK` termination - overlay auto-clears when schedule starts
-4. Only triggers if current temperature is below target (with 0.5°C tolerance)
-
-**Configuration:**
-Enable in Options → Tado CE Exclusive:
-- "Enable Adaptive Preheat" - Master toggle
-- "Adaptive Preheat Zones" - Select which zones to enable (empty = all heating zones)
-
-**Requirements:**
-- Smart Comfort Analytics must be enabled (provides `preheat_now` sensors)
-- Zones must have valid schedules
-
-**Benefits over Tado Early Start:**
-- Local control - no cloud dependency
-- Uses your actual heating rate data (more accurate)
-- Configurable per-zone
-- Works with UFH buffer for slow-response heating systems
-
-**Note:** Entity naming changed in v1.2.0 - no "tado_ce_" prefix for zone entities.
-
-## Per Zone - Switches
-
-| Entity | Type | Description | API Calls |
-|--------|------|-------------|-----------|
-| `switch.{zone}_early_start` | Switch | Smart pre-heating | 1 per toggle |
-| `switch.{zone}_child_lock` | Switch | Child lock on device | 1 per toggle |
-
-**Note:** Entity naming changed in v1.2.0 - no "tado_ce_" prefix for zone entities.
-
-## Hot Water
-
-If you have hot water control:
-
-| Entity | Type | Description | API Calls |
-|--------|------|-------------|-----------|
-| `water_heater.{zone}` | Water Heater | Hot water control (with temperature if supported) | 1 per action |
-| `sensor.{zone}_mode` | Sensor | Mode (Manual/Schedule/Off) | 0 |
-| `sensor.{zone}_power` | Sensor | Power state (ON/OFF) (v1.5.0) | 0 |
-
-**Note:** Entity naming changed in v1.2.0 - no "tado_ce_" prefix for zone entities.
-
-### Hot Water Temperature Control (v1.5.0)
-
-If your hot water zone supports temperature (e.g., hot water tanks with V2 thermostats), the water heater entity will show and allow setting target temperature. This is auto-detected from the API response.
-
-### Hot Water Operation Modes (v1.2.0)
-
-| Mode | Description |
-|------|-------------|
-| `auto` | Follow Tado schedule |
-| `heat` | Manual override (on until cancelled or timer expires) |
-| `off` | Completely off |
-
-### Hot Water Timer Buttons (v1.2.0)
-
-Quick-access timer buttons for hot water boost:
-
-| Entity | Type | Description | API Calls |
-|--------|------|-------------|-----------|
-| `button.{zone}_timer_30min` | Button | Turn on hot water for 30 minutes | 1 per press |
-| `button.{zone}_timer_60min` | Button | Turn on hot water for 60 minutes | 1 per press |
-| `button.{zone}_timer_90min` | Button | Turn on hot water for 90 minutes | 1 per press |
-
-## Boiler Flow Temperature (v1.4.0)
-
-**Auto-detected** - Only appears if your system has OpenTherm/eBUS connection between Tado and boiler.
-
-| Entity | Type | Description |
-|--------|------|-------------|
-| `sensor.tado_ce_boiler_flow_temperature` | Temperature | Real-time boiler flow temperature |
-
-**Attributes:**
-- `source_zone`: The zone providing the boiler data
-
-**Note:** This is a Hub-level sensor. If you don't have OpenTherm, this sensor won't be created.
+## Climate / Water Heater (3 entities per zone)
+
+### Friendly Names
+
+| # | Function | CE? | v2.3.1 Name | v3.0 Name |
+|---|----------|-----|-------------|-----------|
+| 54 | Heating climate | | Lounge | Lounge |
+| 55 | AC climate | | Lounge | Lounge |
+| 56 | Water heater | | Lounge | Lounge |
+
+### Entity IDs
+
+| # | v2.3.1 entity_id | v3.0 entity_id (fresh) |
+|---|-------------------|------------------------|
+| 54 | `climate.lounge` | `climate.lounge` |
+| 55 | `climate.lounge` | `climate.lounge` |
+| 56 | `water_heater.lounge` | `water_heater.lounge` |
 
 ---
 
-## Device Trackers
+## Zone Switches (2 entities per zone)
 
-For each mobile device with geo tracking enabled:
+### Friendly Names
 
-| Entity | Type | Description |
-|--------|------|-------------|
-| `device_tracker.tado_ce_{device_name}` | Device Tracker | Presence (home/not_home) |
+| # | Function | CE? | v2.3.1 Name | v3.0 Name |
+|---|----------|-----|-------------|-----------|
+| 57 | Early start | ⬆ | Lounge Early Start | Lounge Early Start |
+| 58 | Child lock | | Lounge SU1234 Child Lock | Lounge Child Lock |
 
-**Note:** Entity ID is generated from device name (e.g., `device_tracker.tado_ce_joe_s_iphone`).
+> ⬆ HA official exposes early start as a read-only binary sensor.
+> CE provides a controllable switch to toggle the Tado early start feature on/off.
 
-## AC Zones (v1.5.0 Enhanced)
+### Entity IDs
 
-For air conditioning zones, climate entities support additional features:
-
-| Feature | Description |
-|---------|-------------|
-| `hvac_modes` | off/auto/cool/heat/dry/fan_only |
-| `fan_mode` | auto/low/medium/high (mapped from Tado's SILENT/LEVEL1-5/AUTO) |
-| `swing_mode` | on/off/vertical/horizontal (when supported by AC unit) |
-| `min_temp` / `max_temp` | Read from AC capabilities API |
-| `target_temp_step` | Read from AC capabilities API |
-
-**Note (v1.5.0):** AC capabilities are now fetched from Tado API instead of hardcoded values.
+| # | v2.3.1 entity_id | v3.0 entity_id (fresh) |
+|---|-------------------|------------------------|
+| 57 | `switch.lounge_early_start` | `switch.lounge_early_start` |
+| 58 | `switch.lounge_su1234_child_lock` | `switch.lounge_child_lock` |
 
 ---
 
-## Smart Comfort Analytics (v1.9.0) — ⚠️ Deprecated in v2.0.0
+## Zone Buttons (4 entities per zone)
 
-**Optional feature** - Enable in integration options under "Smart Comfort Settings".
+### Friendly Names
 
-> **⚠️ Deprecation Notice:** The sensors listed below (`heating_rate`, `cooling_rate`, `heating_efficiency`, `time_to_target`) were removed in v2.0.0 and replaced by Thermal Analytics sensors. See [v2.0.0 Changes](#-v200-changes) for migration paths. The remaining Smart Comfort sensors (`comfort_level`, `historical_temp`, `preheat_advisor`, `smart_comfort_target`, `next_schedule_time`, `next_schedule_temp`) are still active.
+| # | Function | CE? | v2.3.1 Name | v3.0 Name |
+|---|----------|-----|-------------|-----------|
+| 59 | Timer buttons | ✓ | Lounge {dur}min Timer | Lounge [CE] {dur}min Timer |
+| 60 | Refresh schedule | ✓ | Lounge Refresh Schedule | Lounge [CE] Refresh Schedule |
+| 61 | Boost | ⬆ | Lounge Boost | Lounge Boost |
+| 62 | Smart boost | ✓ | Lounge Smart Boost | Lounge [CE] Smart Boost |
 
-Provides intelligent heating insights based on temperature history analysis.
+> ⬆ Boost replicates the Tado app's boost feature (25°C for 30min).
+> HA official Tado integration does not expose this. Smart Boost (#62) is CE exclusive
+> — it uses thermal analytics to calculate optimal duration.
 
-### Per Zone Sensors
+### Entity IDs
 
-| Entity | Type | Unit | Status | Description |
-|--------|------|------|--------|-------------|
-| `sensor.{zone}_heating_rate` | Sensor | °C/h | ❌ Removed v2.0.0 | Use `sensor.{zone}_avg_heating_rate` (Thermal Analytics) |
-| `sensor.{zone}_cooling_rate` | Sensor | °C/h | ❌ Removed v2.0.0 | No direct replacement (heat loss analysis) |
-| `sensor.{zone}_heating_efficiency` | Sensor | % | ❌ Removed v2.0.0 | Use `sensor.{zone}_analysis_confidence` (Thermal Analytics) |
-| `sensor.{zone}_time_to_target` | Sensor | min | ❌ Removed v2.0.0 | Use `sensor.{zone}_preheat_time` (Thermal Analytics) |
-| `sensor.{zone}_comfort_level` | Sensor | State | ✅ Active | Too Cold / Comfortable / Too Warm |
-
-### Heating Efficiency Sensor Details
-
-The Heating Efficiency sensor compares current heating rate against the baseline (historical average).
-
-| State | Meaning | Possible Causes |
-|-------|---------|-----------------|
-| `< 75%` | Slow heating | Open window, poor insulation, boiler issue |
-| `75-125%` | Normal | Heating as expected |
-| `> 125%` | Fast heating | External heat source (sun, cooking, guests) |
-
-**Attributes:**
-- `current_rate`: Current heating rate in °C/h
-- `baseline_rate`: Historical average heating rate
-- `status`: "slow" / "normal" / "fast"
-
-### Data Requirements
-
-- Sensors need ~15 minutes of data to calculate rates
-- Baseline rates require HA Recorder long-term statistics (typically 1+ week)
-- Cache stores up to 7-30 d of readings (configurable)
+| # | v2.3.1 entity_id | v3.0 entity_id (fresh) |
+|---|-------------------|------------------------|
+| 59 | `button.lounge_timer_30min` | `button.lounge_ce_30min_timer` |
+| 60 | `button.lounge_refresh_schedule` | `button.lounge_ce_refresh_schedule` |
+| 61 | `button.lounge_boost` | `button.lounge_boost` |
+| 62 | `button.lounge_smart_boost` | `button.lounge_ce_smart_boost` |
 
 ---
 
-## API Usage Summary
+## Calendar (1 entity per zone)
 
-**v1.2.0 Optimizations:**
-- Normal polling: 1-2 calls (quick sync) instead of 4
-- Full sync: Every 6 h only (4 calls)
-- Weather: Optional (disabled by default, saves 1 call per sync)
-- Immediate refresh: Quota-aware with exponential backoff
-- **Estimated savings: 60-70% reduction in API calls**
+### Friendly Names
 
-| Action | API Calls |
-|--------|-----------|
-| Quick sync (normal) | 1-2 per sync |
-| Full sync (every 6h) | 4 per sync |
-| Weather (if enabled) | 1 per sync |
-| Set temperature | 1 |
-| Change HVAC mode | 1 |
-| Toggle Away Mode | 1 |
-| Change Preset | 1 |
-| Toggle Early Start | 1 |
-| Toggle Child Lock | 1 |
-| Set Hot Water | 1 |
-| Hot Water Timer Button | 1 |
+| # | Function | CE? | v2.3.1 Name | v3.0 Name |
+|---|----------|-----|-------------|-----------|
+| 63 | Zone schedule | ✓ | Lounge | Lounge [CE] Schedule |
 
-All read operations use cached data from the last sync - no additional API calls.
+### Entity IDs
+
+| # | v2.3.1 entity_id | v3.0 entity_id (fresh) |
+|---|-------------------|------------------------|
+| 63 | `calendar.lounge` | `calendar.heating_schedule_ce_schedule` |
 
 ---
 
-## 🆕 v1.2.0 New Features
+## Zone Config (11 entities per zone, all CE exclusive)
 
-### Hot Water Timer Buttons
+### Friendly Names
 
-Quick-access timer buttons for hot water boost:
+| # | Function | CE? | v2.3.1 Name | v3.0 Name |
+|---|----------|-----|-------------|-----------|
+| 64 | Heat emitter type | ✓ | Heat Emitter Type | [CE] Heat Emitter |
+| 65 | UFH buffer | ✓ | UFH Buffer | [CE] UFH Buffer |
+| 66 | Adaptive preheat | ✓ | Adaptive Preheat | [CE] Adaptive Preheat |
+| 67 | Smart comfort mode | ✓ | Smart Comfort | [CE] Smart Comfort |
+| 68 | Window type | ✓ | Window Type | [CE] Window Type |
+| 69 | Zone overlay mode | ✓ | Overlay Mode | [CE] Overlay Mode |
+| 70 | Zone overlay timer | ✓ | Overlay Timer Duration | [CE] Overlay Timer |
+| 71 | Min temperature | ✓ | Min Temp | [CE] Min Temp |
+| 72 | Max temperature | ✓ | Max Temp | [CE] Max Temp |
+| 73 | Temp offset | ✓ | Temp Offset | [CE] Temp Offset |
+| 74 | Surface temp offset | ✓ | Surface Temp Offset | [CE] Surface Offset |
 
-| Entity | Type | Description | API Calls |
-|--------|------|-------------|-----------|
-| `button.{zone}_timer_30min` | Button | Turn on hot water for 30 minutes | 1 per press |
-| `button.{zone}_timer_60min` | Button | Turn on hot water for 60 minutes | 1 per press |
-| `button.{zone}_timer_90min` | Button | Turn on hot water for 90 minutes | 1 per press |
+### Entity IDs
 
-### Enhanced API Monitoring
-
-| Entity | Type | Description |
-|--------|------|-------------|
-| `sensor.tado_ce_api_usage` | Sensor | Shows detailed call history (last 100 calls) |
-| `sensor.tado_ce_api_reset` | Sensor | Exact reset timestamp in local timezone |
-
-### Customizable Polling
-
-Configure in integration options:
-- Custom day/night hours (default: 7am-11pm day, 11pm-7am night)
-- Custom polling intervals
-- Quota warnings when intervals would exceed limits
-
-### Optional Weather Sensors
-
-Toggle weather sensors on/off in integration options:
-- **Default: Disabled** for new installations
-- Saves 1 API call per sync when disabled
-- Enable if you need weather data
+| # | v2.3.1 entity_id | v3.0 entity_id (fresh) |
+|---|-------------------|------------------------|
+| 64 | `select.lounge_heating_type` | `select.lounge_ce_heat_emitter` |
+| 65 | `number.lounge_ufh_buffer` | `number.lounge_ce_ufh_buffer` |
+| 66 | `switch.lounge_adaptive_preheat` | `switch.lounge_ce_adaptive_preheat` |
+| 67 | `select.lounge_smart_comfort_mode` | `select.lounge_ce_smart_comfort` |
+| 68 | `select.lounge_window_type` | `select.lounge_ce_window_type` |
+| 69 | `select.lounge_overlay_mode` | `select.lounge_ce_overlay_mode` |
+| 70 | `select.lounge_overlay_timer_duration` | `select.lounge_ce_overlay_timer` |
+| 71 | `number.lounge_min_temp` | `number.lounge_ce_min_temp` |
+| 72 | `number.lounge_max_temp` | `number.lounge_ce_max_temp` |
+| 73 | `number.lounge_temp_offset` | `number.lounge_ce_temp_offset` |
+| 74 | `number.lounge_surface_temp_offset` | `number.lounge_ce_surface_offset` |
 
 ---
 
-## 📝 Entity Naming Convention
+## Device Tracker (1 entity per mobile device, CE exclusive)
 
-### Zone Entities (No Prefix)
-- Entity ID: `climate.living_room`, `sensor.dining_temperature`
-- Friendly name: "Living Room", "Dining Temperature"
-- No `tado_ce_` prefix — zone entities belong to their zone device
+### Friendly Names
 
-### Hub Entities (`tado_ce_` Prefix)
-All hub-level entities use `tado_ce_` prefix in entity_id for disambiguation:
-- `sensor.tado_ce_api_usage`, `sensor.tado_ce_api_reset`, `sensor.tado_ce_api_status`
-- `sensor.tado_ce_home_insights` (v2.2.0)
-- `sensor.tado_ce_next_sync`, `sensor.tado_ce_polling_interval` (v2.0.0)
-- `select.tado_ce_presence_mode`, `select.tado_ce_overlay_mode` (v2.0.2)
-- `binary_sensor.tado_ce_home`
-- `button.tado_ce_resume_all_schedules`, `button.tado_ce_refresh_ac_capabilities`
-- `sensor.tado_ce_outside_temperature` (if enabled)
+| # | Function | CE? | v2.3.1 Name | v3.0 Name |
+|---|----------|-----|-------------|-----------|
+| 75 | Mobile presence | ✓ | Tado CE {device_name} | [CE] {device_name} |
 
-Friendly names do NOT include the prefix (e.g., "API Usage", "Home Insights", "Home").
+### Entity IDs
 
-**Note:** Entity IDs are preserved during upgrade — automations continue to work.
+| # | v2.3.1 entity_id | v3.0 entity_id (fresh) |
+|---|-------------------|------------------------|
+| 75 | `device_tracker.tado_ce_{device_name}` | `device_tracker.tado_ce_hub_ce_{device_name}` |
+
+---
+
+## Summary
+
+| Category | Count | CE ✓ | Enhanced ⬆ | Standard |
+|----------|-------|------|-----------|----------|
+| Hub Sensors | 17 | 14 | 0 | 3 |
+| Hub Controls | 5 | 5 | 0 | 0 |
+| Hub Binary Sensor | 1 | 1 | 0 | 0 |
+| Zone Sensors — Core | 8 /zone | 4 | 0 | 4 |
+| Zone Sensors — Smart Comfort | 4 /zone | 4 | 0 | 0 |
+| Zone Sensors — Environment | 6 /zone | 6 | 0 | 0 |
+| Zone Sensors — Thermal Analytics | 6 /zone | 6 | 0 | 0 |
+| Zone Sensors — Insights | 1 /zone | 1 | 0 | 0 |
+| Zone Binary Sensors | 3 /zone | 2 | 0 | 1 |
+| Device Sensors | 2 /device | 0 | 2 | 0 |
+| Climate / Water Heater | 3 /zone | 0 | 0 | 3 |
+| Zone Switches | 2 /zone | 0 | 1 | 1 |
+| Zone Buttons | 4 /zone | 2 | 1 | 0 |
+| Calendar | 1 /zone | 1 | 0 | 0 |
+| Zone Config | 11 /zone | 11 | 0 | 0 |
+| Device Tracker | 1 /device | 1 | 0 | 0 |
+| **Total unique types** | **75** | **~57** | **4** | **~12** |

@@ -1,14 +1,17 @@
-"""API Call Tracker for Tado CE integration."""
+"""Tado CE API Call Tracker — quota monitoring, rate calculation, reset prediction."""
+
+from __future__ import annotations
+
 import asyncio
+from datetime import UTC, datetime, timedelta
 import json
 import logging
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from threading import Lock
-from typing import Dict, List, Optional
+from typing import TYPE_CHECKING, Any
 
-import aiofiles
-import aiofiles.os
+if TYPE_CHECKING:
+    from .config_manager import ConfigurationManager
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -37,87 +40,101 @@ CALL_TYPE_NAMES = {
 class APICallTracker:
     """Track API calls with persistent storage.
 
-    Async methods use native aiofiles for non-blocking I/O.
+    Async methods use hass executor for non-blocking I/O.
     Sync methods are kept for compatibility with non-async contexts.
     Supports per-home file paths for multi-home setups.
     """
 
-    def __init__(self, data_dir: Path, retention_days: int = 14, home_id: Optional[str] = None):
+    def __init__(
+        self,
+        data_dir: Path,
+        retention_days: int = 14,
+        home_id: str | None = None,
+        config_manager: ConfigurationManager | None = None,
+    ) -> None:
         """Initialize API call tracker.
 
         Args:
             data_dir: Directory for storing call history
             retention_days: Number of days to retain history (0 = forever)
             home_id: Optional home ID for per-home file paths
+            config_manager: Optional ConfigurationManager for config-based rate estimation
         """
         self.data_dir = data_dir
         self.retention_days = retention_days
         self.home_id = home_id
+        self._config_manager = config_manager
 
         # Use per-home file path if home_id provided
         from .const import get_data_file
+
         self.history_file = get_data_file("api_call_history", home_id)
 
         self._lock = Lock()
         self._async_lock = asyncio.Lock()
-        self._call_history: Dict[str, List[Dict]] = {}
+        self._call_history: dict[str, list[dict[str, Any]]] = {}
         self._last_cleanup_date = None
         self._initialized = False
 
-        # NOTE: Do NOT do blocking mkdir here — __init__ runs in the HA event loop.
-        # Directory creation is handled in _save_history_sync() and _save_history_async().
-        # Blocking mkdir in event loop can be interrupted before completion.
+        # Do not call blocking mkdir here — __init__ runs in the event loop.
+        # Directory creation is deferred to _save_history_sync() / _save_history_async().
 
-    def _load_history_sync(self) -> Dict:
+    def _load_history_sync(self) -> dict[str, Any]:
         """Load call history from disk synchronously."""
         try:
             if self.history_file.exists():
-                with open(self.history_file, 'r') as f:
-                    return json.load(f)
-        except Exception as e:
-            _LOGGER.error("Failed to load API call history: %s", e)
+                with self.history_file.open() as f:
+                    return json.load(f)  # type: ignore[no-any-return]
+        except (OSError, json.JSONDecodeError):
+            _LOGGER.exception("Failed to load API call history")
         return {}
 
-    def _save_history_sync(self, data: Dict):
+    def _save_history_sync(self, data: dict[str, Any]) -> None:
         """Save call history to disk synchronously with atomic write."""
         import shutil
         import tempfile
 
         try:
-            # Ensure directory exists
             self.history_file.parent.mkdir(parents=True, exist_ok=True)
 
             # Write to temp file first
             with tempfile.NamedTemporaryFile(
-                mode='w', dir=self.data_dir, delete=False, suffix='.tmp'
+                mode="w",
+                dir=self.data_dir,
+                delete=False,
+                suffix=".tmp",
             ) as tmp:
                 json.dump(data, tmp, indent=2)
                 temp_path = tmp.name
 
             # Atomic rename (move) to final location
             shutil.move(temp_path, self.history_file)
-        except Exception as e:
-            _LOGGER.error("Failed to save API call history: %s", e)
+        except (OSError, json.JSONDecodeError, TypeError):
+            _LOGGER.exception("Failed to save API call history")
             # Clean up temp file if it exists
             try:
-                if 'temp_path' in locals():
+                if "temp_path" in locals():
                     Path(temp_path).unlink(missing_ok=True)
-            except Exception as cleanup_err:
+            except OSError as cleanup_err:
                 _LOGGER.debug("Failed to clean up temp file: %s", cleanup_err)
 
-    async def _load_history_async(self) -> Dict:
-        """Load call history from disk using native async I/O."""
+    async def _load_history_async(self) -> dict[str, Any]:
+        """Load call history from disk using executor."""
         try:
-            if await aiofiles.os.path.exists(self.history_file):
-                async with aiofiles.open(self.history_file, 'r') as f:
-                    content = await f.read()
-                    return json.loads(content)
-        except Exception as e:
-            _LOGGER.error("Failed to load API call history: %s", e)
+            loop = asyncio.get_running_loop()
+            exists = await loop.run_in_executor(None, self.history_file.exists)
+            if exists:
+                content = await loop.run_in_executor(
+                    None,
+                    self.history_file.read_text,
+                )
+                return json.loads(content)  # type: ignore[no-any-return]
+        except (OSError, json.JSONDecodeError):
+            _LOGGER.exception("Failed to load API call history")
         return {}
 
-    async def _save_history_async(self, data: Dict):
-        """Save call history to disk using native async I/O with atomic write.
+    async def _save_history_async(self, data: dict[str, Any]) -> None:
+        """Save call history to disk using executor with atomic write.
 
         Uses asyncio.Lock to serialize concurrent writes and a unique temp file
         to prevent race conditions where multiple saves compete for the same
@@ -125,37 +142,50 @@ class APICallTracker:
         """
         async with self._async_lock:
             try:
-                # Ensure directory exists — run_in_executor guarantees completion
-                # before next line, unlike aiofiles.os.makedirs which may be delayed
-                await asyncio.get_event_loop().run_in_executor(
+                loop = asyncio.get_running_loop()
+                await loop.run_in_executor(
                     None,
-                    lambda: self.history_file.parent.mkdir(parents=True, exist_ok=True)
+                    lambda: self.history_file.parent.mkdir(parents=True, exist_ok=True),
                 )
 
                 # Use unique temp file to avoid collisions (matches _save_history_sync pattern)
                 import tempfile
-                temp_fd, temp_path_str = await asyncio.get_event_loop().run_in_executor(
+
+                _temp_fd, temp_path_str = await loop.run_in_executor(
                     None,
                     lambda: tempfile.mkstemp(
-                        dir=self.history_file.parent, suffix='.tmp'
-                    )
+                        dir=self.history_file.parent,
+                        suffix=".tmp",
+                    ),
                 )
                 temp_path = Path(temp_path_str)
 
                 try:
-                    async with aiofiles.open(temp_fd, 'w', closefd=True) as f:
-                        await f.write(json.dumps(data, indent=2))
+                    import os
+
+                    content = json.dumps(data, indent=2)
+
+                    def _write_and_close() -> None:
+                        """Write content and close file descriptor."""
+                        with os.fdopen(_temp_fd, "w") as f:
+                            f.write(content)
+
+                    await loop.run_in_executor(None, _write_and_close)
 
                     # Atomic move
-                    await aiofiles.os.replace(temp_path, self.history_file)
+                    await loop.run_in_executor(
+                        None,
+                        temp_path.replace,
+                        self.history_file,
+                    )
                 except BaseException:
                     # Clean up temp file on any failure
-                    temp_path.unlink(missing_ok=True)
+                    await loop.run_in_executor(None, lambda: temp_path.unlink(missing_ok=True))
                     raise
-            except Exception as e:
-                _LOGGER.error("Failed to save API call history: %s", e)
+            except (OSError, TypeError):
+                _LOGGER.exception("Failed to save API call history")
 
-    async def async_init(self):
+    async def async_init(self) -> None:
         """Initialize tracker asynchronously (load history from disk)."""
         if self._initialized:
             return
@@ -170,9 +200,9 @@ class APICallTracker:
 
             # Cleanup old records
             await self.async_cleanup_old_records()
-            self._last_cleanup_date = datetime.now().date()
+            self._last_cleanup_date = datetime.now(UTC).date()  # type: ignore[assignment]
 
-    def _ensure_initialized_sync(self):
+    def _ensure_initialized_sync(self) -> None:
         """Ensure tracker is initialized synchronously.
 
         Should only be used when async_init() cannot be called.
@@ -182,8 +212,7 @@ class APICallTracker:
             self._initialized = True
             _LOGGER.debug("Loaded API call history (sync): %s dates", len(self._call_history))
 
-    async def async_record_call(self, call_type: int, status_code: int,
-                                 timestamp: Optional[datetime] = None):
+    async def async_record_call(self, call_type: int, status_code: int, timestamp: datetime | None = None) -> None:
         """Record an API call asynchronously.
 
         Args:
@@ -195,9 +224,9 @@ class APICallTracker:
             await self.async_init()
 
         if timestamp is None:
-            timestamp = datetime.now(timezone.utc)
+            timestamp = datetime.now(UTC)
         elif timestamp.tzinfo is None:
-            timestamp = timestamp.replace(tzinfo=timezone.utc)
+            timestamp = timestamp.replace(tzinfo=UTC)
 
         date_key = timestamp.strftime("%Y-%m-%d")
         today = timestamp.date()
@@ -207,7 +236,7 @@ class APICallTracker:
             "type": call_type,
             "type_name": CALL_TYPE_NAMES.get(call_type, "unknown"),
             "status": status_code,
-            "timestamp": timestamp.isoformat()
+            "timestamp": timestamp.isoformat(),
         }
 
         with self._lock:
@@ -216,7 +245,7 @@ class APICallTracker:
             self._call_history[date_key].append(call_record)
 
             if self._last_cleanup_date is None or self._last_cleanup_date < today:
-                self._last_cleanup_date = today
+                self._last_cleanup_date = today  # type: ignore[assignment]
                 should_cleanup = True
 
         # Save using native async I/O
@@ -227,8 +256,7 @@ class APICallTracker:
 
         _LOGGER.debug("Recorded API call: %s (status %s)", CALL_TYPE_NAMES.get(call_type), status_code)
 
-    def record_call(self, call_type: int, status_code: int,
-                    timestamp: Optional[datetime] = None):
+    def record_call(self, call_type: int, status_code: int, timestamp: datetime | None = None) -> None:
         """Record an API call (sync version, schedules async save).
 
         This method is sync-compatible but schedules the file write asynchronously.
@@ -237,9 +265,9 @@ class APICallTracker:
         self._ensure_initialized_sync()
 
         if timestamp is None:
-            timestamp = datetime.now(timezone.utc)
+            timestamp = datetime.now(UTC)
         elif timestamp.tzinfo is None:
-            timestamp = timestamp.replace(tzinfo=timezone.utc)
+            timestamp = timestamp.replace(tzinfo=UTC)
 
         date_key = timestamp.strftime("%Y-%m-%d")
 
@@ -247,7 +275,7 @@ class APICallTracker:
             "type": call_type,
             "type_name": CALL_TYPE_NAMES.get(call_type, "unknown"),
             "status": status_code,
-            "timestamp": timestamp.isoformat()
+            "timestamp": timestamp.isoformat(),
         }
 
         with self._lock:
@@ -259,7 +287,7 @@ class APICallTracker:
 
         _LOGGER.debug("Recorded API call: %s (status %s)", CALL_TYPE_NAMES.get(call_type), status_code)
 
-    def get_call_history(self, days: int = 1) -> List[Dict]:
+    def get_call_history(self, days: int = 1) -> list[dict[str, Any]]:
         """Get list of API calls from the last N days.
 
         Args:
@@ -270,7 +298,7 @@ class APICallTracker:
         """
         self._ensure_initialized_sync()
 
-        cutoff_date = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
+        cutoff_date = (datetime.now(UTC) - timedelta(days=days)).strftime("%Y-%m-%d")
         calls = []
 
         with self._lock:
@@ -281,7 +309,7 @@ class APICallTracker:
         calls.sort(key=lambda x: x["timestamp"], reverse=True)
         return calls
 
-    def get_recent_calls(self, limit: int = 50) -> List[Dict]:
+    def get_recent_calls(self, limit: int = 50) -> list[dict[str, Any]]:
         """Get the most recent N calls for sensor attributes."""
         self._ensure_initialized_sync()
 
@@ -293,25 +321,25 @@ class APICallTracker:
         all_calls.sort(key=lambda x: x["timestamp"], reverse=True)
         return all_calls[:limit]
 
-    def get_call_counts(self, days: int = 1) -> Dict[str, int]:
+    def get_call_counts(self, days: int = 1) -> dict[str, int]:
         """Get counts by call type for the last N days."""
         calls = self.get_call_history(days)
-        counts = {}
+        counts: dict[str, Any] = {}
         for call in calls:
             type_name = call.get("type_name", "unknown")
             counts[type_name] = counts.get(type_name, 0) + 1
         return counts
 
-    async def async_cleanup_old_records(self):
+    async def async_cleanup_old_records(self) -> None:
         """Remove records older than retention period (async)."""
         if self.retention_days == 0:
             return
 
-        cutoff_str = (datetime.now(timezone.utc) - timedelta(days=self.retention_days)).strftime("%Y-%m-%d")
+        cutoff_str = (datetime.now(UTC) - timedelta(days=self.retention_days)).strftime("%Y-%m-%d")
         removed = 0
 
         with self._lock:
-            dates_to_remove = [k for k in self._call_history.keys() if k < cutoff_str]
+            dates_to_remove = [k for k in self._call_history if k < cutoff_str]
             for date_key in dates_to_remove:
                 del self._call_history[date_key]
                 removed += 1
@@ -320,16 +348,16 @@ class APICallTracker:
             await self._save_history_async(dict(self._call_history))
             _LOGGER.info("Cleaned up %s days of old API call records", removed)
 
-    def cleanup_old_records(self):
+    def cleanup_old_records(self) -> None:
         """Remove records older than retention period (sync)."""
         if self.retention_days == 0:
             return
 
         self._ensure_initialized_sync()
-        cutoff_str = (datetime.now(timezone.utc) - timedelta(days=self.retention_days)).strftime("%Y-%m-%d")
+        cutoff_str = (datetime.now(UTC) - timedelta(days=self.retention_days)).strftime("%Y-%m-%d")
 
         with self._lock:
-            dates_to_remove = [k for k in self._call_history.keys() if k < cutoff_str]
+            dates_to_remove = [k for k in self._call_history if k < cutoff_str]
             for date_key in dates_to_remove:
                 del self._call_history[date_key]
 
@@ -337,7 +365,7 @@ class APICallTracker:
                 self._save_history_sync(dict(self._call_history))
                 _LOGGER.info("Cleaned up %s days of old API call records", len(dates_to_remove))
 
-    def get_daily_usage(self, date) -> Dict:
+    def get_daily_usage(self, date: datetime) -> dict[str, Any]:
         """Get API usage statistics for a specific date."""
         self._ensure_initialized_sync()
         date_key = date.strftime("%Y-%m-%d")
@@ -345,14 +373,14 @@ class APICallTracker:
         with self._lock:
             date_calls = self._call_history.get(date_key, [])
 
-        by_type = {}
+        by_type: dict[str, Any] = {}
         for call in date_calls:
             type_name = call.get("type_name", "unknown")
             by_type[type_name] = by_type.get(type_name, 0) + 1
 
         return {"date": date_key, "total_calls": len(date_calls), "by_type": by_type}
 
-    def extrapolate_reset_time(self, current_used: int) -> Optional[datetime]:
+    def extrapolate_reset_time(self, current_used: int) -> datetime | None:
         """Extrapolate when the API reset happened by looking at usage rate.
 
         Uses a hybrid approach:
@@ -368,7 +396,7 @@ class APICallTracker:
         if current_used <= 0:
             return None
 
-        now_utc = datetime.now(timezone.utc)
+        now_utc = datetime.now(UTC)
         calls_per_hour = None
         rate_source = "unknown"
 
@@ -382,11 +410,11 @@ class APICallTracker:
             for call in calls:
                 try:
                     ts = call["timestamp"]
-                    call_time = datetime.fromisoformat(ts.replace('Z', '+00:00'))
+                    call_time = datetime.fromisoformat(ts)
                     if call_time.tzinfo is None:
-                        call_time = call_time.replace(tzinfo=timezone.utc)
+                        call_time = call_time.replace(tzinfo=UTC)
                     call_times.append(call_time)
-                except Exception:
+                except (ValueError, TypeError, KeyError):
                     continue
 
             if len(call_times) >= 20:
@@ -404,17 +432,16 @@ class APICallTracker:
                         calls_per_hour = actual_calls_per_hour
                         rate_source = f"history ({len(call_times)} calls / {time_span_hours:.1f}h)"
 
-        # Strategy B: Fall back to config-based rate
+        # Strategy B: Fall back to config-based rate (uses per-entry config_manager)
         if calls_per_hour is None:
             try:
-                from .config_manager import ConfigurationManager
-                config_manager = ConfigurationManager(None)
+                config_manager = self._config_manager
 
                 # Get custom intervals or use defaults
-                custom_day = config_manager.get_custom_day_interval()
+                custom_day = config_manager.get_custom_day_interval() if config_manager else None
 
                 # Default intervals for 5000 limit
-                day_interval = custom_day if custom_day else 10
+                day_interval = custom_day or 10
 
                 # Use day rate (more conservative estimate)
                 polls_per_hour = 60 / day_interval
@@ -422,7 +449,7 @@ class APICallTracker:
                 calls_per_hour = polls_per_hour * calls_per_poll
                 rate_source = f"config (day={day_interval}min)"
 
-            except Exception as e:
+            except (AttributeError, TypeError, ValueError) as e:
                 _LOGGER.debug("Failed to get config rate: %s", e)
                 # Ultimate fallback: assume 15 calls/hour
                 calls_per_hour = 15
@@ -444,8 +471,11 @@ class APICallTracker:
 
         _LOGGER.debug(
             "Extrapolated reset time: %s UTC (used=%s, rate=%.1f/h [%s], %.1fh ago)",
-            estimated_reset.strftime('%H:%M'), current_used, calls_per_hour, rate_source, hours_since_reset
+            estimated_reset.strftime("%H:%M"),
+            current_used,
+            calls_per_hour,
+            rate_source,
+            hours_since_reset,
         )
 
         return estimated_reset
-

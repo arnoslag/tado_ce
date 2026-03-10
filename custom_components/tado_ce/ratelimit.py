@@ -1,40 +1,33 @@
-"""Rate limit management for Tado CE.
-
-This module handles API rate limit protection including:
-- Bootstrap reserve checking (blocks all actions when quota critically low)
-- Quota reserve protection (pauses polling to preserve manual operation quota)
-- API limit notifications
-- Reset time detection from HA history
-"""
+"""Tado CE rate limit management — bootstrap reserve, quota protection, notifications."""
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 import json
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-import aiofiles
-import aiofiles.os
-
-from .const import QUOTA_BOOTSTRAP_CALLS, get_data_file
+from .const import DOMAIN, QUOTA_BOOTSTRAP_CALLS, get_data_file
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
     from .config_manager import ConfigurationManager
+    from .coordinator import TadoDataUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
 
-def should_block_manual_action(ratelimit_data: dict, config_manager: ConfigurationManager) -> tuple[bool, str]:
+def should_block_manual_action(
+    ratelimit_data: dict[str, Any], config_manager: ConfigurationManager,
+) -> tuple[bool, str]:
     """Check if manual actions should be blocked due to bootstrap reserve.
 
     Bootstrap Reserve - blocks ALL actions (including manual) when quota
     falls to the absolute minimum needed for auto-recovery after API reset.
 
     Simplified - reads directly from ratelimit_data which already contains
-    simulated values when Test Mode is ON (Single Source of Truth in ratelimit.json).
+    simulated values when Test Mode is ON.
 
     Added quota_reserve_enabled check - allows users to disable protection.
 
@@ -57,9 +50,9 @@ def should_block_manual_action(ratelimit_data: dict, config_manager: Configurati
     last_reset_utc = ratelimit_data.get("last_reset_utc")
     if last_reset_utc:
         try:
-            last_reset = datetime.fromisoformat(last_reset_utc.replace('Z', '+00:00'))
+            last_reset = datetime.fromisoformat(last_reset_utc)
             next_reset = last_reset + timedelta(hours=24)
-            now_utc = datetime.now(timezone.utc)
+            now_utc = datetime.now(UTC)
 
             # If next reset time has passed, allow actions to detect actual reset
             if now_utc >= next_reset:
@@ -67,14 +60,15 @@ def should_block_manual_action(ratelimit_data: dict, config_manager: Configurati
         except Exception as e:
             _LOGGER.debug("Failed to check reset time: %s", e)
 
-    # Read directly from ratelimit_data (already simulated when Test Mode ON)
     # No need to recalculate - save_ratelimit() stores the correct values
     remaining = ratelimit_data.get("remaining", 100)
     test_mode = ratelimit_data.get("test_mode", False)
 
     _LOGGER.debug(
         "Tado CE: should_block_manual_action check - remaining=%s, bootstrap_threshold=%s, test_mode=%s",
-        remaining, QUOTA_BOOTSTRAP_CALLS, test_mode
+        remaining,
+        QUOTA_BOOTSTRAP_CALLS,
+        test_mode,
     )
 
     # Check if we've hit the bootstrap reserve (hard limit)
@@ -94,8 +88,10 @@ def should_block_manual_action(ratelimit_data: dict, config_manager: Configurati
     return False, ""
 
 
-
-async def async_check_bootstrap_reserve(hass: HomeAssistant, coordinator=None) -> tuple[bool, str]:
+async def async_check_bootstrap_reserve(
+    hass: HomeAssistant,
+    coordinator: TadoDataUpdateCoordinator | None = None,
+) -> tuple[bool, str]:
     """Async helper to check bootstrap reserve for service handlers.
 
     Convenience wrapper that loads ratelimit data and config manager.
@@ -113,7 +109,7 @@ async def async_check_bootstrap_reserve(hass: HomeAssistant, coordinator=None) -
         if coordinator is not None:
             config_manager = coordinator.config_manager
             ratelimit_data = await hass.async_add_executor_job(
-                coordinator.data_loader.load_ratelimit_file
+                coordinator.data_loader.load_ratelimit_file,
             )
         else:
             _LOGGER.debug("async_check_bootstrap_reserve called without coordinator, skipping check")
@@ -126,7 +122,6 @@ async def async_check_bootstrap_reserve(hass: HomeAssistant, coordinator=None) -
     except Exception as e:
         _LOGGER.debug("Failed to check bootstrap reserve: %s", e)
         return False, ""
-
 
 
 async def async_show_api_limit_notification(hass: HomeAssistant, message: str) -> None:
@@ -149,11 +144,10 @@ async def async_show_api_limit_notification(hass: HomeAssistant, message: str) -
     )
 
 
-
 async def async_check_bootstrap_reserve_or_raise(
     hass: HomeAssistant,
     entity_name: str = "",
-    coordinator=None
+    coordinator: TadoDataUpdateCoordinator = None,  # type: ignore[assignment]
 ) -> None:
     """Check bootstrap reserve and raise HomeAssistantError if quota critically low.
 
@@ -175,8 +169,11 @@ async def async_check_bootstrap_reserve_or_raise(
         log_name = f" for {entity_name}" if entity_name else ""
         _LOGGER.warning("Tado CE: Blocking manual action%s - %s", log_name, reason)
         await async_show_api_limit_notification(hass, reason)
-        raise HomeAssistantError(reason)
-
+        raise HomeAssistantError(
+            reason,
+            translation_domain=DOMAIN,
+            translation_key="api_quota_critically_low",
+        )
 
 
 async def async_dismiss_api_limit_notification(hass: HomeAssistant) -> None:
@@ -196,7 +193,7 @@ async def async_dismiss_api_limit_notification(hass: HomeAssistant) -> None:
             },
         )
     except Exception:
-        pass  # Notification may not exist
+        _LOGGER.debug("Could not dismiss API limit notification (may not exist)")
 
 
 async def async_detect_reset_from_history(hass: HomeAssistant, home_id: str | None = None) -> datetime | None:
@@ -213,7 +210,7 @@ async def async_detect_reset_from_history(hass: HomeAssistant, home_id: str | No
         Estimated reset time (datetime in UTC), or None if not enough data
     """
     try:
-        from homeassistant.components.recorder import get_instance
+        from homeassistant.components.recorder import get_instance  # type: ignore[attr-defined]
         from homeassistant.components.recorder.history import get_significant_states
         from homeassistant.helpers import entity_registry as er
         from homeassistant.util import dt as dt_util
@@ -236,29 +233,29 @@ async def async_detect_reset_from_history(hass: HomeAssistant, home_id: str | No
             entity_id = "sensor.tado_ce_api_usage"
 
         # Get history from recorder
-        def _get_history():
-            return get_significant_states(
+        def _get_history() -> list[dict[str, Any]]:
+            return get_significant_states(  # type: ignore[return-value]
                 hass,
                 start_time,
                 end_time,
                 [entity_id],
-                significant_changes_only=False
+                significant_changes_only=False,
             )
 
         states = await get_instance(hass).async_add_executor_job(_get_history)
 
-        if not states or entity_id not in states:
+        if not states or entity_id not in states:  # type: ignore[comparison-overlap]
             _LOGGER.debug("HA History Detection: No history found for sensor.tado_ce_api_usage")
             return None
 
-        history = states[entity_id]
+        history = states[entity_id]  # type: ignore[call-overload]
         if len(history) < 10:
             _LOGGER.debug("HA History Detection: Not enough history points (%s)", len(history))
             return None
 
         # Parse states and find minimum value (reset point)
         # The reset is when value drops from high to low
-        min_value = float('inf')
+        min_value = float("inf")
         min_time = None
         prev_value = None
 
@@ -273,9 +270,11 @@ async def async_detect_reset_from_history(hass: HomeAssistant, home_id: str | No
                         # This is likely the reset point
                         _LOGGER.debug(
                             "HA History Detection: Reset detected! %s -> %s at %s",
-                            prev_value, value, state_time
+                            prev_value,
+                            value,
+                            state_time,
                         )
-                        return state_time.replace(tzinfo=timezone.utc) if state_time.tzinfo is None else state_time
+                        return state_time.replace(tzinfo=UTC) if state_time.tzinfo is None else state_time  # type: ignore[no-any-return]
 
                 # Track minimum as fallback
                 if value < min_value:
@@ -290,7 +289,7 @@ async def async_detect_reset_from_history(hass: HomeAssistant, home_id: str | No
         # If no clear reset detected, use minimum value time
         if min_time and min_value < 20:
             _LOGGER.debug("HA History Detection: Using minimum value as reset: %s at %s", min_value, min_time)
-            return min_time.replace(tzinfo=timezone.utc) if min_time.tzinfo is None else min_time
+            return min_time.replace(tzinfo=UTC) if min_time.tzinfo is None else min_time  # type: ignore[no-any-return]
 
         _LOGGER.debug("HA History Detection: Could not detect reset (min_value=%s)", min_value)
         return None
@@ -304,7 +303,9 @@ async def async_detect_reset_from_history(hass: HomeAssistant, home_id: str | No
 
 
 async def async_update_ratelimit_reset_time(
-    hass: HomeAssistant, detected_reset: datetime, home_id: str | None = None,
+    hass: HomeAssistant,
+    detected_reset: datetime,
+    home_id: str | None = None,
 ) -> None:
     """Update ratelimit JSON with detected reset time from HA history.
 
@@ -318,12 +319,12 @@ async def async_update_ratelimit_reset_time(
     """
     try:
         ratelimit_path = get_data_file("ratelimit", home_id)
-        if not await aiofiles.os.path.exists(ratelimit_path):
+        path_exists = await hass.async_add_executor_job(ratelimit_path.exists)
+        if not path_exists:
             return
 
-        async with aiofiles.open(ratelimit_path, 'r') as f:
-            content = await f.read()
-            data = json.loads(content)
+        content = await hass.async_add_executor_job(ratelimit_path.read_text)
+        data = json.loads(content)
 
         # Only update if detected time is different from stored time
         current_reset = data.get("last_reset_utc")
@@ -333,7 +334,7 @@ async def async_update_ratelimit_reset_time(
             data["last_reset_utc"] = new_reset
 
             # Recalculate reset_seconds, reset_at, reset_human
-            now_utc = datetime.now(timezone.utc)
+            now_utc = datetime.now(UTC)
             next_reset = detected_reset + timedelta(hours=24)
 
             # If next_reset is in the past, add another 24h
@@ -350,12 +351,12 @@ async def async_update_ratelimit_reset_time(
                 data["reset_human"] = f"{hours}h {minutes}m" if hours > 0 else f"{minutes}m"
 
             # Write back with atomic write
-            temp_path = ratelimit_path.with_suffix('.tmp')
-            async with aiofiles.open(temp_path, 'w') as f:
-                await f.write(json.dumps(data, indent=2))
+            temp_path = ratelimit_path.with_suffix(".tmp")
+            content = json.dumps(data, indent=2)
+            await hass.async_add_executor_job(temp_path.write_text, content)
 
-            await aiofiles.os.replace(temp_path, ratelimit_path)
-            _LOGGER.info("Updated reset time from HA history: %s UTC", detected_reset.strftime('%H:%M'))
+            await hass.async_add_executor_job(temp_path.replace, ratelimit_path)
+            _LOGGER.info("Updated reset time from HA history: %s UTC", detected_reset.strftime("%H:%M"))
 
     except Exception as e:
         _LOGGER.debug("Failed to update ratelimit reset time: %s", e)

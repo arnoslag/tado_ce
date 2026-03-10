@@ -1,15 +1,16 @@
-"""Actionable insights calculator for Tado CE sensors.
+"""Tado CE actionable insights — SMART recommendations, window detection, priority escalation.
 
-Provides SMART recommendation calculations for environment,
-thermal analytics, device status sensors, and window predicted detection.
-
-SMART = Specific, Measurable, Achievable, Relevant, Time-bound
+Generates context-aware recommendations for environment, thermal analytics,
+device status, and window predicted detection. Physics functions are
+re-exported from calculations.py for backward compatibility.
 """
-import math
+
+from __future__ import annotations
+
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from enum import IntEnum
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from .insight_history import InsightHistoryTracker
@@ -17,6 +18,7 @@ if TYPE_CHECKING:
 
 class InsightPriority(IntEnum):
     """Priority levels for insights (higher = more urgent)."""
+
     NONE = 0
     LOW = 1
     MEDIUM = 2
@@ -27,30 +29,143 @@ class InsightPriority(IntEnum):
 @dataclass
 class Insight:
     """Represents an actionable insight."""
+
     priority: InsightPriority
     recommendation: str
     insight_type: str  # e.g., "mold_risk", "comfort", "battery", "window_predicted"
-    zone_name: Optional[str] = None
+    zone_name: str | None = None
 
 
-from .models import InsightTemperatureReading  # noqa: E402
+from .format_helpers import format_insight_type as _fmt_insight_type  # noqa: E402 — after Insight class
+from .models import InsightTemperatureReading  # noqa: E402 — after Insight class for backward compat
 
 # Backward compat alias — existing code may import TemperatureReading from here
 TemperatureReading = InsightTemperatureReading
+
+# =============================================================================
+# Insight Threshold Constants
+# =============================================================================
+
+# Window detection
+WINDOW_MIN_READINGS = 2
+WINDOW_HIGH_CONFIDENCE_COUNT = 3
+WINDOW_HIGH_CONFIDENCE_CHANGE = 1.5  # °C
+
+# Mold risk — humidity thresholds (%)
+MOLD_HUMIDITY_CRITICAL = 70
+MOLD_HUMIDITY_HIGH = 70
+MOLD_HUMIDITY_MEDIUM = 65
+
+# Mold risk — dew point margin thresholds (°C)
+MOLD_MARGIN_HIGH = 5
+MOLD_MARGIN_MEDIUM = 7
+
+# Device offline thresholds (minutes)
+OFFLINE_RECENT_MINUTES = 30
+OFFLINE_SHORT_MINUTES = 120
+OFFLINE_DAY_MINUTES = 1440  # 24 hours
+
+# API usage thresholds (%)
+API_USAGE_NOTICE = 70
+API_USAGE_WARNING = 80
+API_USAGE_HIGH = 90
+API_USAGE_CRITICAL = 95
+
+# Historical temperature deviation thresholds (°C)
+TEMP_DEVIATION_NORMAL = 1.5
+TEMP_DEVIATION_SIGNIFICANT = 3.0
+TEMP_DEVIATION_MIN_SAMPLES = 3
+
+# Thermal analysis confidence thresholds (%)
+CONFIDENCE_ADEQUATE = 70
+CONFIDENCE_LOW = 30
+CONFIDENCE_MODERATE = 50
+
+# Heating anomaly detection
+HEATING_ANOMALY_MIN_MINUTES = 60
+HEATING_ANOMALY_POWER_THRESHOLD = 80  # %
+HEATING_ANOMALY_TEMP_DELTA = 0.5  # °C
+
+# Preheat timing
+PREHEAT_LONG_MINUTES = 30
+
+# Summary text max length
+SUMMARY_MAX_LENGTH = 200
+
+# Schedule deviation
+SCHEDULE_DEVIATION_MIN_DAYS = 3
+
+# Cross-zone thresholds
+CROSS_ZONE_MOLD_MIN_ZONES = 3
+CROSS_ZONE_WINDOW_MIN_ZONES = 2
+CROSS_ZONE_CONDENSATION_MIN_ZONES = 3
+CROSS_ZONE_EFFICIENCY_MIN_ZONES = 2
+
+# API quota planning
+API_QUOTA_BUFFER_HOURS = 6
+API_QUOTA_HIGH_BUFFER_HOURS = 12
+
+# Weather impact thresholds (°C)
+WEATHER_COLD_SNAP_DELTA = 5.0
+WEATHER_SEVERE_COLD_SNAP_DELTA = 10
+
+# Calls per hour minimum samples
+CALLS_PER_HOUR_MIN_SAMPLES = 2
+
+# Schedule gap thresholds
+SCHEDULE_GAP_MIN_OFF_HOURS = 6
+SCHEDULE_GAP_MIN_DEFICIT = 2.0  # °C
+
+# Home all off / heating off cold thresholds (°C)
+HOME_COLD_MIN_DEFICIT = 2.0
+HEATING_OFF_COLD_MIN_DEFICIT = 3.0
+
+# Solar intensity threshold (%)
+SOLAR_INTENSITY_MIN_PCT = 60
+
+# Frost risk threshold (°C)
+FROST_RISK_TEMP = 3.0
+
+# Heating season advisory — minimum weekly delta (°C)
+HEATING_SEASON_MIN_DELTA = 3.0
+
+# Boiler flow anomaly thresholds
+BOILER_FLOW_HIGH_TEMP = 60  # °C
+BOILER_FLOW_LOW_DEMAND = 20  # %
+BOILER_FLOW_LOW_TEMP = 30  # °C
+BOILER_FLOW_HIGH_DEMAND = 80  # %
+
+# Thermal efficiency thresholds
+THERMAL_EFFICIENCY_MIN_CONFIDENCE = 0.5
+THERMAL_INERTIA_HIGH_MINUTES = 60
+HEATING_RATE_SLOW = 0.5  # °C/h
+
+# Temperature imbalance threshold (°C)
+TEMP_IMBALANCE_MIN_DIFF = 4.0
+
+# Humidity imbalance threshold (%)
+HUMIDITY_IMBALANCE_MIN_EXCESS = 15
+
+# Humidity trend thresholds
+HUMIDITY_TREND_MIN_SAMPLES = 6
+HUMIDITY_TREND_MIN_RISE = 10  # %
+
+# API usage spike threshold (ratio)
+API_USAGE_SPIKE_RATIO = 2.0
 
 
 # ============ Priority Escalation Rules ============
 # Maps insight_type → list of (days_threshold, escalated_priority), sorted ascending.
 # Last matching rule wins (i.e., longest duration that applies).
 ESCALATION_RULES: dict[str, list[tuple[int, InsightPriority]]] = {
-    "battery":          [(7, InsightPriority.HIGH), (14, InsightPriority.CRITICAL)],
-    "mold_risk":        [(3, InsightPriority.HIGH), (7, InsightPriority.CRITICAL)],
-    "condensation":     [(3, InsightPriority.HIGH)],
-    "connection":       [(2, InsightPriority.CRITICAL)],
-    "heating_anomaly":  [(1, InsightPriority.CRITICAL)],
-    "humidity_trend":   [(5, InsightPriority.HIGH)],
+    "battery": [(7, InsightPriority.HIGH), (14, InsightPriority.CRITICAL)],
+    "mold_risk": [(3, InsightPriority.HIGH), (7, InsightPriority.CRITICAL)],
+    "condensation": [(3, InsightPriority.HIGH)],
+    "connection": [(2, InsightPriority.CRITICAL)],
+    "heating_anomaly": [(1, InsightPriority.CRITICAL)],
+    "humidity_trend": [(5, InsightPriority.HIGH)],
     "heating_off_cold": [(2, InsightPriority.HIGH)],
-    "frost_risk":       [(1, InsightPriority.HIGH), (3, InsightPriority.CRITICAL)],
+    "frost_risk": [(1, InsightPriority.HIGH), (3, InsightPriority.CRITICAL)],
 }
 
 # ---------------------------------------------------------------------------
@@ -58,27 +173,33 @@ ESCALATION_RULES: dict[str, list[tuple[int, InsightPriority]]] = {
 # ---------------------------------------------------------------------------
 CORRELATION_GROUPS: dict[str, list[str]] = {
     "humidity_problem": [
-        "mold_risk", "humidity_trend", "condensation", "cross_zone_condensation",
+        "mold_risk",
+        "humidity_trend",
+        "condensation",
+        "cross_zone_condensation",
     ],
     "heating_efficiency_issue": [
-        "heating_anomaly", "thermal_efficiency", "boiler_flow_anomaly",
+        "heating_anomaly",
+        "thermal_efficiency",
+        "boiler_flow_anomaly",
     ],
     "schedule_review": [
-        "overlay_duration", "frequent_override", "schedule_gap", "schedule_deviation",
+        "overlay_duration",
+        "frequent_override",
+        "schedule_gap",
+        "schedule_deviation",
     ],
     "device_maintenance": ["battery", "connection"],
 }
 
 # Reverse lookup: insight_type → group key (immutable after module load)
-_INSIGHT_TO_GROUP: dict[str, str] = {
-    t: grp for grp, types in CORRELATION_GROUPS.items() for t in types
-}
+_INSIGHT_TO_GROUP: dict[str, str] = {t: grp for grp, types in CORRELATION_GROUPS.items() for t in types}
 
 
 def escalate_priorities(
     insights: list[Insight],
-    history: "InsightHistoryTracker",
-    now: datetime,
+    history: InsightHistoryTracker,
+    now: datetime,  # noqa: ARG001 — reserved for future time-based escalation
 ) -> list[Insight]:
     """Return new list with escalated priorities based on persistence duration.
 
@@ -106,16 +227,17 @@ def escalate_priorities(
                 escalated_priority = new_priority
 
         # Cap at CRITICAL
-        if escalated_priority > InsightPriority.CRITICAL:
-            escalated_priority = InsightPriority.CRITICAL
+        escalated_priority = min(escalated_priority, InsightPriority.CRITICAL)
 
         if escalated_priority != insight.priority:
-            result.append(Insight(
-                priority=escalated_priority,
-                recommendation=insight.recommendation,
-                insight_type=insight.insight_type,
-                zone_name=insight.zone_name,
-            ))
+            result.append(
+                Insight(
+                    priority=escalated_priority,
+                    recommendation=insight.recommendation,
+                    insight_type=insight.insight_type,
+                    zone_name=insight.zone_name,
+                ),
+            )
         else:
             result.append(insight)
     return result
@@ -167,20 +289,16 @@ def correlate_insights(
             else:
                 # Merge: max priority, combined recommendation
                 max_pri = max(m.priority for m in members)
-                type_labels = [
-                    _get_action_label(m.insight_type) for m in members
-                ]
-                combined_rec = "%s: %s — %s" % (
-                    zone_name,
-                    grp_key.replace("_", " ").title(),
-                    " + ".join(type_labels),
+                type_labels = [_get_action_label(m.insight_type) for m in members]
+                combined_rec = f"{zone_name}: {grp_key.replace('_', ' ').title()} — {' + '.join(type_labels)}"
+                merged.append(
+                    Insight(
+                        priority=max_pri,
+                        recommendation=combined_rec,
+                        insight_type=grp_key,
+                        zone_name=zone_name,
+                    ),
                 )
-                merged.append(Insight(
-                    priority=max_pri,
-                    recommendation=combined_rec,
-                    insight_type=grp_key,
-                    zone_name=zone_name,
-                ))
 
         result[zone_name] = merged
 
@@ -190,6 +308,7 @@ def correlate_insights(
 @dataclass
 class WindowPredictedResult:
     """Result of window predicted detection."""
+
     detected: bool
     confidence: str  # "none", "low", "medium", "high"
     temp_drop: float
@@ -200,13 +319,14 @@ class WindowPredictedResult:
 
 # ============ Window Predicted Detection ============
 
-def detect_window_predicted(
+
+def detect_window_predicted(  # noqa: C901, PLR0912, PLR0913
     readings: list[TemperatureReading],
-    hvac_active: bool,
+    hvac_active: bool,  # noqa: FBT001 — positional bool required by callers
     zone_name: str = "Room",
-    temp_threshold: float = 1.5,
+    temp_threshold: float = 1.5,  # noqa: ARG001 — kept for backward compat
     time_window_minutes: int = 5,
-    humidity_check: bool = True,
+    humidity_check: bool = True,  # noqa: ARG001, FBT001, FBT002 — kept for backward compat
     hvac_mode: str = "heating",
     consecutive_drops: int = 2,
 ) -> WindowPredictedResult:
@@ -242,7 +362,7 @@ def detect_window_predicted(
         return _not_detected
 
     # Need at least 2 readings to compare consecutive pairs
-    if len(readings) < 2:
+    if len(readings) < WINDOW_MIN_READINGS:
         return _not_detected
 
     # Count consecutive anomalous readings from most recent backward
@@ -252,10 +372,7 @@ def detect_window_predicted(
     for i in range(len(readings) - 1, 0, -1):
         newer = readings[i].temperature
         older = readings[i - 1].temperature
-        if hvac_mode == "heating":
-            is_anomaly = newer < older
-        else:  # cooling
-            is_anomaly = newer > older
+        is_anomaly = newer < older if hvac_mode == "heating" else newer > older
         if is_anomaly:
             anomaly_count += 1
         else:
@@ -269,9 +386,9 @@ def detect_window_predicted(
     total_change = abs(readings[start_idx].temperature - readings[-1].temperature)
 
     # Determine confidence based on count and magnitude
-    if anomaly_count >= 3 and total_change >= 1.5:
+    if anomaly_count >= WINDOW_HIGH_CONFIDENCE_COUNT and total_change >= WINDOW_HIGH_CONFIDENCE_CHANGE:
         confidence = "high"
-    elif anomaly_count >= 3 or total_change >= 1.0:
+    elif anomaly_count >= WINDOW_HIGH_CONFIDENCE_COUNT or total_change >= 1.0:
         confidence = "medium"
     else:
         confidence = "low"
@@ -284,18 +401,12 @@ def detect_window_predicted(
 
     if confidence == "high":
         recommendation = (
-            f"{zone_name}: Close window now — {action}, "
-            f"{total_change:.1f}°C change over {anomaly_count} readings"
+            f"{zone_name}: Close window now — {action}, {total_change:.1f}°C change over {anomaly_count} readings"
         )
     elif confidence == "medium":
-        recommendation = (
-            f"{zone_name}: Check windows — {action}, "
-            f"{total_change:.1f}°C change detected"
-        )
+        recommendation = f"{zone_name}: Check windows — {action}, {total_change:.1f}°C change detected"
     else:
-        recommendation = (
-            f"{zone_name}: Verify windows are closed — {action}"
-        )
+        recommendation = f"{zone_name}: Verify windows are closed — {action}"
 
     return WindowPredictedResult(
         detected=True,
@@ -309,14 +420,15 @@ def detect_window_predicted(
 
 # ============ Mold Risk Recommendations ============
 
-def calculate_mold_risk_recommendation(
+
+def calculate_mold_risk_recommendation(  # noqa: C901, PLR0911, PLR0912, PLR0913
     risk_level: str,
     zone_name: str,
-    humidity: Optional[float] = None,
-    surface_temp: Optional[float] = None,
-    dew_point: Optional[float] = None,
-    current_temp: Optional[float] = None,
-    target_temp: Optional[float] = None
+    humidity: float | None = None,
+    surface_temp: float | None = None,
+    dew_point: float | None = None,
+    current_temp: float | None = None,
+    target_temp: float | None = None,
 ) -> str:
     """Calculate SMART recommendation for mold risk with delta format.
 
@@ -346,7 +458,7 @@ def calculate_mold_risk_recommendation(
     # Calculate margin for specific recommendations
     margin = None
     if surface_temp is not None and dew_point is not None:
-        margin = round(surface_temp - dew_point, 1)
+        margin = surface_temp - dew_point
 
     # Level transition targets (margin thresholds)
     # Critical (<3) -> High needs margin >= 3
@@ -357,7 +469,7 @@ def calculate_mold_risk_recommendation(
         # Target: move to High (margin >= 3)
         transition = "Critical\u2192High"
         actions = []
-        if humidity and humidity > 70:
+        if humidity and humidity > MOLD_HUMIDITY_CRITICAL:
             delta_h = round(humidity - 60)
             actions.append(f"reduce humidity by {delta_h}% (from {humidity:.0f}% to <60%)")
         if current_temp and target_temp and current_temp < target_temp:
@@ -381,17 +493,17 @@ def calculate_mold_risk_recommendation(
     if risk_level == "High":
         # Target: move to Medium (margin >= 5)
         transition = "High\u2192Medium"
-        if humidity and humidity > 70:
+        if humidity and humidity > MOLD_HUMIDITY_HIGH:
             delta_h = round(humidity - 55)
             return (
                 f"{zone_name} [{transition}]: Humidity {humidity:.0f}% "
                 f"(reduce by {delta_h}% to 55%) - dehumidifier or ventilate 15 min"
             )
-        if margin is not None and margin < 5:
+        if margin is not None and margin < MOLD_MARGIN_HIGH:
             needed = round(5 - margin, 1)
             # Use target_temp as base when available,
             # guard against suggesting temp <= current_temp
-            base_temp = target_temp if target_temp else current_temp
+            base_temp = target_temp or current_temp
             if base_temp:
                 suggested = base_temp + 1.5
                 if current_temp and suggested <= current_temp:
@@ -409,13 +521,13 @@ def calculate_mold_risk_recommendation(
     if risk_level == "Medium":
         # Target: move to Low (margin >= 7)
         transition = "Medium\u2192Low"
-        if humidity and humidity > 65:
+        if humidity and humidity > MOLD_HUMIDITY_MEDIUM:
             delta_h = round(humidity - 55)
             return (
                 f"{zone_name} [{transition}]: Humidity {humidity:.0f}% "
                 f"(reduce by {delta_h}% to 55%) - ventilate 10 min after cooking/showering"
             )
-        if margin is not None and margin < 7:
+        if margin is not None and margin < MOLD_MARGIN_MEDIUM:
             needed = round(7 - margin, 1)
             return (
                 f"{zone_name} [{transition}]: Surface {margin:.1f}\u00b0C above dew point "
@@ -425,16 +537,18 @@ def calculate_mold_risk_recommendation(
 
     return ""
 
+
 # ============ Comfort Level Recommendations ============
 
-def calculate_comfort_recommendation(
+
+def calculate_comfort_recommendation(  # noqa: C901, PLR0911, PLR0912, PLR0913
     comfort_state: str,
     zone_name: str,
-    current_temp: Optional[float] = None,
-    target_temp: Optional[float] = None,
-    humidity: Optional[float] = None,
-    hvac_mode: Optional[str] = None,
-    hvac_action: Optional[str] = None
+    current_temp: float | None = None,
+    target_temp: float | None = None,
+    humidity: float | None = None,
+    hvac_mode: str | None = None,
+    hvac_action: str | None = None,
 ) -> str:
     """Calculate SMART recommendation for comfort level with time frame.
 
@@ -462,10 +576,7 @@ def calculate_comfort_recommendation(
             diff = round(target_temp - current_temp, 1)
             if diff > 0:
                 if hvac_mode == "off":
-                    return (
-                        f"{zone_name}: {current_temp:.1f}\u00b0C, "
-                        f"target {target_temp:.0f}\u00b0C - turn on heating"
-                    )
+                    return f"{zone_name}: {current_temp:.1f}\u00b0C, target {target_temp:.0f}\u00b0C - turn on heating"
                 # Differentiate based on hvac_action
                 if hvac_action == "heating":
                     return (
@@ -473,7 +584,7 @@ def calculate_comfort_recommendation(
                         f"{current_temp:.1f}\u00b0C, {diff:.1f}\u00b0C below target. "
                         f"Allow 15-30 min to reach {target_temp:.0f}\u00b0C"
                     )
-                elif hvac_action in ("idle", "off"):
+                if hvac_action in ("idle", "off"):
                     suggested = min(target_temp + 1, 25)
                     return (
                         f"{zone_name}: {current_temp:.1f}\u00b0C, "
@@ -487,14 +598,10 @@ def calculate_comfort_recommendation(
                     f"{diff:.1f}\u00b0C below target - "
                     f"increase setpoint to {suggested:.0f}\u00b0C if not warming up"
                 )
-            else:
-                # Remove min() cap that could suggest
-                # temp <= current_temp. Use current_temp + 2 directly.
-                suggested = current_temp + 2
-                return (
-                    f"{zone_name}: {current_temp:.1f}\u00b0C feels cold - "
-                    f"set heating to {suggested:.0f}\u00b0C"
-                )
+            # Remove min() cap that could suggest
+            # temp <= current_temp. Use current_temp + 2 directly.
+            suggested = current_temp + 2
+            return f"{zone_name}: {current_temp:.1f}\u00b0C feels cold - set heating to {suggested:.0f}\u00b0C"
         return f"{zone_name}: Room too cold - increase heating setpoint by 2\u00b0C"
 
     # Hot states
@@ -515,30 +622,26 @@ def calculate_comfort_recommendation(
 
     if comfort_state == "Too Humid":
         if humidity is not None:
-            return (
-                f"{zone_name}: Humidity {humidity:.0f}% too high - "
-                f"run dehumidifier or ventilate to reach 55%"
-            )
+            return f"{zone_name}: Humidity {humidity:.0f}% too high - run dehumidifier or ventilate to reach 55%"
         return f"{zone_name}: High humidity - run dehumidifier or open window for 15 minutes"
 
     if comfort_state == "Too Dry":
         if humidity is not None:
-            return (
-                f"{zone_name}: Humidity {humidity:.0f}% too low - "
-                f"use humidifier to reach 45%"
-            )
+            return f"{zone_name}: Humidity {humidity:.0f}% too low - use humidifier to reach 45%"
         return f"{zone_name}: Low humidity - use humidifier or place water bowl near radiator"
 
     return ""
 
+
 # ============ Condensation Risk Recommendations ============
 
-def calculate_condensation_recommendation(
+
+def calculate_condensation_recommendation(  # noqa: PLR0911
     risk_level: str,
     zone_name: str,
-    margin: Optional[float] = None,
-    ac_setpoint: Optional[float] = None,
-    current_temp: Optional[float] = None
+    margin: float | None = None,
+    ac_setpoint: float | None = None,
+    current_temp: float | None = None,  # noqa: ARG001 — kept for future use
 ) -> str:
     """Calculate SMART recommendation for condensation risk (AC zones).
 
@@ -578,13 +681,13 @@ def calculate_condensation_recommendation(
     return ""
 
 
-def calculate_heating_condensation_recommendation(
+def calculate_heating_condensation_recommendation(  # noqa: PLR0913
     risk_level: str,
     zone_name: str,
-    margin: Optional[float] = None,
-    humidity: Optional[float] = None,
-    surface_temp: Optional[float] = None,
-    dew_point: Optional[float] = None,
+    margin: float | None = None,
+    humidity: float | None = None,  # noqa: ARG001 — kept for future use
+    surface_temp: float | None = None,
+    dew_point: float | None = None,
 ) -> str:
     """Calculate SMART recommendation for condensation risk (HEATING zones).
 
@@ -613,7 +716,7 @@ def calculate_heating_condensation_recommendation(
         parts = [f"{zone_name}: URGENT — condensation forming on windows"]
         if surface_temp is not None and dew_point is not None and margin is not None:
             parts.append(
-                f"Surface temp {surface_temp:.1f}°C is {abs(margin):.1f}°C below dew point {dew_point:.1f}°C"
+                f"Surface temp {surface_temp:.1f}°C is {abs(margin):.1f}°C below dew point {dew_point:.1f}°C",
             )
         parts.append("Open window briefly, use extractor fan, wipe surfaces")
         return ". ".join(parts)
@@ -622,7 +725,7 @@ def calculate_heating_condensation_recommendation(
         parts = [f"{zone_name}: Windows likely fogging"]
         if margin is not None and dew_point is not None:
             parts.append(
-                f"Surface temp only {margin:.1f}°C above dew point {dew_point:.1f}°C"
+                f"Surface temp only {margin:.1f}°C above dew point {dew_point:.1f}°C",
             )
         parts.append("Ventilate or increase heating")
         return ". ".join(parts)
@@ -631,7 +734,7 @@ def calculate_heating_condensation_recommendation(
         parts = [f"{zone_name}: Monitor — condensation possible"]
         if margin is not None and dew_point is not None:
             parts.append(
-                f"Surface temp {margin:.1f}°C above dew point {dew_point:.1f}°C"
+                f"Surface temp {margin:.1f}°C above dew point {dew_point:.1f}°C",
             )
         parts.append("Ensure adequate ventilation")
         return ". ".join(parts)
@@ -641,10 +744,11 @@ def calculate_heating_condensation_recommendation(
 
 # ============ Battery Recommendations ============
 
+
 def calculate_battery_recommendation(
     battery_state: str,
     zone_name: str,
-    device_type: Optional[str] = None
+    device_type: str | None = None,
 ) -> str:
     """Calculate SMART recommendation for battery status.
 
@@ -679,11 +783,12 @@ def calculate_battery_recommendation(
 
 # ============ Connection Recommendations ============
 
-def calculate_connection_recommendation(
+
+def calculate_connection_recommendation(  # noqa: PLR0911
     connection_state: str,
     zone_name: str,
-    last_seen: Optional[str] = None,
-    offline_minutes: Optional[int] = None
+    last_seen: str | None = None,
+    offline_minutes: int | None = None,
 ) -> str:
     """Calculate SMART recommendation for device connection status.
 
@@ -702,16 +807,15 @@ def calculate_connection_recommendation(
     if connection_state.upper() == "OFFLINE":
         # Provide time-specific recommendations
         if offline_minutes is not None:
-            if offline_minutes < 30:
+            if offline_minutes < OFFLINE_RECENT_MINUTES:
                 return f"{zone_name}: Device offline {offline_minutes} min - may be temporary, wait 30 minutes"
-            elif offline_minutes < 120:
+            if offline_minutes < OFFLINE_SHORT_MINUTES:
                 return f"{zone_name}: Device offline {offline_minutes} min - check if device is within 10m of bridge"
-            elif offline_minutes < 1440:  # 24 hours
+            if offline_minutes < OFFLINE_DAY_MINUTES:  # 24 hours
                 hours = offline_minutes // 60
                 return f"{zone_name}: Device offline {hours}h - check batteries and bridge connection"
-            else:
-                days = offline_minutes // 1440
-                return f"{zone_name}: Device offline {days} days - replace batteries and re-pair if needed"
+            days = offline_minutes // 1440
+            return f"{zone_name}: Device offline {days} days - replace batteries and re-pair if needed"
 
         if last_seen:
             return f"{zone_name}: Device offline since {last_seen} - check batteries and bridge connection"
@@ -726,11 +830,12 @@ def calculate_connection_recommendation(
 
 # ============ API Status Recommendations ============
 
-def calculate_api_status_recommendation(
-    remaining_calls: Optional[int],
-    total_calls: Optional[int],
-    reset_time_human: Optional[str] = None,
-    current_interval_minutes: Optional[int] = None
+
+def calculate_api_status_recommendation(  # noqa: C901, PLR0911
+    remaining_calls: int | None,
+    total_calls: int | None,
+    reset_time_human: str | None = None,
+    current_interval_minutes: int | None = None,
 ) -> str:
     """Calculate SMART recommendation for API status.
 
@@ -748,23 +853,23 @@ def calculate_api_status_recommendation(
 
     usage_percent = ((total_calls - remaining_calls) / total_calls) * 100
 
-    if usage_percent < 70:
+    if usage_percent < API_USAGE_NOTICE:
         return ""
 
     # Calculate suggested interval based on remaining calls and time
     suggested_interval = None
     if current_interval_minutes:
-        if usage_percent >= 90:
+        if usage_percent >= API_USAGE_HIGH:
             suggested_interval = max(current_interval_minutes * 2, 60)
-        elif usage_percent >= 80:
+        elif usage_percent >= API_USAGE_WARNING:
             suggested_interval = max(current_interval_minutes + 15, 30)
 
     reset_info = f" (resets in {reset_time_human})" if reset_time_human else ""
 
-    if usage_percent >= 95:
+    if usage_percent >= API_USAGE_CRITICAL:
         return f"API CRITICAL: Only {remaining_calls} calls remaining{reset_info} - pause automations until reset"
 
-    if usage_percent >= 90:
+    if usage_percent >= API_USAGE_HIGH:
         if suggested_interval:
             return (
                 f"API WARNING: {remaining_calls} calls remaining{reset_info}"
@@ -773,7 +878,7 @@ def calculate_api_status_recommendation(
             )
         return f"API WARNING: {remaining_calls} calls remaining{reset_info} - reduce polling frequency"
 
-    if usage_percent >= 80:
+    if usage_percent >= API_USAGE_WARNING:
         if suggested_interval:
             return (
                 f"API usage at {usage_percent:.0f}%{reset_info}"
@@ -781,22 +886,21 @@ def calculate_api_status_recommendation(
             )
         return f"API usage at {usage_percent:.0f}%{reset_info} - monitor usage"
 
-    if usage_percent >= 70:
+    if usage_percent >= API_USAGE_NOTICE:
         return f"API usage at {usage_percent:.0f}%{reset_info}"
 
     return ""
 
 
-
-
 # ============ Historical Deviation Recommendations ============
 
-def calculate_historical_deviation_recommendation(
-    deviation: Optional[float],
+
+def calculate_historical_deviation_recommendation(  # noqa: C901, PLR0911
+    deviation: float | None,
     zone_name: str,
-    current_temp: Optional[float] = None,
-    historical_avg: Optional[float] = None,
-    sample_count: int = 0
+    current_temp: float | None = None,
+    historical_avg: float | None = None,
+    sample_count: int = 0,
 ) -> str:
     """Calculate SMART recommendation for historical temperature deviation.
 
@@ -810,16 +914,16 @@ def calculate_historical_deviation_recommendation(
     Returns:
         SMART recommendation string (empty if deviation is normal)
     """
-    if deviation is None or sample_count < 3:
+    if deviation is None or sample_count < TEMP_DEVIATION_MIN_SAMPLES:
         return ""
 
     abs_deviation = abs(deviation)
 
-    # Normal range: within 1.5 degrees C of historical average
-    if abs_deviation <= 1.5:
+    # Normal range: within TEMP_DEVIATION_NORMAL degrees C of historical average
+    if abs_deviation <= TEMP_DEVIATION_NORMAL:
         return ""
 
-    if deviation > 3.0:
+    if deviation > TEMP_DEVIATION_SIGNIFICANT:
         if current_temp is not None and historical_avg is not None:
             return (
                 f"{zone_name}: {abs_deviation:.1f}°C warmer than usual "
@@ -828,15 +932,12 @@ def calculate_historical_deviation_recommendation(
             )
         return f"{zone_name}: {abs_deviation:.1f}°C warmer than usual - review heating schedule"
 
-    if deviation > 1.5:
+    if deviation > TEMP_DEVIATION_NORMAL:
         if current_temp is not None:
-            return (
-                f"{zone_name}: {abs_deviation:.1f}°C above average "
-                f"({current_temp:.1f}°C) - monitor for pattern"
-            )
+            return f"{zone_name}: {abs_deviation:.1f}°C above average ({current_temp:.1f}°C) - monitor for pattern"
         return f"{zone_name}: {abs_deviation:.1f}°C above average - monitor for pattern"
 
-    if deviation < -3.0:
+    if deviation < -TEMP_DEVIATION_SIGNIFICANT:
         if current_temp is not None and historical_avg is not None:
             return (
                 f"{zone_name}: {abs_deviation:.1f}°C colder than usual "
@@ -845,7 +946,7 @@ def calculate_historical_deviation_recommendation(
             )
         return f"{zone_name}: {abs_deviation:.1f}°C colder than usual - check windows and heating"
 
-    if deviation < -1.5:
+    if deviation < -TEMP_DEVIATION_NORMAL:
         if current_temp is not None:
             return (
                 f"{zone_name}: {abs_deviation:.1f}°C below average "
@@ -858,11 +959,12 @@ def calculate_historical_deviation_recommendation(
 
 # ============ Analysis Confidence Recommendations ============
 
+
 def calculate_confidence_recommendation(
-    confidence_percent: Optional[float],
+    confidence_percent: float | None,
     zone_name: str,
-    cycle_count: int = 0,
-    completed_count: int = 0
+    cycle_count: int = 0,  # noqa: ARG001 — kept for backward compat
+    completed_count: int = 0,
 ) -> str:
     """Calculate SMART recommendation for thermal analysis confidence.
 
@@ -878,17 +980,17 @@ def calculate_confidence_recommendation(
     if confidence_percent is None:
         return ""
 
-    if confidence_percent >= 70:
+    if confidence_percent >= CONFIDENCE_ADEQUATE:
         return ""
 
-    if confidence_percent < 30:
+    if confidence_percent < CONFIDENCE_LOW:
         needed = max(5 - completed_count, 1)
         return (
             f"{zone_name}: Low analysis confidence ({confidence_percent:.0f}%) "
             f"- need {needed} more complete heating cycles for reliable estimates"
         )
 
-    if confidence_percent < 50:
+    if confidence_percent < CONFIDENCE_MODERATE:
         needed = max(3 - completed_count, 1)
         return (
             f"{zone_name}: Moderate confidence ({confidence_percent:.0f}%) "
@@ -896,12 +998,11 @@ def calculate_confidence_recommendation(
         )
 
     # 50-70%
-    return (
-        f"{zone_name}: Building confidence ({confidence_percent:.0f}%) "
-        f"- estimates improving with each heating cycle"
-    )
+    return f"{zone_name}: Building confidence ({confidence_percent:.0f}%) - estimates improving with each heating cycle"
+
 
 # ============ Home Insights Aggregation ============
+
 
 def get_insight_priority(insight_type: str, severity: str) -> InsightPriority:
     """Get priority level for an insight based on type and severity.
@@ -1021,9 +1122,10 @@ def _get_action_label(insight_type: str) -> str:
     }
     return action_map.get(insight_type, insight_type.replace("_", " ").title())
 
+
 def _build_smart_summary(
-    sorted_actions: list[tuple[str, dict]],
-    zones_with_issues: list[str],
+    sorted_actions: list[tuple[str, dict[str, Any]]],
+    zones_with_issues: list[str],  # noqa: ARG001 — kept for future use
 ) -> str:
     """Build context-rich summary from top-priority actions.
 
@@ -1038,12 +1140,12 @@ def _build_smart_summary(
     if not sorted_actions:
         return "All zones are running well — no issues detected."
 
-    def _fmt(label: str, grp: dict) -> str:
+    def _fmt(label: str, grp: dict[str, Any]) -> str:
         pri = InsightPriority(grp["priority"]).name.capitalize()
         zones = grp["zones"]
         if zones:
-            return "%s in %s (%s)" % (label, ", ".join(zones), pri)
-        return "%s (%s)" % (label, pri)
+            return f"{label} in {', '.join(zones)} ({pri})"
+        return f"{label} ({pri})"
 
     total = len(sorted_actions)
     first = _fmt(*sorted_actions[0])
@@ -1052,16 +1154,17 @@ def _build_smart_summary(
         return first
 
     remaining = total - 2
-    suffix = " + %d more" % remaining if remaining > 0 else ""
+    suffix = f" + {remaining} more" if remaining > 0 else ""
     second = _fmt(*sorted_actions[1])
-    text = "%s, %s%s" % (first, second, suffix)
+    text = f"{first}, {second}{suffix}"
 
-    if len(text) <= 200:
+    if len(text) <= SUMMARY_MAX_LENGTH:
         return text
 
     # Fallback: 1 item + total remaining count
     remaining_all = total - 1
-    return "%s + %d more" % (first, remaining_all)
+    return f"{first} + {remaining_all} more"
+
 
 # Priority → health score deduction
 _HEALTH_DEDUCTIONS: dict[InsightPriority, int] = {
@@ -1073,7 +1176,7 @@ _HEALTH_DEDUCTIONS: dict[InsightPriority, int] = {
 
 
 def calculate_insight_health_score(insights: list[Insight]) -> int:
-    """Calculate home health score (0–100, higher = healthier).
+    """Calculate home health score (0\u2013100, higher = healthier).
 
     Starts at 100 and deducts per insight based on priority.
     Floor at 0. Score of 100 = no active insights.
@@ -1083,42 +1186,31 @@ def calculate_insight_health_score(insights: list[Insight]) -> int:
         score -= _HEALTH_DEDUCTIONS.get(insight.priority, 0)
     return max(score, 0)
 
-def build_weekly_digest(
-    history: "InsightHistoryTracker",
+
+@dataclass
+class _WeeklyStats:
+    """Intermediate stats collected from insight history entries."""
+
+    active_count: int
+    resolved_count: int
+    type_counts: dict[str, int]
+    zone_counts: dict[str, int]
+    longest: tuple[str, str | None, float] | None  # (type, zone, days)
+
+
+def _collect_weekly_stats(
+    entries: dict[str, dict[str, Any]],
+    week_ago: datetime,
     now: datetime,
-) -> dict:
-    """Build weekly digest from insight history.
+) -> _WeeklyStats:
+    """Collect weekly insight statistics from history entries.
 
-    Analyses entries from the last 7 days to produce a summary dict.
-
-    Args:
-        history: InsightHistoryTracker instance (uses .entries property).
-        now: Current UTC datetime.
-
-    Returns:
-        Dict with period, total_unique_insights, most_frequent_type,
-        most_affected_zone, longest_persisting, resolved_this_week.
+    Iterates over entries, filtering to the last 7 days, and accumulates
+    type/zone counts, longest-persisting insight, and resolved count.
     """
-    week_ago = now - timedelta(days=7)
-    period_start = week_ago.strftime("%Y-%m-%d")
-    period_end = now.strftime("%Y-%m-%d")
-
-    empty = {
-        "period": "%s to %s" % (period_start, period_end),
-        "total_unique_insights": 0,
-        "most_frequent_type": None,
-        "most_affected_zone": None,
-        "longest_persisting": None,
-        "resolved_this_week": 0,
-    }
-
-    entries = history.entries
-    if not entries:
-        return empty
-
     type_counts: dict[str, int] = {}
     zone_counts: dict[str, int] = {}
-    longest: dict | None = None
+    longest: tuple[str, str | None, float] | None = None
     longest_days: float = 0.0
     active_count = 0
     resolved_count = 0
@@ -1128,60 +1220,104 @@ def build_weekly_digest(
             first_seen = datetime.fromisoformat(entry["first_seen"])
             last_seen = datetime.fromisoformat(entry["last_seen"])
             if first_seen.tzinfo is None:
-                first_seen = first_seen.replace(tzinfo=timezone.utc)
+                first_seen = first_seen.replace(tzinfo=UTC)
             if last_seen.tzinfo is None:
-                last_seen = last_seen.replace(tzinfo=timezone.utc)
+                last_seen = last_seen.replace(tzinfo=UTC)
         except (ValueError, KeyError, TypeError):
             continue
 
-        # Only consider entries that overlap with the last 7 days
         if last_seen < week_ago:
             continue
 
         parts = key.split(":", 1)
         insight_type = parts[0]
-        zone_name = parts[1] if len(parts) > 1 else "_hub"
+        zone_name = parts[1] if len(parts) > 1 else None
 
         active_count += 1
         type_counts[insight_type] = type_counts.get(insight_type, 0) + 1
-        if zone_name != "_hub":
+        if zone_name:
             zone_counts[zone_name] = zone_counts.get(zone_name, 0) + 1
 
         duration_days = (last_seen - first_seen).total_seconds() / 86400
         if duration_days > longest_days:
             longest_days = duration_days
-            longest = {
-                "type": insight_type,
-                "zone": zone_name if zone_name != "_hub" else None,
-                "days": round(duration_days, 1),
-            }
+            longest = (insight_type, zone_name, round(duration_days, 1))
 
-        # Resolved = last_seen is in the past week but entry is no longer active
-        # (last_seen < now means it was last seen before current poll)
-        # We approximate: if last_seen < now - 1 hour, consider resolved
         if last_seen < now - timedelta(hours=1):
             resolved_count += 1
 
-    if active_count == 0:
-        return empty
-
-    most_frequent_type = max(type_counts, key=type_counts.get) if type_counts else None
-    most_affected_zone = max(zone_counts, key=zone_counts.get) if zone_counts else None
-
-    return {
-        "period": "%s to %s" % (period_start, period_end),
-        "total_unique_insights": active_count,
-        "most_frequent_type": most_frequent_type,
-        "most_affected_zone": most_affected_zone,
-        "longest_persisting": longest,
-        "resolved_this_week": resolved_count,
-    }
+    return _WeeklyStats(
+        active_count=active_count,
+        resolved_count=resolved_count,
+        type_counts=type_counts,
+        zone_counts=zone_counts,
+        longest=longest,
+    )
 
 
+def _format_digest_parts(stats: _WeeklyStats, header: str) -> str:
+    """Format weekly stats into a human-readable digest string.
+
+    Builds a dot-separated summary from the collected stats.
+    """
+    parts: list[str] = [header]
+
+    if stats.type_counts:
+        top_type = max(stats.type_counts, key=stats.type_counts.get)  # type: ignore[arg-type]
+        top_count = stats.type_counts[top_type]
+        parts.append(f"Most frequent: {_fmt_insight_type(top_type)} ({top_count})")
+
+    if stats.zone_counts:
+        top_zone = max(stats.zone_counts, key=stats.zone_counts.get)  # type: ignore[arg-type]
+        top_zone_count = stats.zone_counts[top_zone]
+        parts.append(f"Most affected: {top_zone} ({top_zone_count})")
+
+    if stats.longest and stats.longest[2] >= 1.0:
+        days_int = int(stats.longest[2])
+        day_label = "day" if days_int == 1 else "days"
+        zone_part = f" in {stats.longest[1]}" if stats.longest[1] else ""
+        parts.append(f"Longest: {_fmt_insight_type(stats.longest[0])}{zone_part} ({days_int} {day_label})")
+
+    if stats.resolved_count > 0:
+        parts.append(f"Resolved: {stats.resolved_count}")
+
+    return " \u00b7 ".join(parts)
 
 
+def build_weekly_digest(
+    history: InsightHistoryTracker,
+    now: datetime,
+) -> str:
+    """Build human-readable weekly digest from insight history.
 
-def aggregate_home_insights(zone_insights: dict[str, list[Insight]]) -> dict:
+    Analyses entries from the last 7 days to produce a summary string.
+
+    Args:
+        history: InsightHistoryTracker instance (uses .entries property).
+        now: Current UTC datetime.
+
+    Returns:
+        Human-readable summary string for the weekly digest attribute.
+    """
+    week_ago = now - timedelta(days=7)
+    period_start = week_ago.strftime("%b %d")
+    period_end = now.strftime("%b %d")
+    no_data = f"{period_start} \u2013 {period_end}: No insights this week"
+
+    entries = history.entries
+    if not entries:
+        return no_data
+
+    stats = _collect_weekly_stats(entries, week_ago, now)
+    if stats.active_count == 0:
+        return no_data
+
+    label = "insight" if stats.active_count == 1 else "insights"
+    header = f"{period_start} \u2013 {period_end}: {stats.active_count} {label}"
+    return _format_digest_parts(stats, header)
+
+
+def aggregate_home_insights(zone_insights: dict[str, list[Insight]]) -> dict[str, Any]:  # noqa: C901
     """Aggregate insights from all zones into action-based home summary.
 
     Groups insights by action type across zones, producing a list of
@@ -1225,7 +1361,7 @@ def aggregate_home_insights(zone_insights: dict[str, list[Insight]]) -> dict:
         return empty_result
 
     # Group by action label, tracking zones and max priority per action
-    action_groups: dict[str, dict] = {}
+    action_groups: dict[str, dict[str, Any]] = {}
     for insight in all_insights:
         label = _get_action_label(insight.insight_type)
         if label not in action_groups:
@@ -1233,8 +1369,7 @@ def aggregate_home_insights(zone_insights: dict[str, list[Insight]]) -> dict:
         grp = action_groups[label]
         if insight.zone_name and insight.zone_name not in grp["zones"]:
             grp["zones"].append(insight.zone_name)
-        if insight.priority > grp["priority"]:
-            grp["priority"] = insight.priority
+        grp["priority"] = max(grp["priority"], insight.priority)
 
     # Sort actions by priority (highest first), then alphabetically
     sorted_actions = sorted(
@@ -1274,11 +1409,12 @@ def aggregate_home_insights(zone_insights: dict[str, list[Insight]]) -> dict:
 
 # ============ Preheat Timing Insight (US-14) ============
 
+
 def calculate_preheat_timing_insight(
-    preheat_time_minutes: Optional[float] = None,
-    next_schedule_time: Optional[str] = None,
+    preheat_time_minutes: float | None = None,
+    next_schedule_time: str | None = None,
     zone_name: str = "",
-) -> Optional["Insight"]:
+) -> Insight | None:
     """Calculate preheat timing insight.
 
     Combines Thermal Analytics preheat_time with Smart Comfort
@@ -1307,7 +1443,7 @@ def calculate_preheat_timing_insight(
     )
 
     priority = InsightPriority.LOW
-    if preheat_time_minutes > 30:
+    if preheat_time_minutes > PREHEAT_LONG_MINUTES:
         priority = InsightPriority.MEDIUM
 
     return Insight(
@@ -1320,12 +1456,13 @@ def calculate_preheat_timing_insight(
 
 # ============ Schedule Deviation Insight (US-15) ============
 
+
 def calculate_schedule_deviation_insight(
-    historical_temp: Optional[float] = None,
-    target_temp: Optional[float] = None,
+    historical_temp: float | None = None,
+    target_temp: float | None = None,
     deviation_days: int = 0,
     zone_name: str = "",
-) -> Optional["Insight"]:
+) -> Insight | None:
     """Detect consistent schedule deviation over multiple days.
 
     Triggers when actual temperature consistently deviates from target
@@ -1342,7 +1479,7 @@ def calculate_schedule_deviation_insight(
     """
     if historical_temp is None or target_temp is None:
         return None
-    if deviation_days < 3:
+    if deviation_days < SCHEDULE_DEVIATION_MIN_DAYS:
         return None
 
     diff = round(historical_temp - target_temp, 1)
@@ -1372,12 +1509,13 @@ def calculate_schedule_deviation_insight(
 
 # ============ Heating Power Anomaly Detection (US-16) ============
 
+
 def calculate_heating_anomaly_insight(
-    heating_power_pct: Optional[float] = None,
-    temp_delta: Optional[float] = None,
+    heating_power_pct: float | None = None,
+    temp_delta: float | None = None,
     duration_minutes: int = 0,
     zone_name: str = "",
-) -> Optional["Insight"]:
+) -> Insight | None:
     """Detect heating power anomaly.
 
     Triggers when heating_power >= 80% AND temp_delta < 0.5C for 60+ min,
@@ -1394,9 +1532,9 @@ def calculate_heating_anomaly_insight(
     """
     if heating_power_pct is None or temp_delta is None:
         return None
-    if duration_minutes < 60:
+    if duration_minutes < HEATING_ANOMALY_MIN_MINUTES:
         return None
-    if heating_power_pct < 80 or temp_delta >= 0.5:
+    if heating_power_pct < HEATING_ANOMALY_POWER_THRESHOLD or temp_delta >= HEATING_ANOMALY_TEMP_DELTA:
         return None
 
     hours = duration_minutes / 60
@@ -1416,9 +1554,10 @@ def calculate_heating_anomaly_insight(
 
 # ============ Cross-Zone Mold Risk Aggregation (US-17) ============
 
+
 def aggregate_cross_zone_mold_risk(
     zone_mold_risks: dict[str, str],
-) -> Optional["Insight"]:
+) -> Insight | None:
     """Aggregate mold risk across zones.
 
     Triggers when 3+ zones have Medium/High/Critical mold risk,
@@ -1433,12 +1572,9 @@ def aggregate_cross_zone_mold_risk(
     if not zone_mold_risks:
         return None
 
-    affected = [
-        name for name, level in zone_mold_risks.items()
-        if level in ("Medium", "High", "Critical")
-    ]
+    affected = [name for name, level in zone_mold_risks.items() if level in ("Medium", "High", "Critical")]
 
-    if len(affected) < 3:
+    if len(affected) < CROSS_ZONE_MOLD_MIN_ZONES:
         return None
 
     zones_str = ", ".join(affected[:5])
@@ -1449,9 +1585,7 @@ def aggregate_cross_zone_mold_risk(
     )
 
     # Priority based on worst zone
-    has_critical = any(
-        zone_mold_risks[z] == "Critical" for z in affected
-    )
+    has_critical = any(zone_mold_risks[z] == "Critical" for z in affected)
     priority = InsightPriority.CRITICAL if has_critical else InsightPriority.HIGH
 
     return Insight(
@@ -1464,9 +1598,10 @@ def aggregate_cross_zone_mold_risk(
 
 # ============ Cross-Zone Window Detection (US-18) ============
 
+
 def aggregate_cross_zone_window_predicted(
     zone_window_states: dict[str, bool],
-) -> Optional["Insight"]:
+) -> Insight | None:
     """Aggregate window predicted across zones.
 
     Triggers when 2+ zones have window_predicted=on,
@@ -1483,14 +1618,11 @@ def aggregate_cross_zone_window_predicted(
 
     open_zones = [name for name, is_open in zone_window_states.items() if is_open]
 
-    if len(open_zones) < 2:
+    if len(open_zones) < CROSS_ZONE_WINDOW_MIN_ZONES:
         return None
 
     zones_str = ", ".join(open_zones)
-    rec = (
-        f"Multiple windows detected open: {zones_str} - "
-        f"close windows to prevent energy waste"
-    )
+    rec = f"Multiple windows detected open: {zones_str} - close windows to prevent energy waste"
 
     return Insight(
         priority=InsightPriority.HIGH,
@@ -1502,13 +1634,14 @@ def aggregate_cross_zone_window_predicted(
 
 # ============ API Quota Planning Insight (US-19) ============
 
+
 def calculate_api_quota_planning_insight(
-    remaining_calls: Optional[int] = None,
-    total_calls: Optional[int] = None,
-    calls_per_hour: Optional[float] = None,
-    hours_until_reset: Optional[float] = None,
-    current_interval_minutes: Optional[float] = None,
-) -> Optional["Insight"]:
+    remaining_calls: int | None = None,
+    total_calls: int | None = None,  # noqa: ARG001 — kept for backward compat
+    calls_per_hour: float | None = None,
+    hours_until_reset: float | None = None,
+    current_interval_minutes: float | None = None,  # noqa: ARG001 — kept for backward compat
+) -> Insight | None:
     """Calculate API quota planning insight.
 
     Triggers when projected exhaustion is < 6 hours before reset,
@@ -1533,16 +1666,13 @@ def calculate_api_quota_planning_insight(
     buffer_hours = hours_until_reset - hours_remaining
 
     # Only trigger if projected to run out > 6 hours before reset
-    if buffer_hours < 6:
+    if buffer_hours < API_QUOTA_BUFFER_HOURS:
         return None
 
     # Suggest new interval
     if hours_until_reset > 0 and remaining_calls > 0:
         safe_calls_per_hour = remaining_calls / hours_until_reset * 0.8  # 20% safety margin
-        if safe_calls_per_hour > 0:
-            suggested_interval = max(60 / safe_calls_per_hour, 5)  # min 5 minutes
-        else:
-            suggested_interval = 30
+        suggested_interval = max(60 / safe_calls_per_hour, 5) if safe_calls_per_hour > 0 else 30
     else:
         suggested_interval = 30
 
@@ -1552,7 +1682,7 @@ def calculate_api_quota_planning_insight(
         f"Consider increasing polling interval to {suggested_interval:.0f} min"
     )
 
-    priority = InsightPriority.HIGH if buffer_hours > 12 else InsightPriority.MEDIUM
+    priority = InsightPriority.HIGH if buffer_hours > API_QUOTA_HIGH_BUFFER_HOURS else InsightPriority.MEDIUM
 
     return Insight(
         priority=priority,
@@ -1564,11 +1694,12 @@ def calculate_api_quota_planning_insight(
 
 # ============ Weather Impact Insight (US-20) ============
 
+
 def calculate_weather_impact_insight(
-    current_outdoor_temp: Optional[float] = None,
-    avg_outdoor_temp_7d: Optional[float] = None,
+    current_outdoor_temp: float | None = None,
+    avg_outdoor_temp_7d: float | None = None,
     zone_name: str = "",
-) -> Optional["Insight"]:
+) -> Insight | None:
     """Calculate weather impact insight.
 
     Triggers when current outdoor temp is > 5C colder than 7-day average,
@@ -1586,7 +1717,7 @@ def calculate_weather_impact_insight(
         return None
 
     diff = round(avg_outdoor_temp_7d - current_outdoor_temp, 1)
-    if diff <= 5.0:
+    if diff <= WEATHER_COLD_SNAP_DELTA:
         return None
 
     # Rough estimate: each 1C drop increases heating by ~3-5%
@@ -1599,103 +1730,37 @@ def calculate_weather_impact_insight(
     )
 
     priority = InsightPriority.LOW
-    if diff > 10:
+    if diff > WEATHER_SEVERE_COLD_SNAP_DELTA:
         priority = InsightPriority.MEDIUM
 
     return Insight(
         priority=priority,
         recommendation=rec,
         insight_type="weather_impact",
-        zone_name=zone_name if zone_name else None,
+        zone_name=zone_name or None,
     )
 
-# ============ Dew Point Calculation (moved from sensor.py) ============
 
-def calculate_dew_point(temperature: float, humidity: float) -> float:
-    """Calculate dew point using Magnus-Tetens formula.
+# ============ Physics Functions (re-exported from calculations.py) ============
+# calculate_dew_point, classify_mold_risk_level, classify_comfort_level
+# are imported at module level for backward compatibility.
+from .calculations import (  # noqa: E402 — backward compat re-exports
+    calculate_dew_point,
+    classify_comfort_level,
+    classify_mold_risk_level,
+)
 
-    Formula: Td = (b × α) / (a - α)
-    where α = (a × T) / (b + T) + ln(RH/100)
-
-    Constants (for -40°C to 50°C range):
-    a = 17.27, b = 237.7°C
-
-    Args:
-        temperature: Indoor temperature in °C
-        humidity: Relative humidity in %
-
-    Returns:
-        Dew point temperature in °C
-    """
-    a = 17.27
-    b = 237.7
-    # Clamp humidity to valid range (avoid log(0))
-    humidity = max(1, min(100, humidity))
-    alpha = (a * temperature) / (b + temperature) + math.log(humidity / 100)
-    return round((b * alpha) / (a - alpha), 1)
-
-
-# ============ Mold Risk Level Classification ============
-
-def classify_mold_risk_level(inside_temp: float, humidity: float) -> str:
-    """Classify mold risk level from temperature and humidity.
-
-    Uses dew point margin thresholds:
-    - Critical: margin < 3°C
-    - High:     margin < 5°C
-    - Medium:   margin < 7°C
-    - Low:      margin >= 7°C
-
-    Args:
-        inside_temp: Indoor temperature in °C
-        humidity: Relative humidity in %
-
-    Returns:
-        Risk level string: "Critical", "High", "Medium", or "Low"
-    """
-    dew_point = calculate_dew_point(inside_temp, humidity)
-    margin = round(inside_temp - dew_point, 1)
-    if margin < 3:
-        return "Critical"
-    if margin < 5:
-        return "High"
-    if margin < 7:
-        return "Medium"
-    return "Low"
-
-
-# ============ Comfort Level Classification ============
-
-def classify_comfort_level(inside_temp: float) -> str:
-    """Classify comfort level from indoor temperature.
-
-    Thresholds:
-    - Cold:        < 16°C
-    - Cool:        < 18°C
-    - Comfortable: <= 24°C
-    - Warm:        <= 26°C
-    - Hot:         > 26°C
-
-    Args:
-        inside_temp: Indoor temperature in °C
-
-    Returns:
-        Comfort level string: "Cold", "Cool", "Comfortable", "Warm", or "Hot"
-    """
-    if inside_temp < 16:
-        return "Cold"
-    if inside_temp < 18:
-        return "Cool"
-    if inside_temp <= 24:
-        return "Comfortable"
-    if inside_temp <= 26:
-        return "Warm"
-    return "Hot"
+__all__ = [
+    "calculate_dew_point",
+    "classify_comfort_level",
+    "classify_mold_risk_level",
+]
 
 
 # ============ API Call Rate Calculation ============
 
-def calculate_calls_per_hour(history: list) -> Optional[float]:
+
+def calculate_calls_per_hour(history: list[Any]) -> float | None:
     """Calculate average API calls per hour from call history.
 
     Args:
@@ -1704,13 +1769,13 @@ def calculate_calls_per_hour(history: list) -> Optional[float]:
     Returns:
         Calls per hour as float, or None if insufficient data
     """
-    if not history or len(history) < 2:
+    if not history or len(history) < CALLS_PER_HOUR_MIN_SAMPLES:
         return None
     try:
         first_ts = history[0].get("timestamp", "")
         last_ts = history[-1].get("timestamp", "")
-        first_dt = datetime.fromisoformat(first_ts.replace("Z", "+00:00"))
-        last_dt = datetime.fromisoformat(last_ts.replace("Z", "+00:00"))
+        first_dt = datetime.fromisoformat(first_ts)
+        last_dt = datetime.fromisoformat(last_ts)
         hours_span = (last_dt - first_dt).total_seconds() / 3600
         if hours_span <= 0:
             return None
@@ -1718,16 +1783,17 @@ def calculate_calls_per_hour(history: list) -> Optional[float]:
     except (ValueError, TypeError, AttributeError):
         return None
 
+
 # ============================================================================
 # Category A (Overlay & Schedule)
 # ============================================================================
 
 
 def calculate_overlay_duration_insight(
-    overlay_type: Optional[str] = None,
-    next_schedule_change: Optional[str] = None,
+    overlay_type: str | None = None,
+    next_schedule_change: str | None = None,
     zone_name: str = "",
-) -> Optional[Insight]:
+) -> Insight | None:
     """Detect permanent manual overlay that user may have forgotten.
 
     Triggers when overlayType is present but nextScheduleChange is null,
@@ -1761,12 +1827,12 @@ def calculate_overlay_duration_insight(
 
 
 def calculate_schedule_gap_insight(
-    schedule_blocks: Optional[list] = None,
-    current_temp: Optional[float] = None,
-    next_target_temp: Optional[float] = None,
-    longest_off_hours: Optional[float] = None,
+    schedule_blocks: list[Any] | None = None,
+    current_temp: float | None = None,
+    next_target_temp: float | None = None,
+    longest_off_hours: float | None = None,
     zone_name: str = "",
-) -> Optional[Insight]:
+) -> Insight | None:
     """Detect long OFF gaps in schedule while room is cold.
 
     Triggers when the schedule has a long continuous OFF period and the
@@ -1787,11 +1853,11 @@ def calculate_schedule_gap_insight(
         return None
     if next_target_temp is None or longest_off_hours is None:
         return None
-    if longest_off_hours < 6:
+    if longest_off_hours < SCHEDULE_GAP_MIN_OFF_HOURS:
         return None
 
     temp_deficit = next_target_temp - current_temp
-    if temp_deficit < 2.0:
+    if temp_deficit < SCHEDULE_GAP_MIN_DEFICIT:
         return None
 
     rec = (
@@ -1810,9 +1876,9 @@ def calculate_schedule_gap_insight(
 
 
 def calculate_frequent_override_insight(
-    overlay_type: Optional[str] = None,
+    overlay_type: str | None = None,
     zone_name: str = "",
-) -> Optional[Insight]:
+) -> Insight | None:
     """Suggest schedule review when manual override is active.
 
     Simple insight that triggers whenever an overlay is active,
@@ -1842,16 +1908,15 @@ def calculate_frequent_override_insight(
     )
 
 
-
 # ============================================================================
 # Category B (Home/Away Presence)
 # ============================================================================
 
 
 def calculate_away_heating_active_insight(
-    presence: Optional[str] = None,
-    active_zones: Optional[list] = None,
-) -> Optional[Insight]:
+    presence: str | None = None,
+    active_zones: list[Any] | None = None,
+) -> Insight | None:
     """Detect energy waste: home is AWAY but zones still heating/cooling.
 
     Args:
@@ -1874,10 +1939,7 @@ def calculate_away_heating_active_insight(
         zone_descs.append(f"{name} ({pct:.0f}%)")
 
     zones_str = ", ".join(zone_descs)
-    rec = (
-        f"Home is AWAY but {len(active_zones)} zone(s) still active: "
-        f"{zones_str} - check if this is intentional"
-    )
+    rec = f"Home is AWAY but {len(active_zones)} zone(s) still active: {zones_str} - check if this is intentional"
 
     return Insight(
         priority=InsightPriority.HIGH,
@@ -1888,12 +1950,12 @@ def calculate_away_heating_active_insight(
 
 
 def calculate_home_all_off_insight(
-    presence: Optional[str] = None,
-    all_zones_off: bool = True,
-    coldest_zone_name: Optional[str] = None,
-    coldest_zone_temp: Optional[float] = None,
-    coldest_zone_target: Optional[float] = None,
-) -> Optional[Insight]:
+    presence: str | None = None,
+    all_zones_off: bool = True,  # noqa: FBT001, FBT002 — public API, callers use positional
+    coldest_zone_name: str | None = None,
+    coldest_zone_temp: float | None = None,
+    coldest_zone_target: float | None = None,
+) -> Insight | None:
     """Detect when someone is home but all heating is off and rooms are cold.
 
     Args:
@@ -1914,7 +1976,7 @@ def calculate_home_all_off_insight(
         return None
 
     deficit = coldest_zone_target - coldest_zone_temp
-    if deficit < 2.0:
+    if deficit < HOME_COLD_MIN_DEFICIT:
         return None
 
     rec = (
@@ -1931,16 +1993,15 @@ def calculate_home_all_off_insight(
     )
 
 
-
 # ============================================================================
 # Category C (Weather & Outdoor)
 # ============================================================================
 
 
 def calculate_solar_gain_insight(
-    solar_intensity_pct: Optional[float] = None,
-    heating_zones_active: Optional[list] = None,
-) -> Optional[Insight]:
+    solar_intensity_pct: float | None = None,
+    heating_zones_active: list[Any] | None = None,
+) -> Insight | None:
     """Suggest leveraging solar gain when sun is strong and heating is active.
 
     Args:
@@ -1951,7 +2012,7 @@ def calculate_solar_gain_insight(
     Returns:
         Insight if solar gain opportunity exists, None otherwise
     """
-    if solar_intensity_pct is None or solar_intensity_pct < 60:
+    if solar_intensity_pct is None or solar_intensity_pct < SOLAR_INTENSITY_MIN_PCT:
         return None
     if not heating_zones_active:
         return None
@@ -1973,9 +2034,9 @@ def calculate_solar_gain_insight(
 
 
 def calculate_solar_ac_load_insight(
-    solar_intensity_pct: Optional[float] = None,
-    ac_zones_active: Optional[list] = None,
-) -> Optional[Insight]:
+    solar_intensity_pct: float | None = None,
+    ac_zones_active: list[Any] | None = None,
+) -> Insight | None:
     """Warn about solar load increasing AC demand.
 
     Args:
@@ -1985,7 +2046,7 @@ def calculate_solar_ac_load_insight(
     Returns:
         Insight if solar load is increasing AC demand, None otherwise
     """
-    if solar_intensity_pct is None or solar_intensity_pct < 60:
+    if solar_intensity_pct is None or solar_intensity_pct < SOLAR_INTENSITY_MIN_PCT:
         return None
     if not ac_zones_active:
         return None
@@ -2006,8 +2067,8 @@ def calculate_solar_ac_load_insight(
 
 
 def calculate_frost_risk_insight(
-    outdoor_temp: Optional[float] = None,
-) -> Optional[Insight]:
+    outdoor_temp: float | None = None,
+) -> Insight | None:
     """Warn about frost/pipe freezing risk when outdoor temp near freezing.
 
     Args:
@@ -2018,7 +2079,7 @@ def calculate_frost_risk_insight(
     """
     if outdoor_temp is None:
         return None
-    if outdoor_temp > 3.0:
+    if outdoor_temp > FROST_RISK_TEMP:
         return None
 
     if outdoor_temp <= 0:
@@ -2043,9 +2104,9 @@ def calculate_frost_risk_insight(
 
 
 def calculate_heating_season_advisory_insight(
-    current_avg_7d: Optional[float] = None,
-    previous_avg_7d: Optional[float] = None,
-) -> Optional[Insight]:
+    current_avg_7d: float | None = None,
+    previous_avg_7d: float | None = None,
+) -> Insight | None:
     """Advise on seasonal heating changes based on outdoor temp trends.
 
     Compares current 7-day average to previous 7-day average to detect
@@ -2062,7 +2123,7 @@ def calculate_heating_season_advisory_insight(
         return None
 
     diff = round(current_avg_7d - previous_avg_7d, 1)
-    if abs(diff) < 3.0:
+    if abs(diff) < HEATING_SEASON_MIN_DELTA:
         return None
 
     if diff > 0:
@@ -2086,18 +2147,17 @@ def calculate_heating_season_advisory_insight(
     )
 
 
-
 # ============================================================================
 # Category D (Heating/AC Efficiency)
 # ============================================================================
 
 
 def calculate_heating_off_cold_room_insight(
-    power_state: Optional[str] = None,
-    current_temp: Optional[float] = None,
-    target_temp: Optional[float] = None,
+    power_state: str | None = None,
+    current_temp: float | None = None,
+    target_temp: float | None = None,
     zone_name: str = "",
-) -> Optional[Insight]:
+) -> Insight | None:
     """Detect when heating is OFF but room has dropped significantly below target.
 
     Args:
@@ -2115,7 +2175,7 @@ def calculate_heating_off_cold_room_insight(
         return None
 
     deficit = target_temp - current_temp
-    if deficit < 3.0:
+    if deficit < HEATING_OFF_COLD_MIN_DEFICIT:
         return None
 
     rec = (
@@ -2133,10 +2193,10 @@ def calculate_heating_off_cold_room_insight(
 
 
 def calculate_boiler_flow_anomaly_insight(
-    flow_temp: Optional[float] = None,
-    heating_power_pct: Optional[float] = None,
+    flow_temp: float | None = None,
+    heating_power_pct: float | None = None,
     zone_name: str = "",
-) -> Optional[Insight]:
+) -> Insight | None:
     """Detect boiler flow temperature anomaly relative to heating demand.
 
     Triggers when flow temp is high but heating demand is low, or
@@ -2154,7 +2214,7 @@ def calculate_boiler_flow_anomaly_insight(
         return None
 
     # High flow temp but low demand
-    if flow_temp > 60 and heating_power_pct < 20:
+    if flow_temp > BOILER_FLOW_HIGH_TEMP and heating_power_pct < BOILER_FLOW_LOW_DEMAND:
         rec = (
             f"Boiler flow temp is {flow_temp:.0f}\u00b0C but heating demand "
             f"is only {heating_power_pct:.0f}% - flow temperature may be "
@@ -2164,11 +2224,11 @@ def calculate_boiler_flow_anomaly_insight(
             priority=InsightPriority.MEDIUM,
             recommendation=rec,
             insight_type="boiler_flow_anomaly",
-            zone_name=zone_name if zone_name else None,
+            zone_name=zone_name or None,
         )
 
     # Low flow temp but high demand
-    if flow_temp < 30 and heating_power_pct > 80:
+    if flow_temp < BOILER_FLOW_LOW_TEMP and heating_power_pct > BOILER_FLOW_HIGH_DEMAND:
         rec = (
             f"Boiler flow temp is only {flow_temp:.0f}\u00b0C but heating "
             f"demand is {heating_power_pct:.0f}% - boiler may not be "
@@ -2178,17 +2238,17 @@ def calculate_boiler_flow_anomaly_insight(
             priority=InsightPriority.HIGH,
             recommendation=rec,
             insight_type="boiler_flow_anomaly",
-            zone_name=zone_name if zone_name else None,
+            zone_name=zone_name or None,
         )
 
     return None
 
 
 def calculate_early_start_disabled_insight(
-    early_start_enabled: bool = True,
-    preheat_time_minutes: Optional[float] = None,
+    early_start_enabled: bool = True,  # noqa: FBT001, FBT002 — public API
+    preheat_time_minutes: float | None = None,
     zone_name: str = "",
-) -> Optional[Insight]:
+) -> Insight | None:
     """Suggest enabling Early Start when preheat time is long.
 
     Args:
@@ -2201,7 +2261,7 @@ def calculate_early_start_disabled_insight(
     """
     if early_start_enabled:
         return None
-    if preheat_time_minutes is None or preheat_time_minutes < 30:
+    if preheat_time_minutes is None or preheat_time_minutes < PREHEAT_LONG_MINUTES:
         return None
 
     rec = (
@@ -2219,11 +2279,11 @@ def calculate_early_start_disabled_insight(
 
 
 def calculate_poor_thermal_efficiency_insight(
-    thermal_inertia: Optional[float] = None,
-    heating_rate: Optional[float] = None,
-    confidence_score: Optional[float] = None,
+    thermal_inertia: float | None = None,
+    heating_rate: float | None = None,
+    confidence_score: float | None = None,
     zone_name: str = "",
-) -> Optional[Insight]:
+) -> Insight | None:
     """Detect poor thermal efficiency from Thermal Analytics data.
 
     Triggers when thermal inertia is high or heating rate is very low,
@@ -2238,26 +2298,23 @@ def calculate_poor_thermal_efficiency_insight(
     Returns:
         Insight if poor efficiency detected, None otherwise
     """
-    if confidence_score is not None and confidence_score < 0.5:
+    if confidence_score is not None and confidence_score < THERMAL_EFFICIENCY_MIN_CONFIDENCE:
         return None
 
     if thermal_inertia is None and heating_rate is None:
         return None
 
     issues = []
-    if thermal_inertia is not None and thermal_inertia > 60:
+    if thermal_inertia is not None and thermal_inertia > THERMAL_INERTIA_HIGH_MINUTES:
         issues.append(f"thermal inertia is {thermal_inertia:.0f} min (high)")
-    if heating_rate is not None and heating_rate < 0.5:
+    if heating_rate is not None and heating_rate < HEATING_RATE_SLOW:
         issues.append(f"heating rate is {heating_rate:.2f}\u00b0C/h (slow)")
 
     if not issues:
         return None
 
     issues_str = " and ".join(issues)
-    rec = (
-        f"{zone_name}: {issues_str} - check insulation, "
-        f"radiator sizing, or TRV operation"
-    )
+    rec = f"{zone_name}: {issues_str} - check insulation, radiator sizing, or TRV operation"
 
     return Insight(
         priority=InsightPriority.MEDIUM,
@@ -2267,15 +2324,14 @@ def calculate_poor_thermal_efficiency_insight(
     )
 
 
-
 # ============================================================================
 # Category E (Cross-Zone)
 # ============================================================================
 
 
 def aggregate_cross_zone_condensation(
-    zone_condensation_states: dict,
-) -> Optional[Insight]:
+    zone_condensation_states: dict[str, Any],
+) -> Insight | None:
     """Aggregate condensation risk across zones.
 
     Triggers when 3+ zones have condensation risk, suggesting a
@@ -2291,11 +2347,12 @@ def aggregate_cross_zone_condensation(
         return None
 
     affected = [
-        name for name, level in zone_condensation_states.items()
+        name
+        for name, level in zone_condensation_states.items()
         if level not in ("unavailable", "unknown", "None", "Low", None)
     ]
 
-    if len(affected) < 3:
+    if len(affected) < CROSS_ZONE_CONDENSATION_MIN_ZONES:
         return None
 
     zones_str = ", ".join(affected[:5])
@@ -2314,8 +2371,8 @@ def aggregate_cross_zone_condensation(
 
 
 def calculate_cross_zone_efficiency_insight(
-    zone_heating_rates: dict,
-) -> Optional[Insight]:
+    zone_heating_rates: dict[str, Any],
+) -> Insight | None:
     """Compare heating efficiency across zones.
 
     Triggers when one zone heats significantly slower than the average.
@@ -2326,7 +2383,7 @@ def calculate_cross_zone_efficiency_insight(
     Returns:
         Insight if significant efficiency difference found, None otherwise
     """
-    if not zone_heating_rates or len(zone_heating_rates) < 2:
+    if not zone_heating_rates or len(zone_heating_rates) < CROSS_ZONE_EFFICIENCY_MIN_ZONES:
         return None
 
     rates = list(zone_heating_rates.values())
@@ -2335,7 +2392,7 @@ def calculate_cross_zone_efficiency_insight(
         return None
 
     # Find the slowest zone
-    slowest_zone = min(zone_heating_rates, key=zone_heating_rates.get)
+    slowest_zone = min(zone_heating_rates, key=zone_heating_rates.get)  # type: ignore[arg-type]
     slowest_rate = zone_heating_rates[slowest_zone]
 
     # Trigger if slowest is less than half the average
@@ -2357,8 +2414,8 @@ def calculate_cross_zone_efficiency_insight(
 
 
 def calculate_temperature_imbalance_insight(
-    zone_temperatures: dict,
-) -> Optional[Insight]:
+    zone_temperatures: dict[str, Any],
+) -> Insight | None:
     """Detect large temperature differences between active zones.
 
     Args:
@@ -2368,16 +2425,16 @@ def calculate_temperature_imbalance_insight(
     Returns:
         Insight if significant imbalance found, None otherwise
     """
-    if not zone_temperatures or len(zone_temperatures) < 2:
+    if not zone_temperatures or len(zone_temperatures) < CROSS_ZONE_EFFICIENCY_MIN_ZONES:
         return None
 
-    warmest_zone = max(zone_temperatures, key=zone_temperatures.get)
-    coldest_zone = min(zone_temperatures, key=zone_temperatures.get)
+    warmest_zone = max(zone_temperatures, key=zone_temperatures.get)  # type: ignore[arg-type]
+    coldest_zone = min(zone_temperatures, key=zone_temperatures.get)  # type: ignore[arg-type]
     warmest_temp = zone_temperatures[warmest_zone]
     coldest_temp = zone_temperatures[coldest_zone]
 
     diff = warmest_temp - coldest_temp
-    if diff < 4.0:
+    if diff < TEMP_IMBALANCE_MIN_DIFF:
         return None
 
     rec = (
@@ -2395,8 +2452,8 @@ def calculate_temperature_imbalance_insight(
 
 
 def calculate_humidity_imbalance_insight(
-    zone_humidities: dict,
-) -> Optional[Insight]:
+    zone_humidities: dict[str, Any],
+) -> Insight | None:
     """Detect when one zone has significantly higher humidity than others.
 
     Args:
@@ -2405,18 +2462,18 @@ def calculate_humidity_imbalance_insight(
     Returns:
         Insight if significant humidity imbalance found, None otherwise
     """
-    if not zone_humidities or len(zone_humidities) < 2:
+    if not zone_humidities or len(zone_humidities) < CROSS_ZONE_EFFICIENCY_MIN_ZONES:
         return None
 
     values = list(zone_humidities.values())
     avg_humidity = sum(values) / len(values)
 
     # Find the most humid zone
-    most_humid_zone = max(zone_humidities, key=zone_humidities.get)
+    most_humid_zone = max(zone_humidities, key=zone_humidities.get)  # type: ignore[arg-type]
     most_humid_val = zone_humidities[most_humid_zone]
 
     excess = most_humid_val - avg_humidity
-    if excess < 15:
+    if excess < HUMIDITY_IMBALANCE_MIN_EXCESS:
         return None
 
     rec = (
@@ -2433,17 +2490,16 @@ def calculate_humidity_imbalance_insight(
     )
 
 
-
 # ============================================================================
 # Category F (Environment Trends)
 # ============================================================================
 
 
 def calculate_humidity_trend_insight(
-    current_humidity: Optional[float] = None,
-    humidity_history: Optional[list] = None,
+    current_humidity: float | None = None,
+    humidity_history: list[Any] | None = None,
     zone_name: str = "",
-) -> Optional[Insight]:
+) -> Insight | None:
     """Detect rising humidity trend in a zone.
 
     Compares current humidity to the average of recent history to detect
@@ -2459,12 +2515,12 @@ def calculate_humidity_trend_insight(
     """
     if current_humidity is None or not humidity_history:
         return None
-    if len(humidity_history) < 6:
+    if len(humidity_history) < HUMIDITY_TREND_MIN_SAMPLES:
         return None
 
     avg_history = sum(humidity_history) / len(humidity_history)
     rise = current_humidity - avg_history
-    if rise < 10:
+    if rise < HUMIDITY_TREND_MIN_RISE:
         return None
 
     rec = (
@@ -2487,10 +2543,10 @@ def calculate_humidity_trend_insight(
 
 
 def calculate_device_limitation_insight(
-    has_humidity_sensor: bool = True,
-    has_temperature_sensor: bool = True,
+    has_humidity_sensor: bool = True,  # noqa: FBT001, FBT002 — public API
+    has_temperature_sensor: bool = True,  # noqa: FBT001, FBT002 — public API
     zone_name: str = "",
-) -> Optional[Insight]:
+) -> Insight | None:
     """Inform user when a zone device lacks expected sensors.
 
     Args:
@@ -2511,10 +2567,7 @@ def calculate_device_limitation_insight(
         missing.append("temperature")
 
     missing_str = " and ".join(missing)
-    rec = (
-        f"{zone_name}: Device has no {missing_str} sensor "
-        f"- some insights (mold risk, comfort) may not be available"
-    )
+    rec = f"{zone_name}: Device has no {missing_str} sensor - some insights (mold risk, comfort) may not be available"
 
     return Insight(
         priority=InsightPriority.LOW,
@@ -2525,8 +2578,8 @@ def calculate_device_limitation_insight(
 
 
 def calculate_geofencing_device_offline_insight(
-    devices: Optional[list] = None,
-) -> Optional[Insight]:
+    devices: list[Any] | None = None,
+) -> Insight | None:
     """Detect when a geofencing mobile device has location tracking disabled.
 
     Args:
@@ -2538,20 +2591,13 @@ def calculate_geofencing_device_offline_insight(
     if not devices:
         return None
 
-    offline_devices = [
-        d.get("name", "Unknown")
-        for d in devices
-        if not d.get("location_enabled", True)
-    ]
+    offline_devices = [d.get("name", "Unknown") for d in devices if not d.get("location_enabled", True)]
 
     if not offline_devices:
         return None
 
     devices_str = ", ".join(offline_devices[:3])
-    rec = (
-        f"Geofencing device(s) with location disabled: {devices_str} "
-        f"- home/away detection may be inaccurate"
-    )
+    rec = f"Geofencing device(s) with location disabled: {devices_str} - home/away detection may be inaccurate"
 
     return Insight(
         priority=InsightPriority.MEDIUM,
@@ -2562,9 +2608,9 @@ def calculate_geofencing_device_offline_insight(
 
 
 def calculate_api_usage_spike_insight(
-    current_hour_calls: Optional[int] = None,
-    avg_calls_per_hour: Optional[float] = None,
-) -> Optional[Insight]:
+    current_hour_calls: int | None = None,
+    avg_calls_per_hour: float | None = None,
+) -> Insight | None:
     """Detect abnormal API usage spikes.
 
     Triggers when current hour's calls significantly exceed the average.
@@ -2582,7 +2628,7 @@ def calculate_api_usage_spike_insight(
         return None
 
     ratio = current_hour_calls / avg_calls_per_hour
-    if ratio < 2.0:
+    if ratio < API_USAGE_SPIKE_RATIO:
         return None
 
     rec = (
@@ -2597,4 +2643,3 @@ def calculate_api_usage_spike_insight(
         insight_type="api_usage_spike",
         zone_name=None,
     )
-

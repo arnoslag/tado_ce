@@ -1,25 +1,2 @@
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.pyc
-.venv/
-
-# Environment variables (contains tokens!)
-.env
-
-# User data (contains tokens!)
-custom_components/tado_ce/data/
-
-# Backups
-*.backup
-*.bak*
-
-# Dev tooling config (stays in root for tool compatibility)
-pyproject.toml
-
-# Ruff cache
-.ruff_cache/
-
-# Internal documentation (private - not synced to GitHub)
-DEV/
+# Project-specific ignores are handled by ~/.gitignore_global
+# This file is intentionally minimal — add only repo-specific overrides here.

@@ -1,15 +1,14 @@
-"""Immediate Refresh Handler for Tado CE integration.
+"""Tado CE Immediate Refresh Handler — per-entity rate limiting and debounce.
 
-Handles immediate data refresh after user-initiated state changes.
-Uses coordinator.async_request_refresh() instead of direct API sync + dispatcher.
-Per-entry RefreshHandler stored on coordinator.refresh_handler.
+Per-entity rate limiting and debounce for user-initiated state changes.
 """
+
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime
 import logging
-from datetime import datetime
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from .coordinator import TadoDataUpdateCoordinator
@@ -18,10 +17,10 @@ _LOGGER = logging.getLogger(__name__)
 
 # Entity types that should trigger immediate refresh
 REFRESH_ENTITY_TYPES = {
-    "climate",      # Temperature and HVAC mode changes
-    "switch",       # Switch toggles
-    "water_heater", # Hot water state changes
-    "select"        # Presence mode changes
+    "climate",  # Temperature and HVAC mode changes
+    "switch",  # Switch toggles
+    "water_heater",  # Hot water state changes
+    "select",  # Presence mode changes
 }
 
 # Rate limiting thresholds
@@ -38,7 +37,7 @@ class RefreshHandler:
     handles entity update propagation automatically.
     """
 
-    def __init__(self, coordinator: TadoDataUpdateCoordinator):
+    def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
         """Initialize immediate refresh handler.
 
         Args:
@@ -47,10 +46,10 @@ class RefreshHandler:
         """
         self._coordinator = coordinator
         self.hass = coordinator.hass
-        # CRITICAL FIX: Per-entity rate limiting instead of global only
+        # Per-entity rate limiting
         self._last_refresh_per_entity: dict[str, datetime] = {}
-        self._global_last_refresh: Optional[datetime] = None
-        self._min_global_interval = 2  # Reduced from 10s to allow multi-zone updates
+        self._global_last_refresh: datetime | None = None
+        self._min_global_interval = 2
         self._min_per_entity_interval = 2  # Per-entity minimum (seconds)
         self._consecutive_failures = 0
         self._max_backoff_interval = 300  # Max 5 minutes backoff
@@ -58,8 +57,9 @@ class RefreshHandler:
         # Debounce mechanism for batch updates
         self._pending_refresh: bool = False
         self._pending_home_state_refresh: bool = False  # Track if home state refresh needed
-        self._debounce_task: Optional[object] = None
-        self._debounce_delay = 15.0  # Default 15 seconds (was 1s), configurable via options
+        self._debounce_task: object | None = None
+        self._debounce_delay = 15.0  # Configurable via options
+
     def _get_debounce_delay(self) -> float:
         """Get debounce delay from config or use default.
 
@@ -72,7 +72,7 @@ class RefreshHandler:
             _LOGGER.debug("Could not get debounce config, using default: %s", e)
         return self._debounce_delay
 
-    async def _get_rate_limit_info(self) -> dict:
+    async def _get_rate_limit_info(self) -> dict[str, Any]:
         """Get current rate limit information.
 
         Direct coordinator.data_loader access.
@@ -81,9 +81,12 @@ class RefreshHandler:
             Dictionary with rate limit info, or empty dict if unavailable
         """
         try:
-            return await self.hass.async_add_executor_job(
-                self._coordinator.data_loader.load_ratelimit_file
-            ) or {}
+            return (
+                await self.hass.async_add_executor_job(
+                    self._coordinator.data_loader.load_ratelimit_file,
+                )
+                or {}
+            )
         except Exception as e:
             _LOGGER.debug("Failed to read rate limit file: %s", e)
         return {}
@@ -123,7 +126,9 @@ class RefreshHandler:
             if percentage_used >= QUOTA_WARNING_THRESHOLD:
                 _LOGGER.warning(
                     "API quota warning: %s%% used (%s/%s remaining)",
-                    int(percentage_used * 100), remaining, limit
+                    int(percentage_used * 100),
+                    remaining,
+                    limit,
                 )
 
         return True, "ok"
@@ -138,8 +143,8 @@ class RefreshHandler:
             return self._min_global_interval
 
         # Exponential backoff: 10s, 20s, 40s, 80s, 160s, 300s (max)
-        backoff = self._min_global_interval * (2 ** self._consecutive_failures)
-        return min(backoff, self._max_backoff_interval)
+        backoff = self._min_global_interval * (2**self._consecutive_failures)
+        return min(backoff, self._max_backoff_interval)  # type: ignore[no-any-return]
 
     def should_refresh(self, entity_id: str) -> bool:
         """Check if entity type should trigger immediate refresh.
@@ -150,7 +155,7 @@ class RefreshHandler:
         Returns:
             True if entity type should trigger refresh
         """
-        domain = entity_id.split(".")[0]
+        domain = entity_id.split(".", maxsplit=1)[0]
         return domain in REFRESH_ENTITY_TYPES
 
     def can_refresh_now(self, entity_id: str) -> bool:
@@ -166,7 +171,7 @@ class RefreshHandler:
         Returns:
             True if refresh is allowed now
         """
-        now = datetime.now()
+        now = datetime.now(UTC)
 
         # Check global rate limit (prevents API spam)
         if self._global_last_refresh:
@@ -175,7 +180,8 @@ class RefreshHandler:
             if global_elapsed < required_global:
                 _LOGGER.debug(
                     "Global backoff active: %ss remaining (failures: %s)",
-                    int(required_global - global_elapsed), self._consecutive_failures
+                    int(required_global - global_elapsed),
+                    self._consecutive_failures,
                 )
                 return False
 
@@ -185,17 +191,21 @@ class RefreshHandler:
             if entity_elapsed < self._min_per_entity_interval:
                 _LOGGER.debug(
                     "Entity %s backoff active: %ss remaining",
-                    entity_id, int(self._min_per_entity_interval - entity_elapsed)
+                    entity_id,
+                    int(self._min_per_entity_interval - entity_elapsed),
                 )
                 return False
 
         return True
 
     async def trigger_refresh(
-        self, entity_id: str, reason: str = "state_change",
-        force: bool = False, skip_debounce: bool = False,
+        self,
+        entity_id: str,
+        reason: str = "state_change",
+        force: bool = False,
+        skip_debounce: bool = False,
         include_home_state: bool = False,
-    ):
+    ) -> None:
         """Trigger immediate refresh for an entity.
 
         Uses debouncing to batch multiple rapid changes into a single refresh.
@@ -216,7 +226,8 @@ class RefreshHandler:
         if not can_refresh:
             _LOGGER.debug(
                 "Skipping immediate refresh for %s: %s. Will rely on normal polling.",
-                entity_id, quota_reason
+                entity_id,
+                quota_reason,
             )
             return
 
@@ -224,18 +235,18 @@ class RefreshHandler:
 
         # Cancel existing debounce task if any
         if self._debounce_task is not None:
-            self._debounce_task.cancel()
+            self._debounce_task.cancel()  # type: ignore[attr-defined]
             self._debounce_task = None
 
         # Mark refresh as pending
         self._pending_refresh = True
-        self._last_refresh_per_entity[entity_id] = datetime.now()
+        self._last_refresh_per_entity[entity_id] = datetime.now(UTC)
 
         # Track if home state refresh is needed
         self._pending_home_state_refresh = include_home_state
 
         # Schedule debounced refresh
-        async def _debounced_refresh():
+        async def _debounced_refresh() -> None:
             # Skip debounce delay if requested (for buttons like Resume All Schedules)
             if not skip_debounce:
                 delay = self._get_debounce_delay()
@@ -247,7 +258,7 @@ class RefreshHandler:
             self._pending_refresh = False
 
             # Check global rate limit
-            now = datetime.now()
+            now = datetime.now(UTC)
             if self._global_last_refresh:
                 global_elapsed = (now - self._global_last_refresh).total_seconds()
                 required_global = self._get_backoff_interval()
@@ -267,7 +278,7 @@ class RefreshHandler:
                 # For immediate presence changes, the coordinator's full sync covers it.
                 await self._coordinator.async_request_refresh()
 
-                self._global_last_refresh = datetime.now()
+                self._global_last_refresh = datetime.now(UTC)
 
                 if self._consecutive_failures > 0:
                     _LOGGER.info("Immediate refresh recovered after %s failures", self._consecutive_failures)
@@ -275,11 +286,12 @@ class RefreshHandler:
 
                 _LOGGER.debug("Immediate refresh completed via coordinator")
 
-            except Exception as e:
+            except Exception:
                 self._consecutive_failures += 1
-                _LOGGER.error(
-                    "Immediate refresh failed (attempt %s): %s. Next backoff: %ss",
-                    self._consecutive_failures, e, self._get_backoff_interval()
+                _LOGGER.exception(
+                    "Immediate refresh failed (attempt %s). Next backoff: %ss",
+                    self._consecutive_failures,
+                    self._get_backoff_interval(),
                 )
 
         self._debounce_task = asyncio.create_task(_debounced_refresh())

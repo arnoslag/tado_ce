@@ -1,11 +1,18 @@
 """Tado CE Smart Comfort Sensors — schedule deviation, preheat advisor, etc."""
+
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.sensor import SensorStateClass
 from homeassistant.core import callback
 
+from .calculations import (
+    calculate_ashrae_comfort_temp,
+    calculate_seasonal_comfort_target,
+    estimate_cooling_crossover,
+)
 from .format_helpers import (
     format_comfort_model as _format_comfort_model,
 )
@@ -21,9 +28,18 @@ from .insights import (
 from .sensor_helpers import get_outdoor_temperature as _get_outdoor_temp
 from .sensor_zone import TadoZoneSensor
 
+if TYPE_CHECKING:
+    from datetime import datetime
+
+    from .coordinator import TadoDataUpdateCoordinator
+    from .smart_comfort import NextScheduleBlock
+
 _LOGGER = logging.getLogger(__name__)
 
+
 class TadoScheduleDeviationSensor(TadoZoneSensor):
+    """Represent a Tado schedule deviation sensor."""
+
     _attr_has_entity_name = True
 
     """Historical temperature comparison sensor.
@@ -34,9 +50,12 @@ class TadoScheduleDeviationSensor(TadoZoneSensor):
     State: Difference from historical average (e.g., "+1.2" or "-0.8")
     """
 
-    def __init__(self, coordinator, zone_id: str, zone_name: str, zone_type: str = "HEATING"):
+    def __init__(
+        self, coordinator: TadoDataUpdateCoordinator, zone_id: str, zone_name: str, zone_type: str = "HEATING",
+    ) -> None:
+        """Initialize the Schedule Deviation Sensor."""
         super().__init__(coordinator, zone_id, zone_name, zone_type)
-        self._attr_name = "[CE] Schedule Deviation"
+        self._attr_translation_key = "schedule_deviation"
         self._attr_unique_id = f"tado_ce_{coordinator.home_id}_zone_{zone_id}_schedule_deviation"
         self._attr_native_unit_of_measurement = "°C"
         self._attr_icon = "mdi:chart-timeline-variant"
@@ -47,32 +66,39 @@ class TadoScheduleDeviationSensor(TadoZoneSensor):
         self._historical_avg: float | None = None
         self._sample_count: int = 0
         self._summary: str = ""
-        self._recommendation: str = ""  # Actionable recommendation
+        self._recommendation: str = ""
 
     @property
-    def extra_state_attributes(self):
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return extra state attributes."""
         return {
             "current_temperature": self._current_temp,
             "historical_average": self._historical_avg,
             "sample_count": self._sample_count,
             "summary": self._summary,
             "zone_type": _format_zone_type(self._zone_type),
-            "recommendation": self._recommendation,  # Actionable recommendation
+            "recommendation": self._recommendation,
         }
 
     @property
-    def icon(self):
+    def icon(self) -> str | None:
         """Dynamic icon based on comparison."""
         if self._attr_native_value is None:
             return "mdi:chart-timeline-variant"
-        elif self._attr_native_value > 0.5:
+        if self._attr_native_value > 0.5:  # type: ignore[operator]
             return "mdi:thermometer-chevron-up"
-        elif self._attr_native_value < -0.5:
+        if self._attr_native_value < -0.5:  # type: ignore[operator]
             return "mdi:thermometer-chevron-down"
         return "mdi:thermometer-check"
 
     @callback
-    def update(self):
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        self.update()
+        self.async_write_ha_state()
+
+    @callback
+    def update(self) -> None:
         """Update historical comparison from SmartComfortManager."""
         try:
             manager = self.coordinator.smart_comfort_manager if self.hass else None
@@ -81,14 +107,13 @@ class TadoScheduleDeviationSensor(TadoZoneSensor):
                 self._attr_available = False
                 return
 
-            # Get current temperature from zone data
             zone_data = self._get_zone_data()
             if not zone_data:
                 self._attr_available = False
                 return
 
-            sensor_data = zone_data.get('sensorDataPoints') or {}
-            self._current_temp = (sensor_data.get('insideTemperature') or {}).get('celsius')
+            sensor_data = zone_data.get("sensorDataPoints") or {}
+            self._current_temp = (sensor_data.get("insideTemperature") or {}).get("celsius")
 
             if self._current_temp is None:
                 self._attr_available = False
@@ -97,7 +122,7 @@ class TadoScheduleDeviationSensor(TadoZoneSensor):
             # Get historical comparison
             comparison = manager.get_historical_comparison(
                 self._zone_id,
-                self._current_temp
+                self._current_temp,
             )
 
             if comparison is None:
@@ -113,13 +138,12 @@ class TadoScheduleDeviationSensor(TadoZoneSensor):
             self._sample_count = comparison.sample_count
             self._summary = comparison.to_summary()
 
-            # Calculate SMART actionable recommendation
             self._recommendation = calculate_historical_deviation_recommendation(
                 deviation=comparison.difference,
                 zone_name=self._zone_name,
                 current_temp=self._current_temp,
                 historical_avg=comparison.historical_avg,
-                sample_count=comparison.sample_count
+                sample_count=comparison.sample_count,
             )
 
             self._attr_available = True
@@ -130,6 +154,8 @@ class TadoScheduleDeviationSensor(TadoZoneSensor):
 
 
 class TadoNextScheduleTimeSensor(TadoZoneSensor):
+    """Represent a Tado next schedule change time sensor."""
+
     _attr_has_entity_name = True
 
     """Next schedule time sensor.
@@ -139,9 +165,12 @@ class TadoNextScheduleTimeSensor(TadoZoneSensor):
     State: Next schedule time (e.g., "17:00" or "Tomorrow 07:00")
     """
 
-    def __init__(self, coordinator, zone_id: str, zone_name: str, zone_type: str = "HEATING"):
+    def __init__(
+        self, coordinator: TadoDataUpdateCoordinator, zone_id: str, zone_name: str, zone_type: str = "HEATING",
+    ) -> None:
+        """Initialize the Next Schedule Time Sensor."""
         super().__init__(coordinator, zone_id, zone_name, zone_type)
-        self._attr_name = "[CE] Next Schedule"
+        self._attr_translation_key = "next_schedule"
         self._attr_unique_id = f"tado_ce_{coordinator.home_id}_zone_{zone_id}_next_schedule"
         self._attr_icon = "mdi:calendar-clock"
 
@@ -152,7 +181,8 @@ class TadoNextScheduleTimeSensor(TadoZoneSensor):
         self._minutes_until: int | None = None
 
     @property
-    def extra_state_attributes(self):
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return extra state attributes."""
         return {
             "next_temperature": self._next_temp,
             "is_heating_on": self._is_heating_on,
@@ -162,11 +192,15 @@ class TadoNextScheduleTimeSensor(TadoZoneSensor):
         }
 
     @callback
-    def update(self):
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        self.update()
+        self.async_write_ha_state()
+
+    @callback
+    def update(self) -> None:
         """Update next schedule time from schedule data."""
         try:
-            from datetime import datetime
-
             from .smart_comfort import get_next_schedule_change
 
             _dl = self.coordinator.data_loader
@@ -181,7 +215,9 @@ class TadoNextScheduleTimeSensor(TadoZoneSensor):
                 self._minutes_until = None
                 return
 
-            now = datetime.now()
+            from homeassistant.util import dt as dt_util
+
+            now = dt_util.now()
             self._is_tomorrow = next_block.start_time.date() > now.date()
             self._is_heating_on = next_block.is_heating_on
             self._next_temp = next_block.target_temp
@@ -205,6 +241,8 @@ class TadoNextScheduleTimeSensor(TadoZoneSensor):
 
 
 class TadoNextScheduleTempSensor(TadoZoneSensor):
+    """Represent a Tado next schedule target temperature sensor."""
+
     _attr_has_entity_name = True
 
     """Next schedule target temperature sensor.
@@ -214,9 +252,12 @@ class TadoNextScheduleTempSensor(TadoZoneSensor):
     State: Target temperature (°C) or "OFF"
     """
 
-    def __init__(self, coordinator, zone_id: str, zone_name: str, zone_type: str = "HEATING"):
+    def __init__(
+        self, coordinator: TadoDataUpdateCoordinator, zone_id: str, zone_name: str, zone_type: str = "HEATING",
+    ) -> None:
+        """Initialize the Next Schedule Temp Sensor."""
         super().__init__(coordinator, zone_id, zone_name, zone_type)
-        self._attr_name = "[CE] Next Sched Temp"
+        self._attr_translation_key = "next_sched_temp"
         self._attr_unique_id = f"tado_ce_{coordinator.home_id}_zone_{zone_id}_next_sched_temp"
         # No unit_of_measurement so we can show "OFF" as state
         self._attr_icon = "mdi:thermometer-chevron-up"
@@ -228,7 +269,8 @@ class TadoNextScheduleTempSensor(TadoZoneSensor):
         self._temp_diff: float | None = None
 
     @property
-    def extra_state_attributes(self):
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return extra state attributes."""
         attrs = {
             "schedule_time": self._schedule_time,
             "is_heating_on": self._is_heating_on,
@@ -242,19 +284,25 @@ class TadoNextScheduleTempSensor(TadoZoneSensor):
         return attrs
 
     @property
-    def icon(self):
+    def icon(self) -> str | None:
         """Dynamic icon based on heating direction."""
         if self._temp_diff is not None:
             if self._temp_diff > 0:
                 return "mdi:thermometer-chevron-up"
-            elif self._temp_diff < 0:
+            if self._temp_diff < 0:
                 return "mdi:thermometer-chevron-down"
         if not self._is_heating_on:
             return "mdi:thermometer-off"
         return "mdi:thermometer"
 
     @callback
-    def update(self):
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        self.update()
+        self.async_write_ha_state()
+
+    @callback
+    def update(self) -> None:
         """Update next schedule temperature from schedule data."""
         try:
             from .smart_comfort import get_next_schedule_change
@@ -274,11 +322,10 @@ class TadoNextScheduleTempSensor(TadoZoneSensor):
             self._is_heating_on = next_block.is_heating_on
             self._schedule_time = next_block.start_time.strftime("%H:%M")
 
-            # Get current temperature
             zone_data = self._get_zone_data()
             if zone_data:
-                sensor_data = zone_data.get('sensorDataPoints') or {}
-                self._current_temp = (sensor_data.get('insideTemperature') or {}).get('celsius')
+                sensor_data = zone_data.get("sensorDataPoints") or {}
+                self._current_temp = (sensor_data.get("insideTemperature") or {}).get("celsius")
 
             if not next_block.is_heating_on or next_block.target_temp is None:
                 # Heating OFF block - show "OFF" instead of unknown
@@ -303,6 +350,8 @@ class TadoNextScheduleTempSensor(TadoZoneSensor):
 
 
 class TadoPreheatAdvisorSensor(TadoZoneSensor):
+    """Represent a Tado preheat advisor sensor."""
+
     _attr_has_entity_name = True
 
     """Preheat timing advisor sensor.
@@ -313,9 +362,12 @@ class TadoPreheatAdvisorSensor(TadoZoneSensor):
     State: Recommended start time (e.g., "06:15")
     """
 
-    def __init__(self, coordinator, zone_id: str, zone_name: str, zone_type: str = "HEATING"):
+    def __init__(
+        self, coordinator: TadoDataUpdateCoordinator, zone_id: str, zone_name: str, zone_type: str = "HEATING",
+    ) -> None:
+        """Initialize the Preheat Advisor Sensor."""
         super().__init__(coordinator, zone_id, zone_name, zone_type)
-        self._attr_name = "[CE] Preheat Advisor"
+        self._attr_translation_key = "preheat_advisor"
         self._attr_unique_id = f"tado_ce_{coordinator.home_id}_zone_{zone_id}_preheat_advisor"
         self._attr_icon = "mdi:clock-start"
 
@@ -327,9 +379,14 @@ class TadoPreheatAdvisorSensor(TadoZoneSensor):
         self._heating_rate: float | None = None
         self._confidence: str = "unknown"
         self._summary: str = ""
+        self._is_tomorrow: bool = False
+        self._cooling_rate: float | None = None
+        self._predicted_crossover_time: str | None = None
+        self._is_cooling_prediction: bool = False
 
     @property
-    def extra_state_attributes(self):
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return extra state attributes."""
         return {
             "current_temperature": self._current_temp,
             "target_temperature": self._target_temp,
@@ -337,27 +394,37 @@ class TadoPreheatAdvisorSensor(TadoZoneSensor):
             "duration_minutes": self._duration_minutes,
             "heating_rate": self._heating_rate,
             "confidence": _format_confidence(self._confidence),
+            "is_tomorrow": self._is_tomorrow,
             "summary": self._summary,
+            "cooling_rate": self._cooling_rate,
+            "predicted_crossover_time": self._predicted_crossover_time,
+            "is_cooling_prediction": self._is_cooling_prediction,
             "zone_type": _format_zone_type(self._zone_type),
         }
 
     @property
-    def icon(self):
+    def icon(self) -> str | None:
         """Dynamic icon based on confidence."""
         if self._confidence == "high":
             return "mdi:clock-check"
-        elif self._confidence == "medium":
+        if self._confidence == "medium":
             return "mdi:clock-alert"
-        elif self._confidence == "low":
+        if self._confidence == "low":
             return "mdi:clock-outline"
-        elif self._confidence == "no_schedule":
+        if self._confidence == "no_schedule":
             return "mdi:calendar-remove"
-        elif self._confidence == "insufficient_data":
+        if self._confidence == "insufficient_data":
             return "mdi:database-off"
         return "mdi:clock-start"
 
     @callback
-    def update(self):
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        self.update()
+        self.async_write_ha_state()
+
+    @callback
+    def update(self) -> None:
         """Update preheat advice based on schedule and heating rate.
 
         Logic:
@@ -367,6 +434,8 @@ class TadoPreheatAdvisorSensor(TadoZoneSensor):
         4. If no schedule or heating OFF, show appropriate status
         """
         try:
+            from homeassistant.util import dt as dt_util
+
             from .smart_comfort import get_next_schedule_change
 
             manager = self.coordinator.smart_comfort_manager if self.hass else None
@@ -375,14 +444,13 @@ class TadoPreheatAdvisorSensor(TadoZoneSensor):
                 self._attr_available = False
                 return
 
-            # Get current temperature from zone data
             zone_data = self._get_zone_data()
             if not zone_data:
                 self._attr_available = False
                 return
 
-            sensor_data = zone_data.get('sensorDataPoints') or {}
-            self._current_temp = (sensor_data.get('insideTemperature') or {}).get('celsius')
+            sensor_data = zone_data.get("sensorDataPoints") or {}
+            self._current_temp = (sensor_data.get("insideTemperature") or {}).get("celsius")
 
             if self._current_temp is None:
                 self._attr_available = False
@@ -402,32 +470,122 @@ class TadoPreheatAdvisorSensor(TadoZoneSensor):
                 self._heating_rate = None
                 self._confidence = "no_schedule"
                 self._summary = "No upcoming schedule changes today"
+                self._cooling_rate = None
+                self._predicted_crossover_time = None
+                self._is_cooling_prediction = False
                 return
 
             # Check if next block has heating ON
             if not next_block.is_heating_on or next_block.target_temp is None:
                 # Next block is heating OFF
+                now = dt_util.now()
+                self._is_tomorrow = next_block.start_time.date() > now.date()
+                time_str = next_block.start_time.strftime("%H:%M")
                 self._attr_native_value = "Heating OFF"
                 self._attr_available = True
                 self._target_temp = None
-                self._target_time = next_block.start_time.strftime("%H:%M")
+                self._target_time = f"Tomorrow {time_str}" if self._is_tomorrow else time_str
                 self._duration_minutes = 0
                 self._heating_rate = None
                 self._confidence = "high"
                 self._summary = f"Heating turns OFF at {self._target_time}"
+                self._cooling_rate = None
+                self._predicted_crossover_time = None
+                self._is_cooling_prediction = False
                 return
 
             self._target_temp = next_block.target_temp
-            self._target_time = next_block.start_time.strftime("%H:%M")
+            self._is_tomorrow = next_block.start_time.date() > dt_util.now().date()
+            time_str = next_block.start_time.strftime("%H:%M")
+            self._target_time = f"Tomorrow {time_str}" if self._is_tomorrow else time_str
 
             # Check if already at or above target
             if self._current_temp >= self._target_temp:
-                self._attr_native_value = "Ready"
+                # NEW: Check cooling rate before declaring "Ready"
+                cooling_info = self._check_cooling_prediction(next_block, dt_util.now())
+
+                if cooling_info is None:
+                    # No cooling concern — original "Ready" behavior
+                    self._attr_native_value = "Ready"
+                    self._attr_available = True
+                    self._duration_minutes = 0
+                    self._heating_rate = None
+                    self._confidence = "high"
+                    self._summary = f"Already at {self._target_temp:.1f}\u00b0C (no preheat needed)"
+                    self._cooling_rate = None
+                    self._predicted_crossover_time = None
+                    self._is_cooling_prediction = False
+                    return
+
+                # Cooling prediction active — calculate proactive preheat
+                from datetime import timedelta
+
+                crossover_dt = cooling_info["crossover_dt"]
+
+                # Try to get heating rate (reuse existing resolution logic)
+                heating_rate = None
+                inertia_minutes = 0
+
+                heating_cycle_coordinator = self.coordinator.heating_cycle_coordinator
+                if heating_cycle_coordinator:
+                    zone_data_cycle = heating_cycle_coordinator.get_zone_data(self._zone_id)
+                    if zone_data_cycle:
+                        heating_rate = zone_data_cycle.get("heating_rate")
+                        inertia_time = zone_data_cycle.get("inertia_time")
+                        if inertia_time is not None:
+                            inertia_minutes = int(inertia_time)
+
+                if heating_rate is None or heating_rate <= 0.1:
+                    # Fallback to SmartComfortManager
+                    if manager and manager.get_heating_rate(self._zone_id):
+                        heating_rate = manager.get_heating_rate(self._zone_id)
+
+                if heating_rate is None or heating_rate <= 0.1:
+                    # No heating rate — show crossover warning only
+                    self._attr_native_value = crossover_dt.strftime("%H:%M")
+                    self._attr_available = True
+                    self._duration_minutes = None
+                    self._heating_rate = None
+                    self._confidence = "low"
+                    self._summary = (
+                        f"Cooling at {self._cooling_rate:.1f}\u00b0C/h, "
+                        f"will cross {self._target_temp:.1f}\u00b0C at {self._predicted_crossover_time} "
+                        f"(no heating rate data for preheat timing)"
+                    )
+                    return
+
+                # Calculate preheat duration (inertia + UFH buffer)
+                ufh_buffer = 0
+                config_manager = self.coordinator.config_manager
+                if config_manager:
+                    ufh_buffer_global = config_manager.get_ufh_buffer_minutes()
+                    ufh_zones = config_manager.get_ufh_zones()
+                    if ufh_buffer_global > 0:
+                        if not ufh_zones or self._zone_id in ufh_zones:
+                            ufh_buffer = ufh_buffer_global
+
+                total_buffer = min(inertia_minutes + ufh_buffer, 240)
+
+                preheat_start = crossover_dt - timedelta(minutes=total_buffer)
+
+                now = dt_util.now()
+                if preheat_start <= now:
+                    preheat_start = now
+
+                self._is_tomorrow = preheat_start.date() > now.date()
+                time_str = preheat_start.strftime("%H:%M")
+                self._attr_native_value = f"Tomorrow {time_str}" if self._is_tomorrow else time_str
+                self._duration_minutes = total_buffer
+                self._heating_rate = heating_rate
+                self._confidence = "medium"
                 self._attr_available = True
-                self._duration_minutes = 0
-                self._heating_rate = None
-                self._confidence = "high"
-                self._summary = f"Already at {self._target_temp:.1f}°C (no preheat needed)"
+                self._summary = (
+                    f"Cooling at {self._cooling_rate:.1f}\u00b0C/h, "
+                    f"will cross {self._target_temp:.1f}\u00b0C at {self._predicted_crossover_time}, "
+                    f"start preheat at {self._attr_native_value}"
+                )
+                if ufh_buffer > 0:
+                    self._summary += f" (includes {ufh_buffer} min UFH buffer)"
                 return
 
             # Need to preheat - calculate timing
@@ -451,8 +609,8 @@ class TadoPreheatAdvisorSensor(TadoZoneSensor):
             if heating_cycle_coordinator:
                 zone_data_cycle = heating_cycle_coordinator.get_zone_data(self._zone_id)
                 if zone_data_cycle and zone_data_cycle.get("heating_rate") is not None:
-                    # HeatingCycleCoordinator rate is in °C/min, convert to °C/h for consistency
-                    cycle_heating_rate = zone_data_cycle.get("heating_rate") * 60
+                    # HeatingCycleCoordinator rate is already in °C/h
+                    cycle_heating_rate = zone_data_cycle.get("heating_rate")
                     cycle_count = zone_data_cycle.get("cycle_count", 0)
                     # Determine confidence based on cycle count
                     if cycle_count >= 5:
@@ -465,6 +623,7 @@ class TadoPreheatAdvisorSensor(TadoZoneSensor):
             # If we have HeatingCycleCoordinator data, use it directly
             if cycle_heating_rate is not None and cycle_heating_rate > 0.1:
                 from datetime import timedelta
+
                 temp_diff = self._target_temp - self._current_temp
                 hours_needed = temp_diff / cycle_heating_rate
                 minutes_needed = int(hours_needed * 60)
@@ -476,13 +635,18 @@ class TadoPreheatAdvisorSensor(TadoZoneSensor):
 
                 recommended_start = next_block.start_time - timedelta(minutes=minutes_needed)
 
-                self._attr_native_value = recommended_start.strftime("%H:%M")
+                now = dt_util.now()
+                self._is_tomorrow = recommended_start.date() > now.date()
+                time_str = recommended_start.strftime("%H:%M")
+                self._attr_native_value = f"Tomorrow {time_str}" if self._is_tomorrow else time_str
                 self._duration_minutes = minutes_needed
                 self._heating_rate = cycle_heating_rate
-                self._confidence = cycle_confidence
+                self._confidence = cycle_confidence  # type: ignore[assignment]
+                self._cooling_rate = None
+                self._predicted_crossover_time = None
+                self._is_cooling_prediction = False
                 self._summary = (
-                    f"Start at {self._attr_native_value}"
-                    f" ({minutes_needed} min to reach {self._target_temp:.1f}°C)"
+                    f"Start at {self._attr_native_value} ({minutes_needed} min to reach {self._target_temp:.1f}°C)"
                 )
                 if ufh_buffer > 0:
                     self._summary += f" (includes {ufh_buffer} min UFH buffer)"
@@ -494,7 +658,7 @@ class TadoPreheatAdvisorSensor(TadoZoneSensor):
                 self._zone_id,
                 self._target_temp,
                 next_block.start_time,
-                self._current_temp
+                self._current_temp,
             )
 
             if advice is None:
@@ -506,19 +670,29 @@ class TadoPreheatAdvisorSensor(TadoZoneSensor):
                 self._confidence = "insufficient_data"
                 temp_diff = self._target_temp - self._current_temp
                 self._summary = f"Need +{temp_diff:.1f}°C by {self._target_time} (no heating history)"
+                self._cooling_rate = None
+                self._predicted_crossover_time = None
+                self._is_cooling_prediction = False
                 return
 
             # We have a valid preheat recommendation
             # Apply UFH buffer to SmartComfortManager advice
             from datetime import timedelta
+
             adjusted_duration = advice.estimated_duration_minutes + ufh_buffer
             adjusted_duration = min(adjusted_duration, 240)  # Cap at 4 hours
             adjusted_start = next_block.start_time - timedelta(minutes=adjusted_duration)
 
-            self._attr_native_value = adjusted_start.strftime("%H:%M")
+            now = dt_util.now()
+            self._is_tomorrow = adjusted_start.date() > now.date()
+            time_str = adjusted_start.strftime("%H:%M")
+            self._attr_native_value = f"Tomorrow {time_str}" if self._is_tomorrow else time_str
             self._duration_minutes = adjusted_duration
             self._heating_rate = advice.heating_rate
             self._confidence = advice.confidence
+            self._cooling_rate = None
+            self._predicted_crossover_time = None
+            self._is_cooling_prediction = False
             self._summary = advice.to_summary()
             if ufh_buffer > 0:
                 self._summary += f" (includes {ufh_buffer} min UFH buffer)"
@@ -527,9 +701,82 @@ class TadoPreheatAdvisorSensor(TadoZoneSensor):
         except Exception as e:
             _LOGGER.debug("Failed to update preheat advice for zone %s: %s", self._zone_id, e)
             self._attr_available = False
+        finally:
+            # (used by TadoPreheatNowSensor and insight collector)
+            self.coordinator.publish_entity_data(
+                self._zone_id,
+                "preheat_advisor",
+                {
+                    "state": str(self._attr_native_value) if self._attr_native_value else None,
+                    "target_time": self._target_time,
+                    "target_temperature": self._target_temp,
+                    "current_temperature": self._current_temp,
+                    "duration_minutes": self._duration_minutes,
+                    "confidence": self._confidence,
+                    "is_tomorrow": self._is_tomorrow,
+                    "cooling_rate": self._cooling_rate,
+                    "predicted_crossover_time": self._predicted_crossover_time,
+                    "is_cooling_prediction": self._is_cooling_prediction,
+                },
+            )
 
+
+    def _check_cooling_prediction(
+        self,
+        next_block: NextScheduleBlock,
+        now: datetime,
+    ) -> dict[str, Any] | None:
+        """Check if cooling rate predicts temperature will cross target before schedule.
+
+        Args:
+            next_block: Next schedule block with target temp and start time.
+            now: Current datetime.
+
+        Returns:
+            Dict with crossover info if preheat needed, None if "Ready" is appropriate.
+        """
+        from datetime import timedelta
+
+        manager = self.coordinator.smart_comfort_manager
+        if not manager:
+            return None
+
+        cooling_rate = manager.get_cooling_rate(self._zone_id)
+
+        # No data or stable temperature
+        if cooling_rate is None or cooling_rate >= -0.1:
+            return None
+
+        # Clamp extreme rates
+        cooling_rate = max(cooling_rate, -5.0)
+
+        hours_to_crossover = estimate_cooling_crossover(
+            self._current_temp, self._target_temp, cooling_rate,
+        )
+        if hours_to_crossover is None:
+            return None
+
+        crossover_dt = now + timedelta(hours=hours_to_crossover)
+
+        # 30-minute buffer: if crossover is well after schedule change, no concern
+        schedule_deadline = next_block.start_time + timedelta(minutes=30)
+        if crossover_dt > schedule_deadline:
+            return None
+
+        # Cooling prediction is relevant
+        self._cooling_rate = cooling_rate
+        self._predicted_crossover_time = crossover_dt.strftime("%H:%M")
+        self._is_cooling_prediction = True
+
+        return {
+            "crossover_dt": crossover_dt,
+            "cooling_rate": cooling_rate,
+            "hours_to_crossover": hours_to_crossover,
+        }
 
 class TadoSmartComfortTargetSensor(TadoZoneSensor):
+    """Represent a Tado smart comfort target temperature sensor."""
+
     _attr_has_entity_name = True
 
     """Smart Comfort Target Temperature sensor.
@@ -547,9 +794,12 @@ class TadoSmartComfortTargetSensor(TadoZoneSensor):
     State: Recommended target temperature (°C)
     """
 
-    def __init__(self, coordinator, zone_id: str, zone_name: str, zone_type: str = "HEATING"):
+    def __init__(
+        self, coordinator: TadoDataUpdateCoordinator, zone_id: str, zone_name: str, zone_type: str = "HEATING",
+    ) -> None:
+        """Initialize the Smart Comfort Target Sensor."""
         super().__init__(coordinator, zone_id, zone_name, zone_type)
-        self._attr_name = "[CE] Comfort Target"
+        self._attr_translation_key = "comfort_target"
         self._attr_unique_id = f"tado_ce_{coordinator.home_id}_zone_{zone_id}_comfort_target"
         self._attr_native_unit_of_measurement = "°C"
         self._attr_icon = "mdi:thermometer-auto"
@@ -563,7 +813,8 @@ class TadoSmartComfortTargetSensor(TadoZoneSensor):
         self._deviation: float | None = None
 
     @property
-    def extra_state_attributes(self):
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return extra state attributes."""
         return {
             "current_temperature": self._current_temp,
             "outdoor_temperature": self._outdoor_temp,
@@ -574,7 +825,7 @@ class TadoSmartComfortTargetSensor(TadoZoneSensor):
         }
 
     @property
-    def icon(self):
+    def icon(self) -> str | None:
         """Dynamic icon based on deviation from comfort."""
         if self._deviation is None:
             return "mdi:thermometer-auto"
@@ -585,7 +836,13 @@ class TadoSmartComfortTargetSensor(TadoZoneSensor):
         return "mdi:thermometer-check"  # Comfortable
 
     @callback
-    def update(self):
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        self.update()
+        self.async_write_ha_state()
+
+    @callback
+    def update(self) -> None:
         """Update Smart Comfort target using ASHRAE 55 Adaptive Comfort Model."""
         try:
             if not self.hass:
@@ -604,14 +861,13 @@ class TadoSmartComfortTargetSensor(TadoZoneSensor):
                 self._attr_available = False
                 return
 
-            # Get current temperature
-            sensor_data = zone_data.get('sensorDataPoints') or {}
-            inside_temp = sensor_data.get('insideTemperature') or {}
-            self._current_temp = inside_temp.get('celsius')
+            sensor_data = zone_data.get("sensorDataPoints") or {}
+            inside_temp = sensor_data.get("insideTemperature") or {}
+            self._current_temp = inside_temp.get("celsius")
 
             # Get humidity
-            humidity_data = sensor_data.get('humidity') or {}
-            self._humidity = humidity_data.get('percentage')
+            humidity_data = sensor_data.get("humidity") or {}
+            self._humidity = humidity_data.get("percentage")
 
             # Get outdoor temperature
             outdoor_entity = config_manager.get_outdoor_temp_entity()
@@ -645,8 +901,7 @@ class TadoSmartComfortTargetSensor(TadoZoneSensor):
         # Method 1: ASHRAE 55 Adaptive Comfort Model (if outdoor temp available)
         if self._outdoor_temp is not None:
             self._comfort_model = "adaptive"
-            # Formula: Comfort Temp = 0.31 × Outdoor_Temp + 17.8°C
-            return 0.31 * self._outdoor_temp + 17.8
+            return calculate_ashrae_comfort_temp(self._outdoor_temp)
 
         # Method 2: Seasonal fallback based on latitude
         self._comfort_model = "seasonal"
@@ -654,54 +909,12 @@ class TadoSmartComfortTargetSensor(TadoZoneSensor):
 
     def _get_seasonal_comfort_target(self) -> float:
         """Get comfort target based on season and latitude."""
-        from datetime import datetime
-
-        # Get latitude from HA config
         latitude = 51.5  # Default to London
-        if self.hass and hasattr(self.hass.config, 'latitude'):
+        if self.hass and hasattr(self.hass.config, "latitude"):
             latitude = self.hass.config.latitude or 51.5
 
-        # Determine season (reverse for Southern Hemisphere)
-        month = datetime.now().month
-        is_southern = latitude < 0
+        from homeassistant.util import dt as dt_util
 
-        if is_southern:
-            # Southern Hemisphere: reverse seasons
-            if month in [12, 1, 2]:
-                season = "summer"
-            elif month in [6, 7, 8]:
-                season = "winter"
-            else:
-                season = "transition"
-        else:
-            # Northern Hemisphere
-            if month in [6, 7, 8]:
-                season = "summer"
-            elif month in [11, 12, 1, 2]:
-                season = "winter"
-            else:
-                season = "transition"
+        month = dt_util.now().month
 
-        # Base comfort targets by season
-        base_targets = {
-            "summer": 24.0,
-            "winter": 20.0,
-            "transition": 22.0,
-        }
-
-        # Latitude adjustment
-        abs_lat = abs(latitude)
-        if abs_lat > 55:
-            lat_offset = -1.0  # Nordic - prefer cooler
-        elif abs_lat > 45:
-            lat_offset = -0.5  # Northern Europe
-        elif abs_lat < 30:
-            lat_offset = 1.0   # Subtropical - prefer warmer
-        elif abs_lat < 40:
-            lat_offset = 0.5   # Mediterranean
-        else:
-            lat_offset = 0.0   # Temperate
-
-        return base_targets[season] + lat_offset
-
-
+        return calculate_seasonal_comfort_target(latitude, month)

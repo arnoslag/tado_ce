@@ -1,17 +1,14 @@
-"""Adaptive Preheat Manager for Tado CE.
+"""Tado CE Adaptive Preheat Manager — local Early Start replacement.
 
 Automatically triggers heating when preheat_now binary sensor turns ON.
 Replaces Tado's cloud-based Early Start with local, user-controlled automation.
-
-Features:
-- Monitors preheat_now binary sensors for enabled zones
-- Automatically sets heating overlay when preheat time is reached
-- Clears overlay when target temperature is reached or schedule starts
-- Tracks which overlays were set by this manager (won't clear user-set overlays)
 """
+
+from __future__ import annotations
+
+from datetime import UTC, datetime
 import logging
-from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers.event import async_track_state_change_event
@@ -19,6 +16,8 @@ from homeassistant.helpers.event import async_track_state_change_event
 if TYPE_CHECKING:
     from .api_client import TadoApiClient
     from .config_manager import ConfigurationManager
+    from .coordinator import TadoDataUpdateCoordinator
+    from .data_loader import DataLoader
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -29,10 +28,10 @@ class AdaptivePreheatManager:
     def __init__(
         self,
         hass: HomeAssistant,
-        config_manager: "ConfigurationManager",
-        api_client: "TadoApiClient | None" = None,
-        data_loader=None,
-    ):
+        config_manager: ConfigurationManager,
+        api_client: TadoApiClient | None = None,
+        data_loader: DataLoader | None = None,
+    ) -> None:
         """Initialize the Adaptive Preheat Manager.
 
         Args:
@@ -45,11 +44,20 @@ class AdaptivePreheatManager:
         self._config_manager = config_manager
         self._api_client = api_client
         self._data_loader = data_loader
+        self._coordinator: TadoDataUpdateCoordinator | None = None
         self._enabled = False
         self._enabled_zones: list[str] = []  # Zone IDs enabled for adaptive preheat
-        self._active_overlays: dict[str, dict] = {}  # zone_id -> overlay info
-        self._state_listeners: list = []  # Track state change listeners
-        self._zone_info: dict[str, dict] = {}  # zone_id -> {name, entity_id}
+        self._active_overlays: dict[str, dict[str, Any]] = {}  # zone_id -> overlay info
+        self._state_listeners: list[Any] = []  # Track state change listeners
+        self._zone_info: dict[str, dict[str, Any]] = {}  # zone_id -> {name, entity_id}
+
+    def set_coordinator(self, coordinator: TadoDataUpdateCoordinator) -> None:
+        """Set the coordinator back-reference.
+
+        Called after coordinator creation to resolve the chicken-and-egg
+        dependency (manager is created before coordinator).
+        """
+        self._coordinator = coordinator
 
     async def async_setup(self) -> None:
         """Set up the Adaptive Preheat Manager.
@@ -67,7 +75,7 @@ class AdaptivePreheatManager:
         if not self._config_manager.get_smart_comfort_enabled():
             _LOGGER.warning(
                 "Adaptive Preheat: Requires Smart Comfort to be enabled. "
-                "Please enable Smart Comfort in integration options."
+                "Please enable Smart Comfort in integration options.",
             )
             self._enabled = False
             return
@@ -88,24 +96,24 @@ class AdaptivePreheatManager:
 
         # Build zone info mapping
         for zone in zones_info:
-            if zone.get('type') != 'HEATING':
+            if zone.get("type") != "HEATING":
                 continue
 
-            zone_id = str(zone.get('id'))
-            zone_name = zone.get('name', f"Zone {zone_id}")
+            zone_id = str(zone.get("id"))
+            zone_name = zone.get("name", f"Zone {zone_id}")
 
             # Check if this zone is enabled
             if configured_zones and zone_id not in configured_zones:
                 continue
 
             # Build entity IDs
-            zone_slug = zone_name.lower().replace(' ', '_')
+            zone_slug = zone_name.lower().replace(" ", "_")
             self._zone_info[zone_id] = {
-                'name': zone_name,
-                'slug': zone_slug,
-                'preheat_now_entity': f"binary_sensor.{zone_slug}_preheat_now",
-                'preheat_advisor_entity': f"sensor.{zone_slug}_preheat_advisor",
-                'climate_entity': f"climate.{zone_slug}",
+                "name": zone_name,
+                "slug": zone_slug,
+                "preheat_now_entity": f"binary_sensor.{zone_slug}_preheat_now",
+                "preheat_advisor_entity": f"sensor.{zone_slug}_preheat_advisor",
+                "climate_entity": f"climate.{zone_slug}",
             }
             self._enabled_zones.append(zone_id)
 
@@ -115,7 +123,8 @@ class AdaptivePreheatManager:
 
         _LOGGER.info(
             "Adaptive Preheat: Enabled for %s zones: %s",
-            len(self._enabled_zones), [self._zone_info[z]['name'] for z in self._enabled_zones]
+            len(self._enabled_zones),
+            [self._zone_info[z]["name"] for z in self._enabled_zones],
         )
 
         # Start monitoring preheat_now sensors
@@ -124,18 +133,15 @@ class AdaptivePreheatManager:
     async def _start_monitoring(self) -> None:
         """Start monitoring preheat_now binary sensors."""
         # Build list of entities to monitor
-        entities_to_monitor = [
-            self._zone_info[zone_id]['preheat_now_entity']
-            for zone_id in self._enabled_zones
-        ]
+        entities_to_monitor = [self._zone_info[zone_id]["preheat_now_entity"] for zone_id in self._enabled_zones]
 
         # Register state change listener
         @callback
         def _state_change_handler(event: Event) -> None:
             """Handle state changes for preheat_now sensors."""
-            entity_id = event.data.get('entity_id')
-            new_state = event.data.get('new_state')
-            old_state = event.data.get('old_state')
+            entity_id = event.data.get("entity_id")
+            new_state = event.data.get("new_state")
+            old_state = event.data.get("old_state")
 
             if not new_state:
                 return
@@ -143,7 +149,7 @@ class AdaptivePreheatManager:
             # Find zone_id for this entity
             zone_id = None
             for zid, info in self._zone_info.items():
-                if info['preheat_now_entity'] == entity_id:
+                if info["preheat_now_entity"] == entity_id:
                     zone_id = zid
                     break
 
@@ -151,40 +157,42 @@ class AdaptivePreheatManager:
                 return
 
             # Check state transition
-            old_is_on = old_state and old_state.state == 'on'
-            new_is_on = new_state.state == 'on'
+            old_is_on = old_state and old_state.state == "on"
+            new_is_on = new_state.state == "on"
 
             if new_is_on and not old_is_on:
                 # Preheat time reached - trigger heating
                 self._hass.async_create_task(
-                    self._trigger_preheat(zone_id)
+                    self._trigger_preheat(zone_id),
                 )
             elif not new_is_on and old_is_on:
                 # Preheat ended - check if we should clear overlay
                 self._hass.async_create_task(
-                    self._check_clear_overlay(zone_id)
+                    self._check_clear_overlay(zone_id),
                 )
 
         # Register listener
         cancel = async_track_state_change_event(
             self._hass,
             entities_to_monitor,
-            _state_change_handler
+            _state_change_handler,  # type: ignore[arg-type]
         )
         self._state_listeners.append(cancel)
 
         _LOGGER.debug("Adaptive Preheat: Monitoring %s sensors", len(entities_to_monitor))
 
         # Check current state of all sensors (in case they're already ON)
-        for zone_id in self._enabled_zones:
-            entity_id = self._zone_info[zone_id]['preheat_now_entity']
-            state = self._hass.states.get(entity_id)
-            if state and state.state == 'on':
-                _LOGGER.info(
-                    "Adaptive Preheat: %s preheat_now already ON, triggering preheat",
-                    self._zone_info[zone_id]['name']
-                )
-                await self._trigger_preheat(zone_id)
+        # Uses coordinator entity_data if available; falls back gracefully
+        # since state listeners will catch future transitions anyway.
+        if self._coordinator:
+            for zone_id in self._enabled_zones:
+                preheat_data = self._coordinator.get_entity_data(zone_id, "preheat_now")
+                if preheat_data and preheat_data.get("state") == "on":
+                    _LOGGER.info(
+                        "Adaptive Preheat: %s preheat_now already ON, triggering preheat",
+                        self._zone_info[zone_id]["name"],
+                    )
+                    await self._trigger_preheat(zone_id)
 
     async def _trigger_preheat(self, zone_id: str) -> None:
         """Trigger heating for a zone.
@@ -199,22 +207,21 @@ class AdaptivePreheatManager:
         if not zone_info:
             return
 
-        zone_name = zone_info['name']
+        zone_name = zone_info["name"]
 
         # Check if we already have an active overlay for this zone
         if zone_id in self._active_overlays:
             _LOGGER.debug("Adaptive Preheat: %s already has active overlay", zone_name)
             return
 
-        # Get target temperature from preheat advisor
-        preheat_advisor_id = zone_info['preheat_advisor_entity']
-        preheat_state = self._hass.states.get(preheat_advisor_id)
+        # Get target temperature from coordinator.entity_data (published by TadoPreheatAdvisorSensor)
+        preheat_data = self._coordinator.get_entity_data(zone_id, "preheat_advisor")  # type: ignore[union-attr]
 
-        if not preheat_state:
-            _LOGGER.warning("Adaptive Preheat: %s preheat advisor not found", zone_name)
+        if not preheat_data:
+            _LOGGER.warning("Adaptive Preheat: %s preheat advisor data not available", zone_name)
             return
 
-        target_temp = preheat_state.attributes.get('target_temperature')
+        target_temp = preheat_data.get("target_temperature")
         if not target_temp:
             _LOGGER.warning("Adaptive Preheat: %s no target temperature", zone_name)
             return
@@ -225,16 +232,21 @@ class AdaptivePreheatManager:
             _LOGGER.warning("Adaptive Preheat: %s invalid target temp: %s", zone_name, target_temp)
             return
 
-        # Check current temperature - don't trigger if already at target
-        climate_entity_id = zone_info['climate_entity']
-        climate_state = self._hass.states.get(climate_entity_id)
+        # Check current temperature from coordinator data (no hass.states.get needed)
+        coord_data = self._coordinator.data or {}  # type: ignore[union-attr]
+        zones_data = coord_data.get("zones") or {}
+        zone_states = zones_data.get("zoneStates") or {}
+        zone_data = zone_states.get(zone_id) or zone_states.get(str(zone_id))
 
-        if climate_state:
-            current_temp = climate_state.attributes.get('current_temperature')
-            if current_temp and float(current_temp) >= target_temp - 0.5:
+        if zone_data:
+            sensor_data = zone_data.get("sensorDataPoints") or {}
+            current_temp = (sensor_data.get("insideTemperature") or {}).get("celsius")
+            if current_temp is not None and current_temp >= target_temp - 0.5:
                 _LOGGER.info(
                     "Adaptive Preheat: %s already at target (%s°C >= %s°C), skipping",
-                    zone_name, current_temp, target_temp
+                    zone_name,
+                    current_temp,
+                    target_temp,
                 )
                 return
 
@@ -252,7 +264,7 @@ class AdaptivePreheatManager:
             setting = {
                 "type": "HEATING",
                 "power": "ON",
-                "temperature": {"celsius": target_temp}
+                "temperature": {"celsius": target_temp},
             }
             # TADO_MODE = follows device settings, which defaults to "until next schedule block"
             termination = {"type": "TADO_MODE"}
@@ -261,16 +273,16 @@ class AdaptivePreheatManager:
 
             if success:
                 self._active_overlays[zone_id] = {
-                    'target_temp': target_temp,
-                    'triggered_at': datetime.now(),
-                    'termination': 'TADO_MODE'
+                    "target_temp": target_temp,
+                    "triggered_at": datetime.now(UTC),
+                    "termination": "TADO_MODE",
                 }
                 _LOGGER.info("Adaptive Preheat: %s overlay set successfully", zone_name)
             else:
                 _LOGGER.warning("Adaptive Preheat: %s failed to set overlay", zone_name)
 
-        except Exception as e:
-            _LOGGER.error("Adaptive Preheat: %s error setting overlay: %s", zone_name, e)
+        except Exception:
+            _LOGGER.exception("Adaptive Preheat: %s error setting overlay", zone_name)
 
     async def _check_clear_overlay(self, zone_id: str) -> None:
         """Check if we should clear the overlay for a zone.
@@ -285,7 +297,7 @@ class AdaptivePreheatManager:
         if not zone_info:
             return
 
-        zone_name = zone_info['name']
+        zone_name = zone_info["name"]
 
         # Check if we have an active overlay for this zone
         if zone_id not in self._active_overlays:
