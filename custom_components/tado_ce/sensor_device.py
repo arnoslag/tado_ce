@@ -10,7 +10,7 @@ from homeassistant.components.sensor import SensorEntity
 from homeassistant.core import callback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .device_manager import get_zone_device_info
+from .device_manager import get_device_name_suffix, get_zone_device_info
 from .format_helpers import (
     format_battery_state as _format_battery_state,
 )
@@ -45,6 +45,7 @@ class TadoBatterySensor(CoordinatorEntity["TadoDataUpdateCoordinator"], SensorEn
         zone_name: str,
         zone_type: str,
         device: dict[str, Any],
+        zones_info: list[dict[str, Any]] | None = None,
     ) -> None:
         """Initialize the Battery Sensor."""
         super().__init__(coordinator)
@@ -60,6 +61,12 @@ class TadoBatterySensor(CoordinatorEntity["TadoDataUpdateCoordinator"], SensorEn
         self._attr_available = True
         self._attr_native_value = _format_battery_state(device.get("batteryState", "unknown"))
         self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type, coordinator.home_id)
+
+        # Add device suffix to distinguish multiple devices in the same zone
+        suffix = get_device_name_suffix(zone_id, self._device_serial, self._device_type, zones_info or [])
+        if suffix:
+            self._attr_translation_key = None
+            self._attr_name = f"Battery{suffix}"
 
         # Extra attributes
         self._firmware = device.get("currentFwVersion")
@@ -138,6 +145,7 @@ class TadoDeviceConnectionSensor(CoordinatorEntity["TadoDataUpdateCoordinator"],
         zone_name: str,
         zone_type: str,
         device: dict[str, Any],
+        zones_info: list[dict[str, Any]] | None = None,
     ) -> None:
         """Initialize the Device Connection Sensor."""
         super().__init__(coordinator)
@@ -152,6 +160,12 @@ class TadoDeviceConnectionSensor(CoordinatorEntity["TadoDataUpdateCoordinator"],
         self._attr_icon = "mdi:wifi"
         self._attr_available = True
         self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type, coordinator.home_id)
+
+        # Add device suffix to distinguish multiple devices in the same zone
+        suffix = get_device_name_suffix(zone_id, self._device_serial, self._device_type, zones_info or [])
+        if suffix:
+            self._attr_translation_key = None
+            self._attr_name = f"Connection{suffix}"
 
         conn = device.get("connectionState") or {}
         self._attr_native_value = _format_connection_state(conn.get("value"))

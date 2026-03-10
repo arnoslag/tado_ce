@@ -4,6 +4,69 @@ Community contributors who helped shape Tado CE through bug reports, feature req
 
 ---
 
+## v3.0.1 - Entity Unavailable Fix, [CE] Prefix Removal, Translation Sync & Multi-Device Fix
+
+### Bug Reports & Issue Reporters
+
+**[@hapklaar](https://github.com/hapklaar)** - [Issue #167](https://github.com/hiall-fyi/tado_ce/issues/167) (Comment 3, 15, 18, 20)
+- Reported duplicate Battery/Connection sensor names in multi-device zones (e.g., 2 TRVs + 1 controller)
+- Provided screenshot showing indistinguishable sensor names
+- Reported entities going unavailable every 5 minutes after v3.0.0 upgrade
+- Provided detailed debug logs, network connectivity tests, and screenshots of unavailable transitions
+
+**[@andyb2000](https://github.com/andyb2000)** - [Issue #167](https://github.com/hiall-fyi/tado_ce/issues/167) (Comment 12, 21)
+- Confirmed Tado API connectivity issues resolved but entities still going unavailable
+- Provided critical debug logs showing the exact unload/reload sequence during token rotation — this pinpointed the root cause
+
+**[@jeverley](https://github.com/jeverley)** - [Issue #167](https://github.com/hiall-fyi/tado_ce/issues/167) (Comment 10-14)
+- Reported `[CE]` prefix on all CE-exclusive entity names as UI clutter
+- Suggested removing prefix and documenting CE-exclusive features in docs instead
+
+### What Was Fixed
+
+- ✅ **Issue #167**: Fixed entities going unavailable every 5 minutes — token rotation was triggering full integration reload on every poll cycle. Update listener now compares options before/after and skips data-only changes (token rotation)
+- ✅ **Issue #167**: Removed `[CE]` prefix from all entity friendly names across `strings.json`, 7 translation files, `button.py`, and `device_tracker.py`
+- ✅ **Issue #167**: Multi-device zones now append device type suffix (e.g., "Battery VA02", "Connection RU01")
+- ✅ Synced 3 missing translation keys (`data_description.home`, `timer_set_failed`, `water_heater_not_found`) to all 7 language files
+
+---
+
+## v3.0.0 - Multi-Home Support, Actionable Insights Full Feature Set, Code Quality Platinum
+
+### Feature Ideas & Suggestions
+
+**[@robvol87](https://github.com/robvol87)** - [Issue #110](https://github.com/hiall-fyi/tado_ce/issues/110)
+- Requested multi-home support for multiple Tado accounts
+
+**[@Blankf](https://github.com/Blankf)** - [Issue #145](https://github.com/hiall-fyi/tado_ce/issues/145)
+- Additional multi-home support request confirming community demand
+
+**[@thefern69](https://github.com/thefern69)** - [Discussion #163](https://github.com/hiall-fyi/tado_ce/discussions/163)
+- Proposed preheat cooling rate prediction for rooms above target temperature
+
+**[@joaomacp](https://github.com/joaomacp)** - [Issue #162](https://github.com/hiall-fyi/tado_ce/issues/162)
+- Requested lowering timer minimum duration to 1 minute
+
+### Bug Reports & Issue Reporters
+
+**[@tanerpaca](https://github.com/tanerpaca)** - [Issue #157](https://github.com/hiall-fyi/tado_ce/issues/157)
+- Reported window sensor not detecting open windows without Auto-Assist subscription
+
+**[@thefern69](https://github.com/thefern69)** - [Issue #164](https://github.com/hiall-fyi/tado_ce/issues/164)
+- Reported preheat now sensor triggering a day early due to missing date context
+
+### What Was Added/Fixed
+
+- ✅ **Issue #110/#145**: Full multi-home support — isolated coordinators, API clients, data loaders per config entry
+- ✅ **Discussion #163**: Preheat cooling rate prediction with `estimate_cooling_crossover()`
+- ✅ **Issue #162**: Timer minimum duration lowered to 1 minute
+- ✅ **Issue #104**: Auth URL 404 page fixed — removed fallback line
+- ✅ **Issue #157**: Window sensor now checks both `openWindow` and `openWindowDetected`
+- ✅ **Issue #164**: Preheat now sensor passes complete datetime instead of time-only
+- ✅ Ground-up rewrite: 62 source files, 3,238 tests, 99% coverage, mypy strict, 7 languages
+
+---
+
 ## v2.3.1 - AC Fan Mapping, Blocking I/O Fix & AC Audit
 
 ### Bug Reports & Issue Reporters

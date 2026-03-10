@@ -6,7 +6,7 @@
 ![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2026.3.1-blue?style=for-the-badge&logo=home-assistant) ![Python](https://img.shields.io/badge/Python-3.13%2B-blue?style=for-the-badge&logo=python&logoColor=white) ![Tado](https://img.shields.io/badge/Tado-V2%2FV3%2FV3%2B-orange?style=for-the-badge) ![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg?style=for-the-badge)
 
 <!-- Status Badges -->
-![Version](https://img.shields.io/badge/Version-3.0.0-purple?style=for-the-badge) ![License](https://img.shields.io/badge/License-AGPL--3.0-blue?style=for-the-badge) ![Maintained](https://img.shields.io/badge/Maintained-Yes-green.svg?style=for-the-badge) ![Tests](https://img.shields.io/badge/Tests-3238-blue?style=for-the-badge) ![Coverage](https://img.shields.io/badge/Coverage-99%25-brightgreen?style=for-the-badge)
+![Version](https://img.shields.io/badge/Version-3.0.1-purple?style=for-the-badge) ![License](https://img.shields.io/badge/License-AGPL--3.0-blue?style=for-the-badge) ![Maintained](https://img.shields.io/badge/Maintained-Yes-green.svg?style=for-the-badge) ![Tests](https://img.shields.io/badge/Tests-3358-blue?style=for-the-badge) ![Coverage](https://img.shields.io/badge/Coverage-99%25-brightgreen?style=for-the-badge)
 
 <!-- Community Badges -->
 ![GitHub stars](https://img.shields.io/github/stars/hiall-fyi/tado_ce?style=for-the-badge&logo=github) ![GitHub forks](https://img.shields.io/github/forks/hiall-fyi/tado_ce?style=for-the-badge&logo=github) ![GitHub issues](https://img.shields.io/github/issues/hiall-fyi/tado_ce?style=for-the-badge&logo=github) ![GitHub last commit](https://img.shields.io/github/last-commit/hiall-fyi/tado_ce?style=for-the-badge&logo=github)
@@ -18,7 +18,7 @@
 
 **Made with ❤️ by Joe Yiu ([@hiall-fyi](https://github.com/hiall-fyi))**
 
-[Quick Start](#-quick-start) • [Features](#-features) • [What's New in v3.0.0](#-whats-new-in-v300) • [Configuration](#-configuration-options) • [Troubleshooting](#-troubleshooting) • [Discussions](https://github.com/hiall-fyi/tado_ce/discussions)
+[Quick Start](#-quick-start) • [Features](#-features) • [What's New in v3.0.1](#-whats-new-in-v301) • [Configuration](#-configuration-options) • [Troubleshooting](#-troubleshooting) • [Discussions](https://github.com/hiall-fyi/tado_ce/discussions)
 
 </div>
 
@@ -104,42 +104,9 @@ See [FEATURES_GUIDE.md](FEATURES_GUIDE.md) for detailed documentation, configura
 
 ---
 
-## 🆕 What's New in v3.0.0
+## 🆕 What's New in v3.0.1
 
-**Multi-Home Support, Actionable Insights Full Feature Set, Code Quality Platinum**
-
-v3.0.0 is a ground-up rewrite — 84 files changed, 31,655 insertions, 21,842 deletions. Every source file was reviewed and most were rewritten. Total churn: 53,497 lines.
-
-**New Features:**
-- **Multi-Home Support** ([#110](https://github.com/hiall-fyi/tado_ce/issues/110), [#145](https://github.com/hiall-fyi/tado_ce/issues/145)) — Multiple Tado accounts/homes in one HA instance. Each config entry fully isolated with its own coordinator, API client, and data. All state via `ConfigEntry.runtime_data`.
-- **Insight Smarter Summary** — Action-based summaries instead of generic counts (e.g., "Replace batteries: Guest, Lounge — Mold risk: Bedroom")
-- **Insight Correlation** — Related insights within a zone merged into single actions
-- **Insight History & Trending** — Persistent tracking across HA restarts, duration-aware messages, weekly digest
-- **Insight Priority Escalation** — Auto-escalation based on persistence (battery low > 7d → high, > 14d → critical)
-- **Insight Health Score** — 0-100 home health score based on active insights and severity
-- **Preheat Cooling Rate Prediction** ([Discussion #163](https://github.com/hiall-fyi/tado_ce/discussions/163)) — Preheat Advisor now considers cooling trends when room is above target, estimating when temperature will drop below target and calculating proactive preheat start time
-- **Human-Readable Weekly Digest** — Home Insights `weekly_digest` attribute now shows a readable summary string instead of raw dict/YAML dump
-- **Centralized Physics Constants** — Mold risk, condensation, Magnus-Tetens, ASHRAE comfort, and window U-value constants consolidated into `calculations.py`. Risk classification extracted as pure functions
-
-**Bug Fixes:**
-- Auth URL showing 404 page ([#104](https://github.com/hiall-fyi/tado_ce/issues/104))
-- Window sensor now detects open windows without Auto-Assist ([#157](https://github.com/hiall-fyi/tado_ce/issues/157))
-- Preheat Now sensor no longer triggers a day early ([#164](https://github.com/hiall-fyi/tado_ce/issues/164))
-- Timer minimum duration lowered to 1 minute ([#162](https://github.com/hiall-fyi/tado_ce/issues/162))
-
-**Code Quality:**
-- 34 → 62 source files (monolith split into focused modules)
-- 3,238 tests across 80 test files with 99% code coverage
-- mypy strict: 667 → 0 errors
-- ruff: 2,295 → 0 violations
-- Return type annotations: 480 → 896 (+87%)
-- f-string log calls: 584 → 0, lazy `%s` calls: 18 → 412
-- `hass.data[DOMAIN]` refs: 35 → 0, `ConfigEntry.runtime_data`: 0 → 38
-- 7 languages (was English only)
-
-**Upgrading:** Direct upgrade from v2.3.1 supported. Migration runs automatically. No breaking changes. After a successful upgrade, you can optionally delete [12 legacy files](CHANGELOG.md) that were renamed or merged in v3.0.0.
-
-See [CHANGELOG.md](CHANGELOG.md) for full details.
+See [CHANGELOG.md](CHANGELOG.md) for full release notes and version history.
 
 ---
 

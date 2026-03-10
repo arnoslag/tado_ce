@@ -74,7 +74,7 @@ class TadoDeviceTracker(CoordinatorEntity["TadoDataUpdateCoordinator"], TrackerE
         self._device_name = device_name
         self._device_data = device_data
 
-        self._attr_name = f"[CE] {device_name}"
+        self._attr_name = device_name
         self._attr_unique_id = f"tado_ce_{home_id}_device_{device_id}"
         self._attr_available = False
         # Use hub device info for global entities

@@ -2,7 +2,7 @@
   "entity": {
     "binary_sensor": {
       "home": {
-        "name": "[CE] Woning",
+        "name": "Woning",
         "state_attributes": {
           "tado_mode": {
             "name": "Tado-modus"
@@ -27,7 +27,7 @@
         }
       },
       "preheat_now": {
-        "name": "[CE] Nu voorverwarmen",
+        "name": "Nu voorverwarmen",
         "state_attributes": {
           "recommended_start": {
             "name": "Aanbevolen start"
@@ -53,7 +53,7 @@
         }
       },
       "window_predicted": {
-        "name": "[CE] Raam voorspeld",
+        "name": "Raam voorspeld",
         "state_attributes": {
           "confidence": {
             "name": "Betrouwbaarheid"
@@ -81,24 +81,24 @@
     },
     "button": {
       "resume_all": {
-        "name": "[CE] Alles hervatten"
+        "name": "Alles hervatten"
       },
       "refresh_ac": {
-        "name": "[CE] Airco vernieuwen"
+        "name": "Airco vernieuwen"
       },
       "refresh_schedule": {
-        "name": "[CE] Schema vernieuwen"
+        "name": "Schema vernieuwen"
       },
       "boost": {
         "name": "Boost"
       },
       "smart_boost": {
-        "name": "[CE] Smart Boost"
+        "name": "Smart Boost"
       }
     },
     "calendar": {
       "schedule": {
-        "name": "[CE] Schema"
+        "name": "Schema"
       }
     },
     "climate": {
@@ -161,19 +161,19 @@
     },
     "number": {
       "min_temp": {
-        "name": "[CE] Min. temp."
+        "name": "Min. temp."
       },
       "max_temp": {
-        "name": "[CE] Max. temp."
+        "name": "Max. temp."
       },
       "temp_offset": {
-        "name": "[CE] Temp.-offset"
+        "name": "Temp.-offset"
       },
       "surface_offset": {
-        "name": "[CE] Oppervlakte-offset"
+        "name": "Oppervlakte-offset"
       },
       "ufh_buffer": {
-        "name": "[CE] Vloerverwarming-buffer"
+        "name": "Vloerverwarming-buffer"
       }
     },
     "sensor": {
@@ -190,10 +190,10 @@
         "name": "Airco"
       },
       "boiler_flow_temp": {
-        "name": "[CE] Ketel-aanvoertemp."
+        "name": "Ketel-aanvoertemp."
       },
       "target": {
-        "name": "[CE] Doel",
+        "name": "Doel",
         "state_attributes": {
           "next_change": {
             "name": "Volgende wijziging"
@@ -204,7 +204,7 @@
         }
       },
       "overlay": {
-        "name": "[CE] Overlay",
+        "name": "Overlay",
         "state_attributes": {
           "source_zone": {
             "name": "Bronzone"
@@ -212,7 +212,7 @@
         }
       },
       "power": {
-        "name": "[CE] Vermogen"
+        "name": "Vermogen"
       },
       "outside_temp": {
         "name": "Buitentemperatuur",
@@ -285,10 +285,10 @@
         }
       },
       "home_id": {
-        "name": "[CE] Woning-ID"
+        "name": "Woning-ID"
       },
       "api_usage": {
-        "name": "[CE] API-gebruik",
+        "name": "API-gebruik",
         "state_attributes": {
           "limit": {
             "name": "Limiet"
@@ -311,7 +311,7 @@
         }
       },
       "api_reset": {
-        "name": "[CE] API-reset",
+        "name": "API-reset",
         "state_attributes": {
           "time_until_reset": {
             "name": "Tijd tot reset"
@@ -340,10 +340,10 @@
         }
       },
       "api_limit": {
-        "name": "[CE] API-limiet"
+        "name": "API-limiet"
       },
       "api_status": {
-        "name": "[CE] API-status",
+        "name": "API-status",
         "state_attributes": {
           "remaining_calls": {
             "name": "Resterende aanroepen"
@@ -360,10 +360,10 @@
         }
       },
       "token_status": {
-        "name": "[CE] Token-status"
+        "name": "Token-status"
       },
       "zone_count": {
-        "name": "[CE] Aantal zones",
+        "name": "Aantal zones",
         "state_attributes": {
           "heating_zones": {
             "name": "Verwarmingszones"
@@ -377,10 +377,10 @@
         }
       },
       "last_sync": {
-        "name": "[CE] Laatste sync"
+        "name": "Laatste sync"
       },
       "next_sync": {
-        "name": "[CE] Volgende sync",
+        "name": "Volgende sync",
         "state_attributes": {
           "countdown": {
             "name": "Aftelling"
@@ -391,7 +391,7 @@
         }
       },
       "polling_interval": {
-        "name": "[CE] Pollinginterval",
+        "name": "Pollinginterval",
         "state_attributes": {
           "source": {
             "name": "Bron"
@@ -411,7 +411,7 @@
         }
       },
       "call_history": {
-        "name": "[CE] Aanroepgeschiedenis",
+        "name": "Aanroepgeschiedenis",
         "state_attributes": {
           "history": {
             "name": "Geschiedenis"
@@ -437,7 +437,7 @@
         }
       },
       "api_breakdown": {
-        "name": "[CE] API-uitsplitsing",
+        "name": "API-uitsplitsing",
         "state_attributes": {
           "breakdown_24h": {
             "name": "Uitsplitsing (24u)"
@@ -457,7 +457,7 @@
         }
       },
       "home_insights": {
-        "name": "[CE] Woninginzichten",
+        "name": "Woninginzichten",
         "state_attributes": {
           "summary": {
             "name": "Samenvatting"
@@ -492,7 +492,7 @@
         }
       },
       "insights": {
-        "name": "[CE] Inzichten",
+        "name": "Inzichten",
         "state_attributes": {
           "top_priority": {
             "name": "Hoogste prioriteit"
@@ -509,7 +509,7 @@
         }
       },
       "schedule_deviation": {
-        "name": "[CE] Schema-afwijking",
+        "name": "Schema-afwijking",
         "state_attributes": {
           "current_temperature": {
             "name": "Huidige temperatuur"
@@ -532,7 +532,7 @@
         }
       },
       "next_schedule": {
-        "name": "[CE] Volgend schema",
+        "name": "Volgend schema",
         "state_attributes": {
           "next_temperature": {
             "name": "Volgende temperatuur"
@@ -552,7 +552,7 @@
         }
       },
       "next_sched_temp": {
-        "name": "[CE] Volgende schematemp.",
+        "name": "Volgende schematemp.",
         "state_attributes": {
           "schedule_time": {
             "name": "Schematijd"
@@ -572,7 +572,7 @@
         }
       },
       "preheat_advisor": {
-        "name": "[CE] Voorverwarmingsadviseur",
+        "name": "Voorverwarmingsadviseur",
         "state_attributes": {
           "current_temperature": {
             "name": "Huidige temperatuur"
@@ -610,7 +610,7 @@
         }
       },
       "comfort_target": {
-        "name": "[CE] Comfortdoel",
+        "name": "Comfortdoel",
         "state_attributes": {
           "current_temperature": {
             "name": "Huidige temperatuur"
@@ -633,7 +633,7 @@
         }
       },
       "thermal_inertia": {
-        "name": "[CE] Thermische traagheid",
+        "name": "Thermische traagheid",
         "state_attributes": {
           "cycle_count": {
             "name": "Aantal cycli"
@@ -647,7 +647,7 @@
         }
       },
       "heating_rate": {
-        "name": "[CE] Verwarmingssnelheid",
+        "name": "Verwarmingssnelheid",
         "state_attributes": {
           "cycle_count": {
             "name": "Aantal cycli"
@@ -661,7 +661,7 @@
         }
       },
       "preheat_time": {
-        "name": "[CE] Voorverwarmingstijd",
+        "name": "Voorverwarmingstijd",
         "state_attributes": {
           "current_temp": {
             "name": "Huidige temperatuur"
@@ -681,7 +681,7 @@
         }
       },
       "confidence": {
-        "name": "[CE] Betrouwbaarheid",
+        "name": "Betrouwbaarheid",
         "state_attributes": {
           "cycle_count": {
             "name": "Aantal cycli"
@@ -695,10 +695,10 @@
         }
       },
       "heat_accel": {
-        "name": "[CE] Verwarmingsversnelling"
+        "name": "Verwarmingsversnelling"
       },
       "approach_factor": {
-        "name": "[CE] Benaderingsfactor",
+        "name": "Benaderingsfactor",
         "state_attributes": {
           "cycle_count": {
             "name": "Aantal cycli"
@@ -709,7 +709,7 @@
         }
       },
       "mold_risk": {
-        "name": "[CE] Schimmelrisico",
+        "name": "Schimmelrisico",
         "state": {
           "critical": "Kritiek",
           "high": "Hoog",
@@ -760,7 +760,7 @@
         }
       },
       "mold_risk_pct": {
-        "name": "[CE] Schimmelrisico %",
+        "name": "Schimmelrisico %",
         "state_attributes": {
           "room_temperature": {
             "name": "Kamertemperatuur"
@@ -783,7 +783,7 @@
         }
       },
       "condensation_risk": {
-        "name": "[CE] Condensatie",
+        "name": "Condensatie",
         "state_attributes": {
           "room_temperature": {
             "name": "Kamertemperatuur"
@@ -827,7 +827,7 @@
         }
       },
       "surface_temp": {
-        "name": "[CE] Oppervlaktetemp.",
+        "name": "Oppervlaktetemp.",
         "state_attributes": {
           "room_temperature": {
             "name": "Kamertemperatuur"
@@ -853,7 +853,7 @@
         }
       },
       "dew_point": {
-        "name": "[CE] Dauwpunt",
+        "name": "Dauwpunt",
         "state_attributes": {
           "room_temperature": {
             "name": "Kamertemperatuur"
@@ -870,7 +870,7 @@
         }
       },
       "comfort_level": {
-        "name": "[CE] Comfortniveau",
+        "name": "Comfortniveau",
         "state_attributes": {
           "temperature": {
             "name": "Temperatuur"
@@ -951,7 +951,7 @@
         }
       },
       "timer_duration": {
-        "name": "[CE] Overlay-timer",
+        "name": "Overlay-timer",
         "state_attributes": {
           "description": {
             "name": "Beschrijving"
@@ -965,19 +965,19 @@
         }
       },
       "heat_emitter": {
-        "name": "[CE] Type verwarming"
+        "name": "Type verwarming"
       },
       "smart_comfort": {
-        "name": "[CE] Smart Comfort"
+        "name": "Smart Comfort"
       },
       "window_type": {
-        "name": "[CE] Raamtype"
+        "name": "Raamtype"
       },
       "zone_overlay_mode": {
-        "name": "[CE] Overlay-modus"
+        "name": "Overlay-modus"
       },
       "zone_timer_duration": {
-        "name": "[CE] Overlay-timer"
+        "name": "Overlay-timer"
       }
     },
     "switch": {
@@ -1010,7 +1010,7 @@
         }
       },
       "adaptive_preheat": {
-        "name": "[CE] Adaptief voorverwarmen"
+        "name": "Adaptief voorverwarmen"
       }
     },
     "water_heater": {
@@ -1071,6 +1071,12 @@
     },
     "api_quota_critically_low": {
       "message": "API-quotum kritiek laag – actie geblokkeerd. Wacht op de API-reset."
+    },
+    "timer_set_failed": {
+      "message": "Failed to set {duration}min timer for {zone_name}: {error}"
+    },
+    "water_heater_not_found": {
+      "message": "Water heater entity not found: {entity_id}"
     }
   },
   "issues": {
@@ -1098,6 +1104,9 @@
         "description": "Meerdere Tado-woningen gevonden. Selecteer welke je wilt gebruiken.",
         "data": {
           "home": "Woning"
+        },
+        "data_description": {
+          "home": "The Tado home to connect this integration to"
         }
       },
       "reauth_confirm": {

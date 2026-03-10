@@ -13,7 +13,7 @@ This document lists all 75 entities in Tado CE, organised by function.
 
 | Column | Meaning |
 |--------|---------|
-| CE? | `[CE]` = CE Exclusive (not in official Tado integration) |
+| CE? | ✓ = CE Exclusive (not in official Tado integration) |
 | v2.3.1 Name | Friendly name in v2.3.1 |
 | v3.0 Name | Friendly name in v3.0.0 (all users, immediate) |
 | v2.3.1 entity_id | Entity ID in v2.3.1 (preserved for migrated users) |
@@ -53,20 +53,20 @@ This document lists all 75 entities in Tado CE, organised by function.
 | 1 | Outdoor temperature | | Outside Temperature | Outside Temp |
 | 2 | Solar radiation | | Solar Intensity | Solar Intensity |
 | 3 | Weather condition | | Weather | Weather |
-| 4 | Boiler flow temp | ✓ | Boiler Flow Temperature | [CE] Boiler Flow Temp |
-| 5 | Home identifier | ✓ | Home ID | [CE] Home ID |
-| 6 | API calls used | ✓ | API Usage | [CE] API Usage |
-| 7 | API reset countdown | ✓ | API Reset | [CE] API Reset |
-| 8 | Daily API limit | ✓ | API Limit | [CE] API Limit |
-| 9 | API health | ✓ | API Status | [CE] API Status |
-| 10 | Auth token health | ✓ | Token Status | [CE] Token Status |
-| 11 | Zone count | ✓ | Zone Count | [CE] Zone Count |
-| 12 | Last sync time | ✓ | Last Sync | [CE] Last Sync |
-| 13 | Next sync time | ✓ | Next Sync | [CE] Next Sync |
-| 14 | Polling interval | ✓ | Polling Interval | [CE] Polling Interval |
-| 15 | API call history | ✓ | Call History | [CE] Call History |
-| 16 | API call breakdown | ✓ | API Call Breakdown | [CE] API Breakdown |
-| 17 | Home-wide insights | ✓ | Home Insights | [CE] Home Insights |
+| 4 | Boiler flow temp | ✓ | Boiler Flow Temperature | Boiler Flow Temp |
+| 5 | Home identifier | ✓ | Home ID | Home ID |
+| 6 | API calls used | ✓ | API Usage | API Usage |
+| 7 | API reset countdown | ✓ | API Reset | API Reset |
+| 8 | Daily API limit | ✓ | API Limit | API Limit |
+| 9 | API health | ✓ | API Status | API Status |
+| 10 | Auth token health | ✓ | Token Status | Token Status |
+| 11 | Zone count | ✓ | Zone Count | Zone Count |
+| 12 | Last sync time | ✓ | Last Sync | Last Sync |
+| 13 | Next sync time | ✓ | Next Sync | Next Sync |
+| 14 | Polling interval | ✓ | Polling Interval | Polling Interval |
+| 15 | API call history | ✓ | Call History | Call History |
+| 16 | API call breakdown | ✓ | API Call Breakdown | API Breakdown |
+| 17 | Home-wide insights | ✓ | Home Insights | Home Insights |
 
 ### Entity IDs
 
@@ -98,11 +98,11 @@ This document lists all 75 entities in Tado CE, organised by function.
 
 | # | Function | CE? | v2.3.1 Name | v3.0 Name |
 |---|----------|-----|-------------|-----------|
-| 18 | Resume all schedules | ✓ | Resume All Schedules | [CE] Resume All |
-| 19 | Refresh AC cache | ✓ | Refresh AC Capabilities | [CE] Refresh AC |
-| 20 | Presence mode | ✓ | Presence Mode | [CE] Presence Mode |
-| 21 | Overlay mode | ✓ | Overlay Mode | [CE] Overlay Mode |
-| 22 | Overlay timer duration | ✓ | Overlay Timer Duration | [CE] Overlay Timer |
+| 18 | Resume all schedules | ✓ | Resume All Schedules | Resume All |
+| 19 | Refresh AC cache | ✓ | Refresh AC Capabilities | Refresh AC |
+| 20 | Presence mode | ✓ | Presence Mode | Presence Mode |
+| 21 | Overlay mode | ✓ | Overlay Mode | Overlay Mode |
+| 22 | Overlay timer duration | ✓ | Overlay Timer Duration | Overlay Timer |
 
 ### Entity IDs
 
@@ -122,7 +122,7 @@ This document lists all 75 entities in Tado CE, organised by function.
 
 | # | Function | CE? | v2.3.1 Name | v3.0 Name |
 |---|----------|-----|-------------|-----------|
-| 23 | Home/Away status | ✓ | Home | [CE] Home |
+| 23 | Home/Away status | ✓ | Home | Home |
 
 ### Entity IDs
 
@@ -142,10 +142,10 @@ This document lists all 75 entities in Tado CE, organised by function.
 | 25 | Humidity | | Lounge Humidity | Lounge Humidity |
 | 26 | Heating power % | | Lounge Heating Power | Lounge Heating |
 | 27 | AC power % | | Lounge AC Power | Lounge AC |
-| 28 | Target temperature | ✓ | Lounge Target | Lounge [CE] Target |
-| 29 | Overlay status | ✓ | Lounge Mode | Lounge [CE] Overlay |
-| 30 | Hot water power | ✓ | Lounge Power | Lounge [CE] Power |
-| 31 | Schedule deviation | ✓ | Lounge Historical Deviation | Lounge [CE] Schedule Deviation |
+| 28 | Target temperature | ✓ | Lounge Target | Lounge Target |
+| 29 | Overlay status | ✓ | Lounge Mode | Lounge Overlay |
+| 30 | Hot water power | ✓ | Lounge Power | Lounge Power |
+| 31 | Schedule deviation | ✓ | Lounge Historical Deviation | Lounge Schedule Deviation |
 
 ### Entity IDs
 
@@ -168,10 +168,10 @@ This document lists all 75 entities in Tado CE, organised by function.
 
 | # | Function | CE? | v2.3.1 Name | v3.0 Name |
 |---|----------|-----|-------------|-----------|
-| 32 | Next schedule time | ✓ | Lounge Next Schedule | Lounge [CE] Next Schedule |
-| 33 | Next schedule temp | ✓ | Lounge Next Schedule Temp | Lounge [CE] Next Sched Temp |
-| 34 | Preheat advisor | ✓ | Lounge Preheat Advisor | Lounge [CE] Preheat Advisor |
-| 35 | Comfort target | ✓ | Lounge Smart Comfort Target | Lounge [CE] Comfort Target |
+| 32 | Next schedule time | ✓ | Lounge Next Schedule | Lounge Next Schedule |
+| 33 | Next schedule temp | ✓ | Lounge Next Schedule Temp | Lounge Next Sched Temp |
+| 34 | Preheat advisor | ✓ | Lounge Preheat Advisor | Lounge Preheat Advisor |
+| 35 | Comfort target | ✓ | Lounge Smart Comfort Target | Lounge Comfort Target |
 
 ### Entity IDs
 
@@ -190,12 +190,12 @@ This document lists all 75 entities in Tado CE, organised by function.
 
 | # | Function | CE? | v2.3.1 Name | v3.0 Name |
 |---|----------|-----|-------------|-----------|
-| 36 | Mold risk level | ✓ | Lounge Mold Risk | Lounge [CE] Mold Risk |
-| 37 | Mold risk % | ✓ | Lounge Mold Risk Percentage | Lounge [CE] Mold Risk % |
-| 38 | Condensation risk | ✓ | Lounge Condensation Risk | Lounge [CE] Condensation |
-| 39 | Surface temperature | ✓ | Lounge Surface Temperature | Lounge [CE] Surface Temp |
-| 40 | Dew point | ✓ | Lounge Dew Point | Lounge [CE] Dew Point |
-| 41 | Comfort level | ✓ | Lounge Comfort Level | Lounge [CE] Comfort Level |
+| 36 | Mold risk level | ✓ | Lounge Mold Risk | Lounge Mold Risk |
+| 37 | Mold risk % | ✓ | Lounge Mold Risk Percentage | Lounge Mold Risk % |
+| 38 | Condensation risk | ✓ | Lounge Condensation Risk | Lounge Condensation |
+| 39 | Surface temperature | ✓ | Lounge Surface Temperature | Lounge Surface Temp |
+| 40 | Dew point | ✓ | Lounge Dew Point | Lounge Dew Point |
+| 41 | Comfort level | ✓ | Lounge Comfort Level | Lounge Comfort Level |
 
 ### Entity IDs
 
@@ -216,12 +216,12 @@ This document lists all 75 entities in Tado CE, organised by function.
 
 | # | Function | CE? | v2.3.1 Name | v3.0 Name |
 |---|----------|-----|-------------|-----------|
-| 42 | Thermal inertia | ✓ | Lounge Thermal Inertia | Lounge [CE] Thermal Inertia |
-| 43 | Heating rate | ✓ | Lounge Avg Heating Rate | Lounge [CE] Heating Rate |
-| 44 | Preheat time | ✓ | Lounge Preheat Time | Lounge [CE] Preheat Time |
-| 45 | Analysis confidence | ✓ | Lounge Analysis Confidence | Lounge [CE] Confidence |
-| 46 | Heating acceleration | ✓ | Lounge Heating Acceleration | Lounge [CE] Heat Accel |
-| 47 | Approach factor | ✓ | Lounge Approach Factor | Lounge [CE] Approach Factor |
+| 42 | Thermal inertia | ✓ | Lounge Thermal Inertia | Lounge Thermal Inertia |
+| 43 | Heating rate | ✓ | Lounge Avg Heating Rate | Lounge Heating Rate |
+| 44 | Preheat time | ✓ | Lounge Preheat Time | Lounge Preheat Time |
+| 45 | Analysis confidence | ✓ | Lounge Analysis Confidence | Lounge Confidence |
+| 46 | Heating acceleration | ✓ | Lounge Heating Acceleration | Lounge Heat Accel |
+| 47 | Approach factor | ✓ | Lounge Approach Factor | Lounge Approach Factor |
 
 ### Entity IDs
 
@@ -242,7 +242,7 @@ This document lists all 75 entities in Tado CE, organised by function.
 
 | # | Function | CE? | v2.3.1 Name | v3.0 Name |
 |---|----------|-----|-------------|-----------|
-| 48 | Zone insights | ✓ | Lounge Insights | Lounge [CE] Insights |
+| 48 | Zone insights | ✓ | Lounge Insights | Lounge Insights |
 
 ### Entity IDs
 
@@ -259,8 +259,8 @@ This document lists all 75 entities in Tado CE, organised by function.
 | # | Function | CE? | v2.3.1 Name | v3.0 Name |
 |---|----------|-----|-------------|-----------|
 | 49 | Open window detected | | Lounge Window | Lounge Window |
-| 50 | Preheat trigger | ✓ | Lounge Preheat Now | Lounge [CE] Preheat Now |
-| 51 | Window predicted | ✓ | Lounge Window Predicted | Lounge [CE] Window Predicted |
+| 50 | Preheat trigger | ✓ | Lounge Preheat Now | Lounge Preheat Now |
+| 51 | Window predicted | ✓ | Lounge Window Predicted | Lounge Window Predicted |
 
 ### Entity IDs
 
@@ -340,10 +340,10 @@ This document lists all 75 entities in Tado CE, organised by function.
 
 | # | Function | CE? | v2.3.1 Name | v3.0 Name |
 |---|----------|-----|-------------|-----------|
-| 59 | Timer buttons | ✓ | Lounge {dur}min Timer | Lounge [CE] {dur}min Timer |
-| 60 | Refresh schedule | ✓ | Lounge Refresh Schedule | Lounge [CE] Refresh Schedule |
+| 59 | Timer buttons | ✓ | Lounge {dur}min Timer | Lounge {dur}min Timer |
+| 60 | Refresh schedule | ✓ | Lounge Refresh Schedule | Lounge Refresh Schedule |
 | 61 | Boost | ⬆ | Lounge Boost | Lounge Boost |
-| 62 | Smart boost | ✓ | Lounge Smart Boost | Lounge [CE] Smart Boost |
+| 62 | Smart boost | ✓ | Lounge Smart Boost | Lounge Smart Boost |
 
 > ⬆ Boost replicates the Tado app's boost feature (25°C for 30min).
 > HA official Tado integration does not expose this. Smart Boost (#62) is CE exclusive
@@ -366,7 +366,7 @@ This document lists all 75 entities in Tado CE, organised by function.
 
 | # | Function | CE? | v2.3.1 Name | v3.0 Name |
 |---|----------|-----|-------------|-----------|
-| 63 | Zone schedule | ✓ | Lounge | Lounge [CE] Schedule |
+| 63 | Zone schedule | ✓ | Lounge | Lounge Schedule |
 
 ### Entity IDs
 
@@ -382,17 +382,17 @@ This document lists all 75 entities in Tado CE, organised by function.
 
 | # | Function | CE? | v2.3.1 Name | v3.0 Name |
 |---|----------|-----|-------------|-----------|
-| 64 | Heat emitter type | ✓ | Heat Emitter Type | [CE] Heat Emitter |
-| 65 | UFH buffer | ✓ | UFH Buffer | [CE] UFH Buffer |
-| 66 | Adaptive preheat | ✓ | Adaptive Preheat | [CE] Adaptive Preheat |
-| 67 | Smart comfort mode | ✓ | Smart Comfort | [CE] Smart Comfort |
-| 68 | Window type | ✓ | Window Type | [CE] Window Type |
-| 69 | Zone overlay mode | ✓ | Overlay Mode | [CE] Overlay Mode |
-| 70 | Zone overlay timer | ✓ | Overlay Timer Duration | [CE] Overlay Timer |
-| 71 | Min temperature | ✓ | Min Temp | [CE] Min Temp |
-| 72 | Max temperature | ✓ | Max Temp | [CE] Max Temp |
-| 73 | Temp offset | ✓ | Temp Offset | [CE] Temp Offset |
-| 74 | Surface temp offset | ✓ | Surface Temp Offset | [CE] Surface Offset |
+| 64 | Heat emitter type | ✓ | Heat Emitter Type | Heat Emitter |
+| 65 | UFH buffer | ✓ | UFH Buffer | UFH Buffer |
+| 66 | Adaptive preheat | ✓ | Adaptive Preheat | Adaptive Preheat |
+| 67 | Smart comfort mode | ✓ | Smart Comfort | Smart Comfort |
+| 68 | Window type | ✓ | Window Type | Window Type |
+| 69 | Zone overlay mode | ✓ | Overlay Mode | Overlay Mode |
+| 70 | Zone overlay timer | ✓ | Overlay Timer Duration | Overlay Timer |
+| 71 | Min temperature | ✓ | Min Temp | Min Temp |
+| 72 | Max temperature | ✓ | Max Temp | Max Temp |
+| 73 | Temp offset | ✓ | Temp Offset | Temp Offset |
+| 74 | Surface temp offset | ✓ | Surface Temp Offset | Surface Offset |
 
 ### Entity IDs
 
@@ -418,7 +418,7 @@ This document lists all 75 entities in Tado CE, organised by function.
 
 | # | Function | CE? | v2.3.1 Name | v3.0 Name |
 |---|----------|-----|-------------|-----------|
-| 75 | Mobile presence | ✓ | Tado CE {device_name} | [CE] {device_name} |
+| 75 | Mobile presence | ✓ | Tado CE {device_name} | {device_name} |
 
 ### Entity IDs
 

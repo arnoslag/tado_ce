@@ -2,6 +2,14 @@
 
 All notable changes to Tado CE will be documented in this file.
 
+## [3.0.1] - 2026-03-10
+
+### Bug Fixes
+- **Removed `[CE]` Prefix from Entity Names** ([#167](https://github.com/hiall-fyi/tado_ce/issues/167) - @jeverley) — All entity friendly names no longer include the `[CE]` prefix. The prefix was intended to distinguish CE-exclusive entities from official Tado integration equivalents, but users found it noisy and unnecessary. Entity IDs are not affected (HA preserves existing entity_ids). CE-exclusive features are documented in the Features Guide instead.
+- **Fixed Duplicate Battery/Connection Sensor Names in Multi-Device Zones** ([#167](https://github.com/hiall-fyi/tado_ce/issues/167) - @hapklaar) — Zones with multiple physical devices (e.g., 1 sensor + 2 valves) created Battery and Connection sensors with identical names, causing HA to append `_2`, `_3` suffixes unpredictably. Now appends device type suffix (e.g., "Battery VA02", "Battery RU01") when a zone has multiple devices. Single-device zones are unaffected.
+- **Fixed Entities Going Unavailable Every 5 Minutes** ([#167](https://github.com/hiall-fyi/tado_ce/issues/167) - @hapklaar, @andyb2000) — Tado's OAuth2 server rotates the refresh token on every use. When the new token was saved to `ConfigEntry.data`, HA's update listener fired and triggered a full integration reload every poll cycle (~5 min). Entities briefly became unavailable during each reload. The update listener now compares options before/after — data-only changes (token rotation) are saved silently without triggering a reload.
+- **Synced Missing Translation Keys** — 3 keys (`data_description.home`, `timer_set_failed`, `water_heater_not_found`) were present in `strings.json` but missing from all 7 translation files. Now synced across all languages.
+
 ## [3.0.0] - 2026-03-10
 
 **Multi-Home Support, Actionable Insights Full Feature Set, Code Quality Platinum**

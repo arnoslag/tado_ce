@@ -750,6 +750,9 @@ class TadoPreheatAdvisorSensor(TadoZoneSensor):
         # Clamp extreme rates
         cooling_rate = max(cooling_rate, -5.0)
 
+        if self._current_temp is None or self._target_temp is None:
+            return None
+
         hours_to_crossover = estimate_cooling_crossover(
             self._current_temp, self._target_temp, cooling_rate,
         )

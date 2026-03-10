@@ -75,15 +75,15 @@ Tado enforces API rate limits (100–20,000 calls/day depending on your plan). T
 
 | Sensor | Friendly Name | Unit | Description |
 |--------|--------------|------|-------------|
-| `sensor.tado_ce_api_usage` | [CE] API Usage | calls | API calls used today |
-| `sensor.tado_ce_api_limit` | [CE] API Limit | calls | Daily API call limit |
-| `sensor.tado_ce_api_reset` | [CE] API Reset | timestamp | When your limit resets |
-| `sensor.tado_ce_api_status` | [CE] API Status | text | API connection status |
-| `sensor.tado_ce_token_status` | [CE] Token Status | text | Auth token health |
-| `sensor.tado_ce_next_sync` | [CE] Next Sync | timestamp | Next scheduled API sync |
-| `sensor.tado_ce_polling_interval` | [CE] Polling Interval | minutes | Current polling interval |
-| `sensor.tado_ce_call_history` | [CE] Call History | count | API call history with statistics |
-| `sensor.tado_ce_api_call_breakdown` | [CE] API Breakdown | text | Call breakdown by endpoint type |
+| `sensor.tado_ce_api_usage` | API Usage | calls | API calls used today |
+| `sensor.tado_ce_api_limit` | API Limit | calls | Daily API call limit |
+| `sensor.tado_ce_api_reset` | API Reset | timestamp | When your limit resets |
+| `sensor.tado_ce_api_status` | API Status | text | API connection status |
+| `sensor.tado_ce_token_status` | Token Status | text | Auth token health |
+| `sensor.tado_ce_next_sync` | Next Sync | timestamp | Next scheduled API sync |
+| `sensor.tado_ce_polling_interval` | Polling Interval | minutes | Current polling interval |
+| `sensor.tado_ce_call_history` | Call History | count | API call history with statistics |
+| `sensor.tado_ce_api_call_breakdown` | API Breakdown | text | Call breakdown by endpoint type |
 
 ### API Status States
 
@@ -240,12 +240,12 @@ Real-time analysis of heating system thermal performance based on complete heati
 
 | Sensor | Friendly Name | Unit | Description |
 |--------|--------------|------|-------------|
-| `sensor.{zone}_thermal_inertia` | [CE] Thermal Inertia | minutes | Time constant for temperature changes |
-| `sensor.{zone}_avg_heating_rate` | [CE] Heating Rate | °C/h | Average heating rate when heating ON |
-| `sensor.{zone}_preheat_time` | [CE] Preheat Time | minutes | Estimated time to reach target |
-| `sensor.{zone}_analysis_confidence` | [CE] Confidence | % | Confidence score for analysis |
-| `sensor.{zone}_heating_acceleration` | [CE] Heat Accel | °C/h² | Rate of change of heating rate |
-| `sensor.{zone}_approach_factor` | [CE] Approach Factor | %/hour | How quickly zone approaches target |
+| `sensor.{zone}_thermal_inertia` | Thermal Inertia | minutes | Time constant for temperature changes |
+| `sensor.{zone}_avg_heating_rate` | Heating Rate | °C/h | Average heating rate when heating ON |
+| `sensor.{zone}_preheat_time` | Preheat Time | minutes | Estimated time to reach target |
+| `sensor.{zone}_analysis_confidence` | Confidence | % | Confidence score for analysis |
+| `sensor.{zone}_heating_acceleration` | Heat Accel | °C/h² | Rate of change of heating rate |
+| `sensor.{zone}_approach_factor` | Approach Factor | %/hour | How quickly zone approaches target |
 
 ### Sensor Interpretation
 
@@ -337,11 +337,11 @@ Learns from heating patterns and provides predictive insights.
 
 | Sensor | Friendly Name | Unit | Description |
 |--------|--------------|------|-------------|
-| `sensor.{zone}_historical_deviation` | [CE] Schedule Deviation | °C | Difference from 7-day average at same time |
-| `sensor.{zone}_next_schedule_time` | [CE] Next Schedule | timestamp | When next schedule change occurs |
-| `sensor.{zone}_next_schedule_temp` | [CE] Next Sched Temp | °C | Target for next schedule block |
-| `sensor.{zone}_preheat_advisor` | [CE] Preheat Advisor | minutes | Recommended preheat start time |
-| `sensor.{zone}_smart_comfort_target` | [CE] Comfort Target | °C | AI-recommended target temperature |
+| `sensor.{zone}_historical_deviation` | Schedule Deviation | °C | Difference from 7-day average at same time |
+| `sensor.{zone}_next_schedule_time` | Next Schedule | timestamp | When next schedule change occurs |
+| `sensor.{zone}_next_schedule_temp` | Next Sched Temp | °C | Target for next schedule block |
+| `sensor.{zone}_preheat_advisor` | Preheat Advisor | minutes | Recommended preheat start time |
+| `sensor.{zone}_smart_comfort_target` | Comfort Target | °C | AI-recommended target temperature |
 
 ### Preheat Cooling Rate Prediction (v3.0.0)
 
@@ -439,12 +439,12 @@ Uses surface temperature calculation to accurately detect cold spots where mold 
 
 | Sensor | Friendly Name | Description |
 |--------|--------------|-------------|
-| `sensor.{zone}_mold_risk` | [CE] Mold Risk | Risk level: Low / Medium / High / Critical |
-| `sensor.{zone}_mold_risk_percentage` | [CE] Mold Risk % | Numeric risk percentage |
-| `sensor.{zone}_condensation_risk` | [CE] Condensation | Condensation risk (AC zones) |
-| `sensor.{zone}_surface_temperature` | [CE] Surface Temp | Calculated surface temperature |
-| `sensor.{zone}_dew_point` | [CE] Dew Point | Dew point temperature |
-| `sensor.{zone}_comfort_level` | [CE] Comfort Level | Overall comfort assessment |
+| `sensor.{zone}_mold_risk` | Mold Risk | Risk level: Low / Medium / High / Critical |
+| `sensor.{zone}_mold_risk_percentage` | Mold Risk % | Numeric risk percentage |
+| `sensor.{zone}_condensation_risk` | Condensation | Condensation risk (AC zones) |
+| `sensor.{zone}_surface_temperature` | Surface Temp | Calculated surface temperature |
+| `sensor.{zone}_dew_point` | Dew Point | Dew point temperature |
+| `sensor.{zone}_comfort_level` | Comfort Level | Overall comfort assessment |
 
 ### Window Type Settings
 
@@ -539,7 +539,7 @@ Dashboard updates immediately after climate control actions. Configurable deboun
 | Button | Friendly Name | Description |
 |--------|--------------|-------------|
 | `button.{zone}_boost` | Boost | Quick boost: 25°C for 30 min (replicates Tado app feature) |
-| `button.{zone}_smart_boost` | [CE] Smart Boost | Intelligent duration based on thermal analytics |
+| `button.{zone}_smart_boost` | Smart Boost | Intelligent duration based on thermal analytics |
 
 > ⬆ Boost replicates the Tado app's boost feature. HA official doesn't expose this.
 > Smart Boost is CE exclusive — calculates optimal duration from thermal data.
@@ -640,7 +640,7 @@ Shows heating schedules as calendar events. Enable in Configure → "Schedule Ca
 
 | Entity | Friendly Name |
 |--------|--------------|
-| `calendar.{zone}` | [CE] Schedule |
+| `calendar.{zone}` | Schedule |
 
 ### Boiler Flow Temperature
 
@@ -648,7 +648,7 @@ Monitors OpenTherm boiler flow temperature. Auto-detected if available.
 
 | Entity | Friendly Name |
 |--------|--------------|
-| `sensor.tado_ce_boiler_flow_temperature` | [CE] Boiler Flow Temp |
+| `sensor.tado_ce_boiler_flow_temperature` | Boiler Flow Temp |
 
 ### Device Tracking
 
@@ -656,7 +656,7 @@ Tracks mobile device presence (home/away). Enable "Mobile Device Tracking" in Co
 
 | Entity | Friendly Name |
 |--------|--------------|
-| `device_tracker.tado_ce_{device_name}` | [CE] {device_name} |
+| `device_tracker.tado_ce_{device_name}` | {device_name} |
 
 API usage: 1 call per full sync (every 6h). Enable "Sync Mobile Frequently" for every-poll updates.
 
@@ -666,8 +666,8 @@ Syncs home/away presence state. Enable "Home/Away State Sync" in Configure.
 
 | Entity | Friendly Name | Description |
 |--------|--------------|-------------|
-| `select.tado_ce_presence_mode` | [CE] Presence Mode | Control: auto / home / away |
-| `binary_sensor.tado_ce_home` | [CE] Home | Read-only home/away status |
+| `select.tado_ce_presence_mode` | Presence Mode | Control: auto / home / away |
+| `binary_sensor.tado_ce_home` | Home | Read-only home/away status |
 
 ### Overlay Mode (v2.0.2)
 
@@ -675,8 +675,8 @@ Controls how long manual temperature changes last.
 
 | Entity | Friendly Name |
 |--------|--------------|
-| `select.tado_ce_overlay_mode` | [CE] Overlay Mode |
-| `select.tado_ce_overlay_timer_duration` | [CE] Overlay Timer |
+| `select.tado_ce_overlay_mode` | Overlay Mode |
+| `select.tado_ce_overlay_timer_duration` | Overlay Timer |
 
 **Options:**
 
@@ -737,22 +737,22 @@ Customize settings for each individual zone instead of using global defaults.
 
 | Entity | Friendly Name | Type | Description |
 |--------|--------------|------|-------------|
-| `select.{zone}_heating_type` | [CE] Heat Emitter | Select | Radiator or Underfloor Heating |
-| `number.{zone}_ufh_buffer` | [CE] UFH Buffer | Number | Extra preheat buffer for UFH (0–60 min) |
+| `select.{zone}_heating_type` | Heat Emitter | Select | Radiator or Underfloor Heating |
+| `number.{zone}_ufh_buffer` | UFH Buffer | Number | Extra preheat buffer for UFH (0–60 min) |
 
 **All Climate Zones:**
 
 | Entity | Friendly Name | Type | Description |
 |--------|--------------|------|-------------|
-| `switch.{zone}_adaptive_preheat` | [CE] Adaptive Preheat | Switch | Enable adaptive preheat |
-| `select.{zone}_smart_comfort_mode` | [CE] Smart Comfort | Select | Weather compensation level |
-| `select.{zone}_window_type` | [CE] Window Type | Select | Window insulation for mold risk |
-| `select.{zone}_overlay_mode` | [CE] Overlay Mode | Select | How temperature changes behave |
-| `select.{zone}_overlay_timer_duration` | [CE] Overlay Timer | Select | Timer duration |
-| `number.{zone}_min_temp` | [CE] Min Temp | Number | Minimum temperature (5–25°C) |
-| `number.{zone}_max_temp` | [CE] Max Temp | Number | Maximum temperature (15–30°C) |
-| `number.{zone}_temp_offset` | [CE] Temp Offset | Number | Temperature calibration (-3.0 to +3.0°C) |
-| `number.{zone}_surface_temp_offset` | [CE] Surface Offset | Number | Surface temp calibration |
+| `switch.{zone}_adaptive_preheat` | Adaptive Preheat | Switch | Enable adaptive preheat |
+| `select.{zone}_smart_comfort_mode` | Smart Comfort | Select | Weather compensation level |
+| `select.{zone}_window_type` | Window Type | Select | Window insulation for mold risk |
+| `select.{zone}_overlay_mode` | Overlay Mode | Select | How temperature changes behave |
+| `select.{zone}_overlay_timer_duration` | Overlay Timer | Select | Timer duration |
+| `number.{zone}_min_temp` | Min Temp | Number | Minimum temperature (5–25°C) |
+| `number.{zone}_max_temp` | Max Temp | Number | Maximum temperature (15–30°C) |
+| `number.{zone}_temp_offset` | Temp Offset | Number | Temperature calibration (-3.0 to +3.0°C) |
+| `number.{zone}_surface_temp_offset` | Surface Offset | Number | Surface temp calibration |
 
 ### Zone Overlay Mode Options
 

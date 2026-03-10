@@ -327,6 +327,7 @@ async def async_setup_entry(
                                 zone_name,
                                 zone_type,
                                 device,
+                                zones_info,
                             ),
                         )
                     if "connectionState" in device:
@@ -337,6 +338,7 @@ async def async_setup_entry(
                                 zone_name,
                                 zone_type,
                                 device,
+                                zones_info,
                             ),
                         )
         except Exception as e:

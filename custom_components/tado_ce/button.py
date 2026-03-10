@@ -240,7 +240,7 @@ class TadoWaterHeaterTimerButton(CoordinatorEntity[TadoDataUpdateCoordinator], B
         self._zone_name = zone_name
         self._duration = duration
 
-        self._attr_name = f"[CE] {duration}min Timer"
+        self._attr_name = f"{duration}min Timer"
         self._attr_unique_id = f"tado_ce_{home_id}_zone_{zone_id}_timer_{duration}min"
         self._attr_device_info = get_zone_device_info(zone_id, zone_name, "HOT_WATER", home_id)
         self._attr_entity_category = EntityCategory.CONFIG

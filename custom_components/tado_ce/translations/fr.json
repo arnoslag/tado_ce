@@ -2,7 +2,7 @@
   "entity": {
     "binary_sensor": {
       "home": {
-        "name": "[CE] Domicile",
+        "name": "Domicile",
         "state_attributes": {
           "tado_mode": {
             "name": "Mode Tado"
@@ -27,7 +27,7 @@
         }
       },
       "preheat_now": {
-        "name": "[CE] Préchauffer maintenant",
+        "name": "Préchauffer maintenant",
         "state_attributes": {
           "recommended_start": {
             "name": "Début recommandé"
@@ -53,7 +53,7 @@
         }
       },
       "window_predicted": {
-        "name": "[CE] Fenêtre prédite",
+        "name": "Fenêtre prédite",
         "state_attributes": {
           "confidence": {
             "name": "Confiance"
@@ -81,24 +81,24 @@
     },
     "button": {
       "resume_all": {
-        "name": "[CE] Tout reprendre"
+        "name": "Tout reprendre"
       },
       "refresh_ac": {
-        "name": "[CE] Actualiser AC"
+        "name": "Actualiser AC"
       },
       "refresh_schedule": {
-        "name": "[CE] Actualiser programme"
+        "name": "Actualiser programme"
       },
       "boost": {
         "name": "Boost"
       },
       "smart_boost": {
-        "name": "[CE] Smart Boost"
+        "name": "Smart Boost"
       }
     },
     "calendar": {
       "schedule": {
-        "name": "[CE] Programme"
+        "name": "Programme"
       }
     },
     "climate": {
@@ -161,19 +161,19 @@
     },
     "number": {
       "min_temp": {
-        "name": "[CE] Temp. min."
+        "name": "Temp. min."
       },
       "max_temp": {
-        "name": "[CE] Temp. max."
+        "name": "Temp. max."
       },
       "temp_offset": {
-        "name": "[CE] Offset temp."
+        "name": "Offset temp."
       },
       "surface_offset": {
-        "name": "[CE] Offset surface"
+        "name": "Offset surface"
       },
       "ufh_buffer": {
-        "name": "[CE] Tampon plancher chauffant"
+        "name": "Tampon plancher chauffant"
       }
     },
     "sensor": {
@@ -190,10 +190,10 @@
         "name": "Climatisation"
       },
       "boiler_flow_temp": {
-        "name": "[CE] Temp. départ chaudière"
+        "name": "Temp. départ chaudière"
       },
       "target": {
-        "name": "[CE] Cible",
+        "name": "Cible",
         "state_attributes": {
           "next_change": {
             "name": "Prochain changement"
@@ -204,7 +204,7 @@
         }
       },
       "overlay": {
-        "name": "[CE] Overlay",
+        "name": "Overlay",
         "state_attributes": {
           "source_zone": {
             "name": "Zone source"
@@ -212,7 +212,7 @@
         }
       },
       "power": {
-        "name": "[CE] Puissance"
+        "name": "Puissance"
       },
       "outside_temp": {
         "name": "Temp. extérieure",
@@ -285,10 +285,10 @@
         }
       },
       "home_id": {
-        "name": "[CE] ID du domicile"
+        "name": "ID du domicile"
       },
       "api_usage": {
-        "name": "[CE] Utilisation API",
+        "name": "Utilisation API",
         "state_attributes": {
           "limit": {
             "name": "Limite"
@@ -311,7 +311,7 @@
         }
       },
       "api_reset": {
-        "name": "[CE] Reset API",
+        "name": "Reset API",
         "state_attributes": {
           "time_until_reset": {
             "name": "Temps avant reset"
@@ -340,10 +340,10 @@
         }
       },
       "api_limit": {
-        "name": "[CE] Limite API"
+        "name": "Limite API"
       },
       "api_status": {
-        "name": "[CE] Statut API",
+        "name": "Statut API",
         "state_attributes": {
           "remaining_calls": {
             "name": "Appels restants"
@@ -360,10 +360,10 @@
         }
       },
       "token_status": {
-        "name": "[CE] Statut du token"
+        "name": "Statut du token"
       },
       "zone_count": {
-        "name": "[CE] Nombre de zones",
+        "name": "Nombre de zones",
         "state_attributes": {
           "heating_zones": {
             "name": "Zones de chauffage"
@@ -377,10 +377,10 @@
         }
       },
       "last_sync": {
-        "name": "[CE] Dernière sync"
+        "name": "Dernière sync"
       },
       "next_sync": {
-        "name": "[CE] Prochaine sync",
+        "name": "Prochaine sync",
         "state_attributes": {
           "countdown": {
             "name": "Compte à rebours"
@@ -391,7 +391,7 @@
         }
       },
       "polling_interval": {
-        "name": "[CE] Intervalle d'interrogation",
+        "name": "Intervalle d'interrogation",
         "state_attributes": {
           "source": {
             "name": "Source"
@@ -411,7 +411,7 @@
         }
       },
       "call_history": {
-        "name": "[CE] Historique des appels",
+        "name": "Historique des appels",
         "state_attributes": {
           "history": {
             "name": "Historique"
@@ -437,7 +437,7 @@
         }
       },
       "api_breakdown": {
-        "name": "[CE] Répartition API",
+        "name": "Répartition API",
         "state_attributes": {
           "breakdown_24h": {
             "name": "Répartition (24h)"
@@ -457,7 +457,7 @@
         }
       },
       "home_insights": {
-        "name": "[CE] Aperçus du domicile",
+        "name": "Aperçus du domicile",
         "state_attributes": {
           "summary": {
             "name": "Résumé"
@@ -492,7 +492,7 @@
         }
       },
       "insights": {
-        "name": "[CE] Aperçus",
+        "name": "Aperçus",
         "state_attributes": {
           "top_priority": {
             "name": "Priorité maximale"
@@ -509,7 +509,7 @@
         }
       },
       "schedule_deviation": {
-        "name": "[CE] Écart du programme",
+        "name": "Écart du programme",
         "state_attributes": {
           "current_temperature": {
             "name": "Température actuelle"
@@ -532,7 +532,7 @@
         }
       },
       "next_schedule": {
-        "name": "[CE] Prochain programme",
+        "name": "Prochain programme",
         "state_attributes": {
           "next_temperature": {
             "name": "Prochaine température"
@@ -552,7 +552,7 @@
         }
       },
       "next_sched_temp": {
-        "name": "[CE] Prochaine temp. programmée",
+        "name": "Prochaine temp. programmée",
         "state_attributes": {
           "schedule_time": {
             "name": "Heure du programme"
@@ -572,7 +572,7 @@
         }
       },
       "preheat_advisor": {
-        "name": "[CE] Conseiller de préchauffage",
+        "name": "Conseiller de préchauffage",
         "state_attributes": {
           "current_temperature": {
             "name": "Température actuelle"
@@ -610,7 +610,7 @@
         }
       },
       "comfort_target": {
-        "name": "[CE] Cible de confort",
+        "name": "Cible de confort",
         "state_attributes": {
           "current_temperature": {
             "name": "Température actuelle"
@@ -633,7 +633,7 @@
         }
       },
       "thermal_inertia": {
-        "name": "[CE] Inertie thermique",
+        "name": "Inertie thermique",
         "state_attributes": {
           "cycle_count": {
             "name": "Nombre de cycles"
@@ -647,7 +647,7 @@
         }
       },
       "heating_rate": {
-        "name": "[CE] Taux de chauffage",
+        "name": "Taux de chauffage",
         "state_attributes": {
           "cycle_count": {
             "name": "Nombre de cycles"
@@ -661,7 +661,7 @@
         }
       },
       "preheat_time": {
-        "name": "[CE] Temps de préchauffage",
+        "name": "Temps de préchauffage",
         "state_attributes": {
           "current_temp": {
             "name": "Température actuelle"
@@ -681,7 +681,7 @@
         }
       },
       "confidence": {
-        "name": "[CE] Confiance",
+        "name": "Confiance",
         "state_attributes": {
           "cycle_count": {
             "name": "Nombre de cycles"
@@ -695,10 +695,10 @@
         }
       },
       "heat_accel": {
-        "name": "[CE] Accélération de chauffe"
+        "name": "Accélération de chauffe"
       },
       "approach_factor": {
-        "name": "[CE] Facteur d'approche",
+        "name": "Facteur d'approche",
         "state_attributes": {
           "cycle_count": {
             "name": "Nombre de cycles"
@@ -709,7 +709,7 @@
         }
       },
       "mold_risk": {
-        "name": "[CE] Risque de moisissure",
+        "name": "Risque de moisissure",
         "state": {
           "critical": "Critique",
           "high": "Élevé",
@@ -760,7 +760,7 @@
         }
       },
       "mold_risk_pct": {
-        "name": "[CE] Risque de moisissure %",
+        "name": "Risque de moisissure %",
         "state_attributes": {
           "room_temperature": {
             "name": "Température ambiante"
@@ -783,7 +783,7 @@
         }
       },
       "condensation_risk": {
-        "name": "[CE] Condensation",
+        "name": "Condensation",
         "state_attributes": {
           "room_temperature": {
             "name": "Température ambiante"
@@ -827,7 +827,7 @@
         }
       },
       "surface_temp": {
-        "name": "[CE] Temp. de surface",
+        "name": "Temp. de surface",
         "state_attributes": {
           "room_temperature": {
             "name": "Température ambiante"
@@ -853,7 +853,7 @@
         }
       },
       "dew_point": {
-        "name": "[CE] Point de rosée",
+        "name": "Point de rosée",
         "state_attributes": {
           "room_temperature": {
             "name": "Température ambiante"
@@ -870,7 +870,7 @@
         }
       },
       "comfort_level": {
-        "name": "[CE] Niveau de confort",
+        "name": "Niveau de confort",
         "state_attributes": {
           "temperature": {
             "name": "Température"
@@ -951,7 +951,7 @@
         }
       },
       "timer_duration": {
-        "name": "[CE] Minuterie overlay",
+        "name": "Minuterie overlay",
         "state_attributes": {
           "description": {
             "name": "Description"
@@ -965,19 +965,19 @@
         }
       },
       "heat_emitter": {
-        "name": "[CE] Type d'émetteur"
+        "name": "Type d'émetteur"
       },
       "smart_comfort": {
-        "name": "[CE] Smart Comfort"
+        "name": "Smart Comfort"
       },
       "window_type": {
-        "name": "[CE] Type de fenêtre"
+        "name": "Type de fenêtre"
       },
       "zone_overlay_mode": {
-        "name": "[CE] Mode overlay"
+        "name": "Mode overlay"
       },
       "zone_timer_duration": {
-        "name": "[CE] Minuterie overlay"
+        "name": "Minuterie overlay"
       }
     },
     "switch": {
@@ -1010,7 +1010,7 @@
         }
       },
       "adaptive_preheat": {
-        "name": "[CE] Préchauffage adaptatif"
+        "name": "Préchauffage adaptatif"
       }
     },
     "water_heater": {
@@ -1071,6 +1071,12 @@
     },
     "api_quota_critically_low": {
       "message": "Quota API critique – action bloquée. Veuillez attendre le reset de l'API."
+    },
+    "timer_set_failed": {
+      "message": "Failed to set {duration}min timer for {zone_name}: {error}"
+    },
+    "water_heater_not_found": {
+      "message": "Water heater entity not found: {entity_id}"
     }
   },
   "issues": {
@@ -1098,6 +1104,9 @@
         "description": "Plusieurs domiciles Tado trouvés. Veuillez sélectionner.",
         "data": {
           "home": "Domicile"
+        },
+        "data_description": {
+          "home": "The Tado home to connect this integration to"
         }
       },
       "reauth_confirm": {

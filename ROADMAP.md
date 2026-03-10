@@ -6,39 +6,6 @@ For completed features, see [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
-## ✅ Recently Completed
-
-**Multi-Home Support** ([#110](https://github.com/hiall-fyi/tado_ce/issues/110) - @robvol87, [#145](https://github.com/hiall-fyi/tado_ce/issues/145) - @Blankf):
-
-Multiple Tado accounts/homes in a single HA instance. Completed incrementally from v1.7.0 through v2.3.1:
-
-- Per-home data files (`zones_{home_id}.json`, `ratelimit_{home_id}.json`, etc.) — v1.7.0
-- Per-home unique_id (`tado_ce_{home_id}`) for config entries — v1.7.0
-- Home selection in config flow — v1.3.0
-- Per-home ZoneConfigManager and APICallTracker — v2.0.0
-- `ConfigEntry.runtime_data` for all per-entry state (no `hass.data[DOMAIN]` flat dict) — v2.0.0+
-- Per-entry client instances, coordinator, and cleanup — v2.0.0+
-- Full code audit confirmed zero data isolation issues across all 61 source files
-
-**Actionable Insights — Full Feature Set:**
-
-All four planned improvements now implemented:
-
-- Smarter Summary — Action-based home summary replaces generic counts. Top-priority insight drives summary text (e.g., "Replace batteries: Guest, Lounge — Mold risk: Bedroom")
-- Insight Correlation / Deduplication — Related insights (mold risk + humidity trend + condensation) merged into single "humidity problem" action per zone. Configurable correlation groups
-- Insight History & Trending — Persistent tracking in `.storage/tado_ce/insight_history_{home_id}.json`. Duration-aware messages ("persisting for 3 days"). Weekly digest with most frequent insight types
-- Priority Escalation — Auto-escalation rules based on persistence duration (e.g., battery low > 7 days → critical, mold risk > 3 days → high). Monotonic escalation capped at CRITICAL
-
-**Code Quality — Platinum Quality Scale:**
-
-- mypy strict mode — zero errors across 61 source files
-- ruff comprehensive linting (`--select=ALL` baseline) — zero errors with 12 rule groups enabled
-- Bare `except Exception:` audit — all instances now log errors
-- Module-level docstring standardisation — all 61 files
-- Unnecessary comment cleanup — 22 comments removed across 12 files
-
----
-
 ## Up Next
 
 **Local API / HomeKit Hybrid** ([Discussion #29](https://github.com/hiall-fyi/tado_ce/discussions/29)):
@@ -78,12 +45,6 @@ Multi-Home prerequisite is complete. The path to HomeKit local control:
 
 **HA Official Pattern Alignment:**
 - **`MINOR_VERSION` Support** (A16) — Use `MINOR_VERSION` for backwards-compatible schema changes. Add when a breaking config schema change is actually needed.
-
-**Predictive Preheat — Cooling Rate Awareness** ([Discussion #163](https://github.com/hiall-fyi/tado_ce/discussions/163) - @thefern69):
-- Preheat Advisor currently shows "Ready" when `current_temp >= target_temp`, ignoring temperature trend
-- Enhancement: estimate cooling rate from recent readings, extrapolate when temperature will cross target, and trigger preheat proactively accounting for thermal inertia
-- Building blocks already exist (HeatingCycleCoordinator temperature readings, ThermalAnalyzer second-order analysis)
-- Requires: cooling rate estimation step before the "Ready" early-return in `TadoPreheatAdvisorSensor`
 
 **Other:**
 - Apply for HACS default repository inclusion

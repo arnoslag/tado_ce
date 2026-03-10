@@ -265,6 +265,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if not hass.services.has_service(DOMAIN, SERVICE_SET_CLIMATE_TIMER):
         await _async_register_services(hass)
 
+    # Snapshot current options so the update listener can detect real options changes
+    # vs data-only changes (e.g., token rotation saving to entry.data).
+    # HA's add_update_listener fires for ANY entry mutation (data or options).
+    _last_options_snapshot[entry.entry_id] = dict(entry.options)
+
     # Register update listener for options changes
     entry.async_on_unload(entry.add_update_listener(async_reload_entry))
 
@@ -272,8 +277,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return True
 
 
+# Tracks options per entry to distinguish real options changes from data-only mutations
+_last_options_snapshot: dict[str, dict[str, Any]] = {}
+
+
 async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Reload config entry when options change."""
+    """Reload config entry when options actually change.
+
+    HA's add_update_listener fires for ANY ConfigEntry mutation — including
+    data-only changes like refresh token rotation. We compare the current
+    options against the snapshot taken at setup to skip unnecessary reloads.
+    """
+    prev_options = _last_options_snapshot.get(entry.entry_id)
+    current_options = dict(entry.options)
+
+    if prev_options is not None and prev_options == current_options:
+        _LOGGER.debug("Tado CE: Entry data updated (e.g. token rotation) — skipping reload")
+        return
+
+    _last_options_snapshot[entry.entry_id] = current_options
     _LOGGER.info("Tado CE: Options changed, reloading integration...")
 
     from .migration import (
@@ -346,6 +368,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             if hass.services.has_service(DOMAIN, service_name):
                 hass.services.async_remove(DOMAIN, service_name)
         _LOGGER.debug("Unregistered all services (last entry unloaded)")
+
+    # Clean up options snapshot
+    _last_options_snapshot.pop(entry.entry_id, None)
 
     _LOGGER.info("Tado CE: Entry %s unloaded successfully", entry.entry_id)
     return unload_ok
