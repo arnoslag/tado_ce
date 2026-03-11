@@ -4,13 +4,18 @@ Community contributors who helped shape Tado CE through bug reports, feature req
 
 ---
 
-## v3.0.2 - Deadlock Fix, Preheat Away Mode, Polling Display Fix, Insight Display Improvements
+## v3.0.3
 
-### Bug Reports & Issue Reporters
+**[@driagi](https://github.com/driagi)** - [Issue #173](https://github.com/hiall-fyi/tado_ce/issues/173)
+- Reported hub sensors showing stale data after API sync (API Limit stuck at 5000, Status in error)
+
+---
+
+## v3.0.2
 
 **[@driagi](https://github.com/driagi)** - [Issue #170](https://github.com/hiall-fyi/tado_ce/issues/170), [Issue #173](https://github.com/hiall-fyi/tado_ce/issues/173)
-- Reported setup deadlock in API Call Tracker — integration hangs indefinitely on startup
-- Reported hub sensors showing wrong polling interval and API reset time — sensors not passing ratelimit data to `get_polling_interval()`
+- Reported setup deadlock — integration hangs indefinitely on startup
+- Reported hub sensors showing wrong polling interval and API reset time
 
 **[@tigro7](https://github.com/tigro7)** - [Issue #170](https://github.com/hiall-fyi/tado_ce/issues/170)
 - Confirmed deadlock issue, provided additional context
@@ -20,266 +25,149 @@ Community contributors who helped shape Tado CE through bug reports, feature req
 
 **[@thefern69](https://github.com/thefern69)** - [Issue #171](https://github.com/hiall-fyi/tado_ce/issues/171), [Discussion #163](https://github.com/hiall-fyi/tado_ce/discussions/163)
 - Reported preheat triggering during Away mode
-- Requested cooling rate prediction for active target (UFH use case)
-
-### What Was Fixed
-
-- ✅ **Issue #170**: Fixed setup deadlock in API Call Tracker — cleanup moved outside the lock
-- ✅ **Issue #171**: Fixed preheat triggering during Away mode — checks `home_state.presence` before preheat activity
-- ✅ **Issue #173**: Fixed hub sensors showing wrong polling interval and API reset time — pass `cached_ratelimit` to `get_polling_interval()` in all three hub sensors
-- ✅ Fixed blocking I/O in `api_call_tracker.py` during sensor update — reads from coordinator data instead of file I/O
-- ✅ Fixed raw internal values in Persistent Insights — now uses formatted display names and priority labels
-- ✅ Preheat cooling prediction now applies to current active setpoint (UFH improvement)
-- ✅ Persistent Insights grouped display with emoji-prefixed lines
-- ✅ Removed redundant zone name prefix from per-zone recommendations
+- Requested cooling rate prediction for active target (underfloor heating use case)
 
 ---
 
-## v3.0.1 - Entity Unavailable Fix, [CE] Prefix Removal, Translation Sync & Multi-Device Fix
+## v3.0.1
 
-### Bug Reports & Issue Reporters
+**[@jeverley](https://github.com/jeverley)** - [Issue #167](https://github.com/hiall-fyi/tado_ce/issues/167)
+- Reported `[CE]` prefix in entity names after v3.0.0 upgrade
 
-**[@hapklaar](https://github.com/hapklaar)** - [Issue #167](https://github.com/hiall-fyi/tado_ce/issues/167) (Comment 3, 15, 18, 20)
-- Reported duplicate Battery/Connection sensor names in multi-device zones (e.g., 2 TRVs + 1 controller)
-- Provided screenshot showing indistinguishable sensor names
-- Reported entities going unavailable every 5 minutes after v3.0.0 upgrade
-- Provided detailed debug logs, network connectivity tests, and screenshots of unavailable transitions
+**[@hapklaar](https://github.com/hapklaar)** - [Issue #167](https://github.com/hiall-fyi/tado_ce/issues/167)
+- Reported duplicate sensor names in multi-device zones
+- Reported entities going unavailable every 5 minutes (token refresh triggering reload)
 
-**[@andyb2000](https://github.com/andyb2000)** - [Issue #167](https://github.com/hiall-fyi/tado_ce/issues/167) (Comment 12, 21)
-- Confirmed Tado API connectivity issues resolved but entities still going unavailable
-- Provided critical debug logs showing the exact unload/reload sequence during token rotation — this pinpointed the root cause
-
-**[@jeverley](https://github.com/jeverley)** - [Issue #167](https://github.com/hiall-fyi/tado_ce/issues/167) (Comment 10-14)
-- Reported `[CE]` prefix on all CE-exclusive entity names as UI clutter
-- Suggested removing prefix and documenting CE-exclusive features in docs instead
-
-### What Was Fixed
-
-- ✅ **Issue #167**: Fixed entities going unavailable every 5 minutes — token rotation was triggering full integration reload on every poll cycle. Update listener now compares options before/after and skips data-only changes (token rotation)
-- ✅ **Issue #167**: Removed `[CE]` prefix from all entity friendly names across `strings.json`, 7 translation files, `button.py`, and `device_tracker.py`
-- ✅ **Issue #167**: Multi-device zones now append device type suffix (e.g., "Battery VA02", "Connection RU01")
-- ✅ Synced 3 missing translation keys (`data_description.home`, `timer_set_failed`, `water_heater_not_found`) to all 7 language files
+**[@andyb2000](https://github.com/andyb2000)** - [Issue #167](https://github.com/hiall-fyi/tado_ce/issues/167)
+- Confirmed entities going unavailable issue
 
 ---
 
-## v3.0.0 - Multi-Home Support, Actionable Insights Full Feature Set, Code Quality Platinum
-
-### Feature Ideas & Suggestions
+## v3.0.0
 
 **[@robvol87](https://github.com/robvol87)** - [Issue #110](https://github.com/hiall-fyi/tado_ce/issues/110)
-- Requested multi-home support for multiple Tado accounts
+- Requested multi-home support
 
 **[@Blankf](https://github.com/Blankf)** - [Issue #145](https://github.com/hiall-fyi/tado_ce/issues/145)
-- Additional multi-home support request confirming community demand
+- Requested multi-home support (second account)
 
-**[@thefern69](https://github.com/thefern69)** - [Discussion #163](https://github.com/hiall-fyi/tado_ce/discussions/163)
-- Proposed preheat cooling rate prediction for rooms above target temperature
+**[@thefern69](https://github.com/thefern69)** - [Discussion #163](https://github.com/hiall-fyi/tado_ce/discussions/163), [Issue #164](https://github.com/hiall-fyi/tado_ce/issues/164)
+- Requested preheat cooling rate prediction
+- Reported preheat sensor triggering a day early
 
 **[@joaomacp](https://github.com/joaomacp)** - [Issue #162](https://github.com/hiall-fyi/tado_ce/issues/162)
-- Requested lowering timer minimum duration to 1 minute
-
-### Bug Reports & Issue Reporters
+- Requested lowering timer minimum to 1 minute
 
 **[@tanerpaca](https://github.com/tanerpaca)** - [Issue #157](https://github.com/hiall-fyi/tado_ce/issues/157)
-- Reported window sensor not detecting open windows without Auto-Assist subscription
-
-**[@thefern69](https://github.com/thefern69)** - [Issue #164](https://github.com/hiall-fyi/tado_ce/issues/164)
-- Reported preheat now sensor triggering a day early due to missing date context
-
-### What Was Added/Fixed
-
-- ✅ **Issue #110/#145**: Full multi-home support — isolated coordinators, API clients, data loaders per config entry
-- ✅ **Discussion #163**: Preheat cooling rate prediction with `estimate_cooling_crossover()`
-- ✅ **Issue #162**: Timer minimum duration lowered to 1 minute
-- ✅ **Issue #104**: Auth URL 404 page fixed — removed fallback line
-- ✅ **Issue #157**: Window sensor now checks both `openWindow` and `openWindowDetected`
-- ✅ **Issue #164**: Preheat now sensor passes complete datetime instead of time-only
-- ✅ Ground-up rewrite: 62 source files, 3,238 tests, 99% coverage, mypy strict, 7 languages
+- Reported window sensor not detecting open windows without Auto-Assist
 
 ---
 
-## v2.3.1 - AC Fan Mapping, Blocking I/O Fix & AC Audit
-
-### Bug Reports & Issue Reporters
+## v2.3.1
 
 **[@BirbByte](https://github.com/BirbByte)** - [Issue #142](https://github.com/hiall-fyi/tado_ce/issues/142)
-- Reported AC 'High' fan speed still reverting to Auto on Mitsubishi units after v2.2.3
-- Provided detailed diagnostics confirming `FOUR` fan level not being sent correctly
+- Reported AC 'High' fan speed reverting on Mitsubishi/Fujitsu units
 
 **[@slflowfoon](https://github.com/slflowfoon)** - [Issue #127](https://github.com/hiall-fyi/tado_ce/issues/127)
-- Reported blocking I/O warning in `api_call_tracker.py` on fresh install
-
-### What Was Fixed
-
-- ✅ **Issue #142**: AC fan mapping rebuilt per-zone from actual capabilities; Mitsubishi/Fujitsu `FOUR` now maps correctly to `FAN_HIGH`
-- ✅ **Issue #127**: Blocking I/O in `api_call_tracker.py` — directory creation moved to async executor
-- ✅ AC capabilities signal — live reload without HA restart when Refresh AC Capabilities button pressed
-- ✅ AC fan mode fallback now uses `AUTO` instead of silent static mapping
-- ✅ AC temperature default uses capabilities midpoint instead of hardcoded 24°C
-- ✅ AC optimistic state preserves fan/swing modes during update cycle
-- ✅ AC rollback includes swing mode in HVAC mode change rollback
+- Reported blocking I/O warning on fresh install
 
 ---
 
-## v2.3.0 - Expanded Insights, Service Enhancement & Bug Fixes
-
-### Bug Reports & Issue Reporters
-
-**[@ChrisMarriott38](https://github.com/ChrisMarriott38)** - [Issue #147](https://github.com/hiall-fyi/tado_ce/issues/147), [Issue #149](https://github.com/hiall-fyi/tado_ce/issues/149)
-- Reported mold risk recommendation suggesting lower temperature when room already warm
-- Reported hot water overlay entities incorrectly showing for combi boilers
+## v2.3.0
 
 **[@mpartington](https://github.com/mpartington)** - [Issue #152](https://github.com/hiall-fyi/tado_ce/issues/152)
-- Reported `set_climate_timer` service requiring `time_period` even when using overlay mode
+- Requested enhanced `set_climate_timer` service with optional `time_period`
+
+**[@ChrisMarriott38](https://github.com/ChrisMarriott38)** - [Issue #147](https://github.com/hiall-fyi/tado_ce/issues/147), [Issue #149](https://github.com/hiall-fyi/tado_ce/issues/149)
+- Reported mold risk suggesting lower temperature when room is warm
+- Reported hot water overlay showing for combi boilers
 
 **[@driagi](https://github.com/driagi)** - [Issue #150](https://github.com/hiall-fyi/tado_ce/issues/150)
-- Reported mobile device tracker not updating after HA restart
-- Provided detailed debug logs that pinpointed the root cause
-
-### What Was Fixed
-
-- ✅ **Issue #147**: Mold risk recommendation now uses target temperature as base; suggests ventilation when room already warm
-- ✅ **Issue #149**: Hot water overlay detection now uses `nextScheduleChange` as sole indicator
-- ✅ **Issue #150**: Mobile device tracker now polls every 30 seconds instead of only reading once at startup
-- ✅ **Issue #152**: `set_climate_timer` now supports `overlay` without `time_period` (AC parity fix included)
+- Reported mobile device tracker not updating
 
 ---
 
-## v2.2.3 - Smart Day/Night Polling, AC Fan Fix & Climate Group Support
-
-### Bug Reports & Issue Reporters
+## v2.2.3
 
 **[@mkruiver](https://github.com/mkruiver)** - [Issue #144](https://github.com/hiall-fyi/tado_ce/issues/144)
 - Reported adaptive polling stuck at 120 min for low-quota users
 
 **[@Xavinooo](https://github.com/Xavinooo)** - [Issue #141](https://github.com/hiall-fyi/tado_ce/issues/141)
-- Reported night calls calculation using wrong interval
+- Reported night polling using wrong interval
 
 **[@BirbByte](https://github.com/BirbByte)** - [Issue #142](https://github.com/hiall-fyi/tado_ce/issues/142)
 - Reported AC 'High' fan speed reverting
 
 **[@merlinpimpim](https://github.com/merlinpimpim)** - [Discussion #139](https://github.com/hiall-fyi/tado_ce/discussions/139)
-- Requested climate group support for custom services
-
-### What Was Fixed
-
-- ✅ **Issue #144**: Smart Day/Night algorithm for low-quota users
-- ✅ **Issue #141**: Night calls now uses correct custom interval
-- ✅ **Issue #142**: Fan level validation checks AC capabilities
-- ✅ **Discussion #139**: Custom services now support climate groups
+- Requested climate group support
 
 ---
 
-## v2.2.2 - Options Flow Validation & Persistence Fixes
-
-### Bug Reports & Issue Reporters
+## v2.2.2
 
 **[@Xavinooo](https://github.com/Xavinooo)** - [Issue #134](https://github.com/hiall-fyi/tado_ce/issues/134)
-- Reported API Options validation and persistence bugs
-
-### What Was Fixed
-
-- ✅ **Issue #134**: Options validation and persistence fixed for day/night intervals
+- Reported API options validation and persistence issues
 
 ---
 
-## v2.2.1 - Hot Water Detection & API Options Fixes
-
-### Bug Reports & Issue Reporters
+## v2.2.1
 
 **[@jeverley](https://github.com/jeverley)** - [Issue #115](https://github.com/hiall-fyi/tado_ce/issues/115)
-- Reported hot water per-zone config detection failing for tank-based systems
+- Reported hot water config not working for tank-based systems
 
-**[@ChrisMarriott38](https://github.com/ChrisMarriott38)**, **[@Xavinooo](https://github.com/Xavinooo)** - [Issue #134](https://github.com/hiall-fyi/tado_ce/issues/134)
-- Reported API Options not saving (NumberSelector float vs int)
+**[@ChrisMarriott38](https://github.com/ChrisMarriott38)** - [Issue #134](https://github.com/hiall-fyi/tado_ce/issues/134)
+- Reported API options not saving
 
-### What Was Fixed
-
-- ✅ **Issue #115**: Tank-based hot water detection uses `nextScheduleChange`
-- ✅ **Issue #134**: Options flow handles float values from NumberSelector
+**[@Xavinooo](https://github.com/Xavinooo)** - [Issue #134](https://github.com/hiall-fyi/tado_ce/issues/134)
+- Confirmed API options not saving
 
 ---
 
-## v2.2.0 - Calibration Sensors & Actionable Insights
-
-### Feature Ideas & Suggestions
+## v2.2.0
 
 **[@tigro7](https://github.com/tigro7)** - [Discussion #112](https://github.com/hiall-fyi/tado_ce/discussions/112)
-- Proposed window predicted binary sensor for early open window detection
-- Inspired actionable recommendation attributes on sensors
-- Inspired Home Insights and Zone Insights sensors
-
-### Bug Reports & Issue Reporters
+- Proposed window predicted sensor, actionable recommendations, home/zone insights
 
 **[@BruceRobertson](https://github.com/BruceRobertson)** - [Issue #125](https://github.com/hiall-fyi/tado_ce/issues/125)
-- Reported heating cycle never completing after ~50 minutes
+- Reported heating cycle never completing for long cycles
 
 **[@slflowfoon](https://github.com/slflowfoon)** - [Issue #127](https://github.com/hiall-fyi/tado_ce/issues/127)
-- Reported API call history save error on first run
+- Reported API call history error on first run
 
 **[@hacker4257](https://github.com/hacker4257)** - [PR #132](https://github.com/hiall-fyi/tado_ce/pull/132)
-- Improved fix for API call history directory creation
+- Contributed fix for API call history directory creation
 
 **[@jeverley](https://github.com/jeverley)** - [Issue #115](https://github.com/hiall-fyi/tado_ce/issues/115)
-- Reported hot water per-zone config issues for tank-based systems
+- Reported hot water config for tank-based systems
 
 **[@Xavinooo](https://github.com/Xavinooo)** - [Issue #126](https://github.com/hiall-fyi/tado_ce/issues/126)
-- Reported polling override issues (custom night interval, daytime calculation)
+- Reported polling override issues
 
 **[@BirbByte](https://github.com/BirbByte)** - [Issue #128](https://github.com/hiall-fyi/tado_ce/issues/128)
-- Reported AC swing mode validation issue for Mitsubishi units
-
-### What Was Added/Fixed
-
-- ✅ **Discussion #112**: Window Predicted sensor, Actionable Recommendations, Home/Zone Insights
-- ✅ **Issue #118**: Surface Temperature and Dew Point calibration sensors
-- ✅ **Issue #125**: Heating cycle completion for long cycles
-- ✅ **Issue #127/#132**: API call history directory creation
-- ✅ **Issue #115**: Hot water per-zone config detection
-- ✅ **Issue #126**: Polling override fixes
-- ✅ **Issue #128**: AC swing validation for Mitsubishi units
+- Reported AC swing mode issue for Mitsubishi units
 
 ---
 
-## v2.1.1 - Bug Fixes
-
-### Bug Reports & Issue Reporters
+## v2.1.1
 
 **[@ChrisMarriott38](https://github.com/ChrisMarriott38)** - [Issue #120](https://github.com/hiall-fyi/tado_ce/issues/120), [Issue #119](https://github.com/hiall-fyi/tado_ce/issues/119)
-- Reported Test Mode adaptive polling using wrong reset time
+- Reported Test Mode polling using wrong reset time
 - Reported hot water zones showing heating-only entities
-
-### What Was Fixed
-
-- ✅ **Issue #120/#119**: Test Mode respects its own reset time
-- ✅ **Issue #115**: Hot water zones skip heating-only entities
 
 ---
 
-## v2.1.0 - Per-Zone Configuration
-
-### Feature Ideas & Suggestions
+## v2.1.0
 
 **[@ChrisMarriott38](https://github.com/ChrisMarriott38)** - [Issue #90](https://github.com/hiall-fyi/tado_ce/issues/90), [Issue #91](https://github.com/hiall-fyi/tado_ce/issues/91)
 - Inspired per-zone surface temp offset for mold risk calibration
 - Requested per-zone thermal analytics selection
 
-### Bug Reports & Issue Reporters
-
 **[@jakeycrx](https://github.com/jakeycrx)** - [Issue #107](https://github.com/hiall-fyi/tado_ce/issues/107)
-- Reported custom polling interval below 5 minutes still not working
-
-### What Was Added/Fixed
-
-- ✅ **Issue #90**: Per-zone surface temp offset entity
-- ✅ **Issue #91**: Per-zone thermal analytics selection
-- ✅ **Issue #107**: Custom polling intervals below 5 min now work correctly
+- Reported custom polling interval below 5 minutes not working
 
 ---
 
-## v2.0.2 - Presence Mode Select & Configurable Overlay Mode
-
-### Feature Ideas & Suggestions
+## v2.0.2
 
 **[@wyx087](https://github.com/wyx087)** - [Discussion #102](https://github.com/hiall-fyi/tado_ce/discussions/102)
 - Proposed Presence Mode Select to replace Away Mode switch
@@ -287,26 +175,15 @@ Community contributors who helped shape Tado CE through bug reports, feature req
 **[@leoogermenia](https://github.com/leoogermenia)** - [Issue #101](https://github.com/hiall-fyi/tado_ce/issues/101)
 - Requested configurable overlay mode
 
-### Bug Reports & Issue Reporters
-
 **[@jakeycrx](https://github.com/jakeycrx)** - [Issue #107](https://github.com/hiall-fyi/tado_ce/issues/107)
 - Reported custom polling interval below 5 minutes not working
 
 **[@ChrisMarriott38](https://github.com/ChrisMarriott38)** - [Issue #99](https://github.com/hiall-fyi/tado_ce/issues/99)
 - Reported polling stuck at 120 min in Uniform Mode
 
-### What Was Added/Fixed
-
-- ✅ **Discussion #102**: Presence Mode Select (Auto/Home/Away)
-- ✅ **Issue #101**: Configurable Overlay Mode entity
-- ✅ **Issue #107**: Custom polling intervals support 1-1440 minutes
-- ✅ **Issue #99**: Uniform Mode polling calculation fixed
-
 ---
 
-## v2.0.1 - Mold Risk Percentage, Hot Water Fix & Bootstrap Reserve
-
-### Bug Reports & Issue Reporters
+## v2.0.1
 
 **[@Claeysjens](https://github.com/Claeysjens)** - [Issue #100](https://github.com/hiall-fyi/tado_ce/issues/100)
 - Reported climate entities unavailable after upgrade
@@ -317,674 +194,187 @@ Community contributors who helped shape Tado CE through bug reports, feature req
 - Reported hot water UI jumping back after temperature change
 - Reported quota reserve not preventing API limit exceeded
 
-### What Was Added/Fixed
-
-- ✅ **Issue #90**: Mold Risk Percentage sensor, dew point calculation fix
-- ✅ **Issue #91**: Thermal Analytics for ALL zones with heatingPower
-- ✅ **Issue #98**: Hot water optimistic updates
-- ✅ **Issue #99**: Bootstrap Reserve Protection
-- ✅ **Issue #100**: Climate entities migration fix
-
 ---
 
-## v2.0.0 - Smart Polling, Mold Risk Enhancement & Thermal Analytics
-
-### Feature Ideas & Suggestions
+## v2.0.0
 
 **[@ChrisMarriott38](https://github.com/ChrisMarriott38)** - [Issue #89](https://github.com/hiall-fyi/tado_ce/issues/89), [Issue #90](https://github.com/hiall-fyi/tado_ce/issues/90), [Issue #94](https://github.com/hiall-fyi/tado_ce/issues/94)
 - Inspired adaptive smart polling based on remaining quota
 - Proposed enhanced mold risk with surface temperature calculation
 - Requested quota reserve protection
 
-### Bug Reports & Issue Reporters
-
 **[@Fred224](https://github.com/Fred224)** - [Issue #93](https://github.com/hiall-fyi/tado_ce/issues/93)
 - Reported hot water timer buttons not finding entity
 
-### What Was Added/Fixed
+---
 
-- ✅ **Issue #89**: Adaptive Smart Polling
-- ✅ **Issue #90**: Enhanced Mold Risk with window type config
-- ✅ **Issue #93**: Hot water timer button fix
-- ✅ **Issue #94**: Quota Reserve Protection
-- ✅ API Monitoring sensors (next_sync, polling_interval, call_history, api_call_breakdown)
-- ✅ Thermal Analytics sensors
+## v1.10.0
+
+**[@hapklaar](https://github.com/hapklaar)**, **[@chinezbrun](https://github.com/chinezbrun)**, **[@neonsp](https://github.com/neonsp)** - [Issue #44](https://github.com/hiall-fyi/tado_ce/issues/44)
+- Extensive testing and feedback on climate entity flickering
 
 ---
 
-## v1.9.4 (2026-02-02) - Boost Buttons & Bug Fixes
-
-### Bug Reports & Issue Reporters
+## v1.9.x
 
 **[@hapklaar](https://github.com/hapklaar)** - [Issue #44](https://github.com/hiall-fyi/tado_ce/issues/44)
-- Reported hvac_action stuck on "Heating" after switching to Auto mode
-- Provided debug logs showing the optimistic update wasn't setting hvac_action
+- Reported hvac_action stuck on "Heating", Resume All Schedules delay, grey loading state
 
 **[@chinezbrun](https://github.com/chinezbrun)** - [Issue #44](https://github.com/hiall-fyi/tado_ce/issues/44)
-- Reported Heating Power sensor not updating immediately after actions
-- Confirmed v1.9.3 speed improvements and identified remaining sensor delay
+- Reported grey loading state, slow state confirmation, heating power sensor delay
 
 **[@neonsp](https://github.com/neonsp)** - [Issue #44](https://github.com/hiall-fyi/tado_ce/issues/44)
-- Reported AC startup validation warnings ("Fan mode is not valid")
-- Tested and confirmed the fix
+- Reported AC startup validation warnings, AC optimistic update issues
 
-### What Was Fixed
+**[@Fred224](https://github.com/Fred224)** - [Issue #79](https://github.com/hiall-fyi/tado_ce/issues/79)
+- Reported AC DRY mode 422 error
 
-- ✅ **Issue #44**: hvac_action now sets to IDLE when switching to AUTO mode (optimistic update)
-- ✅ **Issue #44**: Zone sensors (Temperature, Humidity, Heating Power) now update immediately via signal
-- ✅ **Issue #44**: AC startup validation warnings suppressed by setting default fan/swing modes
-
-### New Features
-
-- ✅ **Boost Button** - Official Tado-style boost (25°C for 30 min)
-- ✅ **Smart Boost Button** - Intelligent duration based on heating rate
-
----
-
-## v1.9.3 (2026-02-02) - Fix: Slow State Confirmation
-
-### Bug Reports & Issue Reporters
-
-**[@hapklaar](https://github.com/hapklaar)**, **[@chinezbrun](https://github.com/chinezbrun)** - [Issue #44](https://github.com/hiall-fyi/tado_ce/issues/44)
-- Reported slow state confirmation (25-30s delay) after climate changes
-- @hapklaar provided detailed screenshots and debug logs that confirmed the root cause
-- Identified that immediate refresh handler updated zones.json but entities didn't re-read
-
-### What Was Fixed
-
-- ✅ **Issue #44**: Signal-based entity update - climate entities now listen for `SIGNAL_ZONES_UPDATED` and re-read fresh data immediately after zones.json refresh
-- ✅ State confirmation time reduced from 25-30s to ~6-8s (debounce_delay + API time)
-
----
-
-## v1.9.2 (2026-02-01) - Hotfix: Grey Loading State
-
-### Bug Reports & Issue Reporters
-
-**[@chinezbrun](https://github.com/chinezbrun)** - [Issue #44](https://github.com/hiall-fyi/tado_ce/issues/44)
-- Reported grey loading state issue (15-20 second delay) when changing climate modes
-- Extensive testing across multiple versions (v1.5.0 to v1.9.1) to help identify the regression
-- Provided detailed timestamps and screenshots showing the delay
-
-### What Was Fixed
-
-- ✅ **Issue #44**: Grey loading state - changed from fire-and-forget to await pattern for API calls
-- ✅ Service calls now await API completion (with 10s timeout) for proper HA Frontend state sync
-- ✅ Fixed race condition where refresh failures incorrectly triggered rollback
-- ✅ Fixed Smart Comfort cache bloat - deduplicate readings on cache load
-
----
-
-## v1.9.1 (2026-01-31) - Hotfix: Device Migration Error
-
-### Bug Reports & Issue Reporters
-
-**[@thefern69](https://github.com/thefern69)** - [Issue #74](https://github.com/hiall-fyi/tado_ce/issues/74)
-- Reported startup crash after upgrading to v1.9.0
-- Identified device identifier unpacking error in migration code
-- Quick bug report that caught this critical issue within hours of release
-
-### What Was Fixed
-
-- ✅ **Issue #74**: Device migration error - fixed identifier tuple unpacking for non-standard device identifiers
-
----
-
-## v1.9.0 (2026-01-31) - Smart Comfort Analytics + Bug Fixes
-
-### Feature Ideas & Suggestions
-
-**[@thefern69](https://github.com/thefern69)** - [Discussion #33](https://github.com/hiall-fyi/tado_ce/discussions/33)
+**[@thefern69](https://github.com/thefern69)** - [Issue #74](https://github.com/hiall-fyi/tado_ce/issues/74), [Discussion #33](https://github.com/hiall-fyi/tado_ce/discussions/33)
+- Reported device migration crash on startup
 - Proposed room-aware early start / preheat concept
-- Inspired the Smart Comfort Analytics suite (heating rate, cooling rate, preheat advisor)
 
-**[@ChrisMarriott38](https://github.com/ChrisMarriott38)** - [Issue #64](https://github.com/hiall-fyi/tado_ce/issues/64)
-- Proposed Mold Risk Indicator based on temp + humidity
-- Suggested environment monitoring features
-- Inspired the Comfort Level sensor (author's personal implementation now shared with community)
-
-### Bug Reports & Issue Reporters
-
-**[@ChrisMarriott38](https://github.com/ChrisMarriott38)** - [Issue #54](https://github.com/hiall-fyi/tado_ce/issues/54)
-- Reported API reset detection not working with 100-call limit accounts
-- Helped identify that hardcoded threshold needed to be dynamic
+**[@ChrisMarriott38](https://github.com/ChrisMarriott38)** - [Issue #54](https://github.com/hiall-fyi/tado_ce/issues/54), [Issue #56](https://github.com/hiall-fyi/tado_ce/issues/56), [Issue #64](https://github.com/hiall-fyi/tado_ce/issues/64)
+- Reported API reset detection issue with 100-call limit
+- Reported device sensors assigned to wrong zone
+- Proposed mold risk indicator and environment monitoring
 
 **[@neonsp](https://github.com/neonsp)** - [Issue #61](https://github.com/hiall-fyi/tado_ce/issues/61)
-- Reported Refresh AC Capabilities button not recording API calls in history
-- Identified missing call type tracking for capabilities endpoint
+- Reported AC capabilities consuming unnecessary API calls
 
 **[@colinada](https://github.com/colinada)** - [Issue #66](https://github.com/hiall-fyi/tado_ce/issues/66)
 - Reported temperature offset only applying to first TRV in multi-TRV rooms
-- Identified that offset service needed to loop through all devices
-
-**[@ChrisMarriott38](https://github.com/ChrisMarriott38)** - [Issue #56](https://github.com/hiall-fyi/tado_ce/issues/56)
-- Reported Battery/Connection sensors assigned to wrong zone when device serves multiple zones
-- Helped identify that HEATING zones should be prioritized over HOT_WATER
-
-**[@hapklaar](https://github.com/hapklaar)**, **[@neonsp](https://github.com/neonsp)** - [Issue #44](https://github.com/hiall-fyi/tado_ce/issues/44)
-- Continued testing and feedback on AC turn-off behavior
-- Debug logging added to help diagnose intermittent restore-to-ON issue
-
-### What Was Added/Fixed
-
-- ✅ **Discussion #33**: Smart Comfort Analytics - Heating Rate, Cooling Rate, Time to Target, Heating Efficiency, Preheat Advisor
-- ✅ **Issue #64**: Environment Sensors - Mold Risk Indicator, Comfort Level sensor
-- ✅ **Issue #54**: API reset detection now uses dynamic threshold for both 5000 and 100 call limits
-- ✅ **Issue #61**: Refresh AC Capabilities button now tracked in call history (Code 8)
-- ✅ **Issue #66**: Temperature offset now applied to ALL devices in multi-TRV zones
-- ✅ **Issue #56**: Device sensors now assigned to HEATING zones over HOT_WATER when device serves multiple zones
-- ✅ **Issue #44**: Added detailed debug logging for AC turn-off diagnosis
 
 ---
 
-## v1.8.3 (2026-01-26) - AC Optimistic Updates & Cached Capabilities
-
-### Bug Reports & Issue Reporters
+## v1.8.x
 
 **[@neonsp](https://github.com/neonsp)** - [Issue #44](https://github.com/hiall-fyi/tado_ce/issues/44), [Issue #61](https://github.com/hiall-fyi/tado_ce/issues/61)
-- Reported AC OFF→ON only shows mode change, not temperature/fan/hvac_action
-- Reported restart consuming 6 API calls (4 for AC capabilities that don't change)
-- Identified that AC capabilities should be cached
+- Reported AC OFF→ON state feedback issues, AC capabilities caching suggestion
 
-### What Was Fixed
-
-- ✅ **Issue #44**: AC OFF→ON optimistic updates now include hvac_mode and hvac_action
-- ✅ **Issue #61**: AC capabilities now cached on first fetch, saving API calls on every restart
-
----
-
-## v1.8.2 (2026-01-26) - AC Optimistic Updates Enhancement
-
-### Bug Reports & Issue Reporters
-
-**[@neonsp](https://github.com/neonsp)** - [Issue #44](https://github.com/hiall-fyi/tado_ce/issues/44)
-- Reported AC turning on from OFF only shows mode change, not temperature/fan mode
-- Identified that optimistic updates needed to include all attributes
-
-**[@hapklaar](https://github.com/hapklaar)** - [Issue #44](https://github.com/hiall-fyi/tado_ce/issues/44)
-- Reported Resume All Schedules button taking ~20 seconds to update
-- Identified debounce delay was being applied unnecessarily
-
-### What Was Fixed
-
-- ✅ **Issue #44**: AC optimistic updates now include temperature, fan mode, and hvac action when turning on
-- ✅ **Issue #44**: Resume All Schedules button now refreshes immediately (skips debounce delay)
-
----
-
-## v1.8.1 (2026-01-26) - AC Optimistic Updates Hotfix
-
-### Bug Reports & Issue Reporters
-
-**[@neonsp](https://github.com/neonsp)** - [Issue #44](https://github.com/hiall-fyi/tado_ce/issues/44)
-- Reported AC zones still bouncing back after v1.8.0
-- Identified that AC class was missing optimistic update protection
-
-**[@hapklaar](https://github.com/hapklaar)** - [Issue #44](https://github.com/hiall-fyi/tado_ce/issues/44)
-- Reported Resume All Schedules button not refreshing climate entities
-
-### What Was Fixed
-
-- ✅ **Issue #44**: AC optimistic updates - AC zones now have same protection as heating zones
-- ✅ **Issue #44**: Resume All Schedules refresh - button now properly triggers immediate refresh
-- ✅ AC state changes (temperature, mode, fan, swing) update immediately without bouncing back
-
----
-
-## v1.8.0 (2026-01-26) - Schedule Calendar & Multi-Home Data
-
-### Feature Contributors
-
-**Schedule Calendar** - [Discussion #51](https://github.com/hiall-fyi/tado_ce/discussions/51)
-- Per-zone calendar entities showing heating schedules from Tado app
-- Opt-in feature to minimize API calls
-
-### Bug Reports & Issue Reporters
+**[@hapklaar](https://github.com/hapklaar)** - [Issue #44](https://github.com/hiall-fyi/tado_ce/issues/44), [Discussion #39](https://github.com/hiall-fyi/tado_ce/discussions/39)
+- Reported Resume All Schedules delay, requested Resume All Schedules button
 
 **[@ChrisMarriott38](https://github.com/ChrisMarriott38)** - [Issue #54](https://github.com/hiall-fyi/tado_ce/issues/54), [Issue #55](https://github.com/hiall-fyi/tado_ce/issues/55)
-- Requested `last_reset` and `reset_at` attributes on API Reset sensor
-- Suggested Home State Sync should default to OFF (consistent with Weather/Mobile Devices)
-- Helped maintain API-saving defaults across all optional features
-
-### What Was Added/Fixed
-
-- ✅ **NEW**: Schedule Calendar - per-zone calendar entities (opt-in)
-- ✅ **NEW**: Per-zone Refresh Schedule button
-- ✅ **NEW**: API Reset sensor `reset_at` and `last_reset` attributes ([#54](https://github.com/hiall-fyi/tado_ce/issues/54))
-- ✅ Multi-home prep: Per-home data files (`zones_{home_id}.json`)
-- ✅ Auto-migration for existing data files
-- ✅ **Issue #55**: Home State Sync default changed to OFF
+- Requested API Reset sensor attributes, suggested Home State Sync default OFF
 
 ---
 
-## v1.7.0 (2026-01-26) - Multi-Home Preparation
-
-### Bug Reports & Feature Contributors
+## v1.7.0
 
 **[@neonsp](https://github.com/neonsp)** - [Issue #44](https://github.com/hiall-fyi/tado_ce/issues/44), [Issue #31](https://github.com/hiall-fyi/tado_ce/issues/31)
 - Reported UI not updating immediately after state changes
 - Requested optional homeState sync to save API calls
-- Continued testing and feedback
-
-### What Was Added/Fixed
-
-- ✅ **Issue #44**: Optimistic state updates - immediate UI feedback with rollback on failure
-- ✅ **Issue #31**: Optional homeState sync - saves 1 API call per quick sync
-- ✅ Multi-home prep: unique_id migration to `tado_ce_{home_id}`
-- ✅ Fixed options float validation (NumberSelector returns float)
 
 ---
 
-## v1.6.0 (2026-01-25) - Refresh & Automation Fixes
-
-### Bug Reports & Issue Reporters
+## v1.6.0
 
 **[@neonsp](https://github.com/neonsp)** - [Issue #31](https://github.com/hiall-fyi/tado_ce/issues/31)
-- Reported `climate.set_temperature` ignoring `hvac_mode` parameter in Node-RED
-- Helped identify missing `ATTR_HVAC_MODE` handling in `async_set_temperature()`
+- Reported `climate.set_temperature` ignoring `hvac_mode` parameter
 
 **[@hapklaar](https://github.com/hapklaar)** - [Issue #44](https://github.com/hiall-fyi/tado_ce/issues/44)
-- Reported climate entities not updating consistently when changing multiple zones
-- Identified Resume All Schedules button not refreshing dashboard
-- Provided detailed screenshots showing the issue
-
-### What Was Fixed
-
-- ✅ **Issue #31**: `climate.set_temperature` now handles `hvac_mode` parameter for Node-RED/automation compatibility
-- ✅ **Issue #44**: Debounced refresh mechanism for multi-zone updates (multiple changes = 1 API call)
-- ✅ **Issue #44**: Resume All Schedules button now triggers immediate refresh
+- Reported climate entities not updating consistently
 
 ---
 
-## v1.5.5 (2026-01-24) - AC Auto Mode & API Optimization
-
-### Bug Reports & Issue Reporters
+## v1.5.x
 
 **[@neonsp](https://github.com/neonsp)** - [Issue #31](https://github.com/hiall-fyi/tado_ce/issues/31)
-- Reported AC Auto mode turning off AC instead of setting Tado's AUTO mode
-- Identified 3 API calls per state change, suggested optimization
-- Continued testing and feedback throughout v1.5.x AC fixes
+- Comprehensive AC testing — identified all 6 AC issues, provided API response data
+- Reported AC Auto mode turning off AC, suggested API call optimization
 
-### What Was Fixed
-
-- ✅ **Issue #31**: AC Auto mode fix - removed confusing `AUTO` option (use `Heat/Cool` instead)
-- ✅ **Issue #31**: Reduced API calls per state change from 3 to 2 (optimized immediate refresh)
-
----
-
-## v1.5.4 (2026-01-24) - Complete AC Fix
-
-### Bug Reports & Issue Reporters
-
-**[@neonsp](https://github.com/neonsp)** - [Issue #31](https://github.com/hiall-fyi/tado_ce/issues/31)
-- Comprehensive AC testing and debug output
-- Identified all 6 AC issues (fan/swing state, idle status, DRY mode, temperature, swing reset, power sensor)
-- Provided API response data confirming correct field names (`fanLevel`, `verticalSwing`, `horizontalSwing`, `acPower.value`)
-- Suggested unified swing dropdown matching official integration
-
-### What Was Fixed/Added
-
-- ✅ **Issue #31**: AC fan/swing state not updating - fixed field names
-- ✅ **Issue #31**: AC always showing "idle" - use `acPower.value`
-- ✅ **Issue #31**: DRY mode 422 error - mode-specific payload
-- ✅ **Issue #31**: Temperature disappearing when AC off - preserve value
-- ✅ **Issue #31**: Swing reset when changing settings - preserve unified state
-- ✅ **Issue #31**: AC Power sensor showing 0% - handle `value` vs `percentage`
-- ✅ Unified swing dropdown (off/vertical/horizontal/both)
-- ✅ Entity unique_id stability (use zone_id instead of zone_name)
-
----
-
-## v1.5.3 (2026-01-24) - AC Fix & Resume All Schedules
-
-### Bug Reports & Issue Reporters
-
-**[@neonsp](https://github.com/neonsp)** - [Issue #31](https://github.com/hiall-fyi/tado_ce/issues/31)
-- Reported AC control 422 errors
-- Provided critical API payload from app.tado.com showing correct field names
-- Helped identify `fanSpeed` → `fanLevel`, `swing` → `verticalSwing`/`horizontalSwing` fix
-
-### Feature Contributors
-
-**[@hapklaar](https://github.com/hapklaar)** - [Discussion #39](https://github.com/hiall-fyi/tado_ce/discussions/39)
+**[@hapklaar](https://github.com/hapklaar)** - [Discussion #39](https://github.com/hiall-fyi/tado_ce/discussions/39), [Issue #34](https://github.com/hiall-fyi/tado_ce/issues/34)
 - Requested Resume All Schedules button
-- Shared automation use case for resetting manual overrides
-
-### What Was Fixed/Added
-
-- ✅ **Issue #31**: AC control 422 error - fixed API field names
-- ✅ **Discussion #39**: Resume All Schedules button on Hub device
-- ✅ Blocking I/O warning in config_flow.py
-- ✅ Comprehensive upgrade logging at INFO level
-
----
-
-## v1.5.2 (2026-01-24) - Data Storage Fix
-
-### Bug Reports & Issue Reporters
+- Reported token loss after HACS upgrade
 
 **[@jeverley](https://github.com/jeverley)** - [Issue #34](https://github.com/hiall-fyi/tado_ce/issues/34)
-- Reported token loss after HACS upgrade
-- Identified that data directory was being overwritten
-
-**[@hapklaar](https://github.com/hapklaar)** - [Issue #34](https://github.com/hiall-fyi/tado_ce/issues/34)
-- Confirmed token loss issue
-- Helped validate the problem
+- Reported token loss after HACS upgrade, requested re-authenticate option
 
 **[@wrowlands3](https://github.com/wrowlands3)** - [Issue #34](https://github.com/hiall-fyi/tado_ce/issues/34)
-- Additional confirmation of the upgrade issue
-
-### What Was Fixed
-
-- ✅ **Issue #34**: Token loss on HACS upgrade - data directory moved to `/config/.storage/tado_ce/`
-
----
-
-## v1.5.1 (2026-01-24) - OAuth & Re-auth Fix
-
-### Bug Reports & Issue Reporters
+- Confirmed token loss issue
 
 **[@mkruiver](https://github.com/mkruiver)** - [Issue #36](https://github.com/hiall-fyi/tado_ce/issues/36)
-- Reported OAuth flow "invalid flow specified" error for new users
-
-**[@jeverley](https://github.com/jeverley)** - [Issue #34](https://github.com/hiall-fyi/tado_ce/issues/34)
-- Requested re-authenticate option in UI
-
-**[@hapklaar](https://github.com/hapklaar)** - [Issue #34](https://github.com/hiall-fyi/tado_ce/issues/34)
-- Supported re-authenticate feature request
+- Reported OAuth flow error for new users
 
 **[@harryvandervossen](https://github.com/harryvandervossen)** - [Discussion #35](https://github.com/hiall-fyi/tado_ce/discussions/35)
 - Provided detailed OAuth flow feedback
 
-### What Was Fixed
-
-- ✅ **Issue #36**: OAuth flow error - simplified to manual check approach
-- ✅ **Issue #34**: Re-authenticate option added via reconfigure flow
-
----
-
-## v1.5.0 (2026-01-24) - Async & Stability Release
-
-### Bug Reports & Issue Reporters
-
-**[@hapklaar](https://github.com/hapklaar)** - [Issue #26](https://github.com/hiall-fyi/tado_ce/issues/26)
-- Reported null value crash in water_heater entities
-- Helped identify the `temperature: null` API response issue for HOT_WATER zones
-
-**[@neonsp](https://github.com/neonsp)** - [Issue #31](https://github.com/hiall-fyi/tado_ce/issues/31)
-- Reported AC zone missing DRY/FAN modes, fan levels, and swing options
-- Provided detailed API response data showing AC capabilities endpoint
-- Helped identify that AC capabilities require separate API endpoint
-
-### Feature Contributors
-
 **[@pisolofin](https://github.com/pisolofin)** - [Issue #24](https://github.com/hiall-fyi/tado_ce/issues/24)
-- Requested `get_temperature_offset` service for automations
+- Requested `get_temperature_offset` service
 
 **[@ohipe](https://github.com/ohipe)** - [Issue #25](https://github.com/hiall-fyi/tado_ce/issues/25)
-- Requested optional `offset_celsius` attribute on climate entities
-- Identified HVAC mode behavior difference from official integration
+- Requested optional `offset_celsius` attribute
 
 **[@beltrao](https://github.com/beltrao)** - [Issue #28](https://github.com/hiall-fyi/tado_ce/issues/28)
-- Requested frequent mobile device sync option for presence automations
-
-### What Was Fixed/Added
-
-- ✅ **Issue #24**: `tado_ce.get_temperature_offset` service
-- ✅ **Issue #25**: Optional `offset_celsius` attribute, HVAC mode logic fix
-- ✅ **Issue #26**: Null value crash fix for water_heater and climate entities
-- ✅ **Issue #27**: Async migration, blocking I/O warning fix
-- ✅ **Issue #28**: Frequent mobile device sync option
-- ✅ **Issue #31**: Full AC capabilities support (DRY/FAN modes, fan levels, swing)
-
----
-
-## v1.4.1 (2026-01-23) - Hotfix Release
-
-### Bug Reports & Issue Reporters
+- Requested frequent mobile device sync option
 
 **[@hapklaar](https://github.com/hapklaar)** - [Issue #26](https://github.com/hiall-fyi/tado_ce/issues/26)
-- First to report authentication broken after v1.2.1 → v1.4.0 upgrade
-- Quick bug report that caught this critical issue early
+- Reported authentication broken after upgrade
 
 **[@mjsarfatti](https://github.com/mjsarfatti)** - [Issue #26](https://github.com/hiall-fyi/tado_ce/issues/26)
-- Additional confirmation of the upgrade issue
-- Helped validate the problem
-
-### What Was Fixed
-
-- ✅ **Issue #26**: Authentication broken after upgrade - missing migration path from VERSION 2/3 to VERSION 4
+- Confirmed authentication broken after upgrade
 
 ---
 
-## v1.4.0 (2026-01-23) - Setup Simplification Release
-
-### Feature Contributors
-
-**Setup Flow Redesign**
-- New device authorization flow - no more SSH required
-- Home selection for multi-home accounts
-
-### Bug Reports & Issue Reporters
+## v1.4.0
 
 **[@ChrisMarriott38](https://github.com/ChrisMarriott38)** - [Issue #15](https://github.com/hiall-fyi/tado_ce/issues/15), [Issue #16](https://github.com/hiall-fyi/tado_ce/issues/16), [Issue #17](https://github.com/hiall-fyi/tado_ce/issues/17)
-- Reported Boiler Flow Temperature sensor issues
-- Identified API Reset time confusion after re-authentication
-- Reported Options UI issues (checkboxes, values not saving)
-- Suggested uniform polling mode
+- Reported boiler flow temperature issues, API reset time confusion, options UI issues
 
 **[@jeverley](https://github.com/jeverley)** - [Issue #22](https://github.com/hiall-fyi/tado_ce/issues/22)
 - Reported climate preset mode stuck on Away
-- Helped identify mobile device location vs home state issue
 
 **[@hapklaar](https://github.com/hapklaar)**
 - Volunteered for OpenTherm testing
 
-### What Was Fixed
-
-- ✅ **Issue #15**: Boiler Flow Temperature sensor - auto-detect OpenTherm, moved to Hub device
-- ✅ **Issue #16**: API Reset time now uses actual Tado API reset time
-- ✅ **Issue #17**: Options UI fixes, uniform polling mode support
-- ✅ **Issue #22**: Climate preset mode now uses home state instead of mobile device location
-
 ---
 
-## v1.2.1 (2026-01-22) - Hotfix Release
-
-### Bug Reports & Issue Reporters
+## v1.2.x
 
 **[@marcovn](https://github.com/marcovn)** - [Issue #10](https://github.com/hiall-fyi/tado_ce/issues/10), [Issue #11](https://github.com/hiall-fyi/tado_ce/issues/11)
-- Reported duplicate hub issue after v1.1.0 → v1.2.0 upgrade
-- Reported confusing entity names for multi-device zones
-- Provided valuable feedback and testing
-- Helped identify both critical issues in v1.2.1
+- Reported duplicate hub issue, confusing entity names for multi-device zones
 
-**[@ChrisMarriott38](https://github.com/ChrisMarriott38)** - [Issue #10](https://github.com/hiall-fyi/tado_ce/issues/10)
-- Reported duplicate hub cleanup issue
-- Provided detailed testing feedback
-- Helped validate the fix
-
-**[@hapklaar](https://github.com/hapklaar)** - [Issue #10](https://github.com/hiall-fyi/tado_ce/issues/10)
-- Reported duplicate hub issue
-- Contributed to testing and validation
-
-### What Was Fixed
-
-- ✅ **Issue #10**: Duplicate hub cleanup race condition - automatic cleanup on upgrade
-- ✅ **Issue #11**: Multi-device zone entity naming - clear device type + index suffixes
-
----
-
-## v1.2.0 (2026-01-21) - Major Stability Release
-
-### Feature Contributors
+**[@ChrisMarriott38](https://github.com/ChrisMarriott38)** - [Issue #4](https://github.com/hiall-fyi/tado_ce/issues/4), [Issue #10](https://github.com/hiall-fyi/tado_ce/issues/10)
+- Extensive feature requests and testing — boiler flow temp, weather sensors, API tracking, polling intervals, test mode
+- Confirmed duplicate hub cleanup issue
 
 **[@wrowlands3](https://github.com/wrowlands3)** - [Issue #4](https://github.com/hiall-fyi/tado_ce/issues/4)
-- Requested zone-based device organization
-- Suggested improved entity naming (remove "Tado CE" prefix)
-- Highlighted difficulty in searching and identifying zones in UI
-- Helped shape the device organization structure
-
-**[@ChrisMarriott38](https://github.com/ChrisMarriott38)** - [Issue #4](https://github.com/hiall-fyi/tado_ce/issues/4)
-- Requested boiler flow temperature sensor integration
-- Suggested optional weather sensors toggle to save API calls
-- Requested API call tracking with detailed history and diagnostic codes
-- Suggested enhanced reset time display (human-readable timestamp)
-- Proposed customizable day/night polling intervals for shift workers
-- Requested test mode with enforced API limits (100 calls) for testing
-- Suggested pre-release testing mechanism for community feedback
-- Provided extensive testing feedback and bug reports
-- Identified API polling patterns and optimization opportunities
-- Shared advanced use cases: mold risk calculations, air quality index, weather compensation for heat pumps
-- Helped validate temperature and humidity sensor functionality
-- Provided detailed feedback on API optimization and usage patterns
+- Requested zone-based device organization, improved entity naming
 
 **[@donnie-darko](https://github.com/donnie-darko)** - [Issue #4](https://github.com/hiall-fyi/tado_ce/issues/4)
-- Requested `set_water_heater_timer` service with temperature parameter
-- Proposed service compatibility with official Tado integration
-- Shared solar water heater use case and automation requirements
-- Suggested parameter naming alignment (`time_period` vs `duration`)
-- Helped shape service design for seamless migration from official integration
-- Provided NODE-RED workflow requirements for solar thermal systems
-
-**[@marcovn](https://github.com/marcovn)** - [Issue #4](https://github.com/hiall-fyi/tado_ce/issues/4)
-- Participated in Issue #4 discussions
-- Contributed to community feedback
+- Requested `set_water_heater_timer` service, shared solar water heater use case
 
 **[@StreborStrebor](https://github.com/StreborStrebor)** - [Issue #4](https://github.com/hiall-fyi/tado_ce/issues/4)
-- Requested immediate refresh after user actions
-- Highlighted the 2-minute delay issue
-- Reported device card not updating after temperature/mode changes
-- Requested AC fan mode controls (Auto, Low, Medium, High)
-- Requested AC swing mode controls (Off, Vertical, Horizontal, Both)
-- Suggested disabling weather polling to free up API calls for more frequent updates
-- Helped prioritize UX improvements
+- Requested immediate refresh after user actions, AC fan/swing mode controls
 
-### Bug Reports & Issue Reporters
-
-**[@LorDHarA](https://github.com/LorDHarA)** - [Issue #1](https://github.com/hiall-fyi/tado_ce/issues/1) *(Fixed in v1.0.1)*
-- Identified 403 authentication error for new users
-- Led to auto-fetch home ID feature
-- Helped improve initial setup experience
-
-**[@hapklaar](https://github.com/hapklaar)** - [Issue #2](https://github.com/hiall-fyi/tado_ce/issues/2), [Issue #5](https://github.com/hiall-fyi/tado_ce/issues/5)
-- Suggested adding humidity attribute to climate entities *(Implemented in v1.1.0)*
-- Suggested adding preset mode support (Home/Away) *(Implemented in v1.1.0)*
-- Reported away mode switch toggling back issue
-- Reported 2-minute delay for temperature/mode changes
-- Both issues fixed with Immediate Refresh feature
+**[@hapklaar](https://github.com/hapklaar)** - [Issue #2](https://github.com/hiall-fyi/tado_ce/issues/2), [Issue #5](https://github.com/hiall-fyi/tado_ce/issues/5), [Issue #10](https://github.com/hiall-fyi/tado_ce/issues/10)
+- Suggested humidity attribute, preset mode support, reported away mode toggle issue
 - Generous Buy Me a Coffee supporter! ☕
 
-**[@MJWMJW2](https://github.com/MJWMJW2)** - [Issue #3](https://github.com/hiall-fyi/tado_ce/issues/3) *(Implemented in v1.1.0)*
-- Requested Away Mode switch for manual Home/Away toggle
-- Improved geofencing control
+**[@LorDHarA](https://github.com/LorDHarA)** - [Issue #1](https://github.com/hiall-fyi/tado_ce/issues/1)
+- First bug report — identified 403 auth error for new users
+
+**[@MJWMJW2](https://github.com/MJWMJW2)** - [Issue #3](https://github.com/hiall-fyi/tado_ce/issues/3)
+- Requested Away Mode switch
 
 **[@ctcampbell](https://github.com/ctcampbell)** - [Issue #6](https://github.com/hiall-fyi/tado_ce/issues/6)
 - Requested proper AUTO/HEAT/OFF operation modes for hot water
-- Highlighted limitations of ON/OFF only modes (water runs forever or schedule never runs)
-- Requested timer-based HEAT mode support
-- Requested AUTO mode to return to schedule
-- Led to comprehensive hot water operation modes implementation in v1.2.0
 
 **[@greavous1138](https://github.com/greavous1138)** - [Issue #7](https://github.com/hiall-fyi/tado_ce/issues/7)
-- Reported `duration` parameter not working in `climate.set_temperature` service
-- Identified YAML configuration error with timer duration
-- Requested boost button feature
-- Helped identify service parameter issues
-- Contributed to climate timer service improvements
+- Reported `duration` parameter not working, requested boost button
 
 **[@thefern69](https://github.com/thefern69)** - [Issue #9](https://github.com/hiall-fyi/tado_ce/issues/9)
 - Provided Docker installation instructions
-- Helped improve README documentation for Docker users
-
-### What Was Added/Fixed
-
-- ✅ **Issue #4**: Zone-based device organization — each zone as separate device
-- ✅ **Issue #4**: Entity naming — removed "Tado CE" prefix for zone entities
-- ✅ **Issue #4**: Optional weather sensors toggle to save API calls
-- ✅ **Issue #4**: Customizable day/night polling intervals
-- ✅ **Issue #5**: Immediate refresh after user actions (debounced)
-- ✅ **Issue #6**: Hot water AUTO/HEAT/OFF modes with timer buttons (30/60/90 min)
-- ✅ **Issue #7**: Climate timer service (`set_climate_timer`)
-- ✅ 60-70% reduction in API calls through optimized sync
-
-### Community Quotes
-
-> "This integration saves me from rate limit headaches!" - Community feedback
-
-> "The immediate refresh feature is exactly what I needed!" - @hapklaar
-
-> "Zone-based devices make organization so much better!" - @wrowlands3
-
-> "API call tracking gives me peace of mind about my quota." - @ChrisMarriott38
-
-> "What an incredible reply! So detailed thanks! I'm ultra novice at code things, just a dabble here and there, but have done Extensive testing for other tools/plugins/web/developers over the years for work." - @ChrisMarriott38
-
-> "Boiler Flow would be my No1 To be included in the API pull. So i dont have to have that as a separate rest API call if possible. to save the Limit." - @ChrisMarriott38
-
-> "This integration turns 'on' which turns the water on until I manually cancel the state (i.e. forever), or 'off' which means my schedule never runs." - @ctcampbell (Issue #6 - Fixed in v1.2.0)
-
-> "First of all, thanks for making this integration, this morning I was actually able to use my Tado system via HA when I woke up!" - @greavous1138
 
 ---
 
 ## 🌟 Special Thanks
 
-**Hardware Verification:**
-
 **[@wyx087](https://github.com/wyx087)** - [Discussion #21](https://github.com/hiall-fyi/tado_ce/discussions/21)
 - Verified Tado V2 hardware compatibility
-- Confirmed integration works perfectly with V2 devices
 
-**Community Testers & Feedback Providers:**
-- Users who shared their setup configurations
-- Community members who provided detailed use cases
-- All supporters on Buy Me a Coffee
-
-**Technical Contributions:**
-- Bug reports that helped identify edge cases
-- Feature requests that shaped the roadmap
-- Detailed feedback on API usage patterns
-- Real-world testing across different Tado setups
-- Advanced automation examples (mold risk, air quality, weather compensation)
-- Documentation improvements and setup guides
-
----
-
-## 📊 Overall Impact
-
-**Total Issues Addressed:** 25+ issues across all versions
-**Features Implemented:** 30+ new features
-**Bug Fixes:** 20+ critical/high-priority fixes
-**API Optimization:** 60-70% reduction in API calls
-**Community Engagement:** Active discussions and continuous feedback
-
----
-
-## 🎯 Looking Forward
-
-The community continues to shape Tado CE's future! Current discussions:
-
-**Completed in v1.10.0:**
-- ✅ Coordinator race condition fix - @hapklaar, @chinezbrun, @neonsp
-- ✅ Climate entity flickering fix - @hapklaar, @chinezbrun, @neonsp
-- ✅ State sync improvements - @hapklaar, @chinezbrun, @neonsp
-
-**Completed in v1.9.4:**
-- ✅ Boost button entity - @greavous1138
-
-**Requested Features:**
-- Air Comfort sensors (humidity comfort level)
-- Multiple homes support (simultaneous)
-- Max Flow Temperature control (requires OpenTherm) - @ChrisMarriott38
-- Combi boiler mode - @ChrisMarriott38
-- Auto-assign devices to Areas during setup
-- Local API support (reduce cloud dependency) - [Discussion #29](https://github.com/hiall-fyi/tado_ce/discussions/29)
-
-**Want to contribute?** Open an issue or join the discussion on [GitHub](https://github.com/hiall-fyi/tado_ce/issues)!
+**All community members** who tested, reported issues, shared use cases, and supported the project. You make Tado CE better every release.
 
 ---
 
 **Made with ❤️ by the Tado CE community**
-
-*Special thanks to everyone who uses, tests, reports issues, and supports this project. You make this integration better every day!*
