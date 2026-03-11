@@ -261,6 +261,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     await hass.config_entries.async_forward_entry_setups(entry, platforms_to_load)
 
+    # Remember which platforms were loaded so unload can match exactly
+    coordinator.loaded_platforms = frozenset(platforms_to_load)
+
     # Lightweight re-registration guard (services normally registered in async_setup)
     if not hass.services.has_service(DOMAIN, SERVICE_SET_CLIMATE_TIMER):
         await _async_register_services(hass)
@@ -298,10 +301,8 @@ async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     _last_options_snapshot[entry.entry_id] = current_options
     _LOGGER.info("Tado CE: Options changed, reloading integration...")
 
-    from .migration import (
-        async_handle_test_mode_transition,
-        cleanup_disabled_feature_entities,
-    )
+    from .entity_cleanup import cleanup_disabled_feature_entities
+    from .migration import async_handle_test_mode_transition
 
     try:
         cleanup_disabled_feature_entities(hass, entry)
@@ -346,7 +347,11 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     config_manager = getattr(coordinator, "config_manager", None) if coordinator else None
 
     platforms_to_unload = list(BASE_PLATFORMS)
-    if CALENDAR_PLATFORM and config_manager and config_manager.get_schedule_calendar_enabled():
+    # Only unload calendar if it was actually loaded during setup.
+    # HA raises ValueError if we try to unload a platform that was never loaded.
+    if coordinator and hasattr(coordinator, "loaded_platforms"):
+        platforms_to_unload = list(coordinator.loaded_platforms)
+    elif CALENDAR_PLATFORM and config_manager and config_manager.get_schedule_calendar_enabled():
         platforms_to_unload.append(CALENDAR_PLATFORM)
 
     unload_ok = await hass.config_entries.async_unload_platforms(entry, platforms_to_unload)

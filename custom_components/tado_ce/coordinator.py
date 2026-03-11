@@ -28,6 +28,7 @@ from .polling import get_polling_interval, should_pause_polling
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from homeassistant.const import Platform
     from homeassistant.core import HomeAssistant
 
     from .adaptive_preheat import AdaptivePreheatManager
@@ -132,6 +133,9 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._last_full_sync: datetime | None = None
         self._cached_ratelimit: dict[str, Any] | None = None
 
+        # Platforms loaded during setup (used by unload to match exactly)
+        self.loaded_platforms: frozenset[Platform] = frozenset()
+
     @property
     def outdoor_temp_history(self) -> list[float]:
         """Return outdoor temp history (read-only access for sensors)."""
@@ -228,7 +232,9 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "Tado CE: HA history detected reset at %s UTC",
                 detected_reset.strftime("%H:%M"),
             )
-            await async_update_ratelimit_reset_time(self.hass, detected_reset, self.home_id)
+            await async_update_ratelimit_reset_time(
+                self.hass, detected_reset, self.home_id, self.data_loader,
+            )
 
         # 5. Read all data from in-memory cache (populated by api_client write-through)
         zone_data = self.data_loader.get_cached("zones")

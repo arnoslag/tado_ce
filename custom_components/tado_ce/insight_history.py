@@ -262,7 +262,7 @@ class InsightHistoryTracker:
                             "zone_name": zone_name,
                             "duration_hours": round(duration.total_seconds() / 3600, 1),
                             "base_priority": _fmt_priority(
-                                priority_names.get(priority_num, str(priority_num))
+                                priority_names.get(priority_num, str(priority_num)),
                             ),
                         },
                     )

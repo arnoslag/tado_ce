@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from .calculations import calculate_surface_temperature
+from .calculations import calculate_surface_rh, calculate_surface_temperature
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -126,5 +126,4 @@ def get_effective_temperature(
         return fallback
 
 
-# calculate_surface_rh is imported from .calculations at module level for backward compatibility.
-from .calculations import calculate_surface_rh as calculate_surface_rh
+__all__ = ["calculate_surface_rh", "get_outdoor_temperature"]

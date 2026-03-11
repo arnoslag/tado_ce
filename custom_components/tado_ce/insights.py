@@ -12,8 +12,19 @@ from datetime import UTC, datetime, timedelta
 from enum import IntEnum
 from typing import TYPE_CHECKING, Any
 
+from .calculations import (
+    calculate_dew_point,
+    classify_comfort_level,
+    classify_mold_risk_level,
+)
+from .format_helpers import format_insight_type as _fmt_insight_type
+from .models import InsightTemperatureReading
+
 if TYPE_CHECKING:
     from .insight_history import InsightHistoryTracker
+
+# Backward compat alias — existing code may import TemperatureReading from here
+TemperatureReading = InsightTemperatureReading
 
 
 class InsightPriority(IntEnum):
@@ -34,13 +45,6 @@ class Insight:
     recommendation: str
     insight_type: str  # e.g., "mold_risk", "comfort", "battery", "window_predicted"
     zone_name: str | None = None
-
-
-from .format_helpers import format_insight_type as _fmt_insight_type  # noqa: E402 — after Insight class
-from .models import InsightTemperatureReading  # noqa: E402 — after Insight class for backward compat
-
-# Backward compat alias — existing code may import TemperatureReading from here
-TemperatureReading = InsightTemperatureReading
 
 # =============================================================================
 # Insight Threshold Constants
@@ -199,7 +203,7 @@ _INSIGHT_TO_GROUP: dict[str, str] = {t: grp for grp, types in CORRELATION_GROUPS
 def escalate_priorities(
     insights: list[Insight],
     history: InsightHistoryTracker,
-    now: datetime,  # noqa: ARG001 — reserved for future time-based escalation
+    now: datetime,
 ) -> list[Insight]:
     """Return new list with escalated priorities based on persistence duration.
 
@@ -320,13 +324,13 @@ class WindowPredictedResult:
 # ============ Window Predicted Detection ============
 
 
-def detect_window_predicted(  # noqa: C901, PLR0912, PLR0913
+def detect_window_predicted(
     readings: list[TemperatureReading],
-    hvac_active: bool,  # noqa: FBT001 — positional bool required by callers
+    hvac_active: bool,
     zone_name: str = "Room",
-    temp_threshold: float = 1.5,  # noqa: ARG001 — kept for backward compat
+    temp_threshold: float = 1.5,
     time_window_minutes: int = 5,
-    humidity_check: bool = True,  # noqa: ARG001, FBT001, FBT002 — kept for backward compat
+    humidity_check: bool = True,
     hvac_mode: str = "heating",
     consecutive_drops: int = 2,
 ) -> WindowPredictedResult:
@@ -421,7 +425,7 @@ def detect_window_predicted(  # noqa: C901, PLR0912, PLR0913
 # ============ Mold Risk Recommendations ============
 
 
-def calculate_mold_risk_recommendation(  # noqa: C901, PLR0911, PLR0912, PLR0913
+def calculate_mold_risk_recommendation(
     risk_level: str,
     zone_name: str,
     humidity: float | None = None,
@@ -541,7 +545,7 @@ def calculate_mold_risk_recommendation(  # noqa: C901, PLR0911, PLR0912, PLR0913
 # ============ Comfort Level Recommendations ============
 
 
-def calculate_comfort_recommendation(  # noqa: C901, PLR0911, PLR0912, PLR0913
+def calculate_comfort_recommendation(
     comfort_state: str,
     zone_name: str,
     current_temp: float | None = None,
@@ -636,12 +640,12 @@ def calculate_comfort_recommendation(  # noqa: C901, PLR0911, PLR0912, PLR0913
 # ============ Condensation Risk Recommendations ============
 
 
-def calculate_condensation_recommendation(  # noqa: PLR0911
+def calculate_condensation_recommendation(
     risk_level: str,
     zone_name: str,
     margin: float | None = None,
     ac_setpoint: float | None = None,
-    current_temp: float | None = None,  # noqa: ARG001 — kept for future use
+    current_temp: float | None = None,
 ) -> str:
     """Calculate SMART recommendation for condensation risk (AC zones).
 
@@ -681,11 +685,11 @@ def calculate_condensation_recommendation(  # noqa: PLR0911
     return ""
 
 
-def calculate_heating_condensation_recommendation(  # noqa: PLR0913
+def calculate_heating_condensation_recommendation(
     risk_level: str,
     zone_name: str,
     margin: float | None = None,
-    humidity: float | None = None,  # noqa: ARG001 — kept for future use
+    humidity: float | None = None,
     surface_temp: float | None = None,
     dew_point: float | None = None,
 ) -> str:
@@ -784,7 +788,7 @@ def calculate_battery_recommendation(
 # ============ Connection Recommendations ============
 
 
-def calculate_connection_recommendation(  # noqa: PLR0911
+def calculate_connection_recommendation(
     connection_state: str,
     zone_name: str,
     last_seen: str | None = None,
@@ -831,7 +835,7 @@ def calculate_connection_recommendation(  # noqa: PLR0911
 # ============ API Status Recommendations ============
 
 
-def calculate_api_status_recommendation(  # noqa: C901, PLR0911
+def calculate_api_status_recommendation(
     remaining_calls: int | None,
     total_calls: int | None,
     reset_time_human: str | None = None,
@@ -895,7 +899,7 @@ def calculate_api_status_recommendation(  # noqa: C901, PLR0911
 # ============ Historical Deviation Recommendations ============
 
 
-def calculate_historical_deviation_recommendation(  # noqa: C901, PLR0911
+def calculate_historical_deviation_recommendation(
     deviation: float | None,
     zone_name: str,
     current_temp: float | None = None,
@@ -963,7 +967,7 @@ def calculate_historical_deviation_recommendation(  # noqa: C901, PLR0911
 def calculate_confidence_recommendation(
     confidence_percent: float | None,
     zone_name: str,
-    cycle_count: int = 0,  # noqa: ARG001 — kept for backward compat
+    cycle_count: int = 0,
     completed_count: int = 0,
 ) -> str:
     """Calculate SMART recommendation for thermal analysis confidence.
@@ -1125,7 +1129,7 @@ def _get_action_label(insight_type: str) -> str:
 
 def _build_smart_summary(
     sorted_actions: list[tuple[str, dict[str, Any]]],
-    zones_with_issues: list[str],  # noqa: ARG001 — kept for future use
+    zones_with_issues: list[str],
 ) -> str:
     """Build context-rich summary from top-priority actions.
 
@@ -1317,7 +1321,7 @@ def build_weekly_digest(
     return _format_digest_parts(stats, header)
 
 
-def aggregate_home_insights(zone_insights: dict[str, list[Insight]]) -> dict[str, Any]:  # noqa: C901
+def aggregate_home_insights(zone_insights: dict[str, list[Insight]]) -> dict[str, Any]:
     """Aggregate insights from all zones into action-based home summary.
 
     Groups insights by action type across zones, producing a list of
@@ -1637,10 +1641,10 @@ def aggregate_cross_zone_window_predicted(
 
 def calculate_api_quota_planning_insight(
     remaining_calls: int | None = None,
-    total_calls: int | None = None,  # noqa: ARG001 — kept for backward compat
+    total_calls: int | None = None,
     calls_per_hour: float | None = None,
     hours_until_reset: float | None = None,
-    current_interval_minutes: float | None = None,  # noqa: ARG001 — kept for backward compat
+    current_interval_minutes: float | None = None,
 ) -> Insight | None:
     """Calculate API quota planning insight.
 
@@ -1740,15 +1744,6 @@ def calculate_weather_impact_insight(
         zone_name=zone_name or None,
     )
 
-
-# ============ Physics Functions (re-exported from calculations.py) ============
-# calculate_dew_point, classify_mold_risk_level, classify_comfort_level
-# are imported at module level for backward compatibility.
-from .calculations import (  # noqa: E402 — backward compat re-exports
-    calculate_dew_point,
-    classify_comfort_level,
-    classify_mold_risk_level,
-)
 
 __all__ = [
     "calculate_dew_point",
@@ -1951,7 +1946,7 @@ def calculate_away_heating_active_insight(
 
 def calculate_home_all_off_insight(
     presence: str | None = None,
-    all_zones_off: bool = True,  # noqa: FBT001, FBT002 — public API, callers use positional
+    all_zones_off: bool = True,
     coldest_zone_name: str | None = None,
     coldest_zone_temp: float | None = None,
     coldest_zone_target: float | None = None,
@@ -2245,7 +2240,7 @@ def calculate_boiler_flow_anomaly_insight(
 
 
 def calculate_early_start_disabled_insight(
-    early_start_enabled: bool = True,  # noqa: FBT001, FBT002 — public API
+    early_start_enabled: bool = True,
     preheat_time_minutes: float | None = None,
     zone_name: str = "",
 ) -> Insight | None:
@@ -2543,8 +2538,8 @@ def calculate_humidity_trend_insight(
 
 
 def calculate_device_limitation_insight(
-    has_humidity_sensor: bool = True,  # noqa: FBT001, FBT002 — public API
-    has_temperature_sensor: bool = True,  # noqa: FBT001, FBT002 — public API
+    has_humidity_sensor: bool = True,
+    has_temperature_sensor: bool = True,
     zone_name: str = "",
 ) -> Insight | None:
     """Inform user when a zone device lacks expected sensors.

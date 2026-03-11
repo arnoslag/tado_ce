@@ -685,6 +685,10 @@ class TadoApiClient:
             ratelimit_path,
         )
 
+        # Write-through: update DataLoader cache (same pattern as _save_json_file)
+        if self._data_loader is not None:
+            self._data_loader.update_cache("ratelimit", data)
+
     async def get_access_token(self) -> str | None:
         """Get valid access token with automatic refresh.
 

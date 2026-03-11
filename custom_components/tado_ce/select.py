@@ -89,7 +89,7 @@ class TadoPresenceModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sel
     Uses 1 API call per change.
     """
 
-    _attr_options = ["Auto", "Home", "Away"]
+    _attr_options: list[str] = ["Auto", "Home", "Away"]
     _attr_translation_key = "presence_mode"
 
     def __init__(self, coordinator: TadoDataUpdateCoordinator, home_id: str) -> None:

@@ -47,7 +47,7 @@ async def async_setup_entry(
     schedule_calendar_enabled = config_manager.get_schedule_calendar_enabled() if config_manager else False
     boost_buttons_enabled = config_manager.get_boost_buttons_enabled() if config_manager else True
 
-    buttons = []
+    buttons: list[ButtonEntity] = []
 
     # Add Resume All Schedules button (hub-level)
     buttons.append(TadoResumeAllSchedulesButton(coordinator, home_id))
@@ -55,7 +55,7 @@ async def async_setup_entry(
     # Add Refresh AC Capabilities button (hub-level) - only if there are AC zones
     has_ac_zones = any(z.get("type") == "AIR_CONDITIONING" for z in (zones_info or []))
     if has_ac_zones:
-        buttons.append(TadoRefreshACCapabilitiesButton(coordinator, home_id))  # type: ignore[arg-type]
+        buttons.append(TadoRefreshACCapabilitiesButton(coordinator, home_id))
 
     if zones_info:
         for zone in zones_info:
@@ -65,26 +65,26 @@ async def async_setup_entry(
 
             # Create timer preset buttons for hot water zones
             if zone_type == "HOT_WATER":
-                for duration in DEFAULT_TIMER_PRESETS:
-                    buttons.append(
-                        TadoWaterHeaterTimerButton(coordinator, zone_id, zone_name, duration, home_id),  # type: ignore[arg-type]
-                    )
+                buttons.extend(
+                    TadoWaterHeaterTimerButton(coordinator, zone_id, zone_name, duration, home_id)
+                    for duration in DEFAULT_TIMER_PRESETS
+                )
 
             # Create boost buttons for heating zones (controlled by boost_buttons_enabled)
             if zone_type == "HEATING" and boost_buttons_enabled:
                 # Boost button (official Tado-style: max temp for 30 min)
                 buttons.append(
-                    TadoBoostButton(coordinator, zone_id, zone_name, home_id),  # type: ignore[arg-type]
+                    TadoBoostButton(coordinator, zone_id, zone_name, home_id),
                 )
                 # Smart Boost button (calculated duration based on heating rate)
                 buttons.append(
-                    TadoSmartBoostButton(coordinator, zone_id, zone_name, home_id),  # type: ignore[arg-type]
+                    TadoSmartBoostButton(coordinator, zone_id, zone_name, home_id),
                 )
 
             # Create refresh schedule button for heating zones (only if calendar enabled)
             if zone_type == "HEATING" and schedule_calendar_enabled:
                 buttons.append(
-                    TadoRefreshScheduleButton(coordinator, zone_id, zone_name, home_id),  # type: ignore[arg-type]
+                    TadoRefreshScheduleButton(coordinator, zone_id, zone_name, home_id),
                 )
 
     if buttons:

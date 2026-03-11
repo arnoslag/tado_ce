@@ -14,6 +14,7 @@ if TYPE_CHECKING:
 
     from .config_manager import ConfigurationManager
     from .coordinator import TadoDataUpdateCoordinator
+    from .data_loader import DataLoader
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -306,6 +307,7 @@ async def async_update_ratelimit_reset_time(
     hass: HomeAssistant,
     detected_reset: datetime,
     home_id: str | None = None,
+    data_loader: DataLoader | None = None,
 ) -> None:
     """Update ratelimit JSON with detected reset time from HA history.
 
@@ -316,15 +318,25 @@ async def async_update_ratelimit_reset_time(
         hass: Home Assistant instance
         detected_reset: Detected reset time (datetime in UTC)
         home_id: Home ID for per-home ratelimit file (multi-home support)
+        data_loader: DataLoader instance for cache read/write-through
     """
     try:
-        ratelimit_path = get_data_file("ratelimit", home_id)
-        path_exists = await hass.async_add_executor_job(ratelimit_path.exists)
-        if not path_exists:
-            return
+        # Read from in-memory cache first, fall back to disk
+        data: dict[str, Any] | None = None
+        if data_loader is not None:
+            cached = data_loader.get_cached("ratelimit")
+            if isinstance(cached, dict):
+                # Work on a copy so we don't mutate cache before disk write succeeds
+                data = dict(cached)
 
-        content = await hass.async_add_executor_job(ratelimit_path.read_text)
-        data = json.loads(content)
+        if data is None:
+            ratelimit_path = get_data_file("ratelimit", home_id)
+            path_exists = await hass.async_add_executor_job(ratelimit_path.exists)
+            if not path_exists:
+                return
+
+            content = await hass.async_add_executor_job(ratelimit_path.read_text)
+            data = json.loads(content)
 
         # Only update if detected time is different from stored time
         current_reset = data.get("last_reset_utc")
@@ -351,11 +363,17 @@ async def async_update_ratelimit_reset_time(
                 data["reset_human"] = f"{hours}h {minutes}m" if hours > 0 else f"{minutes}m"
 
             # Write back with atomic write
+            ratelimit_path = get_data_file("ratelimit", home_id)
             temp_path = ratelimit_path.with_suffix(".tmp")
             content = json.dumps(data, indent=2)
             await hass.async_add_executor_job(temp_path.write_text, content)
 
             await hass.async_add_executor_job(temp_path.replace, ratelimit_path)
+
+            # Write-through: update DataLoader cache
+            if data_loader is not None:
+                data_loader.update_cache("ratelimit", data)
+
             _LOGGER.info("Updated reset time from HA history: %s UTC", detected_reset.strftime("%H:%M"))
 
     except Exception as e:

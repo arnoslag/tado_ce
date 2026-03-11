@@ -623,21 +623,10 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
             if not errors:
                 # Save previous feature states for cleanup in async_reload_entry
                 prev_options = self.config_entry.options
-                cleanup_flags = {}
 
-                # Zone Configuration cleanup
-                prev_zone_cfg = prev_options.get("zone_configuration_enabled", True)
-                new_zone_cfg = processed_input.get("zone_configuration_enabled", True)
-                if prev_zone_cfg and not new_zone_cfg:
-                    cleanup_flags["_cleanup_zone_config"] = True
-                    _LOGGER.info("Zone Configuration disabled: cleanup scheduled")
+                from .entity_cleanup import detect_cleanup_flags
 
-                # Thermal Analytics cleanup
-                prev_thermal = prev_options.get("thermal_analytics_enabled", True)
-                new_thermal = processed_input.get("thermal_analytics_enabled", True)
-                if prev_thermal and not new_thermal:
-                    cleanup_flags["_cleanup_thermal_analytics"] = True
-                    _LOGGER.info("Thermal Analytics disabled: cleanup scheduled")
+                cleanup_flags = detect_cleanup_flags(dict(prev_options), processed_input)
 
                 if cleanup_flags:
                     # Store cleanup flags on coordinator (consumed after reload)

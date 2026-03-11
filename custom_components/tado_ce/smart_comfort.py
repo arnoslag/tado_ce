@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any
 from .const import (
     WEATHER_COMPENSATION_PRESETS,
 )
+from .models import SmartComfortReading
 
 try:
     from .sensor_helpers import get_outdoor_temperature as _get_outdoor_temp
@@ -200,8 +201,6 @@ def get_next_schedule_change(
     _LOGGER.debug("No schedule blocks found for zone %s in next %s days", zone_id, look_ahead_days)
     return None
 
-
-from .models import SmartComfortReading
 
 # Backward compat alias — existing code may import TemperatureReading from here
 TemperatureReading = SmartComfortReading

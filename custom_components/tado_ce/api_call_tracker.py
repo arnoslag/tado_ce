@@ -78,7 +78,7 @@ class APICallTracker:
         self._config_manager = config_manager
 
         # Use per-home file path if home_id provided
-        from .const import get_data_file  # noqa: PLC0415 — avoid circular import
+        from .const import get_data_file  # avoid circular import
 
         self.history_file = get_data_file("api_call_history", home_id)
 

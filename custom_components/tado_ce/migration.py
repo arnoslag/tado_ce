@@ -1,4 +1,4 @@
-"""Tado CE migration — config entry version migration and entity cleanup."""
+"""Tado CE migration — config entry version migration and device cleanup."""
 
 from __future__ import annotations
 
@@ -12,7 +12,6 @@ from .const import CONFIG_FILE, DATA_DIR, DOMAIN
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
     from homeassistant.core import HomeAssistant
-    from homeassistant.helpers.entity_registry import EntityRegistry
 
     from .data_loader import DataLoader
     from .zone_config_manager import ZoneConfigManager
@@ -292,53 +291,6 @@ async def _migrate_to_per_zone_config(
     hass.config_entries.async_update_entry(entry, options=new_options)
 
     _LOGGER.info("Per-zone migration complete: %s zones configured", migrated_count)
-
-
-def cleanup_entities_by_suffix(entity_registry: EntityRegistry, domain: str, prefix: str, suffixes: list[Any]) -> int:
-    """Remove entities matching prefix and any of the suffixes.
-
-    Args:
-        entity_registry: HA entity registry
-        domain: Integration domain (e.g., "tado_ce")
-        prefix: unique_id prefix to match (e.g., "tado_ce_zone_")
-        suffixes: List of suffixes to match (e.g., ["_battery", "_connection"])
-
-    Returns:
-        Number of entities removed
-    """
-    removed = 0
-    for entity_id, entity_entry in list(entity_registry.entities.items()):
-        if entity_entry.platform != domain:
-            continue
-        unique_id = entity_entry.unique_id or ""
-        if unique_id.startswith(prefix) and any(unique_id.endswith(suffix) for suffix in suffixes):
-            _LOGGER.debug("  Removing entity: %s (unique_id: %s)", entity_id, unique_id)
-            entity_registry.async_remove(entity_id)
-            removed += 1
-    return removed
-
-
-def cleanup_entities_by_pattern(entity_registry: EntityRegistry, domain: str, suffixes: list[Any]) -> int:
-    """Remove entities matching any of the suffixes (regardless of prefix).
-
-    Args:
-        entity_registry: HA entity registry
-        domain: Integration domain (e.g., "tado_ce")
-        suffixes: List of suffixes to match (e.g., ["_child_lock", "_early_start"])
-
-    Returns:
-        Number of entities removed
-    """
-    removed = 0
-    for entity_id, entity_entry in list(entity_registry.entities.items()):
-        if entity_entry.platform != domain:
-            continue
-        unique_id = entity_entry.unique_id or ""
-        if unique_id.startswith("tado_ce_") and any(unique_id.endswith(suffix) for suffix in suffixes):
-            _LOGGER.debug("  Removing entity: %s (unique_id: %s)", entity_id, unique_id)
-            entity_registry.async_remove(entity_id)
-            removed += 1
-    return removed
 
 
 # ===========================================================================
@@ -676,102 +628,6 @@ def cleanup_duplicate_devices(hass: HomeAssistant, home_id: str) -> None:
                         # Only old exists - migrate it
                         _LOGGER.info("Migrating zone device: %s -> %s", identifier, new_zone_identifier)
                         device_registry.async_update_device(device.id, new_identifiers={(DOMAIN, new_zone_identifier)})
-
-
-def cleanup_disabled_feature_entities(
-    hass: HomeAssistant,
-    entry: ConfigEntry,
-) -> int:
-    """Cleanup entities when Zone Features are disabled via Options Flow.
-
-    Returns total number of entities removed.
-    """
-    from homeassistant.helpers import entity_registry as er
-
-    entity_registry = er.async_get(hass)
-
-    coordinator = getattr(entry, "runtime_data", None)
-    pending = getattr(coordinator, "_pending_cleanup", {}) if coordinator else {}
-    domain_data = pending.pop(entry.entry_id, {})
-    total_removed = 0
-
-    # Zone Configuration cleanup
-    if domain_data.get("_cleanup_zone_config", False):
-        _LOGGER.info("Tado CE: Zone Configuration disabled - removing zone config entities")
-        zone_config_suffixes = [
-            "_heating_type",
-            "_ufh_buffer",
-            "_adaptive_preheat",
-            "_smart_comfort_mode",
-            "_window_type",
-            "_overlay_mode",
-            "_timer_duration",
-            "_min_temp",
-            "_max_temp",
-            "_temp_offset",
-        ]
-        removed = cleanup_entities_by_suffix(entity_registry, DOMAIN, "tado_ce_zone_", zone_config_suffixes)
-        total_removed += removed
-        _LOGGER.info("  Removed %s zone config entities", removed)
-
-    # Zone Diagnostics cleanup (battery, connection, heating power)
-    if domain_data.get("_cleanup_zone_diagnostics", False):
-        _LOGGER.info("Tado CE: Zone Diagnostics disabled - removing diagnostic entities")
-        diagnostic_suffixes = ["_battery", "_connection", "_heating", "_ac_power"]
-        removed = cleanup_entities_by_suffix(entity_registry, DOMAIN, "tado_ce_zone_", diagnostic_suffixes)
-        removed += cleanup_entities_by_pattern(entity_registry, DOMAIN, ["_battery", "_connection"])
-        total_removed += removed
-        _LOGGER.info("  Removed %s diagnostic entities", removed)
-
-    # Device Controls cleanup (child lock, early start)
-    if domain_data.get("_cleanup_device_controls", False):
-        _LOGGER.info("Tado CE: Device Controls disabled - removing device control entities")
-        removed = cleanup_entities_by_pattern(entity_registry, DOMAIN, ["_child_lock", "_early_start"])
-        total_removed += removed
-        _LOGGER.info("  Removed %s device control entities", removed)
-
-    # Boost Buttons cleanup
-    if domain_data.get("_cleanup_boost_buttons", False):
-        _LOGGER.info("Tado CE: Boost Buttons disabled - removing boost button entities")
-        removed = cleanup_entities_by_pattern(entity_registry, DOMAIN, ["_boost", "_smart_boost"])
-        total_removed += removed
-        _LOGGER.info("  Removed %s boost button entities", removed)
-
-    # Environment Sensors cleanup (mold risk, comfort level, condensation)
-    if domain_data.get("_cleanup_environment_sensors", False):
-        _LOGGER.info("Tado CE: Environment Sensors disabled - removing environment sensor entities")
-        env_suffixes = [
-            "_mold_risk",
-            "_comfort_level",
-            "_condensation_risk",
-            "_surface_temperature",
-            "_dew_point",
-            "_insights",
-        ]
-        removed = cleanup_entities_by_suffix(entity_registry, DOMAIN, "tado_ce_zone_", env_suffixes)
-        removed += cleanup_entities_by_suffix(entity_registry, DOMAIN, "tado_ce_zone_", ["_window_predicted"])
-        total_removed += removed
-        _LOGGER.info("  Removed %s environment sensor entities", removed)
-
-    # Thermal Analytics cleanup
-    if domain_data.get("_cleanup_thermal_analytics", False):
-        _LOGGER.info("Tado CE: Thermal Analytics disabled - removing thermal analytics entities")
-        thermal_suffixes = [
-            "_thermal_inertia",
-            "_heating_rate",
-            "_efficiency",
-            "_approach_factor",
-            "_historical_deviation",
-            "_heating_cycles",
-        ]
-        removed = cleanup_entities_by_suffix(entity_registry, DOMAIN, "tado_ce_zone_", thermal_suffixes)
-        total_removed += removed
-        _LOGGER.info("  Removed %s thermal analytics entities", removed)
-
-    if total_removed > 0:
-        _LOGGER.info("Tado CE: Total entities removed: %s", total_removed)
-
-    return total_removed
 
 
 async def async_handle_test_mode_transition(

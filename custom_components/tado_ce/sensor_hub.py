@@ -501,9 +501,7 @@ class TadoTokenStatusSensor(TadoHubSensor):
             # Check api_client's injected refresh token (from ConfigEntry.data)
             # rather than config file which may have null refresh_token
             client = self.coordinator.api_client
-            if client._injected_refresh_token:
-                self._attr_native_value = "valid"
-            elif client._access_token:
+            if client._injected_refresh_token or client._access_token:
                 self._attr_native_value = "valid"
             else:
                 self._attr_native_value = "missing"
@@ -605,6 +603,7 @@ class TadoNextSyncSensor(TadoHubSensor):
         self._attr_entity_category = EntityCategory.DIAGNOSTIC
         self._countdown: str | None = None
         self._current_interval: int | None = None
+        self._countdown_unsub: Any | None = None  # HA CALLBACK_TYPE
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -613,6 +612,49 @@ class TadoNextSyncSensor(TadoHubSensor):
             "countdown": self._countdown,
             "current_interval_minutes": self._current_interval,
         }
+
+    async def async_added_to_hass(self) -> None:
+        """Start periodic countdown refresh when added to HA."""
+        await super().async_added_to_hass()
+
+        from datetime import timedelta as td
+
+        from homeassistant.helpers.event import async_track_time_interval
+
+        @callback
+        def _refresh_countdown(_now: Any) -> None:  # HA datetime arg
+            """Recalculate countdown attribute periodically."""
+            self._recalculate_countdown()
+            self.async_write_ha_state()
+
+        self._countdown_unsub = async_track_time_interval(
+            self.hass, _refresh_countdown, td(seconds=30),
+        )
+
+    async def async_will_remove_from_hass(self) -> None:
+        """Cancel periodic countdown refresh on removal."""
+        if self._countdown_unsub:
+            self._countdown_unsub()
+            self._countdown_unsub = None
+        await super().async_will_remove_from_hass()
+
+    def _recalculate_countdown(self) -> None:
+        """Recalculate countdown from current native_value."""
+        from datetime import datetime
+
+        native = self._attr_native_value
+        if not isinstance(native, datetime):
+            self._countdown = None
+            return
+
+        now = datetime.now(UTC)
+        time_until = native - now
+        if time_until.total_seconds() > 0:
+            minutes = int(time_until.total_seconds() // 60)
+            seconds = int(time_until.total_seconds() % 60)
+            self._countdown = f"{minutes}m {seconds}s"
+        else:
+            self._countdown = "Overdue"
 
     @callback
     def update(self) -> None:
@@ -643,14 +685,7 @@ class TadoNextSyncSensor(TadoHubSensor):
                 self._attr_native_value = next_sync_time
                 self._attr_available = True
 
-                now = datetime.now(UTC)
-                time_until = next_sync_time - now
-                if time_until.total_seconds() > 0:
-                    minutes = int(time_until.total_seconds() // 60)
-                    seconds = int(time_until.total_seconds() % 60)
-                    self._countdown = f"{minutes}m {seconds}s"
-                else:
-                    self._countdown = "Overdue"
+                self._recalculate_countdown()
             else:
                 self._current_interval = None
                 self._countdown = None

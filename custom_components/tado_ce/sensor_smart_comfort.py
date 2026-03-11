@@ -32,7 +32,6 @@ if TYPE_CHECKING:
     from datetime import datetime
 
     from .coordinator import TadoDataUpdateCoordinator
-    from .smart_comfort import NextScheduleBlock
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -751,8 +750,7 @@ class TadoPreheatAdvisorSensor(TadoZoneSensor):
         total_buffer = min(inertia_minutes + ufh_buffer, 240)
         preheat_start = crossover_dt - timedelta(minutes=total_buffer)
 
-        if preheat_start <= now:
-            preheat_start = now
+        preheat_start = max(now, preheat_start)
 
         self._is_tomorrow = preheat_start.date() > now.date()
         time_str = preheat_start.strftime("%H:%M")
