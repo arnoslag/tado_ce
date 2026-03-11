@@ -6,7 +6,7 @@
 ![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2026.3.1-blue?style=for-the-badge&logo=home-assistant) ![Python](https://img.shields.io/badge/Python-3.13%2B-blue?style=for-the-badge&logo=python&logoColor=white) ![Tado](https://img.shields.io/badge/Tado-V2%2FV3%2FV3%2B-orange?style=for-the-badge) ![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg?style=for-the-badge)
 
 <!-- Status Badges -->
-![Version](https://img.shields.io/badge/Version-3.0.1-purple?style=for-the-badge) ![License](https://img.shields.io/badge/License-AGPL--3.0-blue?style=for-the-badge) ![Maintained](https://img.shields.io/badge/Maintained-Yes-green.svg?style=for-the-badge) ![Tests](https://img.shields.io/badge/Tests-3358-blue?style=for-the-badge) ![Coverage](https://img.shields.io/badge/Coverage-99%25-brightgreen?style=for-the-badge)
+![Version](https://img.shields.io/badge/Version-3.0.2-purple?style=for-the-badge) ![License](https://img.shields.io/badge/License-AGPL--3.0-blue?style=for-the-badge) ![Maintained](https://img.shields.io/badge/Maintained-Yes-green.svg?style=for-the-badge) ![Tests](https://img.shields.io/badge/Tests-3358-blue?style=for-the-badge) ![Coverage](https://img.shields.io/badge/Coverage-99%25-brightgreen?style=for-the-badge)
 
 <!-- Community Badges -->
 ![GitHub stars](https://img.shields.io/github/stars/hiall-fyi/tado_ce?style=for-the-badge&logo=github) ![GitHub forks](https://img.shields.io/github/forks/hiall-fyi/tado_ce?style=for-the-badge&logo=github) ![GitHub issues](https://img.shields.io/github/issues/hiall-fyi/tado_ce?style=for-the-badge&logo=github) ![GitHub last commit](https://img.shields.io/github/last-commit/hiall-fyi/tado_ce?style=for-the-badge&logo=github)
@@ -18,7 +18,7 @@
 
 **Made with ❤️ by Joe Yiu ([@hiall-fyi](https://github.com/hiall-fyi))**
 
-[Quick Start](#-quick-start) • [Features](#-features) • [What's New in v3.0.1](#-whats-new-in-v301) • [Configuration](#-configuration-options) • [Troubleshooting](#-troubleshooting) • [Discussions](https://github.com/hiall-fyi/tado_ce/discussions)
+[Quick Start](#-quick-start) • [Features](#-features) • [Configuration](#-configuration-options) • [Troubleshooting](#-troubleshooting) • [Discussions](https://github.com/hiall-fyi/tado_ce/discussions)
 
 </div>
 
@@ -101,12 +101,6 @@ Tado CE provides comprehensive smart climate control with:
 - **Optional Features** — Schedule calendar, boiler flow temperature, device tracking, home state sync
 
 See [FEATURES_GUIDE.md](FEATURES_GUIDE.md) for detailed documentation, configuration instructions, and usage scenarios for all features.
-
----
-
-## 🆕 What's New in v3.0.1
-
-See [CHANGELOG.md](CHANGELOG.md) for full release notes and version history.
 
 ---
 

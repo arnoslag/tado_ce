@@ -20,6 +20,9 @@ from .format_helpers import (
 from .format_helpers import (
     format_connection_state_attr as _format_connection_state_attr,
 )
+from .format_helpers import (
+    strip_zone_prefix as _strip_zone_prefix,
+)
 from .insights import (
     calculate_battery_recommendation,
     calculate_connection_recommendation,
@@ -92,7 +95,7 @@ class TadoBatterySensor(CoordinatorEntity["TadoDataUpdateCoordinator"], SensorEn
             "firmware_version": self._firmware,
             "connection_state": _format_connection_state_attr(self._connection_state),
             "connection_timestamp": self._connection_timestamp,
-            "recommendation": self._recommendation,
+            "recommendation": _strip_zone_prefix(self._recommendation, self._zone_name),
         }
 
     @callback
@@ -188,7 +191,7 @@ class TadoDeviceConnectionSensor(CoordinatorEntity["TadoDataUpdateCoordinator"],
             "device_type": self._device_type,
             "firmware_version": self._firmware,
             "last_seen": self._connection_timestamp,
-            "recommendation": self._recommendation,
+            "recommendation": _strip_zone_prefix(self._recommendation, self._zone_name),
         }
 
     @callback

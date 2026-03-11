@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 try:
+    from .format_helpers import format_insight_type as _fmt_insight_type
+    from .format_helpers import format_priority as _fmt_priority
     from .helpers import parse_iso_datetime
 except ImportError:
 
@@ -18,6 +20,14 @@ except ImportError:
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=UTC)
         return dt
+
+    def _fmt_insight_type(insight_type: str) -> str:
+        """Format insight type (fallback)."""
+        return insight_type.replace("_", " ").title()
+
+    def _fmt_priority(priority: str) -> str:
+        """Format priority (fallback)."""
+        return priority.title() if priority else "None"
 
 
 if TYPE_CHECKING:
@@ -244,19 +254,27 @@ class InsightHistoryTracker:
                     zone_name = parts[1] if len(parts) > 1 else None
                     if zone_name == "_hub":
                         zone_name = None
+                    priority_num = entry.get("base_priority", 0)
+                    priority_names = {0: "none", 1: "low", 2: "medium", 3: "high", 4: "critical"}
                     result.append(
                         {
-                            "insight_type": insight_type,
+                            "insight_type": _fmt_insight_type(insight_type),
                             "zone_name": zone_name,
                             "duration_hours": round(duration.total_seconds() / 3600, 1),
-                            "base_priority": entry.get("base_priority", 0),
+                            "base_priority": _fmt_priority(
+                                priority_names.get(priority_num, str(priority_num))
+                            ),
                         },
                     )
             except (ValueError, KeyError, TypeError):
                 continue
 
-        # Sort by duration descending
-        result.sort(key=lambda x: x["duration_hours"], reverse=True)
+        # Sort by duration descending — duration_hours is always float from round() above
+        def _sort_key(item: dict[str, Any]) -> float:
+            val = item.get("duration_hours", 0.0)
+            return float(val) if isinstance(val, (int, float)) else 0.0
+
+        result.sort(key=_sort_key, reverse=True)
         return result
 
     def prune_old_entries(self, max_age_days: int = 30) -> int:

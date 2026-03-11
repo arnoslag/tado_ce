@@ -27,6 +27,9 @@ from .format_helpers import (
 from .format_helpers import (
     format_zone_type as _format_zone_type,
 )
+from .format_helpers import (
+    strip_zone_prefix as _strip_zone_prefix,
+)
 from .insights import TemperatureReading, detect_window_predicted
 
 if TYPE_CHECKING:
@@ -355,6 +358,7 @@ class TadoPreheatNowSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], Binar
                 "Heating OFF",
                 "Ready",
                 "Insufficient data",
+                "Away",
                 None,
             )
             preheat_state_val = preheat_data.get("state") if preheat_data else None
@@ -472,7 +476,7 @@ class TadoWindowPredictedSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], 
             "confidence": _format_confidence(self._confidence),
             "temp_drop": self._temp_drop,
             "time_window_minutes": self._time_window,
-            "recommendation": self._recommendation,
+            "recommendation": _strip_zone_prefix(self._recommendation, self._zone_name),
             "zone_type": _format_zone_type(self._zone_type),
             "readings_count": len(self._temp_history),
             "anomaly_readings": self._anomaly_readings,

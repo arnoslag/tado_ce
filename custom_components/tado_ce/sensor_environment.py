@@ -34,6 +34,9 @@ from .format_helpers import (
 from .format_helpers import (
     format_zone_type as _format_zone_type,
 )
+from .format_helpers import (
+    strip_zone_prefix as _strip_zone_prefix,
+)
 from .insights import (
     calculate_comfort_recommendation,
     calculate_condensation_recommendation,
@@ -156,7 +159,7 @@ class TadoMoldRiskSensor(TadoZoneSensor):
             "surface_temperature": round(self._surface_temp, 1) if self._surface_temp is not None else None,
             "surface_temp_offset": self._surface_temp_offset,  # Calibration offset
             "zone_type": _format_zone_type(self._zone_type),
-            "recommendation": self._recommendation,
+            "recommendation": _strip_zone_prefix(self._recommendation, self._zone_name),
         }
 
     @property
@@ -405,7 +408,7 @@ class TadoCondensationRiskSensor(TadoZoneSensor):
                 "window_type": _format_window_type(self._window_type),
                 "u_value": self._u_value,
                 "zone_type": _format_zone_type(self._zone_type),
-                "recommendation": self._recommendation,
+                "recommendation": _strip_zone_prefix(self._recommendation, self._zone_name),
             }
         return {
             "room_temperature": self._room_temp,
@@ -419,7 +422,7 @@ class TadoCondensationRiskSensor(TadoZoneSensor):
             "window_type": _format_window_type(self._window_type),
             "u_value": self._u_value,
             "zone_type": _format_zone_type(self._zone_type),
-            "recommendation": self._recommendation,
+            "recommendation": _strip_zone_prefix(self._recommendation, self._zone_name),
         }
 
     @property
@@ -951,7 +954,7 @@ class TadoComfortLevelSensor(TadoZoneSensor):
             "comfort_model": _format_comfort_model(self._comfort_model),
             "dew_point": round(self._dew_point, 1) if self._dew_point is not None else None,
             "zone_type": _format_zone_type(self._zone_type),
-            "recommendation": self._recommendation,
+            "recommendation": _strip_zone_prefix(self._recommendation, self._zone_name),
         }
 
     @property

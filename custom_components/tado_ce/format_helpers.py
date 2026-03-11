@@ -195,6 +195,85 @@ def format_connection_state_attr(connected: bool | None) -> str:
     return CONNECTION_STATE_ATTR_MAP.get(bool(connected) if connected is not None else False, "offline")
 
 
+def strip_zone_prefix(text: str, zone_name: str) -> str:
+    """Remove redundant zone name prefix from recommendation text.
+
+    Per-zone entities already belong to a zone, so "Dining: ..." is redundant
+    when displayed inside the Dining entity. Home-level aggregation keeps the prefix.
+    """
+    prefix = f"{zone_name}: "
+    if text.startswith(prefix):
+        # Capitalise first char after stripping
+        remainder = text[len(prefix):]
+        return remainder[0].upper() + remainder[1:] if remainder else remainder
+    return text
+
+
 def format_power_state(power: str) -> str:
     """Convert zone power setting to display value. Falsy -> 'Unknown'."""
     return power or "Unknown"
+
+_PRIORITY_EMOJI: dict[str, str] = {
+    "critical": "🔴",
+    "high": "🔴",
+    "medium": "🟡",
+    "low": "🟢",
+    "none": "⚪",
+}
+
+_PRIORITY_ORDER: dict[str, int] = {"critical": 0, "high": 1, "medium": 2, "low": 3, "none": 4}
+
+
+def _format_duration_human(hours: float) -> str:
+    """Format duration hours into human-readable string like '1d 4h' or '28h'."""
+    if hours < 1:
+        return f"{int(hours * 60)}m"
+    days = int(hours // 24)
+    remaining_hours = int(hours % 24)
+    if days > 0 and remaining_hours > 0:
+        return f"{days}d {remaining_hours}h"
+    if days > 0:
+        return f"{days}d"
+    return f"{remaining_hours}h"
+
+
+def format_persistent_insights_grouped(raw: list[dict[str, Any]]) -> list[str]:
+    """Group persistent insights by priority+type, merge zones, return sorted lines.
+
+    Input: list of dicts from InsightHistoryTracker.get_persistent_insights()
+    Output: list of formatted strings like "🔴 High: Battery — Guest (1d 4h)"
+    Zones with same insight type + priority are merged into one line.
+    """
+    if not raw:
+        return []
+
+    groups: dict[tuple[str, str], list[tuple[str | None, float]]] = {}
+    for item in raw:
+        priority_str = str(item.get("base_priority", "Low")).lower()
+        insight_type = str(item.get("insight_type", "Unknown"))
+        zone_name = item.get("zone_name")
+        duration = float(item.get("duration_hours", 0))
+        key = (priority_str, insight_type)
+        if key not in groups:
+            groups[key] = []
+        groups[key].append((zone_name, duration))
+
+    sorted_keys = sorted(groups, key=lambda k: (_PRIORITY_ORDER.get(k[0], 99), k[1]))
+
+    lines: list[str] = []
+    for priority_str, insight_type in sorted_keys:
+        entries = groups[(priority_str, insight_type)]
+        zones = [z for z, _ in entries if z]
+        max_duration = max(d for _, d in entries)
+        emoji = _PRIORITY_EMOJI.get(priority_str, "⚪")
+        priority_display = priority_str.title()
+        duration_str = _format_duration_human(max_duration)
+
+        if zones:
+            zones_str = ", ".join(sorted(zones))
+            lines.append(f"{emoji} {priority_display}: {insight_type} — {zones_str} ({duration_str})")
+        else:
+            lines.append(f"{emoji} {priority_display}: {insight_type} ({duration_str})")
+
+    return lines
+

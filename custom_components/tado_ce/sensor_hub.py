@@ -17,7 +17,6 @@ from homeassistant.const import EntityCategory
 from homeassistant.core import callback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DATA_DIR
 from .device_manager import get_hub_device_info
 from .format_helpers import format_api_status as _format_api_status
 from .insights import calculate_api_status_recommendation
@@ -150,46 +149,35 @@ class TadoApiUsageSensor(TadoHubSensor):
             else:
                 self._attr_available = False
 
+            # Read call history from coordinator data (async-loaded by data_loader)
+            # instead of instantiating APICallTracker which does blocking file I/O.
             try:
                 from datetime import datetime
 
                 from homeassistant.util import dt as dt_util
 
-                from .api_call_tracker import APICallTracker
-
-                retention_days = 14
-                try:
-                    _ed = self.coordinator
-                    retention_days = _ed.config_manager.get_api_history_retention_days()
-                except (AttributeError, TypeError, KeyError):
-                    pass
-
-                home_id = self.coordinator.home_id
-
-                tracker = APICallTracker(DATA_DIR, retention_days=retention_days, home_id=home_id)
-                raw_history = tracker.get_recent_calls(limit=50)
-
+                history_data = (self.coordinator.data or {}).get("api_call_history")
                 self._call_history = []
-                for call in raw_history:
-                    call_copy = call.copy()
-                    try:
-                        ts = datetime.fromisoformat(call["timestamp"])
-                        if ts.tzinfo is None:
-                            ts = ts.replace(tzinfo=dt_util.UTC)
-                        local_ts = dt_util.as_local(ts)
-                        call_copy["timestamp"] = local_ts.strftime("%Y-%m-%d %H:%M:%S")
-                    except Exception:
-                        _LOGGER.debug("Failed to convert timestamp for call history entry")
-                    self._call_history.append(call_copy)
-            except FileNotFoundError:
-                _LOGGER.debug("API call history file not found - first run or migration pending")
-                self._call_history = []
-            except PermissionError:
-                _LOGGER.warning("Permission denied reading API call history file")
-                self._call_history = []
-            except json.JSONDecodeError:
-                _LOGGER.exception("Invalid JSON in API call history file")
-                self._call_history = []
+
+                if history_data and isinstance(history_data, dict):
+                    all_calls: list[dict[str, Any]] = []
+                    for date_calls in history_data.values():
+                        if isinstance(date_calls, list):
+                            all_calls.extend(date_calls)
+
+                    all_calls.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+
+                    for call in all_calls[:50]:
+                        call_copy = call.copy()
+                        try:
+                            ts = datetime.fromisoformat(call["timestamp"])
+                            if ts.tzinfo is None:
+                                ts = ts.replace(tzinfo=dt_util.UTC)
+                            local_ts = dt_util.as_local(ts)
+                            call_copy["timestamp"] = local_ts.strftime("%Y-%m-%d %H:%M:%S")
+                        except Exception:
+                            _LOGGER.debug("Failed to convert timestamp for call history entry")
+                        self._call_history.append(call_copy)
             except Exception as e:
                 _LOGGER.debug("Failed to load call history: %s", e)
                 self._call_history = []
@@ -316,7 +304,7 @@ class TadoApiResetSensor(TadoHubSensor):
 
                     config_manager = self.coordinator.config_manager
                     if config_manager:
-                        self._current_interval = get_polling_interval(config_manager)
+                        self._current_interval = get_polling_interval(config_manager, cached_ratelimit=data)
 
                         next_poll_time = last_sync + timedelta(minutes=self._current_interval)
                         next_poll_local = dt_util.as_local(next_poll_time)
@@ -649,7 +637,7 @@ class TadoNextSyncSensor(TadoHubSensor):
 
             config_manager = self.coordinator.config_manager
             if config_manager:
-                self._current_interval = get_polling_interval(config_manager)
+                self._current_interval = get_polling_interval(config_manager, cached_ratelimit=data)
 
                 next_sync_time = last_sync + timedelta(minutes=self._current_interval)
                 self._attr_native_value = next_sync_time
@@ -719,7 +707,7 @@ class TadoPollingIntervalSensor(TadoHubSensor):
             ratelimit_data = (self.coordinator.data or {}).get("ratelimit")
             self._test_mode = ratelimit_data.get("test_mode", False) if ratelimit_data else False
 
-            self._attr_native_value = get_polling_interval(config_manager)
+            self._attr_native_value = get_polling_interval(config_manager, cached_ratelimit=ratelimit_data)
             self._attr_available = True
 
             # Get custom day/night intervals (None if not set by user)

@@ -434,6 +434,8 @@ class TadoPreheatAdvisorSensor(TadoZoneSensor):
         4. If no schedule or heating OFF, show appropriate status
         """
         try:
+            from datetime import timedelta
+
             from homeassistant.util import dt as dt_util
 
             from .smart_comfort import get_next_schedule_change
@@ -455,6 +457,47 @@ class TadoPreheatAdvisorSensor(TadoZoneSensor):
             if self._current_temp is None:
                 self._attr_available = False
                 return
+
+            # Suppress preheat when home is in AWAY mode (#171)
+            home_state = (self.coordinator.data or {}).get("home_state")
+            if home_state and home_state.get("presence") != "HOME":
+                self._attr_native_value = "Away"
+                self._attr_available = True
+                self._target_temp = None
+                self._target_time = None
+                self._duration_minutes = None
+                self._heating_rate = None
+                self._confidence = "away_mode"
+                self._summary = "Preheat suppressed — home is in away mode"
+                self._cooling_rate = None
+                self._predicted_crossover_time = None
+                self._is_cooling_prediction = False
+                return
+
+            # Check cooling prediction against CURRENT active target (Discussion #163)
+            # If room is above current setpoint but cooling, trigger proactive preheat
+            active_setting = zone_data.get("setting") or {}
+            active_power = active_setting.get("power")
+            active_target = (active_setting.get("temperature") or {}).get("celsius")
+
+            if (
+                active_power == "ON"
+                and active_target is not None
+                and self._current_temp >= active_target
+            ):
+                now = dt_util.now()
+                # Use a 2-hour lookahead as deadline for active target cooling
+                active_deadline = now + timedelta(hours=2)
+                active_cooling = self._check_cooling_prediction(
+                    active_target, active_deadline, now,
+                )
+                if active_cooling is not None:
+                    self._target_temp = active_target
+                    self._target_time = "Active setpoint"
+                    self._is_tomorrow = False
+                    crossover_dt = active_cooling["crossover_dt"]
+                    self._apply_cooling_preheat(crossover_dt, now)
+                    return
 
             # Get next schedule change from schedules.json (per-entry data_loader)
             _dl = self.coordinator.data_loader
@@ -502,7 +545,9 @@ class TadoPreheatAdvisorSensor(TadoZoneSensor):
             # Check if already at or above target
             if self._current_temp >= self._target_temp:
                 # NEW: Check cooling rate before declaring "Ready"
-                cooling_info = self._check_cooling_prediction(next_block, dt_util.now())
+                cooling_info = self._check_cooling_prediction(
+                    self._target_temp, next_block.start_time, dt_util.now(),
+                )
 
                 if cooling_info is None:
                     # No cooling concern — original "Ready" behavior
@@ -517,75 +562,8 @@ class TadoPreheatAdvisorSensor(TadoZoneSensor):
                     self._is_cooling_prediction = False
                     return
 
-                # Cooling prediction active — calculate proactive preheat
-                from datetime import timedelta
-
-                crossover_dt = cooling_info["crossover_dt"]
-
-                # Try to get heating rate (reuse existing resolution logic)
-                heating_rate = None
-                inertia_minutes = 0
-
-                heating_cycle_coordinator = self.coordinator.heating_cycle_coordinator
-                if heating_cycle_coordinator:
-                    zone_data_cycle = heating_cycle_coordinator.get_zone_data(self._zone_id)
-                    if zone_data_cycle:
-                        heating_rate = zone_data_cycle.get("heating_rate")
-                        inertia_time = zone_data_cycle.get("inertia_time")
-                        if inertia_time is not None:
-                            inertia_minutes = int(inertia_time)
-
-                if heating_rate is None or heating_rate <= 0.1:
-                    # Fallback to SmartComfortManager
-                    if manager and manager.get_heating_rate(self._zone_id):
-                        heating_rate = manager.get_heating_rate(self._zone_id)
-
-                if heating_rate is None or heating_rate <= 0.1:
-                    # No heating rate — show crossover warning only
-                    self._attr_native_value = crossover_dt.strftime("%H:%M")
-                    self._attr_available = True
-                    self._duration_minutes = None
-                    self._heating_rate = None
-                    self._confidence = "low"
-                    self._summary = (
-                        f"Cooling at {self._cooling_rate:.1f}\u00b0C/h, "
-                        f"will cross {self._target_temp:.1f}\u00b0C at {self._predicted_crossover_time} "
-                        f"(no heating rate data for preheat timing)"
-                    )
-                    return
-
-                # Calculate preheat duration (inertia + UFH buffer)
-                ufh_buffer = 0
-                config_manager = self.coordinator.config_manager
-                if config_manager:
-                    ufh_buffer_global = config_manager.get_ufh_buffer_minutes()
-                    ufh_zones = config_manager.get_ufh_zones()
-                    if ufh_buffer_global > 0:
-                        if not ufh_zones or self._zone_id in ufh_zones:
-                            ufh_buffer = ufh_buffer_global
-
-                total_buffer = min(inertia_minutes + ufh_buffer, 240)
-
-                preheat_start = crossover_dt - timedelta(minutes=total_buffer)
-
-                now = dt_util.now()
-                if preheat_start <= now:
-                    preheat_start = now
-
-                self._is_tomorrow = preheat_start.date() > now.date()
-                time_str = preheat_start.strftime("%H:%M")
-                self._attr_native_value = f"Tomorrow {time_str}" if self._is_tomorrow else time_str
-                self._duration_minutes = total_buffer
-                self._heating_rate = heating_rate
-                self._confidence = "medium"
-                self._attr_available = True
-                self._summary = (
-                    f"Cooling at {self._cooling_rate:.1f}\u00b0C/h, "
-                    f"will cross {self._target_temp:.1f}\u00b0C at {self._predicted_crossover_time}, "
-                    f"start preheat at {self._attr_native_value}"
-                )
-                if ufh_buffer > 0:
-                    self._summary += f" (includes {ufh_buffer} min UFH buffer)"
+                # Cooling prediction active — use shared helper
+                self._apply_cooling_preheat(cooling_info["crossover_dt"], dt_util.now())
                 return
 
             # Need to preheat - calculate timing
@@ -622,8 +600,6 @@ class TadoPreheatAdvisorSensor(TadoZoneSensor):
 
             # If we have HeatingCycleCoordinator data, use it directly
             if cycle_heating_rate is not None and cycle_heating_rate > 0.1:
-                from datetime import timedelta
-
                 temp_diff = self._target_temp - self._current_temp
                 hours_needed = temp_diff / cycle_heating_rate
                 minutes_needed = int(hours_needed * 60)
@@ -677,8 +653,6 @@ class TadoPreheatAdvisorSensor(TadoZoneSensor):
 
             # We have a valid preheat recommendation
             # Apply UFH buffer to SmartComfortManager advice
-            from datetime import timedelta
-
             adjusted_duration = advice.estimated_duration_minutes + ufh_buffer
             adjusted_duration = min(adjusted_duration, 240)  # Cap at 4 hours
             adjusted_start = next_block.start_time - timedelta(minutes=adjusted_duration)
@@ -721,15 +695,91 @@ class TadoPreheatAdvisorSensor(TadoZoneSensor):
             )
 
 
-    def _check_cooling_prediction(
-        self,
-        next_block: NextScheduleBlock,
-        now: datetime,
-    ) -> dict[str, Any] | None:
-        """Check if cooling rate predicts temperature will cross target before schedule.
+    def _apply_cooling_preheat(self, crossover_dt: datetime, now: datetime) -> None:
+        """Apply cooling-based preheat timing to sensor state.
+
+        Resolves heating rate, inertia, and UFH buffer to calculate
+        when preheat should start before the predicted crossover.
 
         Args:
-            next_block: Next schedule block with target temp and start time.
+            crossover_dt: Predicted datetime when temp crosses below target.
+            now: Current datetime.
+        """
+        from datetime import timedelta
+
+        heating_rate = None
+        inertia_minutes = 0
+
+        heating_cycle_coordinator = self.coordinator.heating_cycle_coordinator
+        if heating_cycle_coordinator:
+            zone_data_cycle = heating_cycle_coordinator.get_zone_data(self._zone_id)
+            if zone_data_cycle:
+                heating_rate = zone_data_cycle.get("heating_rate")
+                inertia_time = zone_data_cycle.get("inertia_time")
+                if inertia_time is not None:
+                    inertia_minutes = int(inertia_time)
+
+        if heating_rate is None or heating_rate <= 0.1:
+            manager = self.coordinator.smart_comfort_manager
+            if manager and manager.get_heating_rate(self._zone_id):
+                heating_rate = manager.get_heating_rate(self._zone_id)
+
+        if heating_rate is None or heating_rate <= 0.1:
+            # No heating rate — show crossover warning only
+            self._attr_native_value = crossover_dt.strftime("%H:%M")
+            self._attr_available = True
+            self._duration_minutes = None
+            self._heating_rate = None
+            self._confidence = "low"
+            self._summary = (
+                f"Cooling at {self._cooling_rate:.1f}\u00b0C/h, "
+                f"will cross {self._target_temp:.1f}\u00b0C at {self._predicted_crossover_time} "
+                f"(no heating rate data for preheat timing)"
+            )
+            return
+
+        # Calculate preheat duration (inertia + UFH buffer)
+        ufh_buffer = 0
+        config_manager = self.coordinator.config_manager
+        if config_manager:
+            ufh_buffer_global = config_manager.get_ufh_buffer_minutes()
+            ufh_zones = config_manager.get_ufh_zones()
+            if ufh_buffer_global > 0:
+                if not ufh_zones or self._zone_id in ufh_zones:
+                    ufh_buffer = ufh_buffer_global
+
+        total_buffer = min(inertia_minutes + ufh_buffer, 240)
+        preheat_start = crossover_dt - timedelta(minutes=total_buffer)
+
+        if preheat_start <= now:
+            preheat_start = now
+
+        self._is_tomorrow = preheat_start.date() > now.date()
+        time_str = preheat_start.strftime("%H:%M")
+        self._attr_native_value = f"Tomorrow {time_str}" if self._is_tomorrow else time_str
+        self._duration_minutes = total_buffer
+        self._heating_rate = heating_rate
+        self._confidence = "medium"
+        self._attr_available = True
+        self._summary = (
+            f"Cooling at {self._cooling_rate:.1f}\u00b0C/h, "
+            f"will cross {self._target_temp:.1f}\u00b0C at {self._predicted_crossover_time}, "
+            f"start preheat at {self._attr_native_value}"
+        )
+        if ufh_buffer > 0:
+            self._summary += f" (includes {ufh_buffer} min UFH buffer)"
+
+    def _check_cooling_prediction(
+        self,
+        target_temp: float,
+        deadline: datetime,
+        now: datetime,
+    ) -> dict[str, Any] | None:
+        """Check if cooling rate predicts temperature will cross target before deadline.
+
+        Args:
+            target_temp: Target temperature to check crossover against.
+            deadline: Deadline datetime (schedule start + buffer).
             now: Current datetime.
 
         Returns:
@@ -750,19 +800,19 @@ class TadoPreheatAdvisorSensor(TadoZoneSensor):
         # Clamp extreme rates
         cooling_rate = max(cooling_rate, -5.0)
 
-        if self._current_temp is None or self._target_temp is None:
+        if self._current_temp is None:
             return None
 
         hours_to_crossover = estimate_cooling_crossover(
-            self._current_temp, self._target_temp, cooling_rate,
+            self._current_temp, target_temp, cooling_rate,
         )
         if hours_to_crossover is None:
             return None
 
         crossover_dt = now + timedelta(hours=hours_to_crossover)
 
-        # 30-minute buffer: if crossover is well after schedule change, no concern
-        schedule_deadline = next_block.start_time + timedelta(minutes=30)
+        # 30-minute buffer: if crossover is well after deadline, no concern
+        schedule_deadline = deadline + timedelta(minutes=30)
         if crossover_dt > schedule_deadline:
             return None
 

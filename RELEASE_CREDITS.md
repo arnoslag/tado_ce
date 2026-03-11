@@ -4,6 +4,37 @@ Community contributors who helped shape Tado CE through bug reports, feature req
 
 ---
 
+## v3.0.2 - Deadlock Fix, Preheat Away Mode, Polling Display Fix, Insight Display Improvements
+
+### Bug Reports & Issue Reporters
+
+**[@driagi](https://github.com/driagi)** - [Issue #170](https://github.com/hiall-fyi/tado_ce/issues/170), [Issue #173](https://github.com/hiall-fyi/tado_ce/issues/173)
+- Reported setup deadlock in API Call Tracker — integration hangs indefinitely on startup
+- Reported hub sensors showing wrong polling interval and API reset time — sensors not passing ratelimit data to `get_polling_interval()`
+
+**[@tigro7](https://github.com/tigro7)** - [Issue #170](https://github.com/hiall-fyi/tado_ce/issues/170)
+- Confirmed deadlock issue, provided additional context
+
+**[@mpartington](https://github.com/mpartington)** - [Issue #170](https://github.com/hiall-fyi/tado_ce/issues/170)
+- Confirmed deadlock issue affecting users with existing call history data
+
+**[@thefern69](https://github.com/thefern69)** - [Issue #171](https://github.com/hiall-fyi/tado_ce/issues/171), [Discussion #163](https://github.com/hiall-fyi/tado_ce/discussions/163)
+- Reported preheat triggering during Away mode
+- Requested cooling rate prediction for active target (UFH use case)
+
+### What Was Fixed
+
+- ✅ **Issue #170**: Fixed setup deadlock in API Call Tracker — cleanup moved outside the lock
+- ✅ **Issue #171**: Fixed preheat triggering during Away mode — checks `home_state.presence` before preheat activity
+- ✅ **Issue #173**: Fixed hub sensors showing wrong polling interval and API reset time — pass `cached_ratelimit` to `get_polling_interval()` in all three hub sensors
+- ✅ Fixed blocking I/O in `api_call_tracker.py` during sensor update — reads from coordinator data instead of file I/O
+- ✅ Fixed raw internal values in Persistent Insights — now uses formatted display names and priority labels
+- ✅ Preheat cooling prediction now applies to current active setpoint (UFH improvement)
+- ✅ Persistent Insights grouped display with emoji-prefixed lines
+- ✅ Removed redundant zone name prefix from per-zone recommendations
+
+---
+
 ## v3.0.1 - Entity Unavailable Fix, [CE] Prefix Removal, Translation Sync & Multi-Device Fix
 
 ### Bug Reports & Issue Reporters

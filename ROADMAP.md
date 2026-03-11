@@ -6,6 +6,22 @@ For completed features, see [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
+## v3.1.0
+
+**Open Window Detection Enhancements:**
+- **Set Open Window Mode Services** ([#172](https://github.com/hiall-fyi/tado_ce/issues/172) - @driagi) — New `tado_ce.activate_open_window` and `tado_ce.deactivate_open_window` services. Tado API supports `POST .../zones/{zoneId}/state/openWindow/activate` and `DELETE .../zones/{zoneId}/state/openWindow`. Enables instant open window activation from external window sensors (instead of waiting 15+ min for Tado's built-in detection) and free Auto-Assist replacement via HA automations. Targets climate entities.
+- **Window Predicted Sensitivity Dropdown** ([#135](https://github.com/hiall-fyi/tado_ce/issues/135) - @ChrisMarriott38) — `select.{zone}_window_predicted_sensitivity` with Low/Medium/High options mapping to preset threshold combinations internally. Allows users to tune false positive rate per zone.
+
+**API Management:**
+- **Event-Driven Full Sync** ([#141](https://github.com/hiall-fyi/tado_ce/issues/141) - @Xavinooo) — Remove 6-hour periodic full sync, make it event-driven (only on HA restart/reload). Zone info, offsets, and AC capabilities rarely change. Reduces unnecessary API calls, particularly beneficial for 100-call quota users.
+
+**Hub Controls Migration:**
+- **Quota Reserve Toggle** — Move `quota_reserve_enabled` from Config Options to Hub Controls for runtime toggle without reload.
+- **Test Mode Toggle** — Move `test_mode_enabled` from Config Options to Hub Controls for easier debugging.
+- Enables automation control and faster toggling without entering Config Options.
+
+---
+
 ## Up Next
 
 **Local API / HomeKit Hybrid** ([Discussion #29](https://github.com/hiall-fyi/tado_ce/discussions/29)):
@@ -25,20 +41,13 @@ Multi-Home prerequisite is complete. The path to HomeKit local control:
 
 **API Management:**
 - **Call Priority System** — Configurable weighting for different call types (e.g., zoneStates every 10 min, weather every 30 min). Requires significant coordinator architecture changes. Low priority — current adaptive polling handles most use cases.
-- **Event-Driven Full Sync** ([#141](https://github.com/hiall-fyi/tado_ce/issues/141) - @Xavinooo) — Remove 6-hour periodic full sync, make it event-driven (only on HA restart/reload). Zone info, offsets, and AC capabilities rarely change.
 
 **Environment Sensors** ([#64](https://github.com/hiall-fyi/tado_ce/issues/64)):
 - **Indoor Air Quality (IAQ)** — Air quality score per zone (requires additional sensors)
 - **Air Comfort** — Similar to Tado app's comfort visualization
 
 **Open Window Detection Enhancements** ([#135](https://github.com/hiall-fyi/tado_ce/issues/135) - @ChrisMarriott38):
-- **Sensitivity Dropdown** — `select.{zone}_window_predicted_sensitivity` with Low/Medium/High options mapping to preset threshold combinations internally.
 - **Cross-Zone Heating Detection** — Check if ANY zone is heating before triggering window predicted. Needs more real-world data; current per-zone approach avoids passive zone false positives.
-
-**Hub Controls Migration:**
-- **Quota Reserve Toggle** — Move `quota_reserve_enabled` from Config Options to Hub Controls for runtime toggle without reload.
-- **Test Mode Toggle** — Move `test_mode_enabled` from Config Options to Hub Controls for easier debugging.
-- **Benefit**: Allows automation control and faster toggling without entering Config Options. Waiting for community feedback.
 
 **Per-Zone External Sensor Override** ([#106](https://github.com/hiall-fyi/tado_ce/issues/106), [#143](https://github.com/hiall-fyi/tado_ce/issues/143) - @BirbByte):
 - Allow selecting any HA temperature sensor (HomeKit, Zigbee, etc.) per zone for faster updates. Under consideration.

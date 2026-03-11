@@ -15,7 +15,13 @@ from .format_helpers import (
     format_insight_type as _format_insight_type,
 )
 from .format_helpers import (
+    format_persistent_insights_grouped as _format_persistent_insights_grouped,
+)
+from .format_helpers import (
     format_priority as _format_priority,
+)
+from .format_helpers import (
+    strip_zone_prefix as _strip_zone_prefix,
 )
 from .insights import Insight, aggregate_home_insights, calculate_insight_health_score
 from .insights import build_weekly_digest as _build_weekly_digest
@@ -87,7 +93,7 @@ class TadoHomeInsightsSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], Sen
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
         """Return extra state attributes."""
-        persistent = self.coordinator.insight_history.get_persistent_insights()
+        raw_persistent = self.coordinator.insight_history.get_persistent_insights()
         return {
             "summary": self._aggregated.get("summary", ""),
             "actions_needed": self._aggregated.get("actions_needed", []),
@@ -96,7 +102,7 @@ class TadoHomeInsightsSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], Sen
             "top_recommendation": self._aggregated.get("top_recommendation", ""),
             "zones_with_issues": self._aggregated.get("zones_with_issues", []),
             "cross_zone_insights": self._aggregated.get("cross_zone_insights", []),
-            "persistent_insights": persistent,
+            "persistent_insights": _format_persistent_insights_grouped(raw_persistent),
             "insight_health_score": self._health_score,
             "weekly_digest": self._weekly_digest,
         }
@@ -249,9 +255,9 @@ class TadoZoneInsightsSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], Sen
         top = max(self._insights, key=lambda i: i.priority.value)
         return {
             "top_priority": _format_priority(top.priority.name.lower()),
-            "top_recommendation": top.recommendation,
+            "top_recommendation": _strip_zone_prefix(top.recommendation, self._zone_name),
             "insight_types": [_format_insight_type(i.insight_type) for i in self._insights],
-            "recommendations": [i.recommendation for i in self._insights],
+            "recommendations": [_strip_zone_prefix(i.recommendation, self._zone_name) for i in self._insights],
         }
 
     @callback

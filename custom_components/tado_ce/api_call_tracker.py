@@ -6,7 +6,10 @@ import asyncio
 from datetime import UTC, datetime, timedelta
 import json
 import logging
+import os
 from pathlib import Path
+import shutil
+import tempfile
 from threading import Lock
 from typing import TYPE_CHECKING, Any
 
@@ -35,6 +38,15 @@ CALL_TYPE_NAMES = {
     CALL_TYPE_HOME_STATE: "homeState",
     CALL_TYPE_CAPABILITIES: "capabilities",
 }
+
+# Rate extrapolation thresholds
+_MIN_CALLS_FOR_RATE = 20
+_MAX_REASONABLE_RATE = 100
+_HOURS_IN_DAY = 24
+_DEFAULT_CALLS_PER_HOUR = 15
+_DEFAULT_DAY_INTERVAL_MIN = 10
+_AVG_CALLS_PER_POLL = 2.5
+_MIN_TIME_SPAN_HOURS = 1.0
 
 
 class APICallTracker:
@@ -66,7 +78,7 @@ class APICallTracker:
         self._config_manager = config_manager
 
         # Use per-home file path if home_id provided
-        from .const import get_data_file
+        from .const import get_data_file  # noqa: PLC0415 — avoid circular import
 
         self.history_file = get_data_file("api_call_history", home_id)
 
@@ -91,9 +103,6 @@ class APICallTracker:
 
     def _save_history_sync(self, data: dict[str, Any]) -> None:
         """Save call history to disk synchronously with atomic write."""
-        import shutil
-        import tempfile
-
         try:
             self.history_file.parent.mkdir(parents=True, exist_ok=True)
 
@@ -149,8 +158,6 @@ class APICallTracker:
                 )
 
                 # Use unique temp file to avoid collisions (matches _save_history_sync pattern)
-                import tempfile
-
                 _temp_fd, temp_path_str = await loop.run_in_executor(
                     None,
                     lambda: tempfile.mkstemp(
@@ -161,8 +168,6 @@ class APICallTracker:
                 temp_path = Path(temp_path_str)
 
                 try:
-                    import os
-
                     content = json.dumps(data, indent=2)
 
                     def _write_and_close() -> None:
@@ -186,7 +191,12 @@ class APICallTracker:
                 _LOGGER.exception("Failed to save API call history")
 
     async def async_init(self) -> None:
-        """Initialize tracker asynchronously (load history from disk)."""
+        """Initialize tracker asynchronously (load history from disk).
+
+        Cleanup is performed outside the lock to avoid deadlock — async_cleanup_old_records
+        calls _save_history_async which also acquires _async_lock (non-reentrant).
+        Fixes #170.
+        """
         if self._initialized:
             return
 
@@ -198,9 +208,10 @@ class APICallTracker:
             self._initialized = True
             _LOGGER.debug("Loaded API call history: %s dates", len(self._call_history))
 
-            # Cleanup old records
-            await self.async_cleanup_old_records()
-            self._last_cleanup_date = datetime.now(UTC).date()  # type: ignore[assignment]
+        # Cleanup outside lock — async_cleanup_old_records → _save_history_async
+        # also acquires _async_lock, so calling it inside would deadlock.
+        await self.async_cleanup_old_records()
+        self._last_cleanup_date = datetime.now(UTC).date()  # type: ignore[assignment]
 
     def _ensure_initialized_sync(self) -> None:
         """Ensure tracker is initialized synchronously.
@@ -380,6 +391,56 @@ class APICallTracker:
 
         return {"date": date_key, "total_calls": len(date_calls), "by_type": by_type}
 
+    def _rate_from_history(self) -> tuple[float, str] | None:
+        """Estimate calls-per-hour from recent call history.
+
+        Returns:
+            Tuple of (calls_per_hour, description) or None if insufficient data.
+        """
+        calls = self.get_call_history(days=1)
+        if len(calls) < _MIN_CALLS_FOR_RATE:
+            return None
+
+        call_times: list[datetime] = []
+        for call in calls:
+            try:
+                call_time = datetime.fromisoformat(call["timestamp"])
+                if call_time.tzinfo is None:
+                    call_time = call_time.replace(tzinfo=UTC)
+                call_times.append(call_time)
+            except (ValueError, TypeError, KeyError):
+                continue
+
+        if len(call_times) < _MIN_CALLS_FOR_RATE:
+            return None
+
+        call_times.sort()
+        time_span_hours = (call_times[-1] - call_times[0]).total_seconds() / 3600
+        if time_span_hours < _MIN_TIME_SPAN_HOURS:
+            return None
+
+        rate = len(call_times) / time_span_hours
+        if not 1 <= rate <= _MAX_REASONABLE_RATE:
+            return None
+
+        return rate, f"history ({len(call_times)} calls / {time_span_hours:.1f}h)"
+
+    def _rate_from_config(self) -> tuple[float, str]:
+        """Estimate calls-per-hour from polling config.
+
+        Returns:
+            Tuple of (calls_per_hour, description).
+        """
+        try:
+            config_manager = self._config_manager
+            custom_day = config_manager.get_custom_day_interval() if config_manager else None
+            day_interval = custom_day or _DEFAULT_DAY_INTERVAL_MIN
+            polls_per_hour = 60 / day_interval
+            return polls_per_hour * _AVG_CALLS_PER_POLL, f"config (day={day_interval}min)"
+        except (AttributeError, TypeError, ValueError) as e:
+            _LOGGER.debug("Failed to get config rate: %s", e)
+            return _DEFAULT_CALLS_PER_HOUR, "default"
+
     def extrapolate_reset_time(self, current_used: int) -> datetime | None:
         """Extrapolate when the API reset happened by looking at usage rate.
 
@@ -396,77 +457,27 @@ class APICallTracker:
         if current_used <= 0:
             return None
 
-        now_utc = datetime.now(UTC)
-        calls_per_hour = None
-        rate_source = "unknown"
-
-        # Strategy A: Try to use actual call history rate (more accurate)
         self._ensure_initialized_sync()
-        calls = self.get_call_history(days=1)
 
-        if len(calls) >= 20:  # Need enough calls for reliable rate
-            # Parse timestamps
-            call_times = []
-            for call in calls:
-                try:
-                    ts = call["timestamp"]
-                    call_time = datetime.fromisoformat(ts)
-                    if call_time.tzinfo is None:
-                        call_time = call_time.replace(tzinfo=UTC)
-                    call_times.append(call_time)
-                except (ValueError, TypeError, KeyError):
-                    continue
+        # Try history-based rate first, fall back to config-based
+        history_result = self._rate_from_history()
+        if history_result is not None:
+            calls_per_hour, rate_source = history_result
+        else:
+            calls_per_hour, rate_source = self._rate_from_config()
 
-            if len(call_times) >= 20:
-                call_times.sort()
-                oldest_call = call_times[0]
-                newest_call = call_times[-1]
-                time_span_hours = (newest_call - oldest_call).total_seconds() / 3600
-
-                if time_span_hours >= 1.0:  # Need at least 1 hour span
-                    # Calculate actual rate from history
-                    actual_calls_per_hour = len(call_times) / time_span_hours
-
-                    # Sanity check: rate should be reasonable (1-100 calls/hour)
-                    if 1 <= actual_calls_per_hour <= 100:
-                        calls_per_hour = actual_calls_per_hour
-                        rate_source = f"history ({len(call_times)} calls / {time_span_hours:.1f}h)"
-
-        # Strategy B: Fall back to config-based rate (uses per-entry config_manager)
-        if calls_per_hour is None:
-            try:
-                config_manager = self._config_manager
-
-                # Get custom intervals or use defaults
-                custom_day = config_manager.get_custom_day_interval() if config_manager else None
-
-                # Default intervals for 5000 limit
-                day_interval = custom_day or 10
-
-                # Use day rate (more conservative estimate)
-                polls_per_hour = 60 / day_interval
-                calls_per_poll = 2.5  # Average
-                calls_per_hour = polls_per_hour * calls_per_poll
-                rate_source = f"config (day={day_interval}min)"
-
-            except (AttributeError, TypeError, ValueError) as e:
-                _LOGGER.debug("Failed to get config rate: %s", e)
-                # Ultimate fallback: assume 15 calls/hour
-                calls_per_hour = 15
-                rate_source = "default"
-
-        if calls_per_hour is None or calls_per_hour < 1:
+        if calls_per_hour < 1:
             _LOGGER.debug("Calls per hour invalid: %s", calls_per_hour)
             return None
 
         # Extrapolate backwards: how many hours ago was used = 0?
         hours_since_reset = current_used / calls_per_hour
 
-        # Sanity check: reset should be within last 24 hours
-        if hours_since_reset > 24 or hours_since_reset < 0:
+        if hours_since_reset > _HOURS_IN_DAY or hours_since_reset < 0:
             _LOGGER.debug("Extrapolated reset time out of range: %.2fh ago", hours_since_reset)
             return None
 
+        now_utc = datetime.now(UTC)
         estimated_reset = now_utc - timedelta(hours=hours_since_reset)
 
         _LOGGER.debug(

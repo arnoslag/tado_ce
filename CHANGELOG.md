@@ -2,6 +2,21 @@
 
 All notable changes to Tado CE will be documented in this file.
 
+## [3.0.2] - 2026-03-11
+
+### Bug Fixes
+- **Fixed Setup Deadlock in API Call Tracker** ([#170](https://github.com/hiall-fyi/tado_ce/issues/170) - @driagi, @tigro7, @mpartington) — `async_init()` called `async_cleanup_old_records()` while holding `_async_lock`; cleanup internally calls `_save_history_async()` which acquires the same non-reentrant lock → deadlock. Setup hangs indefinitely until HA cancels after ~80 minutes. Only affects users with existing call history data (>14 days). Fix: moved cleanup outside the lock.
+- **Fixed Preheat Triggering During Away Mode** ([#171](https://github.com/hiall-fyi/tado_ce/issues/171) - @thefern69) — Preheat Advisor, Preheat Now, and Adaptive Preheat did not check home presence state. Preheat recommendations and triggers would fire even when the home was in Away mode. Fix: Preheat Advisor now checks `home_state.presence` and suppresses all preheat activity when not HOME.
+- **Fixed Blocking I/O in `api_call_tracker.py` During Sensor Update** — `TadoApiUsageSensor.update()` was creating a new `APICallTracker` instance and calling synchronous file I/O (`get_recent_calls` → `_load_history_sync` → `open()`) inside the event loop, triggering HA blocking I/O warnings. Now reads call history from `coordinator.data["api_call_history"]` which is already loaded asynchronously by the data loader. Other sensors (`TadoApiHistorySensor`, `TadoApiBreakdownSensor`) were already using this async path correctly.
+- **Fixed Raw Internal Values in Persistent Insights** — Home Insights `persistent_insights` attribute was showing raw internal identifiers and numeric priority values instead of human-readable display names. Now uses formatted insight types and priority labels.
+- **Fixed Hub Sensors Showing Wrong Polling Interval / API Reset Time** ([#173](https://github.com/hiall-fyi/tado_ce/issues/173) - @driagi) — Three hub sensors (`TadoApiResetSensor`, `TadoNextSyncSensor`, `TadoPollingIntervalSensor`) called `get_polling_interval()` without passing `cached_ratelimit`, so adaptive interval was never calculated and fell back to default day/night intervals. The actual coordinator polling was correct, but sensor display values were wrong. Fix: pass `cached_ratelimit` data to `get_polling_interval()` in all three sensors.
+- **Code Quality: API Call Tracker** — Moved inline imports to top-level, extracted magic numbers to module constants, refactored complex method into smaller helpers.
+
+### Improvements
+- **Preheat Cooling Prediction for Active Target** ([Discussion #163](https://github.com/hiall-fyi/tado_ce/discussions/163) - @thefern69) — Cooling rate prediction now also applies to the current active setpoint, not just the next schedule change. When room is above current target but temperature is dropping, preheat triggers proactively before undershoot occurs. Particularly important for UFH (underfloor heating) systems with high thermal inertia.
+- **Persistent Insights Grouped Display** — Home Insights `persistent_insights` attribute now shows grouped, emoji-prefixed lines (e.g., "🔴 High: Battery — Guest (1d 4h)") instead of raw dict lists. Insights with the same type and priority are merged, zones are combined, and duration is human-readable.
+- **Removed Redundant Zone Name Prefix from Per-Zone Recommendations** — Per-zone entity `recommendation` attributes (Mold Risk, Condensation Risk, Comfort Level, Window Predicted, Battery, Connection, Zone Insights) no longer repeat the zone name as a prefix. The zone context is already provided by the entity itself. Home Insights retains the prefix for cross-zone aggregation.
+
 ## [3.0.1] - 2026-03-10
 
 ### Bug Fixes
