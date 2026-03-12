@@ -1169,7 +1169,7 @@
               "test_mode_enabled": "Mode test (limite de 100 appels API)"
             },
             "data_description": {
-              "smart_comfort_enabled": "Conseiller de préchauffage, risque de moisissure, capteurs de confort",
+              "smart_comfort_enabled": "Écart de programme, prochain programme, conseiller de préchauffage, capteurs d'objectif de confort",
               "thermal_analytics_enabled": "Inertie thermique, taux de chauffage, capteurs d'efficacité",
               "thermal_analytics_zones": "Sélectionner les zones pour l'analyse thermique",
               "adaptive_preheat_enabled": "Démarrer automatiquement le chauffage à l'heure recommandée",

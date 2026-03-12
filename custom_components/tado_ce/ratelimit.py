@@ -228,13 +228,17 @@ async def async_detect_reset_from_history(hass: HomeAssistant, home_id: str | No
             entry = registry.async_get_entity_id("sensor", "tado_ce", target_uid)
             if entry:
                 entity_id = entry
+                _LOGGER.debug("HA History Detection: Found entity via registry: %s (uid=%s)", entity_id, target_uid)
+            else:
+                _LOGGER.debug("HA History Detection: Registry miss for uid=%s", target_uid)
 
         # Fallback to hardcoded entity_id (single-home or registry miss)
         if not entity_id:
             entity_id = "sensor.tado_ce_api_usage"
+            _LOGGER.debug("HA History Detection: Using fallback entity_id: %s", entity_id)
 
         # Get history from recorder
-        def _get_history() -> list[dict[str, Any]]:
+        def _get_history() -> dict[str, list[Any]]:
             return get_significant_states(  # type: ignore[return-value]
                 hass,
                 start_time,
@@ -245,13 +249,19 @@ async def async_detect_reset_from_history(hass: HomeAssistant, home_id: str | No
 
         states = await get_instance(hass).async_add_executor_job(_get_history)
 
-        if not states or entity_id not in states:  # type: ignore[comparison-overlap]
-            _LOGGER.debug("HA History Detection: No history found for sensor.tado_ce_api_usage")
+        if not states or entity_id not in states:
+            # Log available keys to help diagnose entity_id mismatch
+            available_keys = list(states.keys()) if states else []
+            _LOGGER.debug(
+                "HA History Detection: No history for %s (available keys: %s)",
+                entity_id,
+                available_keys[:5] if available_keys else "none",
+            )
             return None
 
-        history = states[entity_id]  # type: ignore[call-overload]
+        history = states[entity_id]
         if len(history) < 10:
-            _LOGGER.debug("HA History Detection: Not enough history points (%s)", len(history))
+            _LOGGER.debug("HA History Detection: Not enough history points (%s) for %s", len(history), entity_id)
             return None
 
         # Parse states and find minimum value (reset point)

@@ -1169,7 +1169,7 @@
               "test_mode_enabled": "Modalità test (limite 100 chiamate API)"
             },
             "data_description": {
-              "smart_comfort_enabled": "Consulente preriscaldamento, rischio muffa, sensori comfort",
+              "smart_comfort_enabled": "Deviazione programma, prossimo programma, consulente preriscaldamento, sensori obiettivo comfort",
               "thermal_analytics_enabled": "Inerzia termica, tasso di riscaldamento, sensori efficienza",
               "thermal_analytics_zones": "Seleziona le zone per l'analisi termica",
               "adaptive_preheat_enabled": "Avvia automaticamente il riscaldamento all'orario consigliato",

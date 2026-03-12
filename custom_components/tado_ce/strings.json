@@ -1169,7 +1169,7 @@
               "test_mode_enabled": "Test Mode (100 API call limit)"
             },
             "data_description": {
-              "smart_comfort_enabled": "Preheat advisor, mold risk, comfort level sensors",
+              "smart_comfort_enabled": "Schedule deviation, next schedule, preheat advisor, comfort target sensors",
               "thermal_analytics_enabled": "Thermal inertia, heating rate, efficiency sensors",
               "thermal_analytics_zones": "Select zones to show thermal analytics (deselect to hide, empty = all)",
               "adaptive_preheat_enabled": "Auto-start heating at recommended preheat time (requires Smart Comfort)",

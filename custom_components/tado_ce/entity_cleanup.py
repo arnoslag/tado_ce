@@ -44,17 +44,22 @@ FEATURE_CLEANUP_MAP: list[tuple[str, str, bool]] = [
 _CLEANUP_DEFINITIONS: dict[str, dict[str, Any]] = {
     "_cleanup_zone_config": {
         "label": "Zone Configuration",
-        "prefix": "tado_ce_zone_",
-        "suffixes": [
-            "_heating_type", "_ufh_buffer", "_adaptive_preheat", "_smart_comfort_mode",
-            "_window_type", "_overlay_mode", "_timer_duration", "_min_temp", "_max_temp", "_temp_offset",
+        "patterns": [
+            # v3.x suffixes
+            "_heat_emitter", "_ufh_buffer", "_adaptive_preheat", "_smart_comfort",
+            "_window_type", "_min_temp", "_max_temp", "_temp_offset", "_surface_offset",
+            # v2.x suffixes (pre-migration unique_ids)
+            "_heating_type", "_smart_comfort_mode", "_surface_temp_offset",
+        ],
+        "zone_patterns": [
+            "_overlay_mode",
+            "_overlay_timer",   # v3.x
+            "_timer_duration",  # v2.x
         ],
     },
     "_cleanup_zone_diagnostics": {
         "label": "Zone Diagnostics",
-        "prefix": "tado_ce_zone_",
-        "suffixes": ["_battery", "_connection", "_heating", "_ac_power"],
-        "extra_patterns": ["_battery", "_connection"],
+        "patterns": ["_battery", "_connection", "_heating"],
     },
     "_cleanup_device_controls": {
         "label": "Device Controls",
@@ -66,33 +71,44 @@ _CLEANUP_DEFINITIONS: dict[str, dict[str, Any]] = {
     },
     "_cleanup_environment_sensors": {
         "label": "Environment Sensors",
-        "prefix": "tado_ce_zone_",
-        "suffixes": [
-            "_mold_risk", "_comfort_level", "_condensation_risk",
-            "_surface_temperature", "_dew_point", "_insights", "_window_predicted",
+        "patterns": [
+            # v3.x suffixes
+            "_mold_risk", "_mold_risk_pct", "_comfort_level", "_condensation",
+            "_surface_temp", "_dew_point",
+            # v2.x suffixes (pre-migration unique_ids)
+            "_mold_risk_percentage", "_condensation_risk", "_surface_temperature",
         ],
     },
     "_cleanup_thermal_analytics": {
         "label": "Thermal Analytics",
-        "prefix": "tado_ce_zone_",
-        "suffixes": [
-            "_thermal_inertia", "_heating_rate", "_efficiency",
-            "_approach_factor", "_historical_deviation", "_heating_cycles",
+        "patterns": [
+            # v3.x suffixes
+            "_thermal_inertia", "_heating_rate", "_preheat_time",
+            "_confidence", "_heat_accel", "_approach_factor",
+            # v2.x suffixes (pre-migration unique_ids)
+            "_avg_heating_rate", "_analysis_confidence", "_heating_acceleration",
         ],
     },
     "_cleanup_smart_comfort": {
         "label": "Smart Comfort",
-        "prefix": "tado_ce_zone_",
-        "suffixes": [
-            "_schedule_deviation", "_next_schedule_time", "_next_schedule_temp",
-            "_preheat_advisor", "_smart_comfort_target", "_preheat_now",
+        "patterns": [
+            # v3.x suffixes
+            "_schedule_deviation", "_next_schedule", "_next_sched_temp",
+            "_preheat_advisor", "_comfort_target", "_preheat_now",
+            # v2.x suffixes (pre-migration unique_ids)
+            "_historical_deviation", "_next_schedule_time", "_next_schedule_temp",
+            "_smart_comfort_target",
         ],
-        "extra_patterns": ["_preheat_now"],
     },
     "_cleanup_schedule_calendar": {
         "label": "Schedule Calendar",
         "exact_suffixes": ["_schedule", "_refresh_schedule"],
-        "exclude_suffixes": ["_next_schedule", "_next_sched_temp", "_schedule_deviation"],
+        "exclude_suffixes": [
+            # v3.x smart comfort suffixes
+            "_next_schedule", "_next_sched_temp", "_schedule_deviation",
+            # v2.x smart comfort suffixes
+            "_next_schedule_time", "_next_schedule_temp",
+        ],
         "remove_device": "heating_schedule",
     },
     "_cleanup_weather": {
@@ -162,6 +178,42 @@ def cleanup_entities_by_pattern(
             continue
         unique_id = entity_entry.unique_id or ""
         if unique_id.startswith("tado_ce_") and any(unique_id.endswith(suffix) for suffix in suffixes):
+            _LOGGER.debug("  Removing entity: %s (unique_id: %s)", entity_id, unique_id)
+            entity_registry.async_remove(entity_id)
+            removed += 1
+    return removed
+
+
+def cleanup_entities_by_zone_pattern(
+    entity_registry: EntityRegistry,
+    domain: str,
+    suffixes: list[str],
+) -> int:
+    """Remove zone-level entities matching suffixes, skipping hub-level entities.
+
+    Like ``cleanup_entities_by_pattern`` but additionally requires ``_zone_``
+    in the unique_id. This prevents false-positive removal of hub-level
+    entities that share the same suffix (e.g., hub ``_overlay_mode`` vs
+    per-zone ``_zone_1_overlay_mode``).
+
+    Args:
+        entity_registry: HA entity registry.
+        domain: Integration domain (e.g., "tado_ce").
+        suffixes: List of suffixes to match (e.g., ["_overlay_mode"]).
+
+    Returns:
+        Number of entities removed.
+    """
+    removed = 0
+    for entity_id, entity_entry in list(entity_registry.entities.items()):
+        if entity_entry.platform != domain:
+            continue
+        unique_id = entity_entry.unique_id or ""
+        if (
+            unique_id.startswith("tado_ce_")
+            and "_zone_" in unique_id
+            and any(unique_id.endswith(suffix) for suffix in suffixes)
+        ):
             _LOGGER.debug("  Removing entity: %s (unique_id: %s)", entity_id, unique_id)
             entity_registry.async_remove(entity_id)
             removed += 1
@@ -405,6 +457,9 @@ def cleanup_disabled_feature_entities(
 
         if "patterns" in defn:
             removed += cleanup_entities_by_pattern(entity_registry, DOMAIN, defn["patterns"])
+
+        if "zone_patterns" in defn:
+            removed += cleanup_entities_by_zone_pattern(entity_registry, DOMAIN, defn["zone_patterns"])
 
         if "extra_patterns" in defn:
             removed += cleanup_entities_by_pattern(entity_registry, DOMAIN, defn["extra_patterns"])

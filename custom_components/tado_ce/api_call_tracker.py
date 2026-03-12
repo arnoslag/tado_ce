@@ -428,15 +428,58 @@ class APICallTracker:
     def _rate_from_config(self) -> tuple[float, str]:
         """Estimate calls-per-hour from polling config.
 
+        Uses actual calls-per-sync from enabled features and a blended
+        day/night interval to account for different polling rates across
+        the 24-hour cycle. This avoids overestimating the rate when
+        adaptive polling raises the interval or night mode uses longer intervals.
+
         Returns:
             Tuple of (calls_per_hour, description).
         """
         try:
             config_manager = self._config_manager
-            custom_day = config_manager.get_custom_day_interval() if config_manager else None
-            day_interval = custom_day or _DEFAULT_DAY_INTERVAL_MIN
-            polls_per_hour = 60 / day_interval
-            return polls_per_hour * _AVG_CALLS_PER_POLL, f"config (day={day_interval}min)"
+            if not config_manager:
+                return _DEFAULT_CALLS_PER_HOUR, "default"
+
+            # Use actual calls per sync based on enabled features (1-3 calls)
+            from .polling import _get_calls_per_sync
+
+            calls_per_sync = _get_calls_per_sync(config_manager)
+
+            # Blended interval: weighted average of day and night intervals
+            # This is more accurate than using day interval alone, since
+            # extrapolation covers the full period since reset (which spans
+            # both day and night hours).
+            from .const import DEFAULT_DAY_INTERVAL, DEFAULT_NIGHT_INTERVAL
+
+            custom_day = config_manager.get_custom_day_interval()
+            custom_night = config_manager.get_custom_night_interval()
+            day_interval: float = custom_day or DEFAULT_DAY_INTERVAL
+            night_interval: float = custom_night or DEFAULT_NIGHT_INTERVAL
+
+            day_start = config_manager.get_day_start_hour()
+            night_start = config_manager.get_night_start_hour()
+
+            if day_start == night_start:
+                # Uniform mode — single interval all day
+                blended_interval = day_interval
+            else:
+                # Calculate day/night durations
+                day_hours = night_start - day_start if night_start > day_start else 24 - day_start + night_start
+                night_hours = 24 - day_hours
+
+                # Weighted average interval
+                blended_interval = (
+                    (day_hours * day_interval) + (night_hours * night_interval)
+                ) / 24
+
+            polls_per_hour = 60 / blended_interval
+            rate = polls_per_hour * calls_per_sync
+            desc = (
+                f"config (day={day_interval:.0f}min, night={night_interval:.0f}min, "
+                f"blend={blended_interval:.1f}min, cps={calls_per_sync})"
+            )
+            return rate, desc
         except (AttributeError, TypeError, ValueError) as e:
             _LOGGER.debug("Failed to get config rate: %s", e)
             return _DEFAULT_CALLS_PER_HOUR, "default"

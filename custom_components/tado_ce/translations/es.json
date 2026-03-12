@@ -1169,7 +1169,7 @@
               "test_mode_enabled": "Modo prueba (límite 100 llamadas API)"
             },
             "data_description": {
-              "smart_comfort_enabled": "Asesor de precalentamiento, riesgo de moho, sensores de confort",
+              "smart_comfort_enabled": "Desviación de horario, próximo horario, asesor de precalentamiento, sensores de objetivo de confort",
               "thermal_analytics_enabled": "Inercia térmica, tasa de calentamiento, sensores de eficiencia",
               "thermal_analytics_zones": "Selecciona las zonas para el análisis térmico",
               "adaptive_preheat_enabled": "Iniciar calefacción automáticamente a la hora recomendada",

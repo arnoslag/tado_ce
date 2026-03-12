@@ -1169,7 +1169,7 @@
               "test_mode_enabled": "Testmodus (100 API-aanroepen limiet)"
             },
             "data_description": {
-              "smart_comfort_enabled": "Voorverwarmingsadviseur, schimmelrisico, comfortsensoren",
+              "smart_comfort_enabled": "Roosterafwijking, volgend rooster, voorverwarmingsadviseur, comfortdoel-sensoren",
               "thermal_analytics_enabled": "Thermische traagheid, verwarmingssnelheid, efficiëntiesensoren",
               "thermal_analytics_zones": "Selecteer zones voor thermische analyse",
               "adaptive_preheat_enabled": "Verwarming automatisch starten op aanbevolen voorverwarmingstijd",

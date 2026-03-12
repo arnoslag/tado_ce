@@ -2,6 +2,16 @@
 
 All notable changes to Tado CE will be documented in this file.
 
+## [3.0.4] - 2026-03-12
+
+### Bug Fixes
+- **Fixed Inaccurate API Reset Time Estimation** ([#173](https://github.com/hiall-fyi/tado_ce/issues/173) - @driagi) — Reset time was off by ~6 hours because the rate estimation assumed a fixed day interval and 2.5 calls/sync. Now uses a blended day/night interval weighted by actual schedule hours and real calls-per-sync from enabled features.
+- **Fixed HA History Detection for API Reset** ([#173](https://github.com/hiall-fyi/tado_ce/issues/173)) — History-based reset detection was silently failing (`No history found`). Added diagnostic logging for entity registry lookups and available history keys to help identify entity_id mismatches. Fixed return type annotation that could cause lookup failures.
+- **Fixed Smart Comfort Analytics Description** — Options flow description incorrectly listed "mold risk, comfort level" which are actually controlled by the always-on Environment Sensors. Updated to accurately list: schedule deviation, next schedule, preheat advisor, comfort target.
+
+### Improvements
+- **Improved Entity Cleanup Accuracy** — Cleanup patterns now use actual v3.x entity suffixes instead of outdated v2.x names, with backward-compatible fallbacks for pre-migration unique_ids. Added zone-level pattern matching to prevent false-positive removal of hub entities sharing the same suffix (e.g., hub `overlay_mode` vs zone `overlay_mode`).
+
 ## [3.0.3] - 2026-03-11
 
 ### Bug Fixes

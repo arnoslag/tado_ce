@@ -1169,7 +1169,7 @@
               "test_mode_enabled": "Testmodus (100 API-Aufrufe Limit)"
             },
             "data_description": {
-              "smart_comfort_enabled": "Vorheiz-Berater, Schimmelrisiko, Komfortsensoren",
+              "smart_comfort_enabled": "Zeitplanabweichung, nächster Zeitplan, Vorheiz-Berater, Komfortziel-Sensoren",
               "thermal_analytics_enabled": "Thermische Trägheit, Heizrate, Effizienzsensoren",
               "thermal_analytics_zones": "Zonen für thermische Analyse auswählen",
               "adaptive_preheat_enabled": "Heizung automatisch zur empfohlenen Vorheizzeit starten",

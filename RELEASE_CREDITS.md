@@ -4,6 +4,13 @@ Community contributors who helped shape Tado CE through bug reports, feature req
 
 ---
 
+## v3.0.4
+
+**[@driagi](https://github.com/driagi)** - [Issue #173](https://github.com/hiall-fyi/tado_ce/issues/173)
+- Reported inaccurate API reset time estimation (~6 hours off) and HA history detection failing silently
+
+---
+
 ## v3.0.3
 
 **[@driagi](https://github.com/driagi)** - [Issue #173](https://github.com/hiall-fyi/tado_ce/issues/173)
