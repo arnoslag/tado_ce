@@ -25,6 +25,7 @@ from .calculations import calculate_surface_rh as _calculate_surface_rh
 from .calculations import (
     calculate_surface_temperature as _calculate_surface_temperature,
 )
+from .entity_registry import ENTITY_REGISTRY, get_entity_category
 from .format_helpers import (
     format_comfort_model as _format_comfort_model,
 )
@@ -124,9 +125,11 @@ class TadoMoldRiskSensor(TadoZoneSensor):
     ) -> None:
         """Initialize the Mold Risk Sensor."""
         super().__init__(coordinator, zone_id, zone_name, zone_type)
-        self._attr_translation_key = "mold_risk"
-        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_zone_{zone_id}_mold_risk"
-        self._attr_icon = "mdi:mushroom"
+        _meta = ENTITY_REGISTRY["sensor_mold_risk"]
+        self._attr_translation_key = _meta.translation_key
+        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix.format(zone_id=zone_id)}"
+        self._attr_icon = _meta.icon
+        self._attr_entity_category = get_entity_category(_meta)
 
         # Attributes
         self._room_temp: float | None = None  # Room temp from Tado sensor
@@ -261,9 +264,11 @@ class TadoMoldRiskPercentageSensor(TadoZoneSensor):
     ) -> None:
         """Initialize the Mold Risk Percentage Sensor."""
         super().__init__(coordinator, zone_id, zone_name, zone_type)
-        self._attr_translation_key = "mold_risk_pct"
-        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_zone_{zone_id}_mold_risk_pct"
-        self._attr_icon = "mdi:water-percent"
+        _meta = ENTITY_REGISTRY["sensor_mold_risk_pct"]
+        self._attr_translation_key = _meta.translation_key
+        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix.format(zone_id=zone_id)}"
+        self._attr_icon = _meta.icon
+        self._attr_entity_category = get_entity_category(_meta)
         self._attr_device_class = SensorDeviceClass.HUMIDITY
         self._attr_native_unit_of_measurement = "%"
         self._attr_state_class = SensorStateClass.MEASUREMENT
@@ -371,9 +376,11 @@ class TadoCondensationRiskSensor(TadoZoneSensor):
     ) -> None:
         """Initialize the Condensation Risk Sensor."""
         super().__init__(coordinator, zone_id, zone_name, zone_type)
-        self._attr_translation_key = "condensation_risk"
-        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_zone_{zone_id}_condensation"
-        self._attr_icon = "mdi:water-alert"
+        _meta = ENTITY_REGISTRY["sensor_condensation_risk"]
+        self._attr_translation_key = _meta.translation_key
+        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix.format(zone_id=zone_id)}"
+        self._attr_icon = _meta.icon
+        self._attr_entity_category = get_entity_category(_meta)
 
         # Common attributes
         self._room_temp: float | None = None
@@ -694,9 +701,11 @@ class TadoSurfaceTemperatureSensor(TadoZoneSensor):
     ) -> None:
         """Initialize the Surface Temperature Sensor."""
         super().__init__(coordinator, zone_id, zone_name, zone_type)
-        self._attr_translation_key = "surface_temp"
-        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_zone_{zone_id}_surface_temp"
-        self._attr_icon = "mdi:thermometer-lines"
+        _meta = ENTITY_REGISTRY["sensor_surface_temp"]
+        self._attr_translation_key = _meta.translation_key
+        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix.format(zone_id=zone_id)}"
+        self._attr_icon = _meta.icon
+        self._attr_entity_category = get_entity_category(_meta)
         self._attr_device_class = SensorDeviceClass.TEMPERATURE
         self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
         self._attr_state_class = SensorStateClass.MEASUREMENT
@@ -848,9 +857,11 @@ class TadoDewPointSensor(TadoZoneSensor):
     ) -> None:
         """Initialize the Dew Point Sensor."""
         super().__init__(coordinator, zone_id, zone_name, zone_type)
-        self._attr_translation_key = "dew_point"
-        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_zone_{zone_id}_dew_point"
-        self._attr_icon = "mdi:water-thermometer"
+        _meta = ENTITY_REGISTRY["sensor_dew_point"]
+        self._attr_translation_key = _meta.translation_key
+        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix.format(zone_id=zone_id)}"
+        self._attr_icon = _meta.icon
+        self._attr_entity_category = get_entity_category(_meta)
         self._attr_device_class = SensorDeviceClass.TEMPERATURE
         self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
         self._attr_state_class = SensorStateClass.MEASUREMENT
@@ -930,9 +941,11 @@ class TadoComfortLevelSensor(TadoZoneSensor):
     ) -> None:
         """Initialize the Comfort Level Sensor."""
         super().__init__(coordinator, zone_id, zone_name, zone_type)
-        self._attr_translation_key = "comfort_level"
-        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_zone_{zone_id}_comfort_level"
-        self._attr_icon = "mdi:air-filter"
+        _meta = ENTITY_REGISTRY["sensor_comfort_level"]
+        self._attr_translation_key = _meta.translation_key
+        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix.format(zone_id=zone_id)}"
+        self._attr_icon = _meta.icon
+        self._attr_entity_category = get_entity_category(_meta)
 
         # Attributes
         self._temperature: float | None = None

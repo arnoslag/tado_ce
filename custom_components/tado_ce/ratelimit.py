@@ -239,13 +239,14 @@ async def async_detect_reset_from_history(hass: HomeAssistant, home_id: str | No
 
         # Get history from recorder
         def _get_history() -> dict[str, list[Any]]:
-            return get_significant_states(  # type: ignore[return-value]
+            result = get_significant_states(
                 hass,
                 start_time,
                 end_time,
                 [entity_id],
                 significant_changes_only=False,
             )
+            return dict(result) if result else {}
 
         states = await get_instance(hass).async_add_executor_job(_get_history)
 

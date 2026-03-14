@@ -12,7 +12,9 @@ import voluptuous as vol
 
 from .const import (
     DOMAIN,
+    SERVICE_ACTIVATE_OPEN_WINDOW,
     SERVICE_ADD_METER_READING,
+    SERVICE_DEACTIVATE_OPEN_WINDOW,
     SERVICE_GET_TEMP_OFFSET,
     SERVICE_IDENTIFY_DEVICE,
     SERVICE_RESUME_SCHEDULE,
@@ -715,6 +717,84 @@ async def _async_register_services(hass: HomeAssistant) -> None:
                 if not success:
                     _LOGGER.error("Failed to set away config for %s", entity_id)
 
+    async def handle_activate_open_window(call: ServiceCall) -> None:
+        """Handle activate_open_window service call.
+
+        Activates open window mode on climate zones (same as tapping the icon in the Tado app).
+        Added bootstrap reserve check and group expansion support.
+        Per-entry API client routing.
+        """
+        entity_ids = call.data.get("entity_id", [])
+        if isinstance(entity_ids, str):
+            entity_ids = [entity_ids]
+
+        # Expand groups to individual entity IDs
+        entity_ids = _expand_group_entity_ids(hass, entity_ids, allowed_domains=["climate"])
+
+        for entity_id in entity_ids:
+            try:
+                _coord = _resolve_coordinator(hass, entity_id)
+            except HomeAssistantError:
+                _LOGGER.exception("activate_open_window")
+                continue
+
+            should_block, reason = await async_check_bootstrap_reserve(hass, coordinator=_coord)
+            if should_block:
+                await async_show_api_limit_notification(hass, reason)
+                raise HomeAssistantError(
+                    translation_domain=DOMAIN,
+                    translation_key="api_quota_critically_low",
+                )
+
+            ent = _find_entity_by_id(hass, "climate", entity_id)
+            if ent:
+                zone_id = getattr(ent, "_zone_id", None)
+                if zone_id:
+                    success = await _coord.api_client.activate_open_window(zone_id)
+                    if success:
+                        _LOGGER.info("Activated open window for %s", entity_id)
+                    else:
+                        _LOGGER.error("Failed to activate open window for %s", entity_id)
+
+    async def handle_deactivate_open_window(call: ServiceCall) -> None:
+        """Handle deactivate_open_window service call.
+
+        Deactivates open window mode on climate zones, resuming normal heating/cooling.
+        Added bootstrap reserve check and group expansion support.
+        Per-entry API client routing.
+        """
+        entity_ids = call.data.get("entity_id", [])
+        if isinstance(entity_ids, str):
+            entity_ids = [entity_ids]
+
+        # Expand groups to individual entity IDs
+        entity_ids = _expand_group_entity_ids(hass, entity_ids, allowed_domains=["climate"])
+
+        for entity_id in entity_ids:
+            try:
+                _coord = _resolve_coordinator(hass, entity_id)
+            except HomeAssistantError:
+                _LOGGER.exception("deactivate_open_window")
+                continue
+
+            should_block, reason = await async_check_bootstrap_reserve(hass, coordinator=_coord)
+            if should_block:
+                await async_show_api_limit_notification(hass, reason)
+                raise HomeAssistantError(
+                    translation_domain=DOMAIN,
+                    translation_key="api_quota_critically_low",
+                )
+
+            ent = _find_entity_by_id(hass, "climate", entity_id)
+            if ent:
+                zone_id = getattr(ent, "_zone_id", None)
+                if zone_id:
+                    success = await _coord.api_client.deactivate_open_window(zone_id)
+                    if success:
+                        _LOGGER.info("Deactivated open window for %s", entity_id)
+                    else:
+                        _LOGGER.error("Failed to deactivate open window for %s", entity_id)
+
     async def handle_get_temp_offset(call: ServiceCall) -> None:
         """Handle get_temperature_offset service call.
 
@@ -840,6 +920,28 @@ async def _async_register_services(hass: HomeAssistant) -> None:
                 vol.Required("mode"): cv.string,
                 vol.Optional("temperature"): vol.Coerce(float),
                 vol.Optional("comfort_level"): vol.Coerce(int),
+            },
+        ),
+    )
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_ACTIVATE_OPEN_WINDOW,
+        handle_activate_open_window,
+        schema=vol.Schema(
+            {
+                vol.Required("entity_id"): cv.entity_ids,
+            },
+        ),
+    )
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_DEACTIVATE_OPEN_WINDOW,
+        handle_deactivate_open_window,
+        schema=vol.Schema(
+            {
+                vol.Required("entity_id"): cv.entity_ids,
             },
         ),
     )

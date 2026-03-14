@@ -27,7 +27,7 @@ from .action_helpers import (
 from .action_helpers import (
     record_smart_comfort_data as _record_smart_comfort_data,
 )
-from .climate_helpers import api_call_with_rollback
+from .climate_helpers import api_call_with_rollback, read_external_sensor
 from .climate_maps import (
     HA_TO_TADO_FAN,
     HA_TO_TADO_HVAC_MODE,
@@ -36,6 +36,7 @@ from .climate_maps import (
     build_fan_mapping,
 )
 from .device_manager import get_zone_device_info
+from .entity_registry import ENTITY_REGISTRY
 from .format_helpers import (
     format_overlay_type as _format_overlay_type,
 )
@@ -80,9 +81,10 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
         self._capabilities = capabilities
         self._entry_id = coordinator.config_entry.entry_id
 
+        _meta = ENTITY_REGISTRY["climate_ac"]
         self._attr_name = None
-        self._attr_translation_key = "ac"
-        self._attr_unique_id = f"tado_ce_{home_id}_zone_{zone_id}_ac_climate"
+        self._attr_translation_key = _meta.translation_key
+        self._attr_unique_id = f"tado_ce_{home_id}_{_meta.unique_id_suffix.format(zone_id=zone_id)}"
         self._attr_temperature_unit = UnitOfTemperature.CELSIUS
         self._attr_device_info = get_zone_device_info(zone_id, zone_name, "AIR_CONDITIONING", home_id)
 
@@ -249,6 +251,12 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
         self._overlay_type = None
         self._ac_power_percentage = None
 
+        # External sensor override tracking
+        self._temperature_source = "tado"
+        self._humidity_source = "tado"
+        self._external_temp_sensor = ""
+        self._external_humidity_sensor = ""
+
         # Optimistic state tracking with sequence numbers
         # Sequence-based optimistic state tracking with coordinator-aware approach
         self._optimistic_state: dict[str, Any] | None = None  # Current optimistic state
@@ -386,27 +394,27 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
     def _update_temp_limits(self) -> None:
         """Update min/max temp from zone config.
 
-        Per-zone temperature limits override capabilities.
-        If per-zone value is not set, reset to capabilities default.
-        Clamp user values to capabilities range (HIGH-3).
+        Only applies user-explicit overrides (has_zone_override check).
+        If user never set min/max_temp in Zone Configuration, use API
+        capabilities directly — avoids DEFAULT_ZONE_CONFIG (25°C max)
+        capping AC zones that support up to 30°C (fixes #180).
         """
         zone_config_manager = self.coordinator.zone_config_manager
         if zone_config_manager:
-            # Get per-zone overrides (use capabilities as defaults)
-            min_temp = zone_config_manager.get_zone_value(self._zone_id, "min_temp", None)
-            max_temp = zone_config_manager.get_zone_value(self._zone_id, "max_temp", None)
-
             caps_min = self._get_capabilities_temp_limit("min", 16)
             caps_max = self._get_capabilities_temp_limit("max", 30)
 
-            if min_temp is not None:
-                # Clamp: user can't set min lower than AC hardware minimum
-                self._attr_min_temp = max(float(min_temp), caps_min)
+            if zone_config_manager.has_zone_override(self._zone_id, "min_temp"):
+                # User explicitly set min_temp — clamp to hardware minimum
+                user_min = zone_config_manager.get_zone_value(self._zone_id, "min_temp", caps_min)
+                self._attr_min_temp = max(float(user_min), caps_min)
             else:
                 self._attr_min_temp = caps_min
-            if max_temp is not None:
-                # Clamp: user can't set max higher than AC hardware maximum
-                self._attr_max_temp = min(float(max_temp), caps_max)
+
+            if zone_config_manager.has_zone_override(self._zone_id, "max_temp"):
+                # User explicitly set max_temp — clamp to hardware maximum
+                user_max = zone_config_manager.get_zone_value(self._zone_id, "max_temp", caps_max)
+                self._attr_max_temp = min(float(user_max), caps_max)
             else:
                 self._attr_max_temp = caps_max
 
@@ -437,6 +445,10 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
             "ac_power_percentage": self._ac_power_percentage,
             "zone_id": self._zone_id,
             "zone_type": _format_zone_type("AIR_CONDITIONING"),
+            "temperature_source": self._temperature_source,
+            "humidity_source": self._humidity_source,
+            "external_temp_sensor": self._external_temp_sensor,
+            "external_humidity_sensor": self._external_humidity_sensor,
         }
 
     @callback
@@ -502,6 +514,28 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
 
             # Current humidity
             self._attr_current_humidity = (sensor_data.get("humidity") or {}).get("percentage")
+
+            # External sensor overrides (fallback to Tado API values above)
+            zcm = self.coordinator.zone_config_manager
+            ext_temp = read_external_sensor(self.hass, zcm, self._zone_id, "external_temp_sensor")
+            if ext_temp is not None:
+                self._attr_current_temperature = ext_temp
+                self._temperature_source = "external"
+            else:
+                self._temperature_source = "tado"
+
+            ext_hum = read_external_sensor(self.hass, zcm, self._zone_id, "external_humidity_sensor")
+            if ext_hum is not None:
+                self._attr_current_humidity = ext_hum
+                self._humidity_source = "external"
+            else:
+                self._humidity_source = "tado"
+
+            # Track configured entity_ids for extra_state_attributes
+            if zcm:
+                zc = zcm.get_zone_config(self._zone_id)
+                self._external_temp_sensor = zc.get("external_temp_sensor", "")
+                self._external_humidity_sensor = zc.get("external_humidity_sensor", "")
 
             # AC power state - API returns {'value': 'ON'/'OFF'} not percentage
             activity_data = zone_data.get("activityDataPoints") or {}

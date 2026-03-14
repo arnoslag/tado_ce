@@ -23,6 +23,7 @@ from .action_helpers import (
     is_within_optimistic_window as _is_within_optimistic_window,
 )
 from .device_manager import get_zone_device_info
+from .entity_registry import ENTITY_REGISTRY
 from .format_helpers import format_overlay_type as _format_overlay_type
 from .helpers import async_trigger_immediate_refresh
 from .optimistic_helpers import clear_optimistic_state
@@ -89,9 +90,10 @@ class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeate
         self._home_id = home_id
         self._entry_id = coordinator.config_entry.entry_id
 
+        _meta = ENTITY_REGISTRY["water_heater_hot_water"]
         self._attr_name = None
-        self._attr_translation_key = "hot_water"
-        self._attr_unique_id = f"tado_ce_{home_id}_zone_{zone_id}_water_heater"
+        self._attr_translation_key = _meta.translation_key
+        self._attr_unique_id = f"tado_ce_{home_id}_{_meta.unique_id_suffix.format(zone_id=zone_id)}"
         self._attr_temperature_unit = UnitOfTemperature.CELSIUS
         self._attr_min_temp = 30
         self._attr_max_temp = 65

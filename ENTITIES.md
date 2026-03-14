@@ -1,6 +1,8 @@
-# Tado CE — Entity Reference (v3.0.0)
+# Tado CE — Entity Reference (v3.1.0)
 
-This document lists all 75 entities in Tado CE, organised by function.
+This document lists all 66 entities in Tado CE, organised by function.
+
+> **v3.1.0 change:** Per-zone configuration (overlay mode, timer, min/max temp, temp offset, heating type, window type, sensitivity, external sensors, etc.) moved from 11 HA entities per zone to a centralised Options Flow menu. Zero config entities are created — settings live in **Settings → Tado CE → Configure → Zone Configuration**.
 
 ## How to Read This Document
 
@@ -132,7 +134,25 @@ This document lists all 75 entities in Tado CE, organised by function.
 
 ---
 
-## Zone Sensors — Core (8 entities per zone)
+## Hub Config Switches (2 entities)
+
+### Friendly Names
+
+| # | Function | CE? | v2.3.1 Name | v3.0 Name |
+|---|----------|-----|-------------|-----------|
+| 76 | Test mode toggle | ✓ | — | Test Mode |
+| 77 | Quota reserve toggle | ✓ | — | Quota Reserve |
+
+### Entity IDs
+
+| # | v2.3.1 entity_id | v3.0 entity_id (fresh) |
+|---|-------------------|------------------------|
+| 76 | — | `switch.tado_ce_hub_ce_test_mode` |
+| 77 | — | `switch.tado_ce_hub_ce_quota_reserve` |
+
+---
+
+## Zone Sensors — Core (7 entities per zone)
 
 ### Friendly Names
 
@@ -145,7 +165,8 @@ This document lists all 75 entities in Tado CE, organised by function.
 | 28 | Target temperature | ✓ | Lounge Target | Lounge Target |
 | 29 | Overlay status | ✓ | Lounge Mode | Lounge Overlay |
 | 30 | Hot water power | ✓ | Lounge Power | Lounge Power |
-| 31 | Schedule deviation | ✓ | Lounge Historical Deviation | Lounge Schedule Deviation |
+
+> **Note:** Boiler Flow Temp (#4 in Hub Sensors) is defined in `sensor_zone.py` but attached to the hub device, not a zone device.
 
 ### Entity IDs
 
@@ -158,16 +179,16 @@ This document lists all 75 entities in Tado CE, organised by function.
 | 28 | `sensor.lounge_target` | `sensor.lounge_ce_target` |
 | 29 | `sensor.lounge_mode` | `sensor.lounge_ce_overlay` |
 | 30 | `sensor.lounge_power` | `sensor.lounge_ce_power` |
-| 31 | `sensor.lounge_historical_deviation` | `sensor.lounge_ce_schedule_deviation` |
 
 ---
 
-## Zone Sensors — Smart Comfort (4 entities per zone)
+## Zone Sensors — Smart Comfort (5 entities per zone)
 
 ### Friendly Names
 
 | # | Function | CE? | v2.3.1 Name | v3.0 Name |
 |---|----------|-----|-------------|-----------|
+| 31 | Schedule deviation | ✓ | Lounge Historical Deviation | Lounge Schedule Deviation |
 | 32 | Next schedule time | ✓ | Lounge Next Schedule | Lounge Next Schedule |
 | 33 | Next schedule temp | ✓ | Lounge Next Schedule Temp | Lounge Next Sched Temp |
 | 34 | Preheat advisor | ✓ | Lounge Preheat Advisor | Lounge Preheat Advisor |
@@ -177,6 +198,7 @@ This document lists all 75 entities in Tado CE, organised by function.
 
 | # | v2.3.1 entity_id | v3.0 entity_id (fresh) |
 |---|-------------------|------------------------|
+| 31 | `sensor.lounge_historical_deviation` | `sensor.lounge_ce_schedule_deviation` |
 | 32 | `sensor.lounge_next_schedule_time` | `sensor.lounge_ce_next_schedule` |
 | 33 | `sensor.lounge_next_schedule_temp` | `sensor.lounge_ce_next_sched_temp` |
 | 34 | `sensor.lounge_preheat_advisor` | `sensor.lounge_ce_preheat_advisor` |
@@ -376,39 +398,9 @@ This document lists all 75 entities in Tado CE, organised by function.
 
 ---
 
-## Zone Config (11 entities per zone, all CE exclusive)
+## Zone Config (removed in v3.1.0)
 
-### Friendly Names
-
-| # | Function | CE? | v2.3.1 Name | v3.0 Name |
-|---|----------|-----|-------------|-----------|
-| 64 | Heat emitter type | ✓ | Heat Emitter Type | Heat Emitter |
-| 65 | UFH buffer | ✓ | UFH Buffer | UFH Buffer |
-| 66 | Adaptive preheat | ✓ | Adaptive Preheat | Adaptive Preheat |
-| 67 | Smart comfort mode | ✓ | Smart Comfort | Smart Comfort |
-| 68 | Window type | ✓ | Window Type | Window Type |
-| 69 | Zone overlay mode | ✓ | Overlay Mode | Overlay Mode |
-| 70 | Zone overlay timer | ✓ | Overlay Timer Duration | Overlay Timer |
-| 71 | Min temperature | ✓ | Min Temp | Min Temp |
-| 72 | Max temperature | ✓ | Max Temp | Max Temp |
-| 73 | Temp offset | ✓ | Temp Offset | Temp Offset |
-| 74 | Surface temp offset | ✓ | Surface Temp Offset | Surface Offset |
-
-### Entity IDs
-
-| # | v2.3.1 entity_id | v3.0 entity_id (fresh) |
-|---|-------------------|------------------------|
-| 64 | `select.lounge_heating_type` | `select.lounge_ce_heat_emitter` |
-| 65 | `number.lounge_ufh_buffer` | `number.lounge_ce_ufh_buffer` |
-| 66 | `switch.lounge_adaptive_preheat` | `switch.lounge_ce_adaptive_preheat` |
-| 67 | `select.lounge_smart_comfort_mode` | `select.lounge_ce_smart_comfort` |
-| 68 | `select.lounge_window_type` | `select.lounge_ce_window_type` |
-| 69 | `select.lounge_overlay_mode` | `select.lounge_ce_overlay_mode` |
-| 70 | `select.lounge_overlay_timer_duration` | `select.lounge_ce_overlay_timer` |
-| 71 | `number.lounge_min_temp` | `number.lounge_ce_min_temp` |
-| 72 | `number.lounge_max_temp` | `number.lounge_ce_max_temp` |
-| 73 | `number.lounge_temp_offset` | `number.lounge_ce_temp_offset` |
-| 74 | `number.lounge_surface_temp_offset` | `number.lounge_ce_surface_offset` |
+> **v3.1.0:** All 11 per-zone configuration entities (heat emitter, UFH buffer, adaptive preheat, smart comfort, window type, overlay mode, overlay timer, min/max temp, temp offset, surface offset) have been replaced by the centralised Options Flow menu. Legacy entities are automatically cleaned up on upgrade. New settings (window predicted sensitivity, external temp/humidity sensor) are also managed via Options Flow — no entities created.
 
 ---
 
@@ -435,8 +427,9 @@ This document lists all 75 entities in Tado CE, organised by function.
 | Hub Sensors | 17 | 14 | 0 | 3 |
 | Hub Controls | 5 | 5 | 0 | 0 |
 | Hub Binary Sensor | 1 | 1 | 0 | 0 |
-| Zone Sensors — Core | 8 /zone | 4 | 0 | 4 |
-| Zone Sensors — Smart Comfort | 4 /zone | 4 | 0 | 0 |
+| Hub Config Switches | 2 | 2 | 0 | 0 |
+| Zone Sensors — Core | 7 /zone | 3 | 0 | 4 |
+| Zone Sensors — Smart Comfort | 5 /zone | 5 | 0 | 0 |
 | Zone Sensors — Environment | 6 /zone | 6 | 0 | 0 |
 | Zone Sensors — Thermal Analytics | 6 /zone | 6 | 0 | 0 |
 | Zone Sensors — Insights | 1 /zone | 1 | 0 | 0 |
@@ -446,6 +439,6 @@ This document lists all 75 entities in Tado CE, organised by function.
 | Zone Switches | 2 /zone | 0 | 1 | 1 |
 | Zone Buttons | 4 /zone | 2 | 1 | 0 |
 | Calendar | 1 /zone | 1 | 0 | 0 |
-| Zone Config | 11 /zone | 11 | 0 | 0 |
+| Zone Config | ~~11 /zone~~ 0 (Options Flow) | — | — | — |
 | Device Tracker | 1 /device | 1 | 0 | 0 |
-| **Total unique types** | **75** | **~57** | **4** | **~12** |
+| **Total unique types** | **66** | **~48** | **4** | **~12** |

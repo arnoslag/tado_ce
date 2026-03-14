@@ -26,6 +26,7 @@ from .const import (
     TIMER_DURATION_OPTIONS,
 )
 from .device_manager import get_hub_device_info
+from .entity_registry import ENTITY_REGISTRY, get_entity_category
 from .helpers import async_trigger_immediate_refresh
 from .optimistic_helpers import clear_optimistic_state
 
@@ -66,10 +67,6 @@ async def async_setup_entry(
         async_add_entities(entities, True)
         _LOGGER.info("Tado CE select entities loaded: %s", len(entities))
 
-    # Zone configuration select entities (per-zone settings)
-    from .zone_config import async_setup_zone_config_select
-
-    await async_setup_zone_config_select(hass, entry, async_add_entities)
 
 
 class TadoPresenceModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], SelectEntity):
@@ -95,9 +92,11 @@ class TadoPresenceModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sel
     def __init__(self, coordinator: TadoDataUpdateCoordinator, home_id: str) -> None:
         """Initialize."""
         super().__init__(coordinator)
+        _meta = ENTITY_REGISTRY["select_presence_mode"]
         self._entry_id = coordinator.config_entry.entry_id
-        self._attr_unique_id = f"tado_ce_{home_id}_presence_mode"
-        self._attr_translation_key = "presence_mode"
+        self._attr_unique_id = f"tado_ce_{home_id}_{_meta.unique_id_suffix}"
+        assert _meta.translation_key is not None  # presence_mode always has translation_key
+        self._attr_translation_key = _meta.translation_key
         self._attr_current_option = "Auto"
         self._attr_available = True
         self._attr_device_info = get_hub_device_info(home_id)
@@ -293,13 +292,16 @@ class TadoOverlayModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sele
     def __init__(self, coordinator: TadoDataUpdateCoordinator, home_id: str) -> None:
         """Initialize."""
         super().__init__(coordinator)
+        _meta = ENTITY_REGISTRY["select_overlay_mode"]
         self._entry_id = coordinator.config_entry.entry_id
-        self._attr_unique_id = f"tado_ce_{home_id}_overlay_mode"
-        self._attr_translation_key = "overlay_mode"
+        self._attr_unique_id = f"tado_ce_{home_id}_{_meta.unique_id_suffix}"
+        assert _meta.translation_key is not None  # overlay_mode always has translation_key
+        self._attr_translation_key = _meta.translation_key
+        self._attr_entity_category = get_entity_category(_meta)
         self._attr_current_option = OVERLAY_MODE_DEFAULT_DISPLAY
         self._attr_available = True
         self._attr_device_info = get_hub_device_info(home_id)
-        self._attr_icon = "mdi:timer-cog-outline"
+        self._attr_icon = _meta.icon
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
@@ -372,13 +374,16 @@ class TadoTimerDurationSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Se
     def __init__(self, coordinator: TadoDataUpdateCoordinator, home_id: str) -> None:
         """Initialize."""
         super().__init__(coordinator)
+        _meta = ENTITY_REGISTRY["select_timer_duration"]
         self._entry_id = coordinator.config_entry.entry_id
-        self._attr_unique_id = f"tado_ce_{home_id}_overlay_timer"
-        self._attr_translation_key = "timer_duration"
+        self._attr_unique_id = f"tado_ce_{home_id}_{_meta.unique_id_suffix}"
+        assert _meta.translation_key is not None  # timer_duration always has translation_key
+        self._attr_translation_key = _meta.translation_key
+        self._attr_entity_category = get_entity_category(_meta)
         self._attr_current_option = str(TIMER_DURATION_DEFAULT)
         self._attr_available = True
         self._attr_device_info = get_hub_device_info(home_id)
-        self._attr_icon = "mdi:timer"
+        self._attr_icon = _meta.icon
         self._attr_unit_of_measurement = "min"
 
     @property

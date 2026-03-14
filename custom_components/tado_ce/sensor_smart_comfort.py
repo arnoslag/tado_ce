@@ -13,6 +13,7 @@ from .calculations import (
     calculate_seasonal_comfort_target,
     estimate_cooling_crossover,
 )
+from .entity_registry import ENTITY_REGISTRY, get_entity_category
 from .format_helpers import (
     format_comfort_model as _format_comfort_model,
 )
@@ -54,10 +55,12 @@ class TadoScheduleDeviationSensor(TadoZoneSensor):
     ) -> None:
         """Initialize the Schedule Deviation Sensor."""
         super().__init__(coordinator, zone_id, zone_name, zone_type)
-        self._attr_translation_key = "schedule_deviation"
-        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_zone_{zone_id}_schedule_deviation"
+        _meta = ENTITY_REGISTRY["sensor_schedule_deviation"]
+        self._attr_translation_key = _meta.translation_key
+        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix.format(zone_id=zone_id)}"
         self._attr_native_unit_of_measurement = "°C"
-        self._attr_icon = "mdi:chart-timeline-variant"
+        self._attr_icon = _meta.icon
+        self._attr_entity_category = get_entity_category(_meta)
         self._attr_state_class = SensorStateClass.MEASUREMENT
 
         # Attributes
@@ -169,9 +172,11 @@ class TadoNextScheduleTimeSensor(TadoZoneSensor):
     ) -> None:
         """Initialize the Next Schedule Time Sensor."""
         super().__init__(coordinator, zone_id, zone_name, zone_type)
-        self._attr_translation_key = "next_schedule"
-        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_zone_{zone_id}_next_schedule"
-        self._attr_icon = "mdi:calendar-clock"
+        _meta = ENTITY_REGISTRY["sensor_next_schedule"]
+        self._attr_translation_key = _meta.translation_key
+        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix.format(zone_id=zone_id)}"
+        self._attr_icon = _meta.icon
+        self._attr_entity_category = get_entity_category(_meta)
 
         # Attributes
         self._next_temp: float | None = None
@@ -256,10 +261,12 @@ class TadoNextScheduleTempSensor(TadoZoneSensor):
     ) -> None:
         """Initialize the Next Schedule Temp Sensor."""
         super().__init__(coordinator, zone_id, zone_name, zone_type)
-        self._attr_translation_key = "next_sched_temp"
-        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_zone_{zone_id}_next_sched_temp"
+        _meta = ENTITY_REGISTRY["sensor_next_sched_temp"]
+        self._attr_translation_key = _meta.translation_key
+        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix.format(zone_id=zone_id)}"
         # No unit_of_measurement so we can show "OFF" as state
-        self._attr_icon = "mdi:thermometer-chevron-up"
+        self._attr_icon = _meta.icon
+        self._attr_entity_category = get_entity_category(_meta)
 
         # Attributes
         self._schedule_time: str | None = None
@@ -366,9 +373,11 @@ class TadoPreheatAdvisorSensor(TadoZoneSensor):
     ) -> None:
         """Initialize the Preheat Advisor Sensor."""
         super().__init__(coordinator, zone_id, zone_name, zone_type)
-        self._attr_translation_key = "preheat_advisor"
-        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_zone_{zone_id}_preheat_advisor"
-        self._attr_icon = "mdi:clock-start"
+        _meta = ENTITY_REGISTRY["sensor_preheat_advisor"]
+        self._attr_translation_key = _meta.translation_key
+        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix.format(zone_id=zone_id)}"
+        self._attr_icon = _meta.icon
+        self._attr_entity_category = get_entity_category(_meta)
 
         # Attributes
         self._current_temp: float | None = None
@@ -850,10 +859,12 @@ class TadoSmartComfortTargetSensor(TadoZoneSensor):
     ) -> None:
         """Initialize the Smart Comfort Target Sensor."""
         super().__init__(coordinator, zone_id, zone_name, zone_type)
-        self._attr_translation_key = "comfort_target"
-        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_zone_{zone_id}_comfort_target"
+        _meta = ENTITY_REGISTRY["sensor_comfort_target"]
+        self._attr_translation_key = _meta.translation_key
+        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix.format(zone_id=zone_id)}"
         self._attr_native_unit_of_measurement = "°C"
-        self._attr_icon = "mdi:thermometer-auto"
+        self._attr_icon = _meta.icon
+        self._attr_entity_category = get_entity_category(_meta)
         self._attr_state_class = SensorStateClass.MEASUREMENT
 
         # Attributes

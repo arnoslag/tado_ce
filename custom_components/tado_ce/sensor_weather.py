@@ -14,6 +14,7 @@ from homeassistant.const import PERCENTAGE, UnitOfTemperature
 from homeassistant.core import callback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from .entity_registry import ENTITY_REGISTRY, get_entity_category
 from .format_helpers import WEATHER_STATE_MAP
 
 if TYPE_CHECKING:
@@ -32,11 +33,13 @@ class TadoOutsideTemperatureSensor(CoordinatorEntity["TadoDataUpdateCoordinator"
     def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
         """Initialize the Outside Temperature Sensor."""
         super().__init__(coordinator)
-        self._attr_translation_key = "outside_temp"
-        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_outside_temp"
+        _meta = ENTITY_REGISTRY["sensor_outside_temp"]
+        self._attr_translation_key = _meta.translation_key
+        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix}"
         self._attr_device_class = SensorDeviceClass.TEMPERATURE
         self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
         self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_entity_category = get_entity_category(_meta)
         self._attr_available = False
         self._attr_native_value = None
         self._timestamp = None
@@ -78,11 +81,13 @@ class TadoSolarIntensitySensor(CoordinatorEntity["TadoDataUpdateCoordinator"], S
     def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
         """Initialize the Solar Intensity Sensor."""
         super().__init__(coordinator)
-        self._attr_translation_key = "solar_intensity"
-        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_solar_intensity"
-        self._attr_icon = "mdi:white-balance-sunny"
+        _meta = ENTITY_REGISTRY["sensor_solar_intensity"]
+        self._attr_translation_key = _meta.translation_key
+        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix}"
+        self._attr_icon = _meta.icon
         self._attr_native_unit_of_measurement = PERCENTAGE
         self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_entity_category = get_entity_category(_meta)
         self._attr_available = False
         self._attr_native_value = None
         self._timestamp = None
@@ -124,9 +129,11 @@ class TadoWeatherStateSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], Sen
     def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
         """Initialize the Weather State Sensor."""
         super().__init__(coordinator)
-        self._attr_translation_key = "weather"
-        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_weather_state"
-        self._attr_icon = "mdi:weather-partly-cloudy"
+        _meta = ENTITY_REGISTRY["sensor_weather"]
+        self._attr_translation_key = _meta.translation_key
+        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix}"
+        self._attr_icon = _meta.icon
+        self._attr_entity_category = get_entity_category(_meta)
         self._attr_available = False
         self._attr_native_value = None
         self._raw_state = None

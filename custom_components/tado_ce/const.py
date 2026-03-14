@@ -73,6 +73,8 @@ SERVICE_GET_TEMP_OFFSET = "get_temperature_offset"  # On-demand offset fetch
 SERVICE_ADD_METER_READING = "add_meter_reading"
 SERVICE_IDENTIFY_DEVICE = "identify_device"
 SERVICE_SET_AWAY_CONFIG = "set_away_configuration"
+SERVICE_ACTIVATE_OPEN_WINDOW = "activate_open_window"
+SERVICE_DEACTIVATE_OPEN_WINDOW = "deactivate_open_window"
 
 # API Base URLs
 TADO_API_BASE = "https://my.tado.com/api/v2"
@@ -256,12 +258,12 @@ OVERLAY_MODE_MANUAL = "MANUAL"
 
 # Overlay mode default
 OVERLAY_MODE_DEFAULT = OVERLAY_MODE_TADO_MODE
-OVERLAY_MODE_DEFAULT_DISPLAY = "Tado Mode"
+OVERLAY_MODE_DEFAULT_DISPLAY = "Tado Default"
 
 # Overlay mode display names
-OVERLAY_MODE_OPTIONS = ["Tado Mode", "Next Time Block", "Timer", "Manual"]
+OVERLAY_MODE_OPTIONS = ["Tado Default", "Next Time Block", "Timer", "Manual"]
 OVERLAY_MODE_MAP = {
-    "Tado Mode": OVERLAY_MODE_TADO_MODE,
+    "Tado Default": OVERLAY_MODE_TADO_MODE,
     "Next Time Block": OVERLAY_MODE_NEXT_TIME_BLOCK,
     "Timer": OVERLAY_MODE_TIMER,
     "Manual": OVERLAY_MODE_MANUAL,
@@ -278,6 +280,9 @@ DEFAULT_ZONE_CONFIG = {
     "adaptive_preheat": False,  # Heating + AC
     "smart_comfort_mode": "none",  # none/light/moderate/aggressive (Heating + AC)
     "window_type": "double_pane",  # single_pane/double_pane/triple_pane/passive_house (Heating + AC)
+    "window_predicted_sensitivity": "medium",  # low/medium/high (Heating + AC)
+    "external_temp_sensor": "",  # HA entity_id for external temperature sensor (Heating + AC)
+    "external_humidity_sensor": "",  # HA entity_id for external humidity sensor (Heating + AC)
     "overlay_mode": OVERLAY_MODE_DEFAULT,
     "timer_duration": TIMER_DURATION_DEFAULT,  # 15-180 minutes (Heating + AC, when Timer)
     "min_temp": 5.0,  # 5-25°C (Heating + AC)
@@ -334,10 +339,20 @@ WINDOW_TYPE_MAP = {
 }
 WINDOW_TYPE_REVERSE_MAP = {v: k for k, v in WINDOW_TYPE_MAP.items()}
 
+# Window predicted sensitivity options (for per-zone select)
+WINDOW_SENSITIVITY_OPTIONS = ["Low", "Medium", "High"]
+WINDOW_SENSITIVITY_MAP = {"Low": "low", "Medium": "medium", "High": "high"}
+WINDOW_SENSITIVITY_REVERSE_MAP = {v: k for k, v in WINDOW_SENSITIVITY_MAP.items()}
+WINDOW_SENSITIVITY_DEFAULT = "medium"
+
+# External sensor entity ID default (empty = not configured, use Tado API values)
+EXTERNAL_SENSOR_DEFAULT = ""
+EXTERNAL_SENSOR_NONE_OPTION = "none"
+
 # Temperature offset limits (per-zone)
 TEMP_OFFSET_MIN = -3.0
 TEMP_OFFSET_MAX = 3.0
 TEMP_OFFSET_STEP = 0.5
 
-# Full sync interval (hours) — how often to do a full API sync vs quick sync
-FULL_SYNC_INTERVAL_HOURS = 6
+# Full sync interval — now only on restart/reload (kept for reference)
+# FULL_SYNC_INTERVAL_HOURS = 6  # Removed in v3.1.0 — Smarter Full Sync

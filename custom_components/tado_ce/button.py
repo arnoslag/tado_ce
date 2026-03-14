@@ -7,13 +7,13 @@ import logging
 from typing import TYPE_CHECKING
 
 from homeassistant.components.button import ButtonEntity
-from homeassistant.helpers.entity import EntityCategory  # type: ignore[attr-defined]
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .action_helpers import check_bootstrap_reserve as _check_bootstrap_reserve
 from .const import DOMAIN
 from .coordinator import TadoDataUpdateCoordinator
 from .device_manager import get_hub_device_info, get_zone_device_info
+from .entity_registry import ENTITY_REGISTRY, get_entity_category
 from .helpers import async_trigger_immediate_refresh
 
 if TYPE_CHECKING:
@@ -102,13 +102,14 @@ class TadoResumeAllSchedulesButton(CoordinatorEntity[TadoDataUpdateCoordinator],
     def __init__(self, coordinator: TadoDataUpdateCoordinator, home_id: str) -> None:
         """Initialize the TadoResumeAllSchedulesButton."""
         super().__init__(coordinator)
+        _meta = ENTITY_REGISTRY["button_resume_all"]
         # Convenience alias — used by action_helpers that still accept entry_id
         self._entry_id = coordinator.config_entry.entry_id
 
-        self._attr_translation_key = "resume_all"
-        self._attr_unique_id = f"tado_ce_{home_id}_resume_all"
+        self._attr_translation_key = _meta.translation_key
+        self._attr_unique_id = f"tado_ce_{home_id}_{_meta.unique_id_suffix}"
         self._attr_device_info = get_hub_device_info(home_id)
-        self._attr_icon = "mdi:calendar-refresh"
+        self._attr_icon = _meta.icon
 
     async def async_press(self) -> None:
         """Handle button press - resume schedules for all zones.
@@ -169,13 +170,14 @@ class TadoRefreshACCapabilitiesButton(CoordinatorEntity[TadoDataUpdateCoordinato
     def __init__(self, coordinator: TadoDataUpdateCoordinator, home_id: str) -> None:
         """Initialize the TadoRefreshACCapabilitiesButton."""
         super().__init__(coordinator)
+        _meta = ENTITY_REGISTRY["button_refresh_ac"]
         self._entry_id = coordinator.config_entry.entry_id
 
-        self._attr_translation_key = "refresh_ac"
-        self._attr_unique_id = f"tado_ce_{home_id}_refresh_ac"
+        self._attr_translation_key = _meta.translation_key
+        self._attr_unique_id = f"tado_ce_{home_id}_{_meta.unique_id_suffix}"
         self._attr_device_info = get_hub_device_info(home_id)
-        self._attr_entity_category = EntityCategory.CONFIG
-        self._attr_icon = "mdi:air-conditioner"
+        self._attr_entity_category = get_entity_category(_meta)
+        self._attr_icon = _meta.icon
 
     async def async_press(self) -> None:
         """Handle button press - refresh AC capabilities from API."""
@@ -235,16 +237,17 @@ class TadoWaterHeaterTimerButton(CoordinatorEntity[TadoDataUpdateCoordinator], B
 
         """
         super().__init__(coordinator)
+        _meta = ENTITY_REGISTRY["button_timer"]
         self._entry_id = coordinator.config_entry.entry_id
         self._zone_id = zone_id
         self._zone_name = zone_name
         self._duration = duration
 
         self._attr_name = f"{duration}min Timer"
-        self._attr_unique_id = f"tado_ce_{home_id}_zone_{zone_id}_timer_{duration}min"
+        self._attr_unique_id = f"tado_ce_{home_id}_{_meta.unique_id_suffix.format(zone_id=zone_id, duration=duration)}"
         self._attr_device_info = get_zone_device_info(zone_id, zone_name, "HOT_WATER", home_id)
-        self._attr_entity_category = EntityCategory.CONFIG
-        self._attr_icon = "mdi:timer"
+        self._attr_entity_category = get_entity_category(_meta)
+        self._attr_icon = _meta.icon
 
     async def async_press(self) -> None:
         """Handle button press - set water heater timer with preset duration."""
@@ -330,15 +333,16 @@ class TadoRefreshScheduleButton(CoordinatorEntity[TadoDataUpdateCoordinator], Bu
 
         """
         super().__init__(coordinator)
+        _meta = ENTITY_REGISTRY["button_refresh_schedule"]
         self._entry_id = coordinator.config_entry.entry_id
         self._zone_id = zone_id
         self._zone_name = zone_name
 
-        self._attr_translation_key = "refresh_schedule"
-        self._attr_unique_id = f"tado_ce_{home_id}_zone_{zone_id}_refresh_schedule"
+        self._attr_translation_key = _meta.translation_key
+        self._attr_unique_id = f"tado_ce_{home_id}_{_meta.unique_id_suffix.format(zone_id=zone_id)}"
         self._attr_device_info = get_zone_device_info(zone_id, zone_name, "HEATING", home_id)
         # No entity_category = Controls section (action button, not config)
-        self._attr_icon = "mdi:calendar-refresh"
+        self._attr_icon = _meta.icon
 
     async def async_press(self) -> None:
         """Handle button press - refresh schedule for this zone."""
@@ -434,14 +438,15 @@ class TadoBoostButton(CoordinatorEntity[TadoDataUpdateCoordinator], ButtonEntity
     def __init__(self, coordinator: TadoDataUpdateCoordinator, zone_id: str, zone_name: str, home_id: str) -> None:
         """Initialize the TadoBoostButton."""
         super().__init__(coordinator)
+        _meta = ENTITY_REGISTRY["button_boost"]
         self._entry_id = coordinator.config_entry.entry_id
         self._zone_id = zone_id
         self._zone_name = zone_name
 
-        self._attr_translation_key = "boost"
-        self._attr_unique_id = f"tado_ce_{home_id}_zone_{zone_id}_boost"
+        self._attr_translation_key = _meta.translation_key
+        self._attr_unique_id = f"tado_ce_{home_id}_{_meta.unique_id_suffix.format(zone_id=zone_id)}"
         self._attr_device_info = get_zone_device_info(zone_id, zone_name, "HEATING", home_id)
-        self._attr_icon = "mdi:fire"
+        self._attr_icon = _meta.icon
 
     async def async_press(self) -> None:
         """Handle button press - boost heating to max for 30 minutes.
@@ -501,14 +506,15 @@ class TadoSmartBoostButton(CoordinatorEntity[TadoDataUpdateCoordinator], ButtonE
     def __init__(self, coordinator: TadoDataUpdateCoordinator, zone_id: str, zone_name: str, home_id: str) -> None:
         """Initialize the TadoSmartBoostButton."""
         super().__init__(coordinator)
+        _meta = ENTITY_REGISTRY["button_smart_boost"]
         self._entry_id = coordinator.config_entry.entry_id
         self._zone_id = zone_id
         self._zone_name = zone_name
 
-        self._attr_translation_key = "smart_boost"
-        self._attr_unique_id = f"tado_ce_{home_id}_zone_{zone_id}_smart_boost"
+        self._attr_translation_key = _meta.translation_key
+        self._attr_unique_id = f"tado_ce_{home_id}_{_meta.unique_id_suffix.format(zone_id=zone_id)}"
         self._attr_device_info = get_zone_device_info(zone_id, zone_name, "HEATING", home_id)
-        self._attr_icon = "mdi:fire-alert"
+        self._attr_icon = _meta.icon
 
     def _get_heating_rate(self) -> float:
         """Get heating rate with fallback chain.

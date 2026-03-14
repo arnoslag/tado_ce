@@ -47,7 +47,9 @@ _CLEANUP_DEFINITIONS: dict[str, dict[str, Any]] = {
         "patterns": [
             # v3.x suffixes
             "_heat_emitter", "_ufh_buffer", "_adaptive_preheat", "_smart_comfort",
-            "_window_type", "_min_temp", "_max_temp", "_temp_offset", "_surface_offset",
+            "_window_type", "_window_predicted_sensitivity",
+            "_min_temp", "_max_temp", "_temp_offset", "_surface_offset",
+            "_external_temp_sensor", "_external_humidity_sensor",
             # v2.x suffixes (pre-migration unique_ids)
             "_heating_type", "_smart_comfort_mode", "_surface_temp_offset",
         ],

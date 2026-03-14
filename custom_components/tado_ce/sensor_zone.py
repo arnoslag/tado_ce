@@ -15,6 +15,7 @@ from homeassistant.core import callback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .device_manager import get_hub_device_info, get_zone_device_info
+from .entity_registry import ENTITY_REGISTRY, get_entity_category
 from .format_helpers import (
     format_power_state as _format_power_state,
 )
@@ -85,8 +86,9 @@ class TadoTemperatureSensor(TadoZoneSensor):
     ) -> None:
         """Initialize the Temperature Sensor."""
         super().__init__(coordinator, zone_id, zone_name, zone_type)
-        self._attr_translation_key = "temperature"
-        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_zone_{zone_id}_temp"
+        _meta = ENTITY_REGISTRY["sensor_temperature"]
+        self._attr_translation_key = _meta.translation_key
+        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix.format(zone_id=zone_id)}"
         self._attr_device_class = SensorDeviceClass.TEMPERATURE
         self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
         self._attr_state_class = SensorStateClass.MEASUREMENT
@@ -121,8 +123,9 @@ class TadoHumiditySensor(TadoZoneSensor):
     ) -> None:
         """Initialize the Humidity Sensor."""
         super().__init__(coordinator, zone_id, zone_name, zone_type)
-        self._attr_translation_key = "humidity"
-        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_zone_{zone_id}_humidity"
+        _meta = ENTITY_REGISTRY["sensor_humidity"]
+        self._attr_translation_key = _meta.translation_key
+        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix.format(zone_id=zone_id)}"
         self._attr_device_class = SensorDeviceClass.HUMIDITY
         self._attr_native_unit_of_measurement = PERCENTAGE
         self._attr_state_class = SensorStateClass.MEASUREMENT
@@ -157,10 +160,12 @@ class TadoHeatingPowerSensor(TadoZoneSensor):
     ) -> None:
         """Initialize the Heating Power Sensor."""
         super().__init__(coordinator, zone_id, zone_name, zone_type)
-        self._attr_translation_key = "heating_power"
-        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_zone_{zone_id}_heating"
+        _meta = ENTITY_REGISTRY["sensor_heating_power"]
+        self._attr_translation_key = _meta.translation_key
+        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix.format(zone_id=zone_id)}"
         self._attr_native_unit_of_measurement = PERCENTAGE
-        self._attr_icon = "mdi:radiator"
+        self._attr_icon = _meta.icon
+        self._attr_entity_category = get_entity_category(_meta)
         self._attr_state_class = SensorStateClass.MEASUREMENT
 
     @callback
@@ -183,10 +188,12 @@ class TadoACPowerSensor(TadoZoneSensor):
     ) -> None:
         """Initialize the ACPower Sensor."""
         super().__init__(coordinator, zone_id, zone_name, zone_type)
-        self._attr_translation_key = "ac_power"
-        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_zone_{zone_id}_ac"
+        _meta = ENTITY_REGISTRY["sensor_ac_power"]
+        self._attr_translation_key = _meta.translation_key
+        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix.format(zone_id=zone_id)}"
         self._attr_native_unit_of_measurement = PERCENTAGE
-        self._attr_icon = "mdi:air-conditioner"
+        self._attr_icon = _meta.icon
+        self._attr_entity_category = get_entity_category(_meta)
         self._attr_state_class = SensorStateClass.MEASUREMENT
 
     @callback
@@ -216,12 +223,14 @@ class TadoBoilerFlowTemperatureSensor(CoordinatorEntity["TadoDataUpdateCoordinat
     def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
         """Initialize the Boiler Flow Temperature Sensor."""
         super().__init__(coordinator)
-        self._attr_translation_key = "boiler_flow_temp"
-        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_boiler_flow_temp"
+        _meta = ENTITY_REGISTRY["sensor_boiler_flow_temp"]
+        self._attr_translation_key = _meta.translation_key
+        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix}"
         self._attr_device_class = SensorDeviceClass.TEMPERATURE
         self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
         self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_icon = "mdi:water-boiler"
+        self._attr_icon = _meta.icon
+        self._attr_entity_category = get_entity_category(_meta)
         self._attr_device_info = get_hub_device_info(coordinator.home_id)
         self._attr_available = False
         self._attr_native_value = None
@@ -276,11 +285,12 @@ class TadoTargetTempSensor(TadoZoneSensor):
     ) -> None:
         """Initialize the Target Temp Sensor."""
         super().__init__(coordinator, zone_id, zone_name, zone_type)
-        self._attr_translation_key = "target"
-        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_zone_{zone_id}_target"
+        _meta = ENTITY_REGISTRY["sensor_target"]
+        self._attr_translation_key = _meta.translation_key
+        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix.format(zone_id=zone_id)}"
         self._attr_device_class = SensorDeviceClass.TEMPERATURE
         self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
-        self._attr_icon = "mdi:thermometer-check"
+        self._attr_icon = _meta.icon
 
     @callback
     def _update_from_zone_data(self, zone_data: dict[str, Any]) -> None:
@@ -304,9 +314,11 @@ class TadoOverlaySensor(TadoZoneSensor):
     ) -> None:
         """Initialize the Overlay Sensor."""
         super().__init__(coordinator, zone_id, zone_name, zone_type)
-        self._attr_translation_key = "overlay"
-        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_zone_{zone_id}_overlay"
-        self._attr_icon = "mdi:calendar-clock"
+        _meta = ENTITY_REGISTRY["sensor_overlay"]
+        self._attr_translation_key = _meta.translation_key
+        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix.format(zone_id=zone_id)}"
+        self._attr_icon = _meta.icon
+        self._attr_entity_category = get_entity_category(_meta)
         self._next_change = None
         self._next_temp = None
 
@@ -359,9 +371,11 @@ class TadoHotWaterPowerSensor(TadoZoneSensor):
     ) -> None:
         """Initialize the Hot Water Power Sensor."""
         super().__init__(coordinator, zone_id, zone_name, zone_type)
-        self._attr_translation_key = "power"
-        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_zone_{zone_id}_power"
-        self._attr_icon = "mdi:power"
+        _meta = ENTITY_REGISTRY["sensor_power"]
+        self._attr_translation_key = _meta.translation_key
+        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix.format(zone_id=zone_id)}"
+        self._attr_icon = _meta.icon
+        self._attr_entity_category = get_entity_category(_meta)
 
     @callback
     def _update_from_zone_data(self, zone_data: dict[str, Any]) -> None:

@@ -6,7 +6,7 @@
 ![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2026.3.1-blue?style=for-the-badge&logo=home-assistant) ![Python](https://img.shields.io/badge/Python-3.13%2B-blue?style=for-the-badge&logo=python&logoColor=white) ![Tado](https://img.shields.io/badge/Tado-V2%2FV3%2FV3%2B-orange?style=for-the-badge) ![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg?style=for-the-badge)
 
 <!-- Status Badges -->
-![Version](https://img.shields.io/badge/Version-3.0.4-purple?style=for-the-badge) ![License](https://img.shields.io/badge/License-AGPL--3.0-blue?style=for-the-badge) ![Maintained](https://img.shields.io/badge/Maintained-Yes-green.svg?style=for-the-badge) ![Tests](https://img.shields.io/badge/Tests-3529-blue?style=for-the-badge) ![Coverage](https://img.shields.io/badge/Coverage-99%25-brightgreen?style=for-the-badge)
+![Version](https://img.shields.io/badge/Version-3.1.0-purple?style=for-the-badge) ![License](https://img.shields.io/badge/License-AGPL--3.0-blue?style=for-the-badge) ![Maintained](https://img.shields.io/badge/Maintained-Yes-green.svg?style=for-the-badge) ![Tests](https://img.shields.io/badge/Tests-3559-blue?style=for-the-badge) ![Coverage](https://img.shields.io/badge/Coverage-99%25-brightgreen?style=for-the-badge)
 
 <!-- Community Badges -->
 ![GitHub stars](https://img.shields.io/github/stars/hiall-fyi/tado_ce?style=for-the-badge&logo=github) ![GitHub forks](https://img.shields.io/github/forks/hiall-fyi/tado_ce?style=for-the-badge&logo=github) ![GitHub issues](https://img.shields.io/github/issues/hiall-fyi/tado_ce?style=for-the-badge&logo=github) ![GitHub last commit](https://img.shields.io/github/last-commit/hiall-fyi/tado_ce?style=for-the-badge&logo=github)
@@ -306,7 +306,7 @@ For other issues, check logs at **Settings > System > Logs** (filter by "tado_ce
 | [ENTITIES.md](ENTITIES.md) | Complete list of all sensors, switches, and controls |
 | [API_REFERENCE.md](API_REFERENCE.md) | API call types, optimization tips, troubleshooting |
 | [ROADMAP.md](ROADMAP.md) | Planned features, ideas, and known limitations |
-| [RELEASE_CREDITS.md](RELEASE_CREDITS.md) | Community contributors |
+| [CREDITS.md](CREDITS.md) | Community contributors and supporters |
 | [CHANGELOG.md](CHANGELOG.md) | Version history and release notes |
 
 ## External Resources

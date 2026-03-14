@@ -12,6 +12,7 @@ from homeassistant.components.sensor import (
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .device_manager import get_zone_device_info
+from .entity_registry import ENTITY_REGISTRY, get_entity_category
 from .insights import calculate_confidence_recommendation
 
 if TYPE_CHECKING:
@@ -37,12 +38,14 @@ class TadoThermalInertiaSensor(CoordinatorEntity["HeatingCycleCoordinator"], Sen
         self._zone_id = zone_id
         self._zone_name = zone_name
         self._zone_type = zone_type
-        self._attr_translation_key = "thermal_inertia"
-        self._attr_unique_id = f"tado_ce_{home_id}_zone_{zone_id}_thermal_inertia"
+        _meta = ENTITY_REGISTRY["sensor_thermal_inertia"]
+        self._attr_translation_key = _meta.translation_key
+        self._attr_unique_id = f"tado_ce_{home_id}_{_meta.unique_id_suffix.format(zone_id=zone_id)}"
         self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type, home_id)
         self._attr_native_unit_of_measurement = "min"
         self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_icon = "mdi:timer-sand"
+        self._attr_icon = _meta.icon
+        self._attr_entity_category = get_entity_category(_meta)
 
     @property
     def native_value(self) -> float | None:
@@ -88,12 +91,14 @@ class TadoHeatingRateSensor(CoordinatorEntity["HeatingCycleCoordinator"], Sensor
         self._zone_id = zone_id
         self._zone_name = zone_name
         self._zone_type = zone_type
-        self._attr_translation_key = "heating_rate"
-        self._attr_unique_id = f"tado_ce_{home_id}_zone_{zone_id}_heating_rate"
+        _meta = ENTITY_REGISTRY["sensor_heating_rate"]
+        self._attr_translation_key = _meta.translation_key
+        self._attr_unique_id = f"tado_ce_{home_id}_{_meta.unique_id_suffix.format(zone_id=zone_id)}"
         self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type, home_id)
         self._attr_native_unit_of_measurement = "°C/h"
         self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_icon = "mdi:trending-up"
+        self._attr_icon = _meta.icon
+        self._attr_entity_category = get_entity_category(_meta)
 
     @property
     def native_value(self) -> float | None:
@@ -139,12 +144,14 @@ class TadoPreheatTimeSensor(CoordinatorEntity["HeatingCycleCoordinator"], Sensor
         self._zone_id = zone_id
         self._zone_name = zone_name
         self._zone_type = zone_type
-        self._attr_translation_key = "preheat_time"
-        self._attr_unique_id = f"tado_ce_{home_id}_zone_{zone_id}_preheat_time"
+        _meta = ENTITY_REGISTRY["sensor_preheat_time"]
+        self._attr_translation_key = _meta.translation_key
+        self._attr_unique_id = f"tado_ce_{home_id}_{_meta.unique_id_suffix.format(zone_id=zone_id)}"
         self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type, home_id)
         self._attr_native_unit_of_measurement = "min"
         self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_icon = "mdi:clock-fast"
+        self._attr_icon = _meta.icon
+        self._attr_entity_category = get_entity_category(_meta)
         self._current_temp: float | None = None
         self._target_temp: float | None = None
 
@@ -213,12 +220,14 @@ class TadoConfidenceSensor(CoordinatorEntity["HeatingCycleCoordinator"], SensorE
         self._zone_id = zone_id
         self._zone_name = zone_name
         self._zone_type = zone_type
-        self._attr_translation_key = "confidence"
-        self._attr_unique_id = f"tado_ce_{home_id}_zone_{zone_id}_confidence"
+        _meta = ENTITY_REGISTRY["sensor_confidence"]
+        self._attr_translation_key = _meta.translation_key
+        self._attr_unique_id = f"tado_ce_{home_id}_{_meta.unique_id_suffix.format(zone_id=zone_id)}"
         self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type, home_id)
         self._attr_native_unit_of_measurement = "%"
         self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_icon = "mdi:chart-line"
+        self._attr_icon = _meta.icon
+        self._attr_entity_category = get_entity_category(_meta)
 
     @property
     def native_value(self) -> float | None:
@@ -278,12 +287,14 @@ class TadoHeatingAccelerationSensor(CoordinatorEntity["HeatingCycleCoordinator"]
         self._zone_id = zone_id
         self._zone_name = zone_name
         self._zone_type = zone_type
-        self._attr_translation_key = "heat_accel"
-        self._attr_unique_id = f"tado_ce_{home_id}_zone_{zone_id}_heat_accel"
+        _meta = ENTITY_REGISTRY["sensor_heat_accel"]
+        self._attr_translation_key = _meta.translation_key
+        self._attr_unique_id = f"tado_ce_{home_id}_{_meta.unique_id_suffix.format(zone_id=zone_id)}"
         self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type, home_id)
         self._attr_native_unit_of_measurement = "°C/h²"
         self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_icon = "mdi:chart-bell-curve-cumulative"
+        self._attr_icon = _meta.icon
+        self._attr_entity_category = get_entity_category(_meta)
 
     @property
     def native_value(self) -> float | None:
@@ -337,12 +348,14 @@ class TadoApproachFactorSensor(CoordinatorEntity["HeatingCycleCoordinator"], Sen
         self._zone_id = zone_id
         self._zone_name = zone_name
         self._zone_type = zone_type
-        self._attr_translation_key = "approach_factor"
-        self._attr_unique_id = f"tado_ce_{home_id}_zone_{zone_id}_approach_factor"
+        _meta = ENTITY_REGISTRY["sensor_approach_factor"]
+        self._attr_translation_key = _meta.translation_key
+        self._attr_unique_id = f"tado_ce_{home_id}_{_meta.unique_id_suffix.format(zone_id=zone_id)}"
         self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type, home_id)
         self._attr_native_unit_of_measurement = "%"
         self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_icon = "mdi:target"
+        self._attr_icon = _meta.icon
+        self._attr_entity_category = get_entity_category(_meta)
 
     @property
     def native_value(self) -> float | None:

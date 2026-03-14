@@ -159,23 +159,6 @@
         }
       }
     },
-    "number": {
-      "min_temp": {
-        "name": "Min Temp"
-      },
-      "max_temp": {
-        "name": "Max Temp"
-      },
-      "temp_offset": {
-        "name": "Temp Offset"
-      },
-      "surface_offset": {
-        "name": "Surface Offset"
-      },
-      "ufh_buffer": {
-        "name": "UFH Buffer"
-      }
-    },
     "sensor": {
       "temperature": {
         "name": "Temp"
@@ -264,8 +247,51 @@
           }
         }
       },
+      "battery_suffixed": {
+        "name": "Battery{device_suffix}",
+        "state_attributes": {
+          "device_serial": {
+            "name": "Device serial"
+          },
+          "device_type": {
+            "name": "Device type"
+          },
+          "firmware_version": {
+            "name": "Firmware version"
+          },
+          "connection_state": {
+            "name": "Connection state"
+          },
+          "connection_timestamp": {
+            "name": "Connection timestamp"
+          },
+          "recommendation": {
+            "name": "Recommendation"
+          }
+        }
+      },
       "connection": {
         "name": "Connection",
+        "state_attributes": {
+          "device_serial": {
+            "name": "Device serial"
+          },
+          "device_type": {
+            "name": "Device type"
+          },
+          "firmware_version": {
+            "name": "Firmware version"
+          },
+          "last_seen": {
+            "name": "Last seen"
+          },
+          "recommendation": {
+            "name": "Recommendation"
+          }
+        }
+      },
+      "connection_suffixed": {
+        "name": "Connection{device_suffix}",
         "state_attributes": {
           "device_serial": {
             "name": "Device serial"
@@ -925,7 +951,7 @@
       "overlay_mode": {
         "name": "Overlay Mode",
         "state": {
-          "tado_mode": "Tado Mode",
+          "tado_mode": "Tado Default",
           "next_time_block": "Next Time Block",
           "manual": "Manual"
         },
@@ -963,21 +989,6 @@
             "name": "API calls per change"
           }
         }
-      },
-      "heat_emitter": {
-        "name": "Heat Emitter"
-      },
-      "smart_comfort": {
-        "name": "Smart Comfort"
-      },
-      "window_type": {
-        "name": "Window Type"
-      },
-      "zone_overlay_mode": {
-        "name": "Overlay Mode"
-      },
-      "zone_timer_duration": {
-        "name": "Overlay Timer"
       }
     },
     "switch": {
@@ -1009,8 +1020,11 @@
           }
         }
       },
-      "adaptive_preheat": {
-        "name": "Adaptive Preheat"
+      "test_mode": {
+        "name": "Test Mode"
+      },
+      "quota_reserve": {
+        "name": "Quota Reserve"
       }
     },
     "water_heater": {
@@ -1024,6 +1038,122 @@
           }
         }
       }
+    }
+  },
+  "services": {
+    "set_climate_timer": {
+      "name": "Set Climate Timer",
+      "description": "Set heating/cooling with a timer that automatically ends after the specified duration, or until the next schedule block. Compatible with official Tado integration.",
+      "fields": {
+        "temperature": {
+          "name": "Temperature",
+          "description": "Target temperature in Celsius."
+        },
+        "time_period": {
+          "name": "Time Period",
+          "description": "Duration before returning to schedule (format HH:MM:SS, e.g., \"01:30:00\" for 90 minutes). Not required when using overlay mode."
+        },
+        "overlay": {
+          "name": "Overlay Type",
+          "description": "When to end the override. Use 'next_time_block' to end at next schedule change, or 'manual' for indefinite. When set, time_period is not required."
+        }
+      }
+    },
+    "set_water_heater_timer": {
+      "name": "Set Water Heater Timer",
+      "description": "Turn on hot water with a timer and optional temperature setting.",
+      "fields": {
+        "time_period": {
+          "name": "Time Period",
+          "description": "Duration before turning off (format HH:MM:SS, e.g., \"01:30:00\" for 90 minutes)."
+        },
+        "temperature": {
+          "name": "Temperature",
+          "description": "Target temperature in Celsius (optional, for solar water heater systems)."
+        }
+      }
+    },
+    "resume_schedule": {
+      "name": "Resume Schedule",
+      "description": "Delete any manual override and return to the automatic schedule."
+    },
+    "set_climate_temperature_offset": {
+      "name": "Set Climate Temperature Offset",
+      "description": "Set the temperature offset (calibration) for a Tado climate device. Compatible with official Tado integration.",
+      "fields": {
+        "entity_id": {
+          "name": "Entity",
+          "description": "The climate entity to set offset for."
+        },
+        "offset": {
+          "name": "Offset",
+          "description": "Temperature offset in Celsius (-10 to +10)."
+        }
+      }
+    },
+    "add_meter_reading": {
+      "name": "Add Meter Reading",
+      "description": "Add an energy meter reading for Energy IQ. Supports specifying the date for historical readings (Tado CE enhancement).",
+      "fields": {
+        "reading": {
+          "name": "Reading",
+          "description": "The meter reading value in m³ or kWh (without decimals)."
+        },
+        "date": {
+          "name": "Date",
+          "description": "The date of the reading (YYYY-MM-DD). Defaults to today if not specified. This allows adding historical readings."
+        }
+      }
+    },
+    "identify_device": {
+      "name": "Identify Device",
+      "description": "Make a Tado device flash its LED to help identify it.",
+      "fields": {
+        "device_serial": {
+          "name": "Device Serial",
+          "description": "The short serial number of the device (e.g., VA1234567890)."
+        }
+      }
+    },
+    "set_away_configuration": {
+      "name": "Set Away Configuration",
+      "description": "Configure what temperature to use when everyone is away from home.",
+      "fields": {
+        "entity_id": {
+          "name": "Entity",
+          "description": "The climate entity to configure away settings for."
+        },
+        "mode": {
+          "name": "Mode",
+          "description": "Away mode - 'auto' for Tado's smart adjustment, 'manual' for fixed temperature, 'off' to turn off heating."
+        },
+        "temperature": {
+          "name": "Temperature",
+          "description": "Target temperature when away (only for manual mode)."
+        },
+        "comfort_level": {
+          "name": "Comfort Level",
+          "description": "Comfort level for auto mode (0=Eco, 50=Balance, 100=Comfort)."
+        }
+      }
+    },
+    "get_temperature_offset": {
+      "name": "Get Temperature Offset",
+      "description": "Fetch the current temperature offset (calibration) for a Tado climate device. Returns the offset value for use in automations.",
+      "fields": {
+        "entity_id": {
+          "name": "Entity",
+          "description": "The climate entity to get offset for."
+        }
+      }
+    },
+    "activate_open_window": {
+      "name": "Activate Open Window",
+      "description": "Activate Open Window mode on a climate zone (same as tapping the icon in the Tado app). Heating/cooling will be suspended."
+    },
+    "deactivate_open_window": {
+      "name": "Deactivate Open Window",
+      "description": "Deactivate Open Window mode on a climate zone, resuming normal heating/cooling."
     }
   },
   "selector": {
@@ -1072,11 +1202,11 @@
     "api_quota_critically_low": {
       "message": "API quota critically low - action blocked to preserve bootstrap reserve. Please wait for API reset."
     },
-    "timer_set_failed": {
-      "message": "Failed to set {duration}min timer for {zone_name}: {error}"
-    },
     "water_heater_not_found": {
       "message": "Water heater entity not found: {entity_id}"
+    },
+    "timer_set_failed": {
+      "message": "Failed to set {duration}min timer for {zone_name}: {error}"
     }
   },
   "issues": {
@@ -1154,7 +1284,15 @@
     "step": {
       "init": {
         "title": "Tado CE Options",
-        "description": "Configure Tado CE integration settings.\n\n⚠️ **Known Issue:** If options don't save after clicking Submit, please select an entity in 'Outdoor Temperature Entity' field (e.g., weather.home). This is a [Home Assistant Core limitation](https://github.com/home-assistant/core/issues/154795). See [Discussion #76](https://github.com/hiall-fyi/tado_ce/discussions/76) for details.",
+        "description": "Choose what to configure.",
+        "menu_options": {
+          "global_settings": "Global Settings",
+          "zone_config": "Zone Configuration"
+        }
+      },
+      "global_settings": {
+        "title": "Global Settings",
+        "description": "Configure Tado CE integration settings.\n\nℹ️ If you don't need weather-dependent features (mold risk, condensation, surface temp, comfort level, weather compensation), you can leave 'Outdoor Temperature Entity' empty.",
         "sections": {
           "tado_ce_exclusive": {
             "name": "Tado CE Exclusive",
@@ -1199,6 +1337,7 @@
           "settings": {
             "name": "Smart Comfort",
             "data": {
+              "use_outdoor_temp_entity": "Use Outdoor Temperature Entity",
               "outdoor_temp_entity": "Outdoor Temperature Entity",
               "hot_water_timer_duration": "Hot Water Timer (minutes)",
               "smart_comfort_mode": "Smart Comfort Mode",
@@ -1210,6 +1349,7 @@
               "heating_cycle_inertia_threshold": "Inertia Detection Threshold"
             },
             "data_description": {
+              "use_outdoor_temp_entity": "Turn off to disable outdoor temperature features",
               "outdoor_temp_entity": "Temperature sensor for weather compensation (e.g., weather.home)",
               "hot_water_timer_duration": "Default duration when turning on hot water (5-1440 min)",
               "smart_comfort_mode": "Adjusts target temp based on outdoor conditions",
@@ -1243,7 +1383,98 @@
             }
           }
         }
+      },
+      "zone_config": {
+        "title": "Zone Configuration",
+        "description": "Select a zone to configure.",
+        "data": {
+          "zone_id": "Zone"
+        }
+      },
+      "zone_sensor_config": {
+        "title": "Zone Config — {zone_name}",
+        "description": "Configure per-zone settings. Sections can be expanded to reveal more options.",
+        "sections": {
+          "heating_section": {
+            "name": "Heating",
+            "data": {
+              "heating_type": "Heat Emitter Type",
+              "ufh_buffer_minutes": "UFH Buffer (minutes)",
+              "adaptive_preheat": "Adaptive Preheat"
+            },
+            "data_description": {
+              "heating_type": "Radiator or underfloor heating",
+              "ufh_buffer_minutes": "Extra minutes for UFH warm-up (0-60)",
+              "adaptive_preheat": "Auto-start heating before schedule"
+            }
+          },
+          "comfort_section": {
+            "name": "Comfort",
+            "data": {
+              "smart_comfort_mode": "Smart Comfort Mode",
+              "window_type": "Window Type",
+              "window_predicted_sensitivity": "Window Detection Sensitivity"
+            },
+            "data_description": {
+              "smart_comfort_mode": "Adjust target temp based on outdoor conditions",
+              "window_type": "Window type for mold risk calculation",
+              "window_predicted_sensitivity": "Sensitivity for predicted window open detection"
+            }
+          },
+          "sensor_section": {
+            "name": "External Sensors",
+            "data": {
+              "use_external_temp": "Use External Temperature Sensor",
+              "external_temp_sensor": "External Temperature Sensor",
+              "use_external_humidity": "Use External Humidity Sensor",
+              "external_humidity_sensor": "External Humidity Sensor"
+            },
+            "data_description": {
+              "use_external_temp": "Turn off to use Tado's built-in temperature sensor",
+              "external_temp_sensor": "Select a temperature sensor to override Tado's reading",
+              "use_external_humidity": "Turn off to use Tado's built-in humidity sensor",
+              "external_humidity_sensor": "Select a humidity sensor to override Tado's reading"
+            }
+          },
+          "overlay_section": {
+            "name": "Overlay",
+            "data": {
+              "overlay_mode": "Overlay Mode",
+              "timer_duration": "Timer Duration (minutes)"
+            },
+            "data_description": {
+              "overlay_mode": "What happens when you manually change temperature",
+              "timer_duration": "Duration for timer overlay mode (15-180 min)"
+            }
+          },
+          "temperature_section": {
+            "name": "Temperature",
+            "data": {
+              "min_temp": "Minimum Temperature",
+              "max_temp": "Maximum Temperature",
+              "temp_offset": "Temperature Offset",
+              "surface_temp_offset": "Surface Temp Offset"
+            },
+            "data_description": {
+              "min_temp": "Minimum allowed target temperature (5-25°C)",
+              "max_temp": "Maximum allowed target temperature (15-30°C)",
+              "temp_offset": "Offset applied to target temperature (-3 to +3°C)",
+              "surface_temp_offset": "Offset for mold risk surface temp calculation (-5 to +5°C)"
+            }
+          }
+        },
+        "data": {
+          "external_temp_sensor": "External Temperature Sensor",
+          "external_humidity_sensor": "External Humidity Sensor"
+        },
+        "data_description": {
+          "external_temp_sensor": "Override Tado's built-in temperature reading with an external sensor",
+          "external_humidity_sensor": "Override Tado's built-in humidity reading with an external sensor"
+        }
       }
+    },
+    "abort": {
+      "no_zones": "No zones available for configuration."
     },
     "error": {
       "interval_out_of_range": "Polling interval must be between 1 and 1440 minutes",

@@ -9,8 +9,10 @@ if TYPE_CHECKING:
     from collections.abc import Coroutine
 
     from homeassistant.components.climate import HVACAction, HVACMode  # type: ignore[attr-defined]
+    from homeassistant.core import HomeAssistant
 
     from .coordinator import TadoDataUpdateCoordinator
+    from .zone_config_manager import ZoneConfigManager
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -73,6 +75,47 @@ def update_preset_mode(coordinator: TadoDataUpdateCoordinator) -> str | None:
         # Keep last known preset mode — caller handles fallback
         _LOGGER.debug("Failed to determine preset mode from home state")
     return None
+
+
+def read_external_sensor(
+    hass: HomeAssistant,
+    zone_config_manager: ZoneConfigManager | None,
+    zone_id: str,
+    config_key: str,
+) -> float | None:
+    """Read a numeric value from an external HA sensor entity.
+
+    Looks up the configured external sensor entity_id from zone config,
+    then reads its state. Returns None if not configured, unavailable,
+    or non-numeric.
+
+    Args:
+        hass: Home Assistant instance
+        zone_config_manager: Zone config manager (may be None)
+        zone_id: Zone ID to look up config for
+        config_key: Config key name (e.g. "external_temp_sensor")
+
+    Returns:
+        Float value from the external sensor, or None if unavailable
+
+    """
+    if not zone_config_manager:
+        return None
+
+    config = zone_config_manager.get_zone_config(zone_id)
+    entity_id = config.get(config_key, "")
+    if not entity_id:
+        return None
+
+    state = hass.states.get(entity_id)
+    if state is None or state.state in ("unknown", "unavailable", ""):
+        return None
+
+    try:
+        return float(state.state)
+    except (ValueError, TypeError):
+        _LOGGER.debug("External sensor %s has non-numeric state: %s", entity_id, state.state)
+        return None
 
 
 async def api_call_with_rollback(

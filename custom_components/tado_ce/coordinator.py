@@ -20,7 +20,7 @@ from homeassistant.helpers.update_coordinator import (
     UpdateFailed,
 )
 
-from .const import DOMAIN, FULL_SYNC_INTERVAL_HOURS, OVERLAY_MODE_DEFAULT, TIMER_DURATION_DEFAULT, get_data_file
+from .const import DOMAIN, OVERLAY_MODE_DEFAULT, TIMER_DURATION_DEFAULT, get_data_file
 from .exceptions import TadoAuthError, TadoSyncError
 from .insight_history import InsightHistoryTracker
 from .polling import get_polling_interval, should_pause_polling
@@ -310,11 +310,10 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         }
 
     def _should_do_full_sync(self) -> bool:
-        """Check if full sync needed (vs quick). Runs on first poll + every N hours."""
+        """Check if full sync needed (vs quick). Only on first poll after restart/reload."""
         if self._last_full_sync is None:
             return True
-        hours_since = (datetime.now(UTC) - self._last_full_sync).total_seconds() / 3600
-        return hours_since >= FULL_SYNC_INTERVAL_HOURS
+        return False
 
     async def _async_load_ratelimit(self) -> None:
         """Load ratelimit data via async I/O."""

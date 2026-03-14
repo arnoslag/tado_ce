@@ -11,6 +11,7 @@ from homeassistant.core import callback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .device_manager import get_device_name_suffix, get_zone_device_info
+from .entity_registry import ENTITY_REGISTRY, get_entity_category
 from .format_helpers import (
     format_battery_state as _format_battery_state,
 )
@@ -58,9 +59,14 @@ class TadoBatterySensor(CoordinatorEntity["TadoDataUpdateCoordinator"], SensorEn
         self._device_serial = device.get("shortSerialNo", "unknown")
         self._device_type = device.get("deviceType", "unknown")
 
-        self._attr_translation_key = "battery"
-        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_device_{self._device_serial}_battery"
-        self._attr_icon = "mdi:battery"
+        _meta = ENTITY_REGISTRY["sensor_battery"]
+        self._attr_translation_key = _meta.translation_key
+        self._attr_unique_id = (
+            f"tado_ce_{coordinator.home_id}"
+            f"_{_meta.unique_id_suffix.format(serial=self._device_serial)}"
+        )
+        self._attr_icon = _meta.icon
+        self._attr_entity_category = get_entity_category(_meta)
         self._attr_available = True
         self._attr_native_value = _format_battery_state(device.get("batteryState", "unknown"))
         self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type, coordinator.home_id)
@@ -68,8 +74,9 @@ class TadoBatterySensor(CoordinatorEntity["TadoDataUpdateCoordinator"], SensorEn
         # Add device suffix to distinguish multiple devices in the same zone
         suffix = get_device_name_suffix(zone_id, self._device_serial, self._device_type, zones_info or [])
         if suffix:
-            self._attr_translation_key = None
-            self._attr_name = f"Battery{suffix}"
+            _meta_suffixed = ENTITY_REGISTRY["sensor_battery_suffixed"]
+            self._attr_translation_key = _meta_suffixed.translation_key
+            self._attr_translation_placeholders = {"device_suffix": suffix}
 
         # Extra attributes
         self._firmware = device.get("currentFwVersion")
@@ -159,16 +166,22 @@ class TadoDeviceConnectionSensor(CoordinatorEntity["TadoDataUpdateCoordinator"],
         self._zone_type = zone_type
 
         self._attr_translation_key = "connection"
-        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_device_{self._device_serial}_connection"
-        self._attr_icon = "mdi:wifi"
+        _conn_meta = ENTITY_REGISTRY["sensor_connection"]
+        self._attr_unique_id = (
+            f"tado_ce_{coordinator.home_id}"
+            f"_{_conn_meta.unique_id_suffix.format(serial=self._device_serial)}"
+        )
+        self._attr_icon = _conn_meta.icon
+        self._attr_entity_category = get_entity_category(_conn_meta)
         self._attr_available = True
         self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type, coordinator.home_id)
 
         # Add device suffix to distinguish multiple devices in the same zone
         suffix = get_device_name_suffix(zone_id, self._device_serial, self._device_type, zones_info or [])
         if suffix:
-            self._attr_translation_key = None
-            self._attr_name = f"Connection{suffix}"
+            _meta_suffixed = ENTITY_REGISTRY["sensor_connection_suffixed"]
+            self._attr_translation_key = _meta_suffixed.translation_key
+            self._attr_translation_placeholders = {"device_suffix": suffix}
 
         conn = device.get("connectionState") or {}
         self._attr_native_value = _format_connection_state(conn.get("value"))

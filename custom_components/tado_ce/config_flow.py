@@ -23,7 +23,30 @@ from homeassistant.helpers.selector import (
 )
 import voluptuous as vol
 
-from .const import API_ENDPOINT_ME, AUTH_ENDPOINT_DEVICE, AUTH_ENDPOINT_TOKEN, CLIENT_ID, DATA_DIR, DOMAIN
+from .const import (
+    API_ENDPOINT_ME,
+    AUTH_ENDPOINT_DEVICE,
+    AUTH_ENDPOINT_TOKEN,
+    CLIENT_ID,
+    DATA_DIR,
+    DOMAIN,
+    HEATING_TYPE_OPTIONS,
+    HEATING_TYPE_RADIATOR,
+    OVERLAY_MODE_DEFAULT,
+    OVERLAY_MODE_MAP,
+    OVERLAY_MODE_OPTIONS,
+    OVERLAY_MODE_REVERSE_MAP,
+    SMART_COMFORT_MODE_OPTIONS,
+    SURFACE_TEMP_OFFSET_MAX,
+    SURFACE_TEMP_OFFSET_MIN,
+    SURFACE_TEMP_OFFSET_STEP,
+    TIMER_DURATION_DEFAULT,
+    TIMER_DURATION_OPTIONS,
+    WINDOW_SENSITIVITY_DEFAULT,
+    WINDOW_SENSITIVITY_MAP,
+    WINDOW_SENSITIVITY_OPTIONS,
+    WINDOW_SENSITIVITY_REVERSE_MAP,
+)
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry, ConfigFlowResult
@@ -499,13 +522,11 @@ class TadoCEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class TadoCEOptionsFlow(config_entries.OptionsFlow):
-    """Handle options flow for Tado CE with user mental model sections.
+    """Handle options flow for Tado CE with menu-based navigation.
 
-    Restructured into 4 sections based on user mental model:
-    1. Tado CE Exclusive (collapsed) - CE-only features + Test Mode
-    2. Tado Data (collapsed) - Extra API calls for Tado data
-    3. Settings (collapsed) - Global default values
-    4. Polling & API (collapsed) - API management
+    Menu options:
+    - Global Settings: 4 collapsed sections (CE Exclusive, Tado Data, Settings, Polling & API)
+    - Zone Sensor Config: Per-zone external sensor picker with EntitySelector
 
     CORE features (always ON, not in UI):
     - Zone Diagnostics, Device Controls, Boost Buttons, Environment Sensors
@@ -517,8 +538,23 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
     def __init__(self, config_entry: ConfigEntry) -> None:
         """Initialize options flow."""
         super().__init__()
+        self._selected_zone_id: str | None = None
 
-    async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Show navigation menu for options."""
+        menu_options = ["global_settings"]
+        if self.config_entry.options.get("zone_configuration_enabled", False):
+            menu_options.append("zone_config")
+        return self.async_show_menu(
+            step_id="init",
+            menu_options=menu_options,
+        )
+
+    async def async_step_global_settings(
+        self, user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
         """Manage the options with user mental model sections."""
         errors = {}
 
@@ -552,7 +588,6 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                     "adaptive_preheat_enabled",
                     "schedule_calendar_enabled",
                     "zone_configuration_enabled",
-                    "test_mode_enabled",
                 ]:
                     if key in section:
                         processed_input[key] = section[key]
@@ -574,7 +609,6 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
             if "settings" in user_input:
                 section = user_input["settings"]
                 settings_keys = [
-                    "outdoor_temp_entity",
                     "hot_water_timer_duration",
                     "smart_comfort_mode",
                     "use_feels_like",
@@ -588,6 +622,12 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                     if key in section:
                         processed_input[key] = section[key]
 
+                # Boolean toggle controls whether EntitySelector value is used
+                if section.get("use_outdoor_temp_entity", False):
+                    processed_input["outdoor_temp_entity"] = section.get("outdoor_temp_entity", "")
+                else:
+                    processed_input["outdoor_temp_entity"] = ""
+
             # Flatten polling_api section
             if "polling_api" in user_input:
                 section = user_input["polling_api"]
@@ -596,7 +636,6 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                     "night_start_hour",
                     "refresh_debounce_seconds",
                     "api_history_retention_days",
-                    "quota_reserve_enabled",
                 ]
                 for key in polling_keys:
                     if key in section:
@@ -672,7 +711,7 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
         smart_comfort_default = opt("smart_comfort_mode", opt("weather_compensation", "none"))
 
         return self.async_show_form(
-            step_id="init",
+            step_id="global_settings",
             data_schema=vol.Schema(
                 {
                     # === Tado CE Exclusive (collapsed) ===
@@ -709,10 +748,6 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                                 vol.Optional(
                                     "zone_configuration_enabled",
                                     default=opt("zone_configuration_enabled", False),
-                                ): BooleanSelector(),
-                                vol.Optional(
-                                    "test_mode_enabled",
-                                    default=opt("test_mode_enabled", False),
                                 ): BooleanSelector(),
                             },
                         ),
@@ -752,8 +787,13 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                             {
                                 # General
                                 vol.Optional(
+                                    "use_outdoor_temp_entity",
+                                    default=bool(opt("outdoor_temp_entity", "")),
+                                ): BooleanSelector(),
+                                vol.Optional(
                                     "outdoor_temp_entity",
-                                    default=opt("outdoor_temp_entity", ""),
+                                    description={"suggested_value": opt("outdoor_temp_entity", "")}
+                                    if opt("outdoor_temp_entity", "") else None,
                                 ): EntitySelector(EntitySelectorConfig(domain=["sensor", "weather"])),
                                 vol.Optional(
                                     "hot_water_timer_duration",
@@ -912,10 +952,6 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                                         unit_of_measurement="d",
                                     ),
                                 ),
-                                vol.Optional(
-                                    "quota_reserve_enabled",
-                                    default=opt("quota_reserve_enabled", True),
-                                ): BooleanSelector(),
                             },
                         ),
                         {"collapsed": True},
@@ -923,4 +959,317 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                 },
             ),
             errors=errors,
+        )
+
+    async def async_step_zone_config(
+        self, user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Show zone picker for per-zone configuration."""
+        coordinator = self.config_entry.runtime_data
+        data_loader = coordinator.data_loader
+        zones_info = await self.hass.async_add_executor_job(data_loader.load_zones_info_file)
+
+        if not zones_info:
+            return self.async_abort(reason="no_zones")
+
+        # Build zone options (exclude HOT_WATER — external sensors are heating/AC only)
+        zone_options = [
+            {"value": str(z.get("id")), "label": z.get("name", f"Zone {z.get('id')}")}
+            for z in zones_info
+            if z.get("type") != "HOT_WATER"
+        ]
+
+        if not zone_options:
+            return self.async_abort(reason="no_zones")
+
+        if user_input is not None:
+            self._selected_zone_id = user_input["zone_id"]
+            return await self.async_step_zone_sensor_config()
+
+        return self.async_show_form(
+            step_id="zone_config",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("zone_id"): SelectSelector(
+                        SelectSelectorConfig(
+                            options=zone_options,  # type: ignore[typeddict-item]
+                            mode=SelectSelectorMode.DROPDOWN,
+                        ),
+                    ),
+                },
+            ),
+        )
+
+    async def async_step_zone_sensor_config(
+        self, user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Configure all per-zone settings for a specific zone."""
+        zone_id = self._selected_zone_id
+        if not zone_id:
+            return self.async_abort(reason="no_zones")
+
+        coordinator = self.config_entry.runtime_data
+        zone_config_manager = coordinator.zone_config_manager
+
+        if user_input is not None:
+            # Flatten sections and save each key to zone_config.json
+            all_values: dict[str, Any] = {}  # noqa: ANN401 — mixed types from zone config
+
+            if "heating_section" in user_input:
+                s = user_input["heating_section"]
+                all_values["heating_type"] = s.get(
+                    "heating_type", HEATING_TYPE_RADIATOR,
+                ).lower()
+                all_values["ufh_buffer_minutes"] = int(s.get("ufh_buffer_minutes", 30))
+                all_values["adaptive_preheat"] = s.get("adaptive_preheat", False)
+
+            if "comfort_section" in user_input:
+                s = user_input["comfort_section"]
+                raw_mode = s.get("smart_comfort_mode", "None")
+                all_values["smart_comfort_mode"] = raw_mode.lower() if raw_mode != "None" else "none"
+                raw_wt = s.get("window_type", "double_pane")
+                all_values["window_type"] = raw_wt
+                raw_sens = s.get("window_predicted_sensitivity", "Medium")
+                all_values["window_predicted_sensitivity"] = WINDOW_SENSITIVITY_MAP.get(raw_sens, "medium")
+
+            if "sensor_section" in user_input:
+                s = user_input["sensor_section"]
+                # Boolean toggle controls whether EntitySelector value is used
+                if s.get("use_external_temp", False):
+                    all_values["external_temp_sensor"] = s.get("external_temp_sensor", "")
+                else:
+                    all_values["external_temp_sensor"] = ""
+                if s.get("use_external_humidity", False):
+                    all_values["external_humidity_sensor"] = s.get("external_humidity_sensor", "")
+                else:
+                    all_values["external_humidity_sensor"] = ""
+
+            if "overlay_section" in user_input:
+                s = user_input["overlay_section"]
+                raw_overlay = s.get("overlay_mode", "Tado Default")
+                all_values["overlay_mode"] = OVERLAY_MODE_MAP.get(raw_overlay, OVERLAY_MODE_DEFAULT)
+                all_values["timer_duration"] = int(s.get("timer_duration", str(TIMER_DURATION_DEFAULT)))
+
+            if "temperature_section" in user_input:
+                s = user_input["temperature_section"]
+                all_values["min_temp"] = float(s.get("min_temp", 5.0))
+                all_values["max_temp"] = float(s.get("max_temp", 25.0))
+                all_values["temp_offset"] = float(s.get("temp_offset", 0.0))
+                all_values["surface_temp_offset"] = float(s.get("surface_temp_offset", 0.0))
+
+            for key, value in all_values.items():
+                await zone_config_manager.async_set_zone_value(zone_id, key, value)
+
+            # Return to menu (no config entry change — zone_config.json is separate)
+            return self.async_create_entry(title="", data=self.config_entry.options)
+
+        # Load current values
+        config = zone_config_manager.get_zone_config(zone_id)
+
+        # Get zone name for description placeholder
+        data_loader = coordinator.data_loader
+        zones_info = await self.hass.async_add_executor_job(data_loader.load_zones_info_file)
+        zone_name = zone_id
+        if zones_info:
+            zone_name = next(
+                (z.get("name", zone_id) for z in zones_info if str(z.get("id")) == zone_id),
+                zone_id,
+            )
+
+        # Current values with display-friendly transforms
+        cur_heating = config.get("heating_type", HEATING_TYPE_RADIATOR).capitalize()
+        if cur_heating == "Ufh":
+            cur_heating = "UFH"
+        cur_ufh_buffer = config.get("ufh_buffer_minutes", 30)
+        cur_adaptive = config.get("adaptive_preheat", False)
+        cur_comfort = config.get("smart_comfort_mode", "none").capitalize()
+        if cur_comfort == "None":
+            cur_comfort = "None"
+        cur_window_type = config.get("window_type", "double_pane")
+        cur_sensitivity = WINDOW_SENSITIVITY_REVERSE_MAP.get(
+            config.get("window_predicted_sensitivity", WINDOW_SENSITIVITY_DEFAULT), "Medium",
+        )
+        cur_temp_sensor = config.get("external_temp_sensor", "")
+        cur_humidity_sensor = config.get("external_humidity_sensor", "")
+        cur_use_ext_temp = bool(cur_temp_sensor)
+        cur_use_ext_humidity = bool(cur_humidity_sensor)
+        cur_overlay = OVERLAY_MODE_REVERSE_MAP.get(
+            config.get("overlay_mode", OVERLAY_MODE_DEFAULT), "Tado Default",
+        )
+        cur_timer = str(config.get("timer_duration", TIMER_DURATION_DEFAULT))
+        cur_min_temp = config.get("min_temp", 5.0)
+        cur_max_temp = config.get("max_temp", 25.0)
+        cur_temp_offset = config.get("temp_offset", 0.0)
+        cur_surface_offset = config.get("surface_temp_offset", 0.0)
+
+        return self.async_show_form(
+            step_id="zone_sensor_config",
+            data_schema=vol.Schema(
+                {
+                    # === Heating ===
+                    vol.Required("heating_section"): data_entry_flow.section(
+                        vol.Schema(
+                            {
+                                vol.Optional(
+                                    "heating_type", default=cur_heating,
+                                ): SelectSelector(
+                                    SelectSelectorConfig(
+                                        options=HEATING_TYPE_OPTIONS,
+                                        mode=SelectSelectorMode.DROPDOWN,
+                                    ),
+                                ),
+                                vol.Optional(
+                                    "ufh_buffer_minutes", default=cur_ufh_buffer,
+                                ): NumberSelector(
+                                    NumberSelectorConfig(
+                                        min=0, max=60, step=5,
+                                        mode=NumberSelectorMode.BOX,
+                                        unit_of_measurement="min",
+                                    ),
+                                ),
+                                vol.Optional(
+                                    "adaptive_preheat", default=cur_adaptive,
+                                ): BooleanSelector(),
+                            },
+                        ),
+                        {"collapsed": False},
+                    ),
+                    # === Comfort ===
+                    vol.Required("comfort_section"): data_entry_flow.section(
+                        vol.Schema(
+                            {
+                                vol.Optional(
+                                    "smart_comfort_mode", default=cur_comfort,
+                                ): SelectSelector(
+                                    SelectSelectorConfig(
+                                        options=SMART_COMFORT_MODE_OPTIONS,
+                                        mode=SelectSelectorMode.DROPDOWN,
+                                    ),
+                                ),
+                                vol.Optional(
+                                    "window_type", default=cur_window_type,
+                                ): SelectSelector(
+                                    SelectSelectorConfig(
+                                        options=["single_pane", "double_pane", "triple_pane", "passive_house"],
+                                        translation_key="mold_risk_window_type",
+                                        mode=SelectSelectorMode.DROPDOWN,
+                                    ),
+                                ),
+                                vol.Optional(
+                                    "window_predicted_sensitivity", default=cur_sensitivity,
+                                ): SelectSelector(
+                                    SelectSelectorConfig(
+                                        options=WINDOW_SENSITIVITY_OPTIONS,
+                                        mode=SelectSelectorMode.DROPDOWN,
+                                    ),
+                                ),
+                            },
+                        ),
+                        {"collapsed": True},
+                    ),
+                    # === External Sensors ===
+                    vol.Required("sensor_section"): data_entry_flow.section(
+                        vol.Schema(
+                            {
+                                vol.Optional(
+                                    "use_external_temp", default=cur_use_ext_temp,
+                                ): BooleanSelector(),
+                                vol.Optional(
+                                    "external_temp_sensor",
+                                    description={"suggested_value": cur_temp_sensor}
+                                    if cur_temp_sensor else None,
+                                ): EntitySelector(
+                                    EntitySelectorConfig(
+                                        domain="sensor", device_class="temperature",
+                                    ),
+                                ),
+                                vol.Optional(
+                                    "use_external_humidity", default=cur_use_ext_humidity,
+                                ): BooleanSelector(),
+                                vol.Optional(
+                                    "external_humidity_sensor",
+                                    description={"suggested_value": cur_humidity_sensor}
+                                    if cur_humidity_sensor else None,
+                                ): EntitySelector(
+                                    EntitySelectorConfig(
+                                        domain="sensor", device_class="humidity",
+                                    ),
+                                ),
+                            },
+                        ),
+                        {"collapsed": True},
+                    ),
+                    # === Overlay ===
+                    vol.Required("overlay_section"): data_entry_flow.section(
+                        vol.Schema(
+                            {
+                                vol.Optional(
+                                    "overlay_mode", default=cur_overlay,
+                                ): SelectSelector(
+                                    SelectSelectorConfig(
+                                        options=OVERLAY_MODE_OPTIONS,
+                                        mode=SelectSelectorMode.DROPDOWN,
+                                    ),
+                                ),
+                                vol.Optional(
+                                    "timer_duration", default=cur_timer,
+                                ): SelectSelector(
+                                    SelectSelectorConfig(
+                                        options=TIMER_DURATION_OPTIONS,
+                                        mode=SelectSelectorMode.DROPDOWN,
+                                    ),
+                                ),
+                            },
+                        ),
+                        {"collapsed": True},
+                    ),
+                    # === Temperature ===
+                    vol.Required("temperature_section"): data_entry_flow.section(
+                        vol.Schema(
+                            {
+                                vol.Optional(
+                                    "min_temp", default=cur_min_temp,
+                                ): NumberSelector(
+                                    NumberSelectorConfig(
+                                        min=5.0, max=25.0, step=0.5,
+                                        mode=NumberSelectorMode.BOX,
+                                        unit_of_measurement="°C",
+                                    ),
+                                ),
+                                vol.Optional(
+                                    "max_temp", default=cur_max_temp,
+                                ): NumberSelector(
+                                    NumberSelectorConfig(
+                                        min=15.0, max=30.0, step=0.5,
+                                        mode=NumberSelectorMode.BOX,
+                                        unit_of_measurement="°C",
+                                    ),
+                                ),
+                                vol.Optional(
+                                    "temp_offset", default=cur_temp_offset,
+                                ): NumberSelector(
+                                    NumberSelectorConfig(
+                                        min=-3.0, max=3.0, step=0.1,
+                                        mode=NumberSelectorMode.BOX,
+                                        unit_of_measurement="°C",
+                                    ),
+                                ),
+                                vol.Optional(
+                                    "surface_temp_offset", default=cur_surface_offset,
+                                ): NumberSelector(
+                                    NumberSelectorConfig(
+                                        min=SURFACE_TEMP_OFFSET_MIN,
+                                        max=SURFACE_TEMP_OFFSET_MAX,
+                                        step=SURFACE_TEMP_OFFSET_STEP,
+                                        mode=NumberSelectorMode.BOX,
+                                        unit_of_measurement="°C",
+                                    ),
+                                ),
+                            },
+                        ),
+                        {"collapsed": True},
+                    ),
+                },
+            ),
+            description_placeholders={"zone_name": zone_name},
         )

@@ -14,6 +14,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
 from .const import DATA_DIR, DOMAIN, MANUFACTURER, get_data_file
+from .entity_registry import ENTITY_REGISTRY
 
 if TYPE_CHECKING:
     from homeassistant.core import Event
@@ -173,10 +174,12 @@ class TadoZoneScheduleCalendar(CoordinatorEntity["TadoDataUpdateCoordinator"], C
         self._entry_id = coordinator.config_entry.entry_id
 
         # Short name for calendar sidebar (just zone name)
-        self._attr_translation_key = "schedule"
-        self._attr_unique_id = f"tado_ce_{home_id}_zone_{zone_id}_schedule"
+        _meta = ENTITY_REGISTRY["calendar_schedule"]
+        self._attr_translation_key = _meta.translation_key
+        self._attr_unique_id = f"tado_ce_{home_id}_{_meta.unique_id_suffix.format(zone_id=zone_id)}"
         self._attr_device_info = get_schedule_device_info(home_id)
-        self._attr_icon = "mdi:calendar-clock"
+        if _meta.icon:
+            self._attr_icon = _meta.icon
 
         self._event: CalendarEvent | None = None
         self._unsub_schedule_update = None

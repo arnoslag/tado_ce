@@ -16,7 +16,8 @@ from .action_helpers import (
 from .action_helpers import (
     is_within_optimistic_window as _is_within_optimistic_window,
 )
-from .device_manager import get_zone_device_info
+from .device_manager import get_hub_device_info, get_zone_device_info
+from .entity_registry import ENTITY_REGISTRY, get_entity_category
 from .helpers import async_trigger_immediate_refresh
 
 if TYPE_CHECKING:
@@ -96,10 +97,17 @@ async def async_setup_entry(
     else:
         _LOGGER.debug("Tado CE: No switches found (device_controls_enabled may be OFF)")
 
-    # Zone configuration switch entities (per-zone settings)
-    from .zone_config import async_setup_zone_config_switch
+    # Hub control toggles (always created)
+    hub_switches: list[SwitchEntity] = [
+        TadoHubToggleSwitch(
+            coordinator, home_id, "switch_test_mode", "test_mode_enabled", "mdi:test-tube", "mdi:test-tube-off",
+        ),
+        TadoHubToggleSwitch(
+            coordinator, home_id, "switch_quota_reserve", "quota_reserve_enabled", "mdi:shield-check", "mdi:shield-off",
+        ),
+    ]
+    async_add_entities(hub_switches, True)
 
-    await async_setup_zone_config_switch(hass, entry, async_add_entities)
 
 
 # TadoAwayModeSwitch class REMOVED
@@ -124,14 +132,16 @@ class TadoEarlyStartSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switc
     ) -> None:
         """Initialize."""
         super().__init__(coordinator)
+        _meta = ENTITY_REGISTRY["switch_early_start"]
         self._zone_id = zone_id
         self._zone_name = zone_name
         self._zone_type = zone_type
         self._entry_id = coordinator.config_entry.entry_id
 
-        self._attr_translation_key = "early_start"
-        self._attr_unique_id = f"tado_ce_{home_id}_zone_{zone_id}_early_start"
-        self._attr_icon = "mdi:clock-fast"
+        self._attr_translation_key = _meta.translation_key
+        self._attr_unique_id = f"tado_ce_{home_id}_{_meta.unique_id_suffix.format(zone_id=zone_id)}"
+        self._attr_entity_category = get_entity_category(_meta)
+        self._attr_icon = _meta.icon
         self._attr_is_on = initial_state
         self._attr_available = True
         self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type, home_id)
@@ -271,6 +281,7 @@ class TadoChildLockSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switch
     ) -> None:
         """Initialize."""
         super().__init__(coordinator)
+        _meta = ENTITY_REGISTRY["switch_child_lock"]
         self._zone_id = zone_id
         self._serial = serial
         self._zone_name = zone_name
@@ -278,9 +289,10 @@ class TadoChildLockSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switch
         self._device_type = device_type
         self._entry_id = coordinator.config_entry.entry_id
 
-        self._attr_translation_key = "child_lock"
-        self._attr_unique_id = f"tado_ce_{home_id}_device_{serial}_child_lock"
-        self._attr_icon = "mdi:lock"
+        self._attr_translation_key = _meta.translation_key
+        self._attr_unique_id = f"tado_ce_{home_id}_{_meta.unique_id_suffix.format(serial=serial)}"
+        self._attr_entity_category = get_entity_category(_meta)
+        self._attr_icon = _meta.icon
         self._attr_is_on = initial_state
         self._attr_available = True
         self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type, home_id)
@@ -399,3 +411,80 @@ class TadoChildLockSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switch
     async def _async_set_child_lock(self, enabled: bool) -> bool:
         """Set child lock state via centralized API client."""
         return await self.coordinator.api_client.set_child_lock(self._serial, enabled)
+
+
+class TadoHubToggleSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], SwitchEntity):
+    """Handle a hub-level config toggle (Test Mode / Quota Reserve)."""
+
+    _attr_has_entity_name = True
+
+    def __init__(
+        self,
+        coordinator: TadoDataUpdateCoordinator,
+        home_id: str,
+        registry_key: str,
+        option_key: str,
+        icon_on: str,
+        icon_off: str,
+    ) -> None:
+        """Initialize the TadoHubToggleSwitch."""
+        super().__init__(coordinator)
+        _meta = ENTITY_REGISTRY[registry_key]
+        self._option_key = option_key
+        self._icon_on = icon_on
+        self._icon_off = icon_off
+
+        self._attr_translation_key = _meta.translation_key
+        self._attr_unique_id = f"tado_ce_{home_id}_{_meta.unique_id_suffix}"
+        self._attr_device_info = get_hub_device_info(home_id)
+        self._attr_entity_category = get_entity_category(_meta)
+        self._attr_is_on = self._read_option()
+
+    def _read_option(self) -> bool:
+        """Read current option value from config entry."""
+        entry = self.coordinator.config_entry
+        result = entry.options.get(self._option_key, self._attr_is_on)
+        return bool(result)
+
+    @property
+    def icon(self) -> str | None:
+        """Return icon based on state."""
+        return self._icon_on if self._attr_is_on else self._icon_off
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Handle coordinator data update."""
+        self._attr_is_on = self._read_option()
+        self.async_write_ha_state()
+
+    async def async_turn_on(self, **kwargs: Any) -> None:  # noqa: ANN401 — HA interface
+        """Turn on the toggle."""
+        await self._async_set_option(True)
+
+    async def async_turn_off(self, **kwargs: Any) -> None:  # noqa: ANN401 — HA interface
+        """Turn off the toggle."""
+        await self._async_set_option(False)
+
+    async def _async_set_option(self, value: bool) -> None:
+        """Persist option to config entry and update state.
+
+        These options are read in real-time by config_manager, so the
+        change takes effect immediately without an integration reload.
+        For test_mode_enabled transitions, we also trigger an API refresh
+        to get real rate limit data when exiting test mode.
+        """
+        entry = self.coordinator.config_entry
+        new_options = {**entry.options, self._option_key: value}
+        self.hass.config_entries.async_update_entry(entry, options=new_options)
+        self._attr_is_on = value
+        self.async_write_ha_state()
+        _LOGGER.info("Tado CE: %s set to %s", self._option_key, value)
+
+        # Handle test mode transition (disable → need API refresh for real data)
+        if self._option_key == "test_mode_enabled":
+            from .migration import async_handle_test_mode_transition
+
+            try:
+                await async_handle_test_mode_transition(self.hass, entry)
+            except Exception as exc:
+                _LOGGER.debug("Tado CE: Test mode transition handling: %s", exc)

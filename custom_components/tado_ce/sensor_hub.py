@@ -13,11 +13,11 @@ from homeassistant.components.sensor import (
     SensorEntity,
     SensorStateClass,
 )
-from homeassistant.const import EntityCategory
 from homeassistant.core import callback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .device_manager import get_hub_device_info
+from .entity_registry import ENTITY_REGISTRY, get_entity_category
 from .format_helpers import format_api_status as _format_api_status
 from .insights import calculate_api_status_recommendation
 
@@ -58,15 +58,15 @@ class TadoHubSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], SensorEntity
 class TadoHomeIdSensor(TadoHubSensor):
     """Sensor showing Tado Home ID."""
 
-    _attr_entity_registry_enabled_default = False
-
     def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator)
-        self._attr_translation_key = "home_id"
-        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_home_id"
-        self._attr_icon = "mdi:home"
-        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+        _meta = ENTITY_REGISTRY["sensor_home_id"]
+        self._attr_translation_key = _meta.translation_key
+        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix}"
+        self._attr_icon = _meta.icon
+        self._attr_entity_category = get_entity_category(_meta)
+        self._attr_entity_registry_enabled_default = _meta.enabled_default
 
     @callback
     def update(self) -> None:
@@ -89,10 +89,12 @@ class TadoApiUsageSensor(TadoHubSensor):
     def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator)
-        self._attr_translation_key = "api_usage"
-        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_api_usage"
+        _meta = ENTITY_REGISTRY["sensor_api_usage"]
+        self._attr_translation_key = _meta.translation_key
+        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix}"
         self._attr_native_unit_of_measurement = "calls"
         self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_entity_category = get_entity_category(_meta)
         self._data: dict[str, Any] = {}
         self._call_history: list[dict[str, Any]] = []
 
@@ -198,10 +200,12 @@ class TadoApiResetSensor(TadoHubSensor):
     def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator)
-        self._attr_translation_key = "api_reset"
-        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_api_reset"
-        self._attr_icon = "mdi:timer-refresh"
+        _meta = ENTITY_REGISTRY["sensor_api_reset"]
+        self._attr_translation_key = _meta.translation_key
+        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix}"
+        self._attr_icon = _meta.icon
         self._attr_device_class = SensorDeviceClass.TIMESTAMP
+        self._attr_entity_category = get_entity_category(_meta)
         self._reset_human: str | None = None
         self._reset_seconds: int | None = None
         self._reset_at: str | None = None
@@ -330,11 +334,12 @@ class TadoApiLimitSensor(TadoHubSensor):
     def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator)
-        self._attr_translation_key = "api_limit"
-        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_api_limit"
-        self._attr_icon = "mdi:speedometer"
+        _meta = ENTITY_REGISTRY["sensor_api_limit"]
+        self._attr_translation_key = _meta.translation_key
+        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix}"
+        self._attr_icon = _meta.icon
         self._attr_native_unit_of_measurement = "calls"
-        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+        self._attr_entity_category = get_entity_category(_meta)
         self._attr_extra_state_attributes: dict[str, Any] = {}
         self._test_mode: bool = False
 
@@ -423,8 +428,10 @@ class TadoApiStatusSensor(TadoHubSensor):
     def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator)
-        self._attr_translation_key = "api_status"
-        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_api_status"
+        _meta = ENTITY_REGISTRY["sensor_api_status"]
+        self._attr_translation_key = _meta.translation_key
+        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix}"
+        self._attr_entity_category = get_entity_category(_meta)
         self._remaining_calls: int | None = None
         self._total_calls: int | None = None
         self._reset_time: str | None = None
@@ -478,14 +485,14 @@ class TadoApiStatusSensor(TadoHubSensor):
 class TadoTokenStatusSensor(TadoHubSensor):
     """Sensor showing Tado token status."""
 
-    _attr_entity_registry_enabled_default = False
-
     def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator)
-        self._attr_translation_key = "token_status"
-        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_token_status"
-        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+        _meta = ENTITY_REGISTRY["sensor_token_status"]
+        self._attr_translation_key = _meta.translation_key
+        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix}"
+        self._attr_entity_category = get_entity_category(_meta)
+        self._attr_entity_registry_enabled_default = _meta.enabled_default
 
     @property
     def icon(self) -> str:
@@ -517,11 +524,12 @@ class TadoZoneCountSensor(TadoHubSensor):
     def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator)
-        self._attr_translation_key = "zone_count"
-        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_zone_count"
-        self._attr_icon = "mdi:home-thermometer"
+        _meta = ENTITY_REGISTRY["sensor_zone_count"]
+        self._attr_translation_key = _meta.translation_key
+        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix}"
+        self._attr_icon = _meta.icon
         self._attr_native_unit_of_measurement = "zones"
-        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+        self._attr_entity_category = get_entity_category(_meta)
         self._heating_zones = 0
         self._hot_water_zones = 0
         self._ac_zones = 0
@@ -558,11 +566,12 @@ class TadoLastSyncSensor(TadoHubSensor):
     def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator)
-        self._attr_translation_key = "last_sync"
-        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_last_sync"
-        self._attr_icon = "mdi:sync"
+        _meta = ENTITY_REGISTRY["sensor_last_sync"]
+        self._attr_translation_key = _meta.translation_key
+        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix}"
+        self._attr_icon = _meta.icon
         self._attr_device_class = SensorDeviceClass.TIMESTAMP
-        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+        self._attr_entity_category = get_entity_category(_meta)
 
     @callback
     def update(self) -> None:
@@ -596,11 +605,12 @@ class TadoNextSyncSensor(TadoHubSensor):
     def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator)
-        self._attr_translation_key = "next_sync"
-        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_next_sync"
-        self._attr_icon = "mdi:clock-outline"
+        _meta = ENTITY_REGISTRY["sensor_next_sync"]
+        self._attr_translation_key = _meta.translation_key
+        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix}"
+        self._attr_icon = _meta.icon
         self._attr_device_class = SensorDeviceClass.TIMESTAMP
-        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+        self._attr_entity_category = get_entity_category(_meta)
         self._countdown: str | None = None
         self._current_interval: int | None = None
         self._countdown_unsub: Any | None = None  # HA CALLBACK_TYPE
@@ -697,17 +707,17 @@ class TadoNextSyncSensor(TadoHubSensor):
 class TadoPollingIntervalSensor(TadoHubSensor):
     """Sensor showing current polling interval."""
 
-    _attr_entity_registry_enabled_default = False
-
     def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator)
-        self._attr_translation_key = "polling_interval"
-        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_polling_interval"
-        self._attr_icon = "mdi:timer-outline"
+        _meta = ENTITY_REGISTRY["sensor_polling_interval"]
+        self._attr_translation_key = _meta.translation_key
+        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix}"
+        self._attr_icon = _meta.icon
         self._attr_native_unit_of_measurement = "min"
         self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+        self._attr_entity_category = get_entity_category(_meta)
+        self._attr_entity_registry_enabled_default = _meta.enabled_default
         self._source: str | None = None
         self._day_interval: int | None = None
         self._night_interval: int | None = None
@@ -803,17 +813,17 @@ class TadoPollingIntervalSensor(TadoHubSensor):
 class TadoApiHistorySensor(TadoHubSensor):
     """Sensor showing API call history."""
 
-    _attr_entity_registry_enabled_default = False
-
     def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator)
-        self._attr_translation_key = "call_history"
-        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_call_history"
-        self._attr_icon = "mdi:history"
+        _meta = ENTITY_REGISTRY["sensor_call_history"]
+        self._attr_translation_key = _meta.translation_key
+        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix}"
+        self._attr_icon = _meta.icon
         self._attr_native_unit_of_measurement = "calls"
         self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+        self._attr_entity_category = get_entity_category(_meta)
+        self._attr_entity_registry_enabled_default = _meta.enabled_default
         self._history: list[dict[str, Any]] = []
         self._history_period_days: int = 14
         self._oldest_call: str | None = None
@@ -944,15 +954,15 @@ class TadoApiHistorySensor(TadoHubSensor):
 class TadoApiBreakdownSensor(TadoHubSensor):
     """Sensor showing API call breakdown by type."""
 
-    _attr_entity_registry_enabled_default = False
-
     def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator)
-        self._attr_translation_key = "api_breakdown"
-        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_api_breakdown"
-        self._attr_icon = "mdi:chart-bar"
-        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+        _meta = ENTITY_REGISTRY["sensor_api_breakdown"]
+        self._attr_translation_key = _meta.translation_key
+        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix}"
+        self._attr_icon = _meta.icon
+        self._attr_entity_category = get_entity_category(_meta)
+        self._attr_entity_registry_enabled_default = _meta.enabled_default
         self._breakdown_24h: dict[str, int] = {}
         self._breakdown_today: dict[str, int] = {}
         self._breakdown_total: dict[str, int] = {}

@@ -1,16 +1,12 @@
 # Tado CE Services
 
 set_climate_timer:
-  name: Set Climate Timer
-  description: Set heating/cooling with a timer that automatically ends after the specified duration, or until the next schedule block. Compatible with official Tado integration.
   target:
     entity:
       integration: tado_ce
       domain: climate
   fields:
     temperature:
-      name: Temperature
-      description: Target temperature in Celsius.
       required: true
       example: 21
       selector:
@@ -20,15 +16,11 @@ set_climate_timer:
           step: 0.5
           unit_of_measurement: "°C"
     time_period:
-      name: Time Period
-      description: Duration before returning to schedule (format HH:MM:SS, e.g., "01:30:00" for 90 minutes). Not required when using overlay mode.
       required: false
       example: "01:30:00"
       selector:
         time:
     overlay:
-      name: Overlay Type
-      description: When to end the override. Use 'next_time_block' to end at next schedule change, or 'manual' for indefinite. When set, time_period is not required.
       required: false
       example: "next_time_block"
       selector:
@@ -40,23 +32,17 @@ set_climate_timer:
               value: "manual"
 
 set_water_heater_timer:
-  name: Set Water Heater Timer
-  description: Turn on hot water with a timer and optional temperature setting.
   target:
     entity:
       integration: tado_ce
       domain: water_heater
   fields:
     time_period:
-      name: Time Period
-      description: Duration before turning off (format HH:MM:SS, e.g., "01:30:00" for 90 minutes).
       required: true
       example: "01:30:00"
       selector:
         time:
     temperature:
-      name: Temperature
-      description: Target temperature in Celsius (optional, for solar water heater systems).
       required: false
       example: 55
       selector:
@@ -67,8 +53,6 @@ set_water_heater_timer:
           unit_of_measurement: "°C"
 
 resume_schedule:
-  name: Resume Schedule
-  description: Delete any manual override and return to the automatic schedule.
   target:
     entity:
       integration: tado_ce
@@ -77,12 +61,8 @@ resume_schedule:
         - water_heater
 
 set_climate_temperature_offset:
-  name: Set Climate Temperature Offset
-  description: Set the temperature offset (calibration) for a Tado climate device. Compatible with official Tado integration.
   fields:
     entity_id:
-      name: Entity
-      description: The climate entity to set offset for.
       required: true
       example: climate.tado_ce_lounge
       selector:
@@ -90,8 +70,6 @@ set_climate_temperature_offset:
           integration: tado_ce
           domain: climate
     offset:
-      name: Offset
-      description: Temperature offset in Celsius (-10 to +10).
       required: true
       example: 0.5
       selector:
@@ -102,12 +80,8 @@ set_climate_temperature_offset:
           unit_of_measurement: "°C"
 
 add_meter_reading:
-  name: Add Meter Reading
-  description: Add an energy meter reading for Energy IQ. Supports specifying the date for historical readings (Tado CE enhancement).
   fields:
     reading:
-      name: Reading
-      description: The meter reading value in m³ or kWh (without decimals).
       required: true
       example: 12345
       selector:
@@ -116,33 +90,22 @@ add_meter_reading:
           max: 999999999
           mode: box
     date:
-      name: Date
-      description: The date of the reading (YYYY-MM-DD). Defaults to today if not specified. This allows adding historical readings.
       required: false
       example: "2026-01-17"
       selector:
         date:
 
-
 identify_device:
-  name: Identify Device
-  description: Make a Tado device flash its LED to help identify it.
   fields:
     device_serial:
-      name: Device Serial
-      description: The short serial number of the device (e.g., VA1234567890).
       required: true
       example: "VA1234567890"
       selector:
         text:
 
 set_away_configuration:
-  name: Set Away Configuration
-  description: Configure what temperature to use when everyone is away from home.
   fields:
     entity_id:
-      name: Entity
-      description: The climate entity to configure away settings for.
       required: true
       example: climate.tado_ce_lounge
       selector:
@@ -150,8 +113,6 @@ set_away_configuration:
           integration: tado_ce
           domain: climate
     mode:
-      name: Mode
-      description: Away mode - 'auto' for Tado's smart adjustment, 'manual' for fixed temperature, 'off' to turn off heating.
       required: true
       example: "auto"
       selector:
@@ -164,8 +125,6 @@ set_away_configuration:
             - label: "Off"
               value: "off"
     temperature:
-      name: Temperature
-      description: Target temperature when away (only for manual mode).
       required: false
       example: 16
       selector:
@@ -175,8 +134,6 @@ set_away_configuration:
           step: 0.5
           unit_of_measurement: "°C"
     comfort_level:
-      name: Comfort Level
-      description: Comfort level for auto mode (0=Eco, 50=Balance, 100=Comfort).
       required: false
       example: 50
       selector:
@@ -186,15 +143,23 @@ set_away_configuration:
           step: 50
 
 get_temperature_offset:
-  name: Get Temperature Offset
-  description: Fetch the current temperature offset (calibration) for a Tado climate device. Returns the offset value for use in automations.
   fields:
     entity_id:
-      name: Entity
-      description: The climate entity to get offset for.
       required: true
       example: climate.tado_ce_lounge
       selector:
         entity:
           integration: tado_ce
           domain: climate
+
+activate_open_window:
+  target:
+    entity:
+      integration: tado_ce
+      domain: climate
+
+deactivate_open_window:
+  target:
+    entity:
+      integration: tado_ce
+      domain: climate

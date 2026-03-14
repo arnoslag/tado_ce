@@ -213,6 +213,22 @@ def format_power_state(power: str) -> str:
     """Convert zone power setting to display value. Falsy -> 'Unknown'."""
     return power or "Unknown"
 
+
+def format_health_score(score: int) -> str:
+    """Format health score (0–100) with emoji and label for readability.
+
+    Bands: 90–100 Excellent, 70–89 Good, 50–69 Fair, 25–49 Poor, 0–24 Critical.
+    """
+    if score >= 90:
+        return f"🟢 {score} — Excellent"
+    if score >= 70:
+        return f"🟢 {score} — Good"
+    if score >= 50:
+        return f"🟡 {score} — Fair"
+    if score >= 25:
+        return f"🟠 {score} — Poor"
+    return f"🔴 {score} — Critical"
+
 _PRIORITY_EMOJI: dict[str, str] = {
     "critical": "🔴",
     "high": "🔴",

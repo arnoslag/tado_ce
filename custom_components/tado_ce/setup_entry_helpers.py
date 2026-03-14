@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from .adaptive_preheat import AdaptivePreheatManager
     from .api_client import TadoApiClient
     from .config_manager import ConfigurationManager
+    from .coordinator import TadoDataUpdateCoordinator
     from .data_loader import DataLoader
     from .heating_coordinator import HeatingCycleCoordinator
     from .smart_comfort import SmartComfortManager
@@ -209,3 +210,89 @@ async def async_init_adaptive_preheat(
     except Exception:
         _LOGGER.exception("Tado CE: Failed to initialize Adaptive Preheat")
         return None
+
+
+def schedule_heating_cycle_timeouts(
+    hass: HomeAssistant,
+    coordinator: TadoDataUpdateCoordinator,
+    heating_cycle_coordinator: HeatingCycleCoordinator,
+) -> None:
+    """Schedule periodic heating cycle timeout checks.
+
+    Registers a 60-second interval timer that checks for timed-out
+    heating cycles and closes them. The cancel handle is stored on
+    the coordinator for cleanup during unload.
+
+    Args:
+        hass: Home Assistant instance.
+        coordinator: The data update coordinator.
+        heating_cycle_coordinator: The heating cycle coordinator to check.
+    """
+    from datetime import datetime as _dt
+    from datetime import timedelta as _td
+
+    from homeassistant.helpers.event import async_track_time_interval as _track
+
+    async def _check_cycle_timeouts(_now: _dt) -> None:
+        """Check for timed-out heating cycles and close them."""
+        await heating_cycle_coordinator.check_timeouts()
+
+    coordinator._heating_cycle_timeout_cancel = _track(
+        hass,
+        _check_cycle_timeouts,
+        _td(seconds=60),
+    )
+
+
+async def async_load_insight_history(coordinator: TadoDataUpdateCoordinator) -> None:
+    """Load insight history from disk and prune stale entries.
+
+    Args:
+        coordinator: The data update coordinator with insight_history tracker.
+    """
+    loaded_count = await coordinator.insight_history.async_load()
+    pruned_count = coordinator.insight_history.prune_old_entries()
+    if loaded_count or pruned_count:
+        _LOGGER.debug(
+            "Tado CE: Insight history loaded %d entries, pruned %d stale",
+            loaded_count,
+            pruned_count,
+        )
+
+
+def register_bridge_devices(
+    hass: HomeAssistant,
+    entry_id: str,
+    zones_info: list[dict[str, Any]],
+) -> None:
+    """Pre-register Tado bridge devices in the device registry.
+
+    Ensures bridge devices (IB01/IB02) exist before zone devices reference
+    them via via_device. This follows the HA official pattern.
+
+    Args:
+        hass: Home Assistant instance.
+        entry_id: The config entry ID.
+        zones_info: List of zone info dicts from coordinator data.
+    """
+    from homeassistant.helpers import device_registry as dr
+
+    from .const import DOMAIN, TADO_BRIDGE_MODELS
+
+    device_registry = dr.async_get(hass)
+    seen_serials: set[str] = set()
+    for zone in zones_info:
+        for device in zone.get("devices") or []:
+            device_type = device.get("deviceType", "")
+            serial = device.get("shortSerialNo", "")
+            if device_type in TADO_BRIDGE_MODELS and serial and serial not in seen_serials:
+                seen_serials.add(serial)
+                device_registry.async_get_or_create(
+                    config_entry_id=entry_id,
+                    identifiers={(DOMAIN, serial)},
+                    manufacturer="Tado",
+                    model=device_type,
+                    name=device.get("serialNo", serial),
+                    sw_version=device.get("currentFwVersion"),
+                )
+                _LOGGER.debug("Pre-registered Tado bridge: %s (%s)", serial, device_type)

@@ -2,7 +2,7 @@
   "entity": {
     "binary_sensor": {
       "home": {
-        "name": "Casa",
+        "name": "Início",
         "state_attributes": {
           "tado_mode": {
             "name": "Modo Tado"
@@ -19,21 +19,21 @@
         "name": "Janela",
         "state_attributes": {
           "detected_time": {
-            "name": "Hora de deteção"
+            "name": "Tempo detectado"
           },
           "expiry_time": {
-            "name": "Hora de expiração"
+            "name": "Prazo de validade"
           }
         }
       },
       "preheat_now": {
-        "name": "Pré-aquecer agora",
+        "name": "Pré-aqueça agora",
         "state_attributes": {
           "recommended_start": {
             "name": "Início recomendado"
           },
           "target_time": {
-            "name": "Hora alvo"
+            "name": "Hora prevista"
           },
           "target_temperature": {
             "name": "Temperatura alvo"
@@ -53,7 +53,7 @@
         }
       },
       "window_predicted": {
-        "name": "Janela prevista",
+        "name": "Janela Prevista",
         "state_attributes": {
           "confidence": {
             "name": "Confiança"
@@ -71,10 +71,10 @@
             "name": "Tipo de zona"
           },
           "readings_count": {
-            "name": "Número de leituras"
+            "name": "Contagem de leituras"
           },
           "anomaly_readings": {
-            "name": "Leituras anómalas"
+            "name": "Leituras de anomalias"
           }
         }
       }
@@ -87,25 +87,25 @@
         "name": "Atualizar AC"
       },
       "refresh_schedule": {
-        "name": "Atualizar programa"
+        "name": "Calendário de atualização"
       },
       "boost": {
-        "name": "Boost"
+        "name": "Impulso"
       },
       "smart_boost": {
-        "name": "Smart Boost"
+        "name": "Impulso inteligente"
       }
     },
     "calendar": {
       "schedule": {
-        "name": "Programa"
+        "name": "Horário"
       }
     },
     "climate": {
       "heating": {
         "state_attributes": {
           "overlay_type": {
-            "name": "Tipo de overlay"
+            "name": "Tipo de sobreposição"
           },
           "heating_power": {
             "name": "Potência de aquecimento"
@@ -114,14 +114,14 @@
             "name": "ID da zona"
           },
           "offset_celsius": {
-            "name": "Offset (°C)"
+            "name": "Desvio (°C)"
           }
         }
       },
       "ac": {
         "state_attributes": {
           "overlay_type": {
-            "name": "Tipo de overlay"
+            "name": "Tipo de sobreposição"
           },
           "ac_power_percentage": {
             "name": "Potência AC (%)"
@@ -151,7 +151,7 @@
             "name": "Modelo"
           },
           "bearing": {
-            "name": "Direção"
+            "name": "Rolamento"
           },
           "relative_distance": {
             "name": "Distância relativa"
@@ -159,26 +159,9 @@
         }
       }
     },
-    "number": {
-      "min_temp": {
-        "name": "Temp. mín."
-      },
-      "max_temp": {
-        "name": "Temp. máx."
-      },
-      "temp_offset": {
-        "name": "Offset temp."
-      },
-      "surface_offset": {
-        "name": "Offset superfície"
-      },
-      "ufh_buffer": {
-        "name": "Buffer piso radiante"
-      }
-    },
     "sensor": {
       "temperature": {
-        "name": "Temp."
+        "name": "Temp"
       },
       "humidity": {
         "name": "Humidade"
@@ -187,16 +170,16 @@
         "name": "Aquecimento"
       },
       "ac_power": {
-        "name": "Ar condicionado"
+        "name": "AC"
       },
       "boiler_flow_temp": {
-        "name": "Temp. ida caldeira"
+        "name": "Temperatura do fluxo da caldeira"
       },
       "target": {
-        "name": "Alvo",
+        "name": "Objetivo",
         "state_attributes": {
           "next_change": {
-            "name": "Próxima alteração"
+            "name": "Próxima mudança"
           },
           "next_temperature": {
             "name": "Próxima temperatura"
@@ -204,7 +187,7 @@
         }
       },
       "overlay": {
-        "name": "Overlay",
+        "name": "Sobreposição",
         "state_attributes": {
           "source_zone": {
             "name": "Zona de origem"
@@ -215,10 +198,10 @@
         "name": "Potência"
       },
       "outside_temp": {
-        "name": "Temp. exterior",
+        "name": "Temperatura exterior",
         "state_attributes": {
           "timestamp": {
-            "name": "Marca temporal"
+            "name": "Carimbo de data/hora"
           }
         }
       },
@@ -226,18 +209,18 @@
         "name": "Intensidade solar",
         "state_attributes": {
           "timestamp": {
-            "name": "Marca temporal"
+            "name": "Carimbo de data/hora"
           }
         }
       },
       "weather": {
-        "name": "Meteorologia",
+        "name": "Tempo",
         "state_attributes": {
           "raw_state": {
             "name": "Estado bruto"
           },
           "timestamp": {
-            "name": "Marca temporal"
+            "name": "Carimbo de data/hora"
           }
         }
       },
@@ -257,7 +240,30 @@
             "name": "Estado da ligação"
           },
           "connection_timestamp": {
-            "name": "Marca temporal da ligação"
+            "name": "Registo de data e hora da ligação"
+          },
+          "recommendation": {
+            "name": "Recomendação"
+          }
+        }
+      },
+      "battery_suffixed": {
+        "name": "Bateria{device_suffix}",
+        "state_attributes": {
+          "device_serial": {
+            "name": "Série do dispositivo"
+          },
+          "device_type": {
+            "name": "Tipo de dispositivo"
+          },
+          "firmware_version": {
+            "name": "Versão do firmware"
+          },
+          "connection_state": {
+            "name": "Estado da ligação"
+          },
+          "connection_timestamp": {
+            "name": "Registo de data e hora da ligação"
           },
           "recommendation": {
             "name": "Recomendação"
@@ -284,11 +290,31 @@
           }
         }
       },
+      "connection_suffixed": {
+        "name": "Ligação{device_suffix}",
+        "state_attributes": {
+          "device_serial": {
+            "name": "Série do dispositivo"
+          },
+          "device_type": {
+            "name": "Tipo de dispositivo"
+          },
+          "firmware_version": {
+            "name": "Versão do firmware"
+          },
+          "last_seen": {
+            "name": "Visto pela última vez"
+          },
+          "recommendation": {
+            "name": "Recomendação"
+          }
+        }
+      },
       "home_id": {
-        "name": "ID da casa"
+        "name": "ID do domicílio"
       },
       "api_usage": {
-        "name": "Utilização API",
+        "name": "Utilização da API",
         "state_attributes": {
           "limit": {
             "name": "Limite"
@@ -311,25 +337,25 @@
         }
       },
       "api_reset": {
-        "name": "Reset API",
+        "name": "Reinicialização da API",
         "state_attributes": {
           "time_until_reset": {
-            "name": "Tempo até reset"
+            "name": "Tempo até à reposição"
           },
           "reset_seconds": {
-            "name": "Segundos para reset"
+            "name": "Repor segundos"
           },
           "reset_at": {
-            "name": "Reset às"
+            "name": "Redefinir em"
           },
           "last_reset": {
-            "name": "Último reset"
+            "name": "Última reposição"
           },
           "status": {
             "name": "Estado"
           },
           "next_poll": {
-            "name": "Próxima consulta"
+            "name": "Próxima sondagem"
           },
           "current_interval_minutes": {
             "name": "Intervalo atual (min)"
@@ -343,16 +369,16 @@
         "name": "Limite API"
       },
       "api_status": {
-        "name": "Estado API",
+        "name": "Estado da API",
         "state_attributes": {
           "remaining_calls": {
             "name": "Chamadas restantes"
           },
           "total_calls": {
-            "name": "Chamadas totais"
+            "name": "Total de chamadas"
           },
           "reset_time": {
-            "name": "Hora de reset"
+            "name": "Tempo de reposição"
           },
           "recommendation": {
             "name": "Recomendação"
@@ -360,10 +386,10 @@
         }
       },
       "token_status": {
-        "name": "Estado do token"
+        "name": "Estado do Token"
       },
       "zone_count": {
-        "name": "Número de zonas",
+        "name": "Contagem de zonas",
         "state_attributes": {
           "heating_zones": {
             "name": "Zonas de aquecimento"
@@ -372,15 +398,15 @@
             "name": "Zonas de água quente"
           },
           "ac_zones": {
-            "name": "Zonas de AC"
+            "name": "Zonas AC"
           }
         }
       },
       "last_sync": {
-        "name": "Última sync"
+        "name": "Última sincronização"
       },
       "next_sync": {
-        "name": "Próxima sync",
+        "name": "Sincronização seguinte",
         "state_attributes": {
           "countdown": {
             "name": "Contagem decrescente"
@@ -391,13 +417,13 @@
         }
       },
       "polling_interval": {
-        "name": "Intervalo de consulta",
+        "name": "Intervalo de polling",
         "state_attributes": {
           "source": {
             "name": "Fonte"
           },
           "day_interval": {
-            "name": "Intervalo diurno"
+            "name": "Intervalo de dias"
           },
           "night_interval": {
             "name": "Intervalo noturno"
@@ -414,10 +440,10 @@
         "name": "Histórico de chamadas",
         "state_attributes": {
           "history": {
-            "name": "Histórico"
+            "name": "História"
           },
           "history_period_days": {
-            "name": "Período de histórico (dias)"
+            "name": "Período histórico (dias)"
           },
           "oldest_call": {
             "name": "Chamada mais antiga"
@@ -432,24 +458,24 @@
             "name": "Chamadas hoje"
           },
           "most_called_endpoint": {
-            "name": "Endpoint mais chamado"
+            "name": "Ponto de extremidade mais chamado"
           }
         }
       },
       "api_breakdown": {
-        "name": "Discriminação API",
+        "name": "Repartição da API",
         "state_attributes": {
           "breakdown_24h": {
-            "name": "Discriminação (24h)"
+            "name": "Avaria (24h)"
           },
           "breakdown_today": {
-            "name": "Discriminação (hoje)"
+            "name": "Repartição (hoje)"
           },
           "breakdown_total": {
-            "name": "Discriminação (total)"
+            "name": "Repartição (total)"
           },
           "top_3_types": {
-            "name": "Top 3 tipos"
+            "name": "Os 3 principais tipos"
           },
           "chart_data": {
             "name": "Dados do gráfico"
@@ -457,34 +483,34 @@
         }
       },
       "home_insights": {
-        "name": "Informações da casa",
+        "name": "Início - Informações",
         "state_attributes": {
           "summary": {
             "name": "Resumo"
           },
           "actions_needed": {
-            "name": "Ações necessárias"
+            "name": "Acções necessárias"
           },
           "zones_ok": {
             "name": "Zonas OK"
           },
           "top_priority": {
-            "name": "Máxima prioridade"
+            "name": "Prioridade máxima"
           },
           "top_recommendation": {
-            "name": "Recomendação principal"
+            "name": "Recomendação de topo"
           },
           "zones_with_issues": {
             "name": "Zonas com problemas"
           },
           "cross_zone_insights": {
-            "name": "Informações entre zonas"
+            "name": "Informações sobre a zona"
           },
           "persistent_insights": {
-            "name": "Informações persistentes"
+            "name": "Percepções persistentes"
           },
           "insight_health_score": {
-            "name": "Pontuação de saúde"
+            "name": "Pontuação de saúde do Insight"
           },
           "weekly_digest": {
             "name": "Resumo semanal"
@@ -492,16 +518,16 @@
         }
       },
       "insights": {
-        "name": "Informações",
+        "name": "Conhecimentos",
         "state_attributes": {
           "top_priority": {
-            "name": "Máxima prioridade"
+            "name": "Prioridade máxima"
           },
           "top_recommendation": {
-            "name": "Recomendação principal"
+            "name": "Recomendação de topo"
           },
           "insight_types": {
-            "name": "Tipos de informação"
+            "name": "Tipos de visão"
           },
           "recommendations": {
             "name": "Recomendações"
@@ -509,7 +535,7 @@
         }
       },
       "schedule_deviation": {
-        "name": "Desvio do programa",
+        "name": "Desvio de horário",
         "state_attributes": {
           "current_temperature": {
             "name": "Temperatura atual"
@@ -518,7 +544,7 @@
             "name": "Média histórica"
           },
           "sample_count": {
-            "name": "Número de amostras"
+            "name": "Contagem de amostras"
           },
           "summary": {
             "name": "Resumo"
@@ -532,7 +558,7 @@
         }
       },
       "next_schedule": {
-        "name": "Próximo programa",
+        "name": "Próximo calendário",
         "state_attributes": {
           "next_temperature": {
             "name": "Próxima temperatura"
@@ -552,10 +578,10 @@
         }
       },
       "next_sched_temp": {
-        "name": "Próxima temp. programada",
+        "name": "Próximo Temp. programado",
         "state_attributes": {
           "schedule_time": {
-            "name": "Hora do programa"
+            "name": "Horário"
           },
           "is_heating_on": {
             "name": "Aquecimento ligado"
@@ -572,7 +598,7 @@
         }
       },
       "preheat_advisor": {
-        "name": "Consultor de pré-aquecimento",
+        "name": "Conselheiro de pré-aquecimento",
         "state_attributes": {
           "current_temperature": {
             "name": "Temperatura atual"
@@ -581,7 +607,7 @@
             "name": "Temperatura alvo"
           },
           "target_time": {
-            "name": "Hora alvo"
+            "name": "Hora prevista"
           },
           "duration_minutes": {
             "name": "Duração (minutos)"
@@ -636,13 +662,13 @@
         "name": "Inércia térmica",
         "state_attributes": {
           "cycle_count": {
-            "name": "Número de ciclos"
+            "name": "Contagem de ciclos"
           },
           "completed_count": {
-            "name": "Ciclos concluídos"
+            "name": "Contagem concluída"
           },
           "confidence_score": {
-            "name": "Pontuação de confiança"
+            "name": "Índice de confiança"
           }
         }
       },
@@ -650,13 +676,13 @@
         "name": "Taxa de aquecimento",
         "state_attributes": {
           "cycle_count": {
-            "name": "Número de ciclos"
+            "name": "Contagem de ciclos"
           },
           "completed_count": {
-            "name": "Ciclos concluídos"
+            "name": "Contagem concluída"
           },
           "confidence_score": {
-            "name": "Pontuação de confiança"
+            "name": "Índice de confiança"
           }
         }
       },
@@ -670,13 +696,13 @@
             "name": "Temperatura alvo"
           },
           "cycle_count": {
-            "name": "Número de ciclos"
+            "name": "Contagem de ciclos"
           },
           "completed_count": {
-            "name": "Ciclos concluídos"
+            "name": "Contagem concluída"
           },
           "confidence_score": {
-            "name": "Pontuação de confiança"
+            "name": "Índice de confiança"
           }
         }
       },
@@ -684,10 +710,10 @@
         "name": "Confiança",
         "state_attributes": {
           "cycle_count": {
-            "name": "Número de ciclos"
+            "name": "Contagem de ciclos"
           },
           "completed_count": {
-            "name": "Ciclos concluídos"
+            "name": "Contagem concluída"
           },
           "recommendation": {
             "name": "Recomendação"
@@ -695,16 +721,16 @@
         }
       },
       "heat_accel": {
-        "name": "Aceleração de aquecimento"
+        "name": "Acelerador de calor"
       },
       "approach_factor": {
         "name": "Fator de aproximação",
         "state_attributes": {
           "cycle_count": {
-            "name": "Número de ciclos"
+            "name": "Contagem de ciclos"
           },
           "completed_count": {
-            "name": "Ciclos concluídos"
+            "name": "Contagem concluída"
           }
         }
       },
@@ -712,7 +738,7 @@
         "name": "Risco de bolor",
         "state": {
           "critical": "Crítico",
-          "high": "Alto",
+          "high": "Elevado",
           "medium": "Médio",
           "low": "Baixo"
         },
@@ -721,7 +747,7 @@
             "name": "Temperatura ambiente"
           },
           "effective_temperature": {
-            "name": "Temperatura efetiva"
+            "name": "Temperatura efectiva"
           },
           "humidity": {
             "name": "Humidade"
@@ -738,18 +764,18 @@
           "temperature_source": {
             "name": "Fonte de temperatura",
             "state": {
-              "surface_estimation": "Estimativa de superfície",
-              "room_average": "Média do ambiente"
+              "surface_estimation": "Estimativa da superfície",
+              "room_average": "Média do quarto"
             }
           },
           "outdoor_temperature": {
             "name": "Temperatura exterior"
           },
           "surface_temperature": {
-            "name": "Temperatura de superfície"
+            "name": "Temperatura da superfície"
           },
           "surface_temp_offset": {
-            "name": "Offset temp. superfície"
+            "name": "Desvio da temperatura da superfície"
           },
           "zone_type": {
             "name": "Tipo de zona"
@@ -766,7 +792,7 @@
             "name": "Temperatura ambiente"
           },
           "effective_temperature": {
-            "name": "Temperatura efetiva"
+            "name": "Temperatura efectiva"
           },
           "humidity": {
             "name": "Humidade"
@@ -795,7 +821,7 @@
             "name": "Ponto de orvalho interior"
           },
           "surface_temperature": {
-            "name": "Temperatura de superfície"
+            "name": "Temperatura da superfície"
           },
           "outdoor_temperature": {
             "name": "Temperatura exterior"
@@ -822,12 +848,12 @@
             "name": "Ponto de orvalho exterior"
           },
           "window_outer_surface_temp": {
-            "name": "Temp. superfície exterior janela"
+            "name": "Temperatura da superfície exterior da janela"
           }
         }
       },
       "surface_temp": {
-        "name": "Temp. superficial",
+        "name": "Temperatura da superfície",
         "state_attributes": {
           "room_temperature": {
             "name": "Temperatura ambiente"
@@ -842,7 +868,7 @@
             "name": "Valor U"
           },
           "offset_applied": {
-            "name": "Offset aplicado"
+            "name": "Desvio aplicado"
           },
           "calculation_method": {
             "name": "Método de cálculo"
@@ -882,7 +908,7 @@
             "name": "Temperatura exterior"
           },
           "comfort_target": {
-            "name": "Alvo de conforto"
+            "name": "Objetivo de conforto"
           },
           "comfort_model": {
             "name": "Modelo de conforto"
@@ -903,9 +929,9 @@
       "presence_mode": {
         "name": "Modo de presença",
         "state": {
-          "auto": "Auto (Geolocalização)",
-          "home": "Em casa",
-          "away": "Ausente"
+          "auto": "Automático (Geofencing)",
+          "home": "Início",
+          "away": "Fora"
         },
         "state_attributes": {
           "presence": {
@@ -915,18 +941,18 @@
             "name": "Presença bloqueada"
           },
           "automatic_geofencing": {
-            "name": "Geolocalização automática"
+            "name": "Delimitação geográfica automática"
           },
           "api_calls_per_change": {
-            "name": "Chamadas API por alteração"
+            "name": "Chamadas à API por alteração"
           }
         }
       },
       "overlay_mode": {
-        "name": "Modo overlay",
+        "name": "Modo de sobreposição",
         "state": {
-          "tado_mode": "Modo Tado",
-          "next_time_block": "Próximo bloco horário",
+          "tado_mode": "Tado Default",
+          "next_time_block": "Bloco da próxima vez",
           "manual": "Manual"
         },
         "state_attributes": {
@@ -934,24 +960,24 @@
             "name": "Descrição"
           },
           "tado_mode_info": {
-            "name": "Info modo Tado"
+            "name": "Informações sobre o modo Tado"
           },
           "next_time_block_info": {
-            "name": "Info próximo bloco"
+            "name": "Informações sobre o próximo bloco de tempo"
           },
           "timer_info": {
-            "name": "Info temporizador"
+            "name": "Informação do temporizador"
           },
           "manual_info": {
-            "name": "Info manual"
+            "name": "Informações do manual"
           },
           "api_calls_per_change": {
-            "name": "Chamadas API por alteração"
+            "name": "Chamadas à API por alteração"
           }
         }
       },
       "timer_duration": {
-        "name": "Temporizador overlay",
+        "name": "Temporizador de sobreposição",
         "state_attributes": {
           "description": {
             "name": "Descrição"
@@ -960,29 +986,14 @@
             "name": "Unidade"
           },
           "api_calls_per_change": {
-            "name": "Chamadas API por alteração"
+            "name": "Chamadas à API por alteração"
           }
         }
-      },
-      "heat_emitter": {
-        "name": "Tipo de emissor"
-      },
-      "smart_comfort": {
-        "name": "Smart Comfort"
-      },
-      "window_type": {
-        "name": "Tipo de janela"
-      },
-      "zone_overlay_mode": {
-        "name": "Modo overlay"
-      },
-      "zone_timer_duration": {
-        "name": "Temporizador overlay"
       }
     },
     "switch": {
       "early_start": {
-        "name": "Início antecipado",
+        "name": "Início precoce",
         "state_attributes": {
           "zone_id": {
             "name": "ID da zona"
@@ -996,10 +1007,10 @@
         }
       },
       "child_lock": {
-        "name": "Bloqueio infantil",
+        "name": "Bloqueio para crianças",
         "state_attributes": {
           "serial": {
-            "name": "Série"
+            "name": "Em série"
           },
           "device_type": {
             "name": "Tipo de dispositivo"
@@ -1009,15 +1020,18 @@
           }
         }
       },
-      "adaptive_preheat": {
-        "name": "Pré-aquecimento adaptativo"
+      "test_mode": {
+        "name": "Modo de teste"
+      },
+      "quota_reserve": {
+        "name": "Reserva de quotas"
       }
     },
     "water_heater": {
       "hot_water": {
         "state_attributes": {
           "overlay_type": {
-            "name": "Tipo de overlay"
+            "name": "Tipo de sobreposição"
           },
           "zone_id": {
             "name": "ID da zona"
@@ -1026,21 +1040,137 @@
       }
     }
   },
+  "services": {
+    "set_climate_timer": {
+      "name": "Definir o temporizador de climatização",
+      "description": "Defina o aquecimento/arrefecimento com um temporizador que termina automaticamente após a duração especificada ou até ao bloco de programação seguinte. Compatível com a integração oficial do Tado.",
+      "fields": {
+        "temperature": {
+          "name": "Temperatura",
+          "description": "Temperatura alvo em Celsius."
+        },
+        "time_period": {
+          "name": "Período de tempo",
+          "description": "Duração antes de regressar ao horário (formato HH:MM:SS, por exemplo, \"01:30:00\" para 90 minutos). Não é necessário quando se utiliza o modo de sobreposição."
+        },
+        "overlay": {
+          "name": "Tipo de sobreposição",
+          "description": "Quando terminar a substituição. Utilizar 'next_time_block' para terminar na próxima alteração de horário, ou 'manual' para indefinido. Quando definido, time_period não é necessário."
+        }
+      }
+    },
+    "set_water_heater_timer": {
+      "name": "Definir o temporizador do aquecedor de água",
+      "description": "Ligue a água quente com um temporizador e uma regulação opcional da temperatura.",
+      "fields": {
+        "time_period": {
+          "name": "Período de tempo",
+          "description": "Duração antes de se desligar (formato HH:MM:SS, por exemplo, \"01:30:00\" para 90 minutos)."
+        },
+        "temperature": {
+          "name": "Temperatura",
+          "description": "Temperatura-alvo em graus Celsius (opcional, para sistemas de aquecimento solar de água)."
+        }
+      }
+    },
+    "resume_schedule": {
+      "name": "Calendário do currículo",
+      "description": "Eliminar qualquer anulação manual e regressar à programação automática."
+    },
+    "set_climate_temperature_offset": {
+      "name": "Definir o desvio da temperatura climática",
+      "description": "Definir o desvio de temperatura (calibração) para um dispositivo climático Tado. Compatível com a integração oficial do Tado.",
+      "fields": {
+        "entity_id": {
+          "name": "Entidade",
+          "description": "A entidade climática para a qual definir a compensação."
+        },
+        "offset": {
+          "name": "Desvio",
+          "description": "Desvio de temperatura em Celsius (-10 a +10)."
+        }
+      }
+    },
+    "add_meter_reading": {
+      "name": "Adicionar leitura do contador",
+      "description": "Adicionar uma leitura do contador de energia para o Energy IQ. Suporta a especificação da data para leituras históricas (melhoria do Tado CE).",
+      "fields": {
+        "reading": {
+          "name": "Leitura",
+          "description": "O valor da leitura do contador em m³ ou kWh (sem casas decimais)."
+        },
+        "date": {
+          "name": "Data",
+          "description": "A data da leitura (AAAA-MM-DD). A predefinição é hoje se não for especificado. Isto permite adicionar leituras históricas."
+        }
+      }
+    },
+    "identify_device": {
+      "name": "Identificar dispositivo",
+      "description": "Faça um dispositivo Tado piscar o seu LED para ajudar a identificá-lo.",
+      "fields": {
+        "device_serial": {
+          "name": "Dispositivo de série",
+          "description": "O número de série abreviado do dispositivo (por exemplo, VA1234567890)."
+        }
+      }
+    },
+    "set_away_configuration": {
+      "name": "Configuração do Set Away",
+      "description": "Configurar a temperatura a utilizar quando todos estão fora de casa.",
+      "fields": {
+        "entity_id": {
+          "name": "Entidade",
+          "description": "A entidade climática para a qual configurar as definições de ausência."
+        },
+        "mode": {
+          "name": "Modo",
+          "description": "Modo Away - \"auto\" para o ajuste inteligente do Tado, \"manual\" para uma temperatura fixa, \"off\" para desligar o aquecimento."
+        },
+        "temperature": {
+          "name": "Temperatura",
+          "description": "Temperatura alvo quando ausente (apenas para o modo manual)."
+        },
+        "comfort_level": {
+          "name": "Nível de conforto",
+          "description": "Nível de conforto para o modo automático (0=Eco, 50=Balanço, 100=Conforto)."
+        }
+      }
+    },
+    "get_temperature_offset": {
+      "name": "Obter desvio de temperatura",
+      "description": "Obtém o desvio de temperatura atual (calibração) para um dispositivo climático Tado. Devolve o valor de compensação para utilização em automatizações.",
+      "fields": {
+        "entity_id": {
+          "name": "Entidade",
+          "description": "A entidade climática que deve ser compensada."
+        }
+      }
+    },
+    "activate_open_window": {
+      "name": "Ativar janela aberta",
+      "description": "Ativar o modo Janela aberta numa zona climática (o mesmo que tocar no ícone na aplicação Tado). O aquecimento/arrefecimento será suspenso."
+    },
+    "deactivate_open_window": {
+      "name": "Desativar janela aberta",
+      "description": "Desativar o modo Janela aberta numa zona climática, retomando o aquecimento/arrefecimento normal."
+    }
+  },
   "selector": {
     "smart_comfort_mode": {
       "options": {
         "none": "Nenhum (desativado)",
-        "light": "Leve",
+        "light": "Luz",
         "moderate": "Moderado",
         "aggressive": "Agressivo"
       }
     },
     "mold_risk_window_type": {
       "options": {
-        "single_pane": "Vidro simples (U=5,0)",
-        "double_pane": "Vidro duplo (U=2,7)",
-        "triple_pane": "Vidro triplo (U=1,0)",
-        "passive_house": "Casa passiva (U=0,8)"
+        "single_pane": "Painel único (U=5.0)",
+        "double_pane": "Vidros duplos (U=2,7)",
+        "triple_pane": "Vidros triplos (U=1,0)",
+        "passive_house": "Casa Passiva (U=0,8)"
       }
     }
   },
@@ -1061,193 +1191,294 @@
       "message": "Dispositivo {device_serial} encontrado mas a sua entrada de configuração não está carregada"
     },
     "device_not_found": {
-      "message": "Dispositivo {device_serial} não encontrado no registo de dispositivos. Verifique o número de série."
+      "message": "Dispositivo {device_serial} não encontrado no registo de dispositivos. Verificar se o número de série está correto."
     },
     "no_entries_loaded": {
-      "message": "Nenhuma entrada Tado CE carregada"
+      "message": "Não há entradas Tado CE carregadas"
     },
     "multiple_entries": {
-      "message": "Múltiplas casas Tado configuradas ({home_ids}). Utilize um serviço que aponte para uma entidade específica."
+      "message": "Múltiplas casas Tado configuradas ({home_ids}). Utilize um serviço que vise uma entidade específica para encaminhar para a residência correta."
     },
     "api_quota_critically_low": {
-      "message": "Quota de API criticamente baixa – ação bloqueada. Aguarde o reset da API."
-    },
-    "timer_set_failed": {
-      "message": "Failed to set {duration}min timer for {zone_name}: {error}"
+      "message": "Quota da API criticamente baixa - ação bloqueada para preservar a reserva de arranque. Aguarde a reposição da API."
     },
     "water_heater_not_found": {
-      "message": "Water heater entity not found: {entity_id}"
+      "message": "Entidade do aquecedor de água não encontrada: {entity_id}"
+    },
+    "timer_set_failed": {
+      "message": "Falha ao definir o temporizador {duration}min para {zone_name}: {error}"
     }
   },
   "issues": {
     "auth_token_expired": {
-      "title": "Tado CE: Autenticação expirada",
-      "description": "O token de atualização para a casa **{home_id}** expirou. Reconfigure a integração.\n\nVá a **Definições → Dispositivos e serviços → Tado CE → Reconfigurar**."
+      "title": "Tado CE: A autenticação expirou",
+      "description": "O token de atualização para a casa **{home_id}** expirou. Por favor, reconfigure a integração para se autenticar novamente.\n\nAceda a **Configurações → Dispositivos e serviços → Tado CE → Reconfigurar**."
     },
     "deprecated_yaml_config": {
       "title": "Tado CE: Chave de configuração obsoleta",
-      "description": "A chave de configuração **{key}** está obsoleta e será removida numa versão futura. Atualize a sua configuração."
+      "description": "A chave de configuração **{key}** está obsoleta e será removida numa versão futura. Actualize a sua configuração."
     }
   },
   "config": {
     "step": {
       "user": {
-        "title": "Configuração Tado CE",
-        "description": "Clique em Enviar para iniciar o processo de autorização."
+        "title": "Configuração do Tado CE",
+        "description": "Clique em Submeter para iniciar o processo de autorização."
       },
       "authorize": {
-        "title": "Autorizar Tado",
-        "description": "**Passo 1:** Clique no link para abrir o login do Tado:\n\n**[Clique aqui para autorizar]({url})**\n\n**Passo 2:** Inicie sessão na sua conta Tado e autorize a ligação.\n\n**Passo 3:** Depois de ver \"Ligação bem-sucedida\" no site do Tado, clique em Enviar."
+        "title": "Autorizar o Tado",
+        "description": "**Passo 1:** Clique no link abaixo para abrir o login do Tado:\n\n**[Clique aqui para autorizar]({url})**\n\n**Passo 2:** Inicie sessão na sua conta Tado e autorize a ligação.\n\n**Passo 3:** Depois de ver \"Successfully connected\" no sítio Web do Tado, clique em Submit abaixo."
       },
       "select_home": {
         "title": "Selecionar casa",
-        "description": "Foram encontradas várias casas Tado. Selecione qual utilizar.",
+        "description": "Foram encontradas várias casas em Tado. Por favor, selecione a casa a utilizar.",
         "data": {
-          "home": "Casa"
+          "home": "Início"
         },
         "data_description": {
-          "home": "The Tado home to connect this integration to"
+          "home": "A casa do Tado para ligar esta integração a"
         }
       },
       "reauth_confirm": {
-        "title": "Re-autenticar Tado CE",
-        "description": "A sua autenticação Tado expirou. Clique em Enviar para iniciar a re-autenticação."
+        "title": "Reautenticar o Tado CE",
+        "description": "A sua autenticação Tado expirou. Clique em Submeter para iniciar uma nova autenticação."
       },
       "reauth_authorize": {
-        "title": "Autorizar Tado",
-        "description": "**Passo 1:** Clique no link para abrir o login do Tado:\n\n**[Clique aqui para autorizar]({url})**\n\n**Passo 2:** Inicie sessão na sua conta Tado e autorize a ligação.\n\n**Passo 3:** Depois de ver \"Ligação bem-sucedida\" no site do Tado, clique em Enviar."
+        "title": "Autorizar o Tado",
+        "description": "**Passo 1:** Clique no link abaixo para abrir o login do Tado:\n\n**[Clique aqui para autorizar]({url})**\n\n**Passo 2:** Inicie sessão na sua conta Tado e autorize a ligação.\n\n**Passo 3:** Depois de ver \"Successfully connected\" no sítio Web do Tado, clique em Submit abaixo."
       },
       "reconfigure": {
-        "title": "Re-autenticar Tado CE",
-        "description": "Clique em Enviar para iniciar a re-autenticação."
+        "title": "Reautenticar o Tado CE",
+        "description": "Clique em Enviar para iniciar a reautenticação. Isto irá atualizar as suas credenciais do Tado sem remover a integração."
       },
       "reconfigure_authorize": {
-        "title": "Autorizar Tado",
-        "description": "**Passo 1:** Clique no link para abrir o login do Tado:\n\n**[Clique aqui para autorizar]({url})**\n\n**Passo 2:** Inicie sessão na sua conta Tado e autorize a ligação.\n\n**Passo 3:** Depois de ver \"Ligação bem-sucedida\" no site do Tado, clique em Enviar."
+        "title": "Autorizar o Tado",
+        "description": "**Passo 1:** Clique no link abaixo para abrir o login do Tado:\n\n**[Clique aqui para autorizar]({url})**\n\n**Passo 2:** Inicie sessão na sua conta Tado e autorize a ligação.\n\n**Passo 3:** Depois de ver \"Successfully connected\" no sítio Web do Tado, clique em Submit abaixo."
       },
       "reconfigure_select_home": {
         "title": "Selecionar casa",
-        "description": "A sua casa anterior já não está disponível. Selecione uma nova.",
+        "description": "O seu alojamento anterior já não está disponível. Por favor, selecione uma nova casa.",
         "data": {
-          "home": "Casa"
+          "home": "Início"
         }
       }
     },
     "progress": {
-      "poll": "A aguardar autorização... Complete o login no seu navegador."
+      "poll": "À espera de autorização... Por favor, complete o login no seu navegador."
     },
     "abort": {
-      "already_configured": "Tado CE já está configurado",
-      "timeout": "Autorização expirada. Tente novamente.",
-      "authorization_failed": "Autorização falhada. Tente novamente.",
-      "no_homes": "Nenhuma casa Tado encontrada para esta conta.",
-      "reauth_successful": "Re-autenticação bem-sucedida! As suas credenciais foram atualizadas.",
-      "reconfigure_successful": "Re-autenticação bem-sucedida! As suas novas credenciais foram guardadas."
+      "already_configured": "O Tado CE já está configurado",
+      "timeout": "A autorização expirou. Por favor, tente novamente.",
+      "authorization_failed": "A autorização falhou. Por favor, tente novamente.",
+      "no_homes": "Não foram encontradas casas Tado para esta conta.",
+      "reauth_successful": "Re-autenticação bem sucedida! As suas credenciais foram actualizadas.",
+      "reconfigure_successful": "Re-autenticação bem sucedida! As suas novas credenciais foram guardadas."
     },
     "error": {
-      "cannot_connect": "Não foi possível ligar ao Tado. Verifique a sua ligação à internet.",
-      "auth_pending": "Autorização ainda não concluída. Autorize primeiro no site do Tado.",
-      "authorization_failed": "Autorização falhada. Comece de novo desde o início."
+      "cannot_connect": "Falha na ligação ao Tado. Verifique a sua ligação à Internet.",
+      "auth_pending": "A autorização ainda não está concluída. Efectue primeiro a autorização no sítio Web do Tado e, em seguida, clique novamente em Enviar.",
+      "authorization_failed": "A autorização falhou. Por favor, tente novamente desde o início."
     }
   },
   "options": {
     "step": {
       "init": {
         "title": "Opções Tado CE",
-        "description": "Configurar as definições da integração Tado CE.",
+        "description": "Escolha o que configurar.",
+        "menu_options": {
+          "global_settings": "Definições globais",
+          "zone_config": "Configuração de zonas"
+        }
+      },
+      "global_settings": {
+        "title": "Definições globais",
+        "description": "Configurar as definições de integração do Tado CE.\n\nℹ️ Se não necessitar de funcionalidades dependentes das condições climatéricas (risco de bolor, condensação, temperatura da superfície, nível de conforto, compensação climatérica), pode deixar 'Entidade de temperatura exterior' em branco.",
         "sections": {
           "tado_ce_exclusive": {
             "name": "Tado CE Exclusivo",
-            "description": "Funcionalidades exclusivas da integração Tado CE",
+            "description": "Caraterísticas exclusivas da integração do Tado CE",
             "data": {
-              "smart_comfort_enabled": "Análise Smart Comfort",
+              "smart_comfort_enabled": "Análise de conforto inteligente",
               "thermal_analytics_enabled": "Análise térmica",
               "thermal_analytics_zones": "Zonas de análise térmica",
               "adaptive_preheat_enabled": "Pré-aquecimento adaptativo",
-              "schedule_calendar_enabled": "Calendário de programas",
+              "schedule_calendar_enabled": "Calendário de horários",
               "zone_configuration_enabled": "Configuração de zonas",
               "test_mode_enabled": "Modo de teste (limite de 100 chamadas API)"
             },
             "data_description": {
-              "smart_comfort_enabled": "Desvio de horário, próximo horário, consultor de pré-aquecimento, sensores de objetivo de conforto",
-              "thermal_analytics_enabled": "Inércia térmica, taxa de aquecimento, sensores de eficiência",
-              "thermal_analytics_zones": "Selecione as zonas para análise térmica",
-              "adaptive_preheat_enabled": "Iniciar aquecimento automaticamente na hora recomendada",
-              "schedule_calendar_enabled": "Mostrar programas de aquecimento como entradas de calendário (apenas leitura)",
-              "zone_configuration_enabled": "Definições por zona: tipo de emissor, modo overlay, limites de temperatura",
-              "test_mode_enabled": "Simular um limite de 100 chamadas API para testar a proteção de quota"
+              "smart_comfort_enabled": "Desvio do horário, horário seguinte, conselheiro de pré-aquecimento, sensores de objectivos de conforto",
+              "thermal_analytics_enabled": "Sensores de inércia térmica, taxa de aquecimento e eficiência",
+              "thermal_analytics_zones": "Selecionar zonas para mostrar análises térmicas (anular a seleção para ocultar, vazio = tudo)",
+              "adaptive_preheat_enabled": "Arranque automático do aquecimento no tempo de pré-aquecimento recomendado (requer Smart Comfort)",
+              "schedule_calendar_enabled": "Apresentar os programas de aquecimento como entidades de calendário (só de leitura)",
+              "zone_configuration_enabled": "Definições por zona: tipo de emissor de calor, modo de sobreposição, limites de temperatura",
+              "test_mode_enabled": "Simular o limite de 100 chamadas API para testar a proteção de quotas"
             }
           },
           "tado_data": {
-            "name": "Dados Tado",
-            "description": "Dados adicionais da API Tado",
+            "name": "Dados do Tado",
+            "description": "Dados extra da API do Tado (chamadas adicionais à API)",
             "data": {
               "weather_enabled": "Sensores meteorológicos",
-              "home_state_sync_enabled": "Sincronização presença/ausência",
-              "mobile_devices_enabled": "Rastreamento de dispositivos móveis",
-              "mobile_devices_frequent_sync": "Sincronização frequente de móveis",
-              "offset_enabled": "Compensação de temperatura"
+              "home_state_sync_enabled": "Sincronização do estado inicial/passageiro",
+              "mobile_devices_enabled": "Rastreio de dispositivos móveis",
+              "mobile_devices_frequent_sync": "Sincronizar o telemóvel com frequência",
+              "offset_enabled": "Desvio de temperatura"
             },
             "data_description": {
-              "weather_enabled": "Temperatura exterior e intensidade solar (+1 chamada API por sync)",
-              "home_state_sync_enabled": "Sincronizar estado presença/ausência (+1 chamada API por sync)",
-              "mobile_devices_enabled": "Rastrear dispositivos móveis para geolocalização (+1 chamada API por sync completa)",
-              "mobile_devices_frequent_sync": "Sincronizar móveis em cada consulta",
-              "offset_enabled": "Adicionar atributo de compensação às entidades climáticas (+1 chamada API por dispositivo)"
+              "weather_enabled": "Temperatura exterior e intensidade solar (+1 chamada API por sincronização)",
+              "home_state_sync_enabled": "Sincronizar o estado de casa/ausência para o interrutor do Modo ausente (+1 chamada à API por sincronização)",
+              "mobile_devices_enabled": "Rastrear dispositivos móveis para delimitação geográfica (+1 chamada à API por sincronização completa)",
+              "mobile_devices_frequent_sync": "Sincronizar dispositivos móveis em cada sondagem em vez de apenas uma sincronização completa",
+              "offset_enabled": "Adicionar o atributo offset_celsius às entidades climáticas (+1 chamada à API por dispositivo)"
             }
           },
           "settings": {
-            "name": "Smart Comfort",
+            "name": "Conforto inteligente",
             "data": {
-              "outdoor_temp_entity": "Entidade temperatura exterior",
-              "hot_water_timer_duration": "Temporizador água quente (minutos)",
-              "smart_comfort_mode": "Modo Smart Comfort",
-              "use_feels_like": "Usar temperatura aparente",
+              "use_outdoor_temp_entity": "Utilizar a entidade de temperatura exterior",
+              "outdoor_temp_entity": "Entidade da temperatura exterior",
+              "hot_water_timer_duration": "Temporizador de água quente (minutos)",
+              "smart_comfort_mode": "Modo de conforto inteligente",
+              "use_feels_like": "Utilizar uma temperatura agradável",
               "mold_risk_window_type": "Tipo de janela",
               "smart_comfort_history_days": "Histórico de temperatura (dias)",
-              "heating_cycle_history_days": "Histórico de análise térmica (dias)",
+              "heating_cycle_history_days": "Histórico da análise térmica (dias)",
               "heating_cycle_min_cycles": "Ciclos mínimos para análise",
               "heating_cycle_inertia_threshold": "Limiar de deteção de inércia"
             },
             "data_description": {
-              "outdoor_temp_entity": "Sensor de temperatura para compensação meteorológica (ex. weather.home)",
-              "hot_water_timer_duration": "Duração predefinida para a água quente (5-1440 min)",
+              "use_outdoor_temp_entity": "Desligar para desativar as funções de temperatura exterior",
+              "outdoor_temp_entity": "Sensor de temperatura para compensação meteorológica (por exemplo, weather.home)",
+              "hot_water_timer_duration": "Duração predefinida para ligar a água quente (5-1440 min)",
               "smart_comfort_mode": "Ajusta a temperatura alvo com base nas condições exteriores",
-              "use_feels_like": "Usar temperatura aparente em vez da real",
-              "mold_risk_window_type": "Tipo de janela para cálculo de temperatura de superfície",
-              "smart_comfort_history_days": "Dias de histórico de temperatura para cálculo de taxa (1-30)",
-              "heating_cycle_history_days": "Dias de histórico de ciclos de aquecimento (1-30)",
-              "heating_cycle_min_cycles": "Ciclos mínimos concluídos antes de mostrar a análise (1-10)",
-              "heating_cycle_inertia_threshold": "Limiar de temperatura para detetar o fim da inércia (0,05-0,5°C)"
+              "use_feels_like": "Utilizar a temperatura aparente em vez da temperatura real",
+              "mold_risk_window_type": "Tipo de janela para cálculo da temperatura da superfície de risco de bolor",
+              "smart_comfort_history_days": "Dias do historial de temperatura para cálculo da taxa (1-30)",
+              "heating_cycle_history_days": "Dias do historial do ciclo de aquecimento a manter (1-30)",
+              "heating_cycle_min_cycles": "Mínimo de ciclos concluídos antes de apresentar análises (1-10)",
+              "heating_cycle_inertia_threshold": "Limiar de alteração da temperatura para detetar o fim da inércia (0,05-0,5°C)"
             }
           },
           "polling_api": {
-            "name": "Consulta & API",
+            "name": "Sondagem e API",
             "data": {
-              "day_start_hour": "Hora início do dia",
-              "night_start_hour": "Hora início da noite",
-              "custom_day_interval": "Intervalo diurno personalizado (minutos)",
+              "day_start_hour": "Dia Hora de início",
+              "night_start_hour": "Hora de início da noite",
+              "custom_day_interval": "Intervalo de dias personalizado (minutos)",
               "custom_night_interval": "Intervalo noturno personalizado (minutos)",
-              "refresh_debounce_seconds": "Anti-ressalto de atualização (segundos)",
-              "api_history_retention_days": "Retenção histórico API (dias)",
-              "quota_reserve_enabled": "Proteção de reserva de quota"
+              "refresh_debounce_seconds": "Débito de atualização (segundos)",
+              "api_history_retention_days": "Retenção do histórico da API (dias)",
+              "quota_reserve_enabled": "Proteção da reserva de quotas"
             },
             "data_description": {
-              "day_start_hour": "Hora de início do período diurno (0-23, predefinido: 7)",
-              "night_start_hour": "Hora de início do período noturno (0-23, predefinido: 23)",
-              "custom_day_interval": "Substituir consulta inteligente para o dia (1-1440 min, vazio para auto)",
-              "custom_night_interval": "Substituir consulta inteligente para a noite (1-1440 min, vazio para auto)",
-              "refresh_debounce_seconds": "Atraso antes de atualizar após alterações de estado (1-60s)",
-              "api_history_retention_days": "Dias para manter o histórico de chamadas API (0 = ilimitado)",
-              "quota_reserve_enabled": "Pausar consulta quando a quota está baixa."
+              "day_start_hour": "Hora de início do período diurno (0-23, predefinição: 7)",
+              "night_start_hour": "Hora de início do período noturno (0-23, predefinição: 23)",
+              "custom_day_interval": "Anular a sondagem inteligente durante o dia (1-1440 min, vazio para automático)",
+              "custom_night_interval": "Substituir a sondagem inteligente para o período noturno (1-1440 min, vazio para automático)",
+              "refresh_debounce_seconds": "Atraso antes da atualização após alterações de estado (1-60s)",
+              "api_history_retention_days": "Dias para manter o histórico de chamadas da API (0 = para sempre)",
+              "quota_reserve_enabled": "Pausa a sondagem quando a quota é baixa. Desativar apenas se compreender os riscos."
             }
           }
         }
+      },
+      "zone_config": {
+        "title": "Configuração de zonas",
+        "description": "Selecione uma zona para configurar.",
+        "data": {
+          "zone_id": "Zona"
+        }
+      },
+      "zone_sensor_config": {
+        "title": "Configuração da zona - {zone_name}",
+        "description": "Configurar definições por zona. As secções podem ser expandidas para revelar mais opções.",
+        "sections": {
+          "heating_section": {
+            "name": "Aquecimento",
+            "data": {
+              "heating_type": "Tipo de emissor de calor",
+              "ufh_buffer_minutes": "Tampão UFH (minutos)",
+              "adaptive_preheat": "Pré-aquecimento adaptativo"
+            },
+            "data_description": {
+              "heating_type": "Radiador ou aquecimento por piso radiante",
+              "ufh_buffer_minutes": "Minutos suplementares para o aquecimento do UFH (0-60)",
+              "adaptive_preheat": "Arranque automático do aquecimento antes do horário previsto"
+            }
+          },
+          "comfort_section": {
+            "name": "Conforto",
+            "data": {
+              "smart_comfort_mode": "Modo de conforto inteligente",
+              "window_type": "Tipo de janela",
+              "window_predicted_sensitivity": "Sensibilidade de deteção de janela"
+            },
+            "data_description": {
+              "smart_comfort_mode": "Ajustar a temperatura alvo com base nas condições exteriores",
+              "window_type": "Tipo de janela para cálculo do risco de bolor",
+              "window_predicted_sensitivity": "Sensibilidade para deteção de abertura de janela prevista"
+            }
+          },
+          "sensor_section": {
+            "name": "Sensores externos",
+            "data": {
+              "use_external_temp": "Utilizar sensor de temperatura externo",
+              "external_temp_sensor": "Sensor de temperatura externo",
+              "use_external_humidity": "Utilizar um sensor de humidade externo",
+              "external_humidity_sensor": "Sensor de humidade externo"
+            },
+            "data_description": {
+              "use_external_temp": "Desativar para utilizar o sensor de temperatura incorporado no Tado",
+              "external_temp_sensor": "Selecionar um sensor de temperatura para anular a leitura do Tado",
+              "use_external_humidity": "Desligue para utilizar o sensor de humidade incorporado no Tado",
+              "external_humidity_sensor": "Selecionar um sensor de humidade para substituir a leitura do Tado"
+            }
+          },
+          "overlay_section": {
+            "name": "Sobreposição",
+            "data": {
+              "overlay_mode": "Modo de sobreposição",
+              "timer_duration": "Duração do temporizador (minutos)"
+            },
+            "data_description": {
+              "overlay_mode": "O que acontece quando se altera manualmente a temperatura",
+              "timer_duration": "Duração do modo de sobreposição do temporizador (15-180 min)"
+            }
+          },
+          "temperature_section": {
+            "name": "Temperatura",
+            "data": {
+              "min_temp": "Temperatura mínima",
+              "max_temp": "Temperatura máxima",
+              "temp_offset": "Desvio de temperatura",
+              "surface_temp_offset": "Desvio da temperatura da superfície"
+            },
+            "data_description": {
+              "min_temp": "Temperatura alvo mínima permitida (5-25°C)",
+              "max_temp": "Temperatura alvo máxima permitida (15-30°C)",
+              "temp_offset": "Desvio aplicado à temperatura alvo (-3 a +3°C)",
+              "surface_temp_offset": "Desvio para o cálculo da temperatura da superfície de risco do molde (-5 a +5°C)"
+            }
+          }
+        },
+        "data": {
+          "external_temp_sensor": "Sensor de temperatura externo",
+          "external_humidity_sensor": "Sensor de humidade externo"
+        },
+        "data_description": {
+          "external_temp_sensor": "Substituir a leitura de temperatura integrada do Tado por um sensor externo",
+          "external_humidity_sensor": "Substituir a leitura da humidade incorporada no Tado por um sensor externo"
+        }
       }
     },
+    "abort": {
+      "no_zones": "Não há zonas disponíveis para configuração."
+    },
     "error": {
-      "interval_out_of_range": "O intervalo de consulta deve estar entre 1 e 1440 minutos",
-      "invalid_number": "Introduza um número válido"
+      "interval_out_of_range": "O intervalo de sondagem deve situar-se entre 1 e 1440 minutos",
+      "invalid_number": "Introduzir um número válido"
     }
   }
 }

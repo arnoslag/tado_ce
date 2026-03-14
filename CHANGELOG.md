@@ -2,6 +2,33 @@
 
 All notable changes to Tado CE will be documented in this file.
 
+## [3.1.0] - 2026-03-14
+
+**Options Flow Zone Configuration, Open Window Services, External Sensor Override & Entity Registry**
+
+### Features
+- **Activate/Deactivate Open Window Services** ([#172](https://github.com/hiall-fyi/tado_ce/issues/172) - @driagi) — New `activate_open_window` and `deactivate_open_window` services let you instantly trigger open window mode from external window sensors (e.g., Zigbee contact sensors) instead of waiting 15+ minutes for Tado's built-in detection. Enables free Auto-Assist replacement via HA automations.
+- **External Temperature & Humidity Sensor Override** ([#106](https://github.com/hiall-fyi/tado_ce/issues/106), [#143](https://github.com/hiall-fyi/tado_ce/issues/143) - @BirbByte) — Per-zone option to use any HA temperature or humidity sensor (HomeKit, Zigbee, etc.) instead of Tado's built-in sensor. Climate entities show `temperature_source` / `humidity_source` attributes indicating whether the reading comes from Tado or an external sensor. Configured via Options Flow → Zone Configuration.
+- **Window Predicted Sensitivity** ([#135](https://github.com/hiall-fyi/tado_ce/issues/135) - @ChrisMarriott38) — Per-zone Low/Medium/High sensitivity setting to tune false positive rate for the Window Predicted sensor. Configured via Options Flow → Zone Configuration.
+- **Hub Control Switches** — New `Test Mode` and `Quota Reserve` switch entities on the hub device. Toggle directly from the dashboard or automations without entering Options Flow. Changes take effect immediately with no integration reload.
+- **Options Flow Menu Navigation** — Options now use a menu with two sections: Global Settings (4 collapsed sections) and Zone Configuration (per-zone settings picker). Outdoor temperature entity selector now uses a boolean toggle + EntitySelector pattern for clearer UX.
+
+### Improvements
+- **Zone Configuration Moved to Options Flow** — All 11 per-zone config entities (overlay mode, timer duration, min/max temp, temp offset, surface offset, heating type, UFH buffer, adaptive preheat, smart comfort mode, window type) replaced by a centralised Options Flow menu. Zero config entities are created — settings live in Settings → Tado CE → Configure → Zone Configuration. Number platform no longer loaded.
+- **Renamed Overlay Mode "Tado Mode" → "Tado Default"** ([#176](https://github.com/hiall-fyi/tado_ce/issues/176)) — Display name now matches Tado's own terminology ("Tado Default" = defer to Tado app setting). Internal API value `TADO_MODE` unchanged. Updated all 7 translation files.
+- **Added EntityCategory to All Entities** ([#178](https://github.com/hiall-fyi/tado_ce/issues/178)) — Configuration entities (switches, selects for overlay mode, timer duration, early start, child lock) now marked as `EntityCategory.CONFIG`. Diagnostic entities (device/zone sensors, thermal analytics, environment, weather, smart comfort, insights, binary sensors, device tracker) now marked as `EntityCategory.DIAGNOSTIC`. Primary control entities (climate, water heater, boost buttons, presence mode, calendar) remain without category.
+- **Centralised Entity Registry** — New `entity_registry.py` module provides a single source of truth for all entity metadata (translation keys, unique_id suffixes, icons, entity categories, enabled defaults). Eliminates scattered hardcoded values across entity classes.
+- **Smarter Full Sync** ([#141](https://github.com/hiall-fyi/tado_ce/issues/141) - @Xavinooo) — Full data sync now only runs on HA restart/reload instead of every 6 hours. Saves API calls, especially for 100-call quota users.
+- **Runtime-Only Options Skip Reload** — Changes to Test Mode and Quota Reserve (whether via hub switches or Options Flow) no longer trigger a full integration reload. Only options that require reload (feature toggles, polling settings) cause a restart.
+- **Health Score Formatting** — Home Insights health score now displays with emoji and label (e.g., "🟢 92 — Excellent") for at-a-glance readability.
+- **Services YAML Cleanup** — Removed inline `name` and `description` fields from `services.yaml` in favour of `strings.json` translations, following HA best practices.
+- **Improved Translation Quality** — All 6 non-English translation files (German, Spanish, French, Italian, Dutch, Portuguese) revised with more natural, context-appropriate wording. Service names and descriptions now translated in all 7 languages (previously English-only in `services.yaml`). New Options Flow steps (Zone Configuration, zone sensor config) fully translated.
+- **Auth Logic Extracted to Mixin** — Token refresh and config persistence logic moved from `api_client.py` to a dedicated `TadoAuthMixin`, reducing `api_client.py` by ~200 lines.
+- **Setup Logic Extracted to Helpers** — Bridge device registration, heating cycle timeout scheduling, and insight history loading moved from `__init__.py` to `setup_entry_helpers.py` for better maintainability.
+
+### Bug Fixes
+- **Fixed AC Max Temperature Capped at 25°C** ([#180](https://github.com/hiall-fyi/tado_ce/issues/180)) — AC zones that support up to 30°C were incorrectly limited to 25°C because `DEFAULT_ZONE_CONFIG` values were applied even when the user never set a per-zone override. Now uses `has_zone_override()` check — only user-explicit overrides are applied; otherwise AC hardware capabilities are used directly. Same fix applied to heating zones.
+
 ## [3.0.4] - 2026-03-12
 
 ### Bug Fixes

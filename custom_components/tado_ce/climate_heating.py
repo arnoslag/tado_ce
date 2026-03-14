@@ -27,10 +27,12 @@ from .action_helpers import (
 )
 from .climate_helpers import (
     api_call_with_rollback,
+    read_external_sensor,
     update_offset,
     update_preset_mode,
 )
 from .device_manager import get_zone_device_info
+from .entity_registry import ENTITY_REGISTRY
 from .format_helpers import (
     format_overlay_type as _format_overlay_type,
 )
@@ -64,10 +66,11 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity)
         self._home_id = home_id
         self._entry_id = coordinator.config_entry.entry_id
 
+        _meta = ENTITY_REGISTRY["climate_heating"]
         self._attr_name = None
-        self._attr_translation_key = "heating"
+        self._attr_translation_key = _meta.translation_key
         # Use zone_id for unique_id to maintain entity_id stability across zone name changes
-        self._attr_unique_id = f"tado_ce_{home_id}_zone_{zone_id}_climate"
+        self._attr_unique_id = f"tado_ce_{home_id}_{_meta.unique_id_suffix.format(zone_id=zone_id)}"
         self._attr_temperature_unit = UnitOfTemperature.CELSIUS
         self._attr_device_info = get_zone_device_info(zone_id, zone_name, "HEATING", home_id)
         self._attr_supported_features = (
@@ -96,6 +99,12 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity)
         self._heating_power = None
         self._offset_celsius = None  # Temperature offset (optional, enabled in config)
         self._attr_preset_mode = PRESET_HOME
+
+        # External sensor override tracking
+        self._temperature_source = "tado"
+        self._humidity_source = "tado"
+        self._external_temp_sensor = ""
+        self._external_humidity_sensor = ""
 
         # Track last target temp from API for heating cycle detection
         self._last_target_temp_from_api: float | None = None
@@ -221,12 +230,21 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity)
     def _update_temp_limits(self) -> None:
         """Update min/max temp from zone config.
 
-        Per-zone temperature limits.
+        Only applies user-explicit overrides (has_zone_override check).
+        If user never set min/max_temp in Zone Configuration, use
+        defaults (5°C / 25°C) — consistent with AC fix (#180).
         """
         zone_config_manager = self.coordinator.zone_config_manager
         if zone_config_manager:
-            self._attr_min_temp = zone_config_manager.get_zone_value(self._zone_id, "min_temp", 5.0)
-            self._attr_max_temp = zone_config_manager.get_zone_value(self._zone_id, "max_temp", 25.0)
+            if zone_config_manager.has_zone_override(self._zone_id, "min_temp"):
+                self._attr_min_temp = zone_config_manager.get_zone_value(self._zone_id, "min_temp", 5.0)
+            else:
+                self._attr_min_temp = 5.0
+
+            if zone_config_manager.has_zone_override(self._zone_id, "max_temp"):
+                self._attr_max_temp = zone_config_manager.get_zone_value(self._zone_id, "max_temp", 25.0)
+            else:
+                self._attr_max_temp = 25.0
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
@@ -235,6 +253,10 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity)
             "overlay_type": _format_overlay_type(self._overlay_type),
             "heating_power": self._heating_power,
             "zone_id": self._zone_id,
+            "temperature_source": self._temperature_source,
+            "humidity_source": self._humidity_source,
+            "external_temp_sensor": self._external_temp_sensor,
+            "external_humidity_sensor": self._external_humidity_sensor,
         }
         # Only include offset_celsius if enabled and available
         if self._offset_celsius is not None:
@@ -284,6 +306,28 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity)
 
             # Current humidity
             self._attr_current_humidity = (sensor_data.get("humidity") or {}).get("percentage")
+
+            # External sensor overrides (fallback to Tado API values above)
+            zcm = self.coordinator.zone_config_manager
+            ext_temp = read_external_sensor(self.hass, zcm, self._zone_id, "external_temp_sensor")
+            if ext_temp is not None:
+                self._attr_current_temperature = ext_temp
+                self._temperature_source = "external"
+            else:
+                self._temperature_source = "tado"
+
+            ext_hum = read_external_sensor(self.hass, zcm, self._zone_id, "external_humidity_sensor")
+            if ext_hum is not None:
+                self._attr_current_humidity = ext_hum
+                self._humidity_source = "external"
+            else:
+                self._humidity_source = "tado"
+
+            # Track configured entity_ids for extra_state_attributes
+            if zcm:
+                zc = zcm.get_zone_config(self._zone_id)
+                self._external_temp_sensor = zc.get("external_temp_sensor", "")
+                self._external_humidity_sensor = zc.get("external_humidity_sensor", "")
 
             # Heating power
             activity_data = zone_data.get("activityDataPoints") or {}

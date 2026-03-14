@@ -88,6 +88,15 @@ class ZoneConfigManager:
         # Merge with defaults (zone config overrides defaults)
         return {**DEFAULT_ZONE_CONFIG, **zone_config}
 
+    def has_zone_override(self, zone_id: str, key: str) -> bool:
+        """Check if a zone has an explicit user-set override for a key.
+
+        Returns True only if the user has explicitly saved a value
+        for this key in zone_config.json (not just the default).
+        """
+        zone_config = self._config.get(str(zone_id), {})
+        return key in zone_config
+
     def get_zone_value(self, zone_id: str, key: str, default: Any = None) -> Any:
         """Get a specific configuration value for a zone.
 

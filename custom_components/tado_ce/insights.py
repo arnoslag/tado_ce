@@ -55,6 +55,28 @@ WINDOW_MIN_READINGS = 2
 WINDOW_HIGH_CONFIDENCE_COUNT = 3
 WINDOW_HIGH_CONFIDENCE_CHANGE = 1.5  # °C
 
+# Window predicted sensitivity presets — threshold mappings per sensitivity level
+WINDOW_SENSITIVITY_PRESETS: dict[str, dict[str, int | float]] = {
+    "low": {
+        "consecutive_drops": 3,
+        "high_confidence_count": 4,
+        "high_confidence_change": 2.0,
+        "medium_change_threshold": 1.5,
+    },
+    "medium": {
+        "consecutive_drops": 2,
+        "high_confidence_count": 3,
+        "high_confidence_change": 1.5,
+        "medium_change_threshold": 1.0,
+    },
+    "high": {
+        "consecutive_drops": 1,
+        "high_confidence_count": 2,
+        "high_confidence_change": 1.0,
+        "medium_change_threshold": 0.5,
+    },
+}
+
 # Mold risk — humidity thresholds (%)
 MOLD_HUMIDITY_CRITICAL = 70
 MOLD_HUMIDITY_HIGH = 70
@@ -333,6 +355,7 @@ def detect_window_predicted(
     humidity_check: bool = True,
     hvac_mode: str = "heating",
     consecutive_drops: int = 2,
+    sensitivity: str = "medium",
 ) -> WindowPredictedResult:
     """Detect possible open window via heating/cooling anomaly detection.
 
@@ -348,6 +371,7 @@ def detect_window_predicted(
         humidity_check: Unused, kept for backward compatibility
         hvac_mode: "heating" or "cooling" — determines anomaly direction
         consecutive_drops: Min consecutive anomalous readings to trigger (default 2)
+        sensitivity: Detection sensitivity level — "low", "medium", or "high"
 
     Returns:
         WindowPredictedResult with detection status and SMART recommendation
@@ -369,6 +393,13 @@ def detect_window_predicted(
     if len(readings) < WINDOW_MIN_READINGS:
         return _not_detected
 
+    # Look up sensitivity preset — override consecutive_drops and confidence thresholds
+    preset = WINDOW_SENSITIVITY_PRESETS.get(sensitivity, WINDOW_SENSITIVITY_PRESETS["medium"])
+    consecutive_drops = int(preset["consecutive_drops"])
+    high_confidence_count = int(preset["high_confidence_count"])
+    high_confidence_change = float(preset["high_confidence_change"])
+    medium_change_threshold = float(preset["medium_change_threshold"])
+
     # Count consecutive anomalous readings from most recent backward
     # For heating: anomaly = temperature dropped (newer < older)
     # For cooling: anomaly = temperature rose (newer > older)
@@ -389,10 +420,10 @@ def detect_window_predicted(
     start_idx = len(readings) - 1 - anomaly_count
     total_change = abs(readings[start_idx].temperature - readings[-1].temperature)
 
-    # Determine confidence based on count and magnitude
-    if anomaly_count >= WINDOW_HIGH_CONFIDENCE_COUNT and total_change >= WINDOW_HIGH_CONFIDENCE_CHANGE:
+    # Determine confidence based on count and magnitude (using preset thresholds)
+    if anomaly_count >= high_confidence_count and total_change >= high_confidence_change:
         confidence = "high"
-    elif anomaly_count >= WINDOW_HIGH_CONFIDENCE_COUNT or total_change >= 1.0:
+    elif anomaly_count >= high_confidence_count or total_change >= medium_change_threshold:
         confidence = "medium"
     else:
         confidence = "low"

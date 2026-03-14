@@ -11,6 +11,10 @@ from homeassistant.core import callback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .device_manager import get_hub_device_info, get_zone_device_info
+from .entity_registry import ENTITY_REGISTRY, get_entity_category
+from .format_helpers import (
+    format_health_score as _format_health_score,
+)
 from .format_helpers import (
     format_insight_type as _format_insight_type,
 )
@@ -61,9 +65,11 @@ class TadoHomeInsightsSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], Sen
     def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
         """Initialize the Home Insights Sensor."""
         super().__init__(coordinator)
-        self._attr_translation_key = "home_insights"
-        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_home_insights"
+        _meta = ENTITY_REGISTRY["sensor_home_insights"]
+        self._attr_translation_key = _meta.translation_key
+        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix}"
         self._attr_device_info = get_hub_device_info(coordinator.home_id)
+        self._attr_entity_category = get_entity_category(_meta)
         self._attr_available = False
         self._attr_native_value = 0
         self._aggregated: dict[str, Any] = {}
@@ -103,7 +109,7 @@ class TadoHomeInsightsSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], Sen
             "zones_with_issues": self._aggregated.get("zones_with_issues", []),
             "cross_zone_insights": self._aggregated.get("cross_zone_insights", []),
             "persistent_insights": _format_persistent_insights_grouped(raw_persistent),
-            "insight_health_score": self._health_score,
+            "insight_health_score": _format_health_score(self._health_score),
             "weekly_digest": self._weekly_digest,
         }
 
@@ -216,9 +222,11 @@ class TadoZoneInsightsSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], Sen
         self._zone_id = zone_id
         self._zone_name = zone_name
         self._zone_type = zone_type
-        self._attr_translation_key = "insights"
-        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_zone_{zone_id}_insights"
+        _meta = ENTITY_REGISTRY["sensor_insights"]
+        self._attr_translation_key = _meta.translation_key
+        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix.format(zone_id=zone_id)}"
         self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type, coordinator.home_id)
+        self._attr_entity_category = get_entity_category(_meta)
         self._attr_available = False
         self._attr_native_value = 0
         self._insights: list[Any] = []

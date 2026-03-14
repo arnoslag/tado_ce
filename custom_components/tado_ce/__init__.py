@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING, Any
 
 from homeassistant.const import Platform
 from homeassistant.exceptions import ConfigEntryNotReady
-from homeassistant.helpers import device_registry as dr
 
 from .config_manager import ConfigurationManager
 from .const import (
@@ -21,7 +20,6 @@ from .const import (
     SERVICE_SET_CLIMATE_TIMER,
     SERVICE_SET_TEMP_OFFSET,
     SERVICE_SET_WATER_HEATER_TIMER,
-    TADO_BRIDGE_MODELS,
 )
 from .coordinator import TadoDataUpdateCoordinator
 from .data_loader import DataLoader
@@ -38,6 +36,7 @@ from .zone_config_manager import ZoneConfigManager
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
     from homeassistant.core import HomeAssistant
+    from homeassistant.helpers import device_registry as dr
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -50,7 +49,6 @@ BASE_PLATFORMS = [
     Platform.SWITCH,
     Platform.BUTTON,
     Platform.SELECT,
-    Platform.NUMBER,
 ]
 CALENDAR_PLATFORM = Platform.CALENDAR
 
@@ -189,34 +187,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Schedule heating cycle timeout check if coordinator exists
     if heating_cycle_coordinator:
-        from datetime import datetime as _dt
-        from datetime import timedelta as _td
+        from .setup_entry_helpers import schedule_heating_cycle_timeouts
 
-        from homeassistant.helpers.event import async_track_time_interval as _track
-
-        async def _check_cycle_timeouts(_now: _dt) -> None:
-            """Check for timed-out heating cycles and close them."""
-            await heating_cycle_coordinator.check_timeouts()
-
-        coordinator._heating_cycle_timeout_cancel = _track(
-            hass,
-            _check_cycle_timeouts,
-            _td(seconds=60),
-        )
+        schedule_heating_cycle_timeouts(hass, coordinator, heating_cycle_coordinator)
 
     # Load overlay/timer cache into coordinator
     coordinator.overlay_mode = overlay_mode
     coordinator.timer_duration = timer_duration
 
     # Load insight history from disk and prune stale entries
-    loaded_count = await coordinator.insight_history.async_load()
-    pruned_count = coordinator.insight_history.prune_old_entries()
-    if loaded_count or pruned_count:
-        _LOGGER.debug(
-            "Tado CE: Insight history loaded %d entries, pruned %d stale",
-            loaded_count,
-            pruned_count,
-        )
+    from .setup_entry_helpers import async_load_insight_history
+
+    await async_load_insight_history(coordinator)
 
     # First refresh
     await coordinator.async_config_entry_first_refresh()
@@ -225,23 +207,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Ensures bridge device exists before zone devices reference it via via_device
     zones_info = coordinator.data.get("zones_info") or []
     if zones_info:
-        device_registry = dr.async_get(hass)
-        seen_serials: set[str] = set()
-        for zone in zones_info:
-            for device in zone.get("devices") or []:
-                device_type = device.get("deviceType", "")
-                serial = device.get("shortSerialNo", "")
-                if device_type in TADO_BRIDGE_MODELS and serial and serial not in seen_serials:
-                    seen_serials.add(serial)
-                    device_registry.async_get_or_create(
-                        config_entry_id=entry.entry_id,
-                        identifiers={(DOMAIN, serial)},
-                        manufacturer="Tado",
-                        model=device_type,
-                        name=device.get("serialNo", serial),
-                        sw_version=device.get("currentFwVersion"),
-                    )
-                    _LOGGER.debug("Pre-registered Tado bridge: %s (%s)", serial, device_type)
+        from .setup_entry_helpers import register_bridge_devices
+
+        register_bridge_devices(hass, entry.entry_id, zones_info)
 
     # Runtime fallback — detect old-format unique_ids
     if home_id:
@@ -284,12 +252,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 _last_options_snapshot: dict[str, dict[str, Any]] = {}
 
 
+# Keys that take effect at runtime via config_manager real-time reads.
+# Changes to ONLY these keys skip the full integration reload.
+_RUNTIME_ONLY_KEYS: frozenset[str] = frozenset({"test_mode_enabled", "quota_reserve_enabled"})
+
+
 async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Reload config entry when options actually change.
 
     HA's add_update_listener fires for ANY ConfigEntry mutation — including
     data-only changes like refresh token rotation. We compare the current
     options against the snapshot taken at setup to skip unnecessary reloads.
+
+    Runtime-only keys (test_mode_enabled, quota_reserve_enabled) are read
+    in real-time by config_manager, so changes to ONLY those keys skip
+    the expensive full reload.
     """
     prev_options = _last_options_snapshot.get(entry.entry_id)
     current_options = dict(entry.options)
@@ -299,6 +276,23 @@ async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
         return
 
     _last_options_snapshot[entry.entry_id] = current_options
+
+    # Determine which keys actually changed
+    changed_keys: set[str] = set()
+    if prev_options is not None:
+        all_keys = set(prev_options) | set(current_options)
+        for key in all_keys:
+            if prev_options.get(key) != current_options.get(key):
+                changed_keys.add(key)
+
+    # If ONLY runtime-only keys changed, skip full reload
+    if changed_keys and changed_keys <= _RUNTIME_ONLY_KEYS:
+        _LOGGER.info(
+            "Tado CE: Runtime-only options changed (%s) — skipping reload",
+            ", ".join(sorted(changed_keys)),
+        )
+        return
+
     _LOGGER.info("Tado CE: Options changed, reloading integration...")
 
     from .entity_cleanup import cleanup_disabled_feature_entities

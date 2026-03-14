@@ -14,7 +14,9 @@ from homeassistant.components.binary_sensor import (
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from .climate_helpers import read_external_sensor
 from .device_manager import get_hub_device_info, get_zone_device_info
+from .entity_registry import ENTITY_REGISTRY, get_entity_category
 from .format_helpers import (
     format_confidence as _format_confidence,
 )
@@ -103,9 +105,11 @@ class TadoHomeSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], BinarySenso
     def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
         """Initialize the Home Sensor."""
         super().__init__(coordinator)
-        self._attr_translation_key = "home"
-        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_home"
+        _meta = ENTITY_REGISTRY["binary_sensor_home"]
+        self._attr_translation_key = _meta.translation_key
+        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix}"
         self._attr_device_class = BinarySensorDeviceClass.PRESENCE
+        self._attr_entity_category = get_entity_category(_meta)
         self._attr_available = False
         self._attr_is_on = None
         # Use hub device info for global entities
@@ -187,11 +191,12 @@ class TadoOpenWindowSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], Binar
     ) -> None:
         """Initialize the Open Window Sensor."""
         super().__init__(coordinator)
+        _meta = ENTITY_REGISTRY["binary_sensor_window"]
         self._zone_id = zone_id
         self._zone_name = zone_name
         self._zone_type = zone_type
-        self._attr_translation_key = "window"
-        self._attr_unique_id = f"tado_ce_{home_id}_zone_{zone_id}_open_window"
+        self._attr_translation_key = _meta.translation_key
+        self._attr_unique_id = f"tado_ce_{home_id}_{_meta.unique_id_suffix.format(zone_id=zone_id)}"
         self._attr_device_class = BinarySensorDeviceClass.WINDOW
         self._attr_available = False
         self._attr_is_on = None
@@ -276,12 +281,14 @@ class TadoPreheatNowSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], Binar
     ) -> None:
         """Initialize the Preheat Now Sensor."""
         super().__init__(coordinator)
+        _meta = ENTITY_REGISTRY["binary_sensor_preheat_now"]
         self._zone_id = zone_id
         self._zone_name = zone_name
         self._zone_type = zone_type
-        self._attr_translation_key = "preheat_now"
-        self._attr_unique_id = f"tado_ce_{home_id}_zone_{zone_id}_preheat_now"
+        self._attr_translation_key = _meta.translation_key
+        self._attr_unique_id = f"tado_ce_{home_id}_{_meta.unique_id_suffix.format(zone_id=zone_id)}"
         self._attr_device_class = BinarySensorDeviceClass.HEAT
+        self._attr_entity_category = get_entity_category(_meta)
         self._attr_available = False
         self._attr_is_on = None
         self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type, home_id)
@@ -443,11 +450,13 @@ class TadoWindowPredictedSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], 
     ) -> None:
         """Initialize the Window Predicted Sensor."""
         super().__init__(coordinator)
+        _meta = ENTITY_REGISTRY["binary_sensor_window_predicted"]
         self._zone_id = zone_id
         self._zone_name = zone_name
         self._zone_type = zone_type
-        self._attr_translation_key = "window_predicted"
-        self._attr_unique_id = f"tado_ce_{home_id}_zone_{zone_id}_window_predicted"
+        self._attr_translation_key = _meta.translation_key
+        self._attr_unique_id = f"tado_ce_{home_id}_{_meta.unique_id_suffix.format(zone_id=zone_id)}"
+        self._attr_entity_category = get_entity_category(_meta)
         self._attr_available = False
         self._attr_is_on = None
         self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type, home_id)
@@ -458,6 +467,9 @@ class TadoWindowPredictedSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], 
         self._time_window: int = 5
         self._recommendation: str = ""
         self._anomaly_readings: int = 0
+
+        # Sensitivity level for window predicted detection
+        self._sensitivity: str = "medium"
 
         # Rolling temperature history for consecutive-reading comparison
         self._temp_history: deque = deque(maxlen=10)  # type: ignore[type-arg]
@@ -480,6 +492,7 @@ class TadoWindowPredictedSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], 
             "zone_type": _format_zone_type(self._zone_type),
             "readings_count": len(self._temp_history),
             "anomaly_readings": self._anomaly_readings,
+            "sensitivity": self._sensitivity,
         }
 
     @property
@@ -520,6 +533,12 @@ class TadoWindowPredictedSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], 
             current_temp = temp_data.get("celsius")
             current_humidity = humidity_data.get("percentage")
 
+            # External temp sensor override (fallback to Tado API value above)
+            zcm = self.coordinator.zone_config_manager
+            ext_temp = read_external_sensor(self.hass, zcm, self._zone_id, "external_temp_sensor")
+            if ext_temp is not None:
+                current_temp = ext_temp
+
             if current_temp is None:
                 self._attr_available = False
                 return
@@ -547,6 +566,13 @@ class TadoWindowPredictedSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], 
             # Determine hvac_mode for anomaly direction
             hvac_mode = "cooling" if ac_on else "heating"
 
+            # Read sensitivity from zone config manager (if available)
+            zcm = self.coordinator.zone_config_manager
+            if zcm:
+                self._sensitivity = zcm.get_zone_value(
+                    self._zone_id, "window_predicted_sensitivity", "medium",
+                )
+
             # Run heating/cooling anomaly detection
             result = detect_window_predicted(
                 readings=list(self._temp_history),
@@ -554,6 +580,7 @@ class TadoWindowPredictedSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], 
                 zone_name=self._zone_name,
                 time_window_minutes=self._time_window,
                 hvac_mode=hvac_mode,
+                sensitivity=self._sensitivity,
             )
 
             self._attr_is_on = result.detected
