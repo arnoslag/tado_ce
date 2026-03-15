@@ -699,8 +699,19 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
             self._attr_hvac_mode = hvac_mode
 
         # If AC is OFF, setting temperature will turn it ON
+        # Smart mode selection (#182): pick COOL/HEAT based on current vs target temp
         if old_mode == HVACMode.OFF:
-            self._attr_hvac_mode = hvac_mode or HVACMode.COOL
+            if hvac_mode is not None:
+                self._attr_hvac_mode = hvac_mode
+            elif (
+                self._attr_current_temperature is not None
+                and temperature is not None
+                and HVACMode.HEAT in self._attr_hvac_modes
+                and temperature > self._attr_current_temperature
+            ):
+                self._attr_hvac_mode = HVACMode.HEAT
+            else:
+                self._attr_hvac_mode = HVACMode.COOL
 
         new_hvac_action = self._calculate_hvac_action()
         self._attr_hvac_action = new_hvac_action

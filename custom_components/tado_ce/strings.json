@@ -1223,7 +1223,25 @@
     "step": {
       "user": {
         "title": "Tado CE Setup",
+        "description": "Choose how to authenticate with Tado.",
+        "menu_options": {
+          "device_auth": "Device Authorization (recommended)",
+          "manual_token": "Manual Token (advanced)"
+        }
+      },
+      "device_auth": {
+        "title": "Device Authorization",
         "description": "Click Submit to start the authorization process."
+      },
+      "manual_token": {
+        "title": "Manual Token",
+        "description": "If device authorization is not working (e.g. Tado server issues), you can paste a refresh token obtained from the Tado web app.\n\n**How to get a token (Chrome):**\n1. Open [app.tado.com](https://app.tado.com) in Chrome\n2. Press `F12` to open Developer Tools → **Network** tab\n3. Type `token` in the filter bar\n4. Log in to your Tado account\n5. Click the `token` request → **Response** tab\n6. Copy the `refresh_token` value\n\n⚠️ This may not work if Tado has also changed their web app login flow.",
+        "data": {
+          "refresh_token": "Refresh Token"
+        },
+        "data_description": {
+          "refresh_token": "Paste the refresh_token value from the Tado web app"
+        }
       },
       "authorize": {
         "title": "Authorize Tado",
@@ -1276,6 +1294,7 @@
     },
     "error": {
       "cannot_connect": "Failed to connect to Tado. Please check your internet connection.",
+      "invalid_token": "Invalid or expired refresh token. Please check the token and try again.",
       "auth_pending": "Authorization not yet complete. Please authorize on Tado's website first, then click Submit again.",
       "authorization_failed": "Authorization failed. Please try again from the beginning."
     }
@@ -1292,7 +1311,7 @@
       },
       "global_settings": {
         "title": "Global Settings",
-        "description": "Configure Tado CE integration settings.\n\nℹ️ If you don't need weather-dependent features (mold risk, condensation, surface temp, comfort level, weather compensation), you can leave 'Outdoor Temperature Entity' empty.",
+        "description": "Configure Tado CE integration settings.\n\nℹ️ If you don't need weather-dependent features (mold risk, condensation, surface temp, comfort level, weather compensation), toggle off 'Use Outdoor Temperature Entity' in Smart Comfort Settings.",
         "sections": {
           "tado_ce_exclusive": {
             "name": "Tado CE Exclusive",

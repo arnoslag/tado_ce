@@ -397,7 +397,8 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity)
 
                 # Handle OFF mode specifics
                 if power != "ON" and api_hvac_mode in (HVACMode.OFF, HVACMode.AUTO):
-                    self._attr_target_temperature = None
+                    # Preserve last known target temperature for UX (#182)
+                    # — keeps climate card controls usable when zone is OFF
                     if api_hvac_mode == HVACMode.OFF:
                         self._attr_hvac_action = HVACAction.OFF
 

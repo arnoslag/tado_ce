@@ -1223,7 +1223,25 @@
     "step": {
       "user": {
         "title": "Configuration de Tado CE",
+        "description": "Choisissez comment vous authentifier auprès de Tado.",
+        "menu_options": {
+          "device_auth": "Autorisation de l'appareil (recommandé)",
+          "manual_token": "Token manuel (avancé)"
+        }
+      },
+      "device_auth": {
+        "title": "Autorisation de l'appareil",
         "description": "Cliquez sur Soumettre pour lancer la procédure d'autorisation."
+      },
+      "manual_token": {
+        "title": "Token manuel",
+        "description": "Si l'autorisation de l'appareil ne fonctionne pas (par exemple, problèmes de serveur Tado), vous pouvez coller un jeton de rafraîchissement manuellement. Ouvrez my.tado.com dans votre navigateur, connectez-vous, ouvrez Developer Tools (F12) → Application → Local Storage → https://my.tado.com → tado_token, et copiez la valeur refresh_token.",
+        "data": {
+          "refresh_token": "Jeton de rafraîchissement"
+        },
+        "data_description": {
+          "refresh_token": "Collez la valeur refresh_token de l'application web de Tado."
+        }
       },
       "authorize": {
         "title": "Autoriser Tado",
@@ -1276,6 +1294,7 @@
     },
     "error": {
       "cannot_connect": "Échec de la connexion à Tado. Veuillez vérifier votre connexion internet.",
+      "invalid_token": "Jeton de rafraîchissement invalide ou expiré. Veuillez vérifier le jeton et réessayer.",
       "auth_pending": "L'autorisation n'est pas encore terminée. Veuillez d'abord procéder à l'autorisation sur le site web de Tado, puis cliquez à nouveau sur Soumettre.",
       "authorization_failed": "L'autorisation a échoué. Veuillez réessayer depuis le début."
     }
@@ -1292,7 +1311,7 @@
       },
       "global_settings": {
         "title": "Paramètres globaux",
-        "description": "Configurer les paramètres d'intégration de Tado CE.\n\nℹ️ Si vous n'avez pas besoin de fonctions dépendant des conditions météorologiques (risque de moisissure, condensation, température de surface, niveau de confort, compensation météorologique), vous pouvez laisser 'Outdoor Temperature Entity' vide.",
+        "description": "Configurer les paramètres d'intégration de Tado CE.\n\nℹ️ Si vous n'avez pas besoin de fonctions dépendant des conditions météorologiques (risque de moisissure, condensation, température de surface, niveau de confort, compensation météorologique), désactivez « Utiliser l'entité de température extérieure » dans les paramètres Smart Comfort.",
         "sections": {
           "tado_ce_exclusive": {
             "name": "Tado CE Exclusive",

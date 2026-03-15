@@ -78,14 +78,20 @@ class TadoCEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return TadoCEOptionsFlow(config_entry)
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Handle the initial step - start device authorization.
+        """Handle the initial step - show auth method menu.
 
         Note: unique_id is set later in _create_entry() after we know the home_id.
         This allows for multi-home support in future versions.
         """
         # Don't set unique_id here - we don't know home_id yet
         # unique_id will be set in _create_entry() as tado_ce_{home_id}
+        return self.async_show_menu(
+            step_id="user",
+            menu_options=["device_auth", "manual_token"],
+        )
 
+    async def async_step_device_auth(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Handle device authorization flow (standard method)."""
         errors = {}
 
         if user_input is not None:
@@ -98,8 +104,54 @@ class TadoCEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["base"] = "cannot_connect"
 
         return self.async_show_form(
-            step_id="user",
+            step_id="device_auth",
             data_schema=vol.Schema({}),
+            errors=errors,
+        )
+
+    async def async_step_manual_token(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Handle manual token input (fallback when device auth is broken)."""
+        errors = {}
+
+        if user_input is not None:
+            refresh_token = user_input.get("refresh_token", "").strip()
+            if not refresh_token:
+                errors["base"] = "invalid_token"
+            else:
+                # Try to use the refresh token to get an access token
+                session = async_get_clientsession(self.hass)
+                try:
+                    async with session.post(
+                        AUTH_ENDPOINT_TOKEN,
+                        data={
+                            "client_id": CLIENT_ID,
+                            "grant_type": "refresh_token",
+                            "refresh_token": refresh_token,
+                        },
+                    ) as resp:
+                        if resp.status == HTTPStatus.OK:
+                            data = await resp.json()
+                            self._access_token = data.get("access_token")
+                            self._refresh_token = data.get("refresh_token", refresh_token)
+
+                            if self._access_token:
+                                await self._fetch_homes()
+                                return await self.async_step_select_home()
+                            errors["base"] = "invalid_token"
+                        else:
+                            _LOGGER.error("Manual token refresh failed: %s", resp.status)
+                            errors["base"] = "invalid_token"
+                except Exception:
+                    _LOGGER.exception("Manual token validation error")
+                    errors["base"] = "cannot_connect"
+
+        return self.async_show_form(
+            step_id="manual_token",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("refresh_token"): str,
+                },
+            ),
             errors=errors,
         )
 

@@ -1223,7 +1223,25 @@
     "step": {
       "user": {
         "title": "Tado CE instellen",
+        "description": "Kies hoe je je wilt authenticeren bij Tado.",
+        "menu_options": {
+          "device_auth": "Apparaatautorisatie (aanbevolen)",
+          "manual_token": "Handmatig token (geavanceerd)"
+        }
+      },
+      "device_auth": {
+        "title": "Apparaatautorisatie",
         "description": "Klik op Submit om het autorisatieproces te starten."
+      },
+      "manual_token": {
+        "title": "Handmatig token",
+        "description": "Als de apparaatautorisatie niet werkt (bijv. problemen met de Tado-server), kun je handmatig een refresh token plakken. Open my.tado.com in je browser, log in, open Developer Tools (F12) → Applicatie → Lokale opslag → https://my.tado.com → tado_token, en kopieer de refresh_token waarde.",
+        "data": {
+          "refresh_token": "Vernieuwingstoken"
+        },
+        "data_description": {
+          "refresh_token": "Plak de refresh_token waarde van de Tado web app"
+        }
       },
       "authorize": {
         "title": "Tado machtigen",
@@ -1276,6 +1294,7 @@
     },
     "error": {
       "cannot_connect": "Verbinding met Tado mislukt. Controleer je internetverbinding.",
+      "invalid_token": "Ongeldig of verlopen vernieuwingstoken. Controleer het token en probeer het opnieuw.",
       "auth_pending": "Autorisatie nog niet voltooid. Autoriseer eerst op de website van Tado en klik dan opnieuw op Verzenden.",
       "authorization_failed": "Autorisatie mislukt. Probeer het opnieuw vanaf het begin."
     }
@@ -1292,7 +1311,7 @@
       },
       "global_settings": {
         "title": "Wereldwijde instellingen",
-        "description": "Configureer de integratie-instellingen van Tado CE.\n\nℹ️ Als je geen weersafhankelijke functies nodig hebt (schimmelrisico, condensatie, oppervlaktetemperatuur, comfortniveau, weerscompensatie), kun je 'Outdoor Temperature Entity' leeg laten.",
+        "description": "Configureer de integratie-instellingen van Tado CE.\n\nℹ️ Als je geen weersafhankelijke functies nodig hebt (schimmelrisico, condensatie, oppervlaktetemperatuur, comfortniveau, weerscompensatie), schakel dan 'Buitentemperatuurentiteit gebruiken' uit in de Smart Comfort-instellingen.",
         "sections": {
           "tado_ce_exclusive": {
             "name": "Tado CE Exclusief",

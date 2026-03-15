@@ -1223,7 +1223,25 @@
     "step": {
       "user": {
         "title": "Tado CE-Einrichtung",
+        "description": "Wählen Sie, wie Sie sich bei Tado authentifizieren möchten.",
+        "menu_options": {
+          "device_auth": "Geräteautorisierung (empfohlen)",
+          "manual_token": "Manuelles Token (erweitert)"
+        }
+      },
+      "device_auth": {
+        "title": "Geräteautorisierung",
         "description": "Klicken Sie auf Senden, um den Autorisierungsprozess zu starten."
+      },
+      "manual_token": {
+        "title": "Manuelles Token",
+        "description": "Wenn die Geräteautorisierung nicht funktioniert (z. B. wegen Problemen mit dem Tado-Server), können Sie ein Refresh-Token manuell einfügen. Öffnen Sie my.tado.com in Ihrem Browser, melden Sie sich an, öffnen Sie die Entwicklertools (F12) → Anwendung → Lokaler Speicher → https://my.tado.com → tado_token, und kopieren Sie den Wert refresh_token.",
+        "data": {
+          "refresh_token": "Refresh-Token"
+        },
+        "data_description": {
+          "refresh_token": "Fügen Sie den refresh_token-Wert aus der Tado-Webanwendung ein"
+        }
       },
       "authorize": {
         "title": "Tado autorisieren",
@@ -1276,6 +1294,7 @@
     },
     "error": {
       "cannot_connect": "Die Verbindung zu Tado konnte nicht hergestellt werden. Bitte überprüfen Sie Ihre Internetverbindung.",
+      "invalid_token": "Ungültiges oder abgelaufenes Refresh-Token. Bitte überprüfen Sie das Token und versuchen Sie es erneut.",
       "auth_pending": "Die Autorisierung ist noch nicht abgeschlossen. Bitte autorisieren Sie zuerst auf der Tado-Website und klicken Sie dann erneut auf Senden.",
       "authorization_failed": "Autorisierung fehlgeschlagen. Bitte versuchen Sie es noch einmal von Anfang an."
     }
@@ -1292,7 +1311,7 @@
       },
       "global_settings": {
         "title": "Globale Einstellungen",
-        "description": "Konfigurieren Sie die Einstellungen für die Integration von Tado CE.\n\nℹ️ Wenn Sie keine wetterabhängigen Funktionen benötigen (Schimmelrisiko, Kondensation, Oberflächentemperatur, Komfortstufe, Wetterkompensation), können Sie \"Außentemperatur-Entität\" leer lassen.",
+        "description": "Konfigurieren Sie die Einstellungen für die Integration von Tado CE.\n\nℹ️ Wenn Sie keine wetterabhängigen Funktionen benötigen (Schimmelrisiko, Kondensation, Oberflächentemperatur, Komfortstufe, Wetterkompensation), deaktivieren Sie 'Außentemperatur-Entität verwenden' in den Smart-Comfort-Einstellungen.",
         "sections": {
           "tado_ce_exclusive": {
             "name": "Tado CE Exklusiv",

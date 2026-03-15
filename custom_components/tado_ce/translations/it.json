@@ -1223,7 +1223,25 @@
     "step": {
       "user": {
         "title": "Configurazione di Tado CE",
+        "description": "Scegliere come autenticarsi con Tado.",
+        "menu_options": {
+          "device_auth": "Autorizzazione del dispositivo (consigliata)",
+          "manual_token": "Token manuale (avanzato)"
+        }
+      },
+      "device_auth": {
+        "title": "Autorizzazione del dispositivo",
         "description": "Fare clic su Invia per avviare il processo di autorizzazione."
+      },
+      "manual_token": {
+        "title": "Token manuale",
+        "description": "Se l'autorizzazione del dispositivo non funziona (ad esempio, problemi del server Tado), è possibile incollare manualmente un token di aggiornamento. Aprite il sito my.tado.com nel browser, effettuate il login, aprite Strumenti per sviluppatori (F12) → Applicazione → Archiviazione locale → https://my.tado.com → tado_token e copiate il valore del refresh_token.",
+        "data": {
+          "refresh_token": "Token di aggiornamento"
+        },
+        "data_description": {
+          "refresh_token": "Incollare il valore del refresh_token dalla web app di Tado"
+        }
       },
       "authorize": {
         "title": "Autorizzare Tado",
@@ -1276,6 +1294,7 @@
     },
     "error": {
       "cannot_connect": "Impossibile connettersi a Tado. Verificare la connessione a Internet.",
+      "invalid_token": "Token di aggiornamento non valido o scaduto. Controllare il token e riprovare.",
       "auth_pending": "L'autorizzazione non è ancora stata completata. Si prega di autorizzare prima il sito web di Tado, quindi di cliccare nuovamente su Invia.",
       "authorization_failed": "Autorizzazione fallita. Riprovare dall'inizio."
     }
@@ -1292,7 +1311,7 @@
       },
       "global_settings": {
         "title": "Impostazioni globali",
-        "description": "Configurare le impostazioni di integrazione di Tado CE.\n\nℹ️ Se non si ha bisogno di funzioni dipendenti dalle condizioni atmosferiche (rischio di muffa, condensazione, temperatura superficiale, livello di comfort, compensazione delle condizioni atmosferiche), si può lasciare vuota la voce \"Entità temperatura esterna\".",
+        "description": "Configurare le impostazioni di integrazione di Tado CE.\n\nℹ️ Se non si ha bisogno di funzioni dipendenti dalle condizioni atmosferiche (rischio di muffa, condensazione, temperatura superficiale, livello di comfort, compensazione delle condizioni atmosferiche), disattivare 'Usa entità temperatura esterna' nelle impostazioni Smart Comfort.",
         "sections": {
           "tado_ce_exclusive": {
             "name": "Esclusivo Tado CE",

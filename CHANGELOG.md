@@ -2,6 +2,20 @@
 
 All notable changes to Tado CE will be documented in this file.
 
+## [3.1.1] - 2026-03-15
+
+**Manual Token Auth, Climate Card Fix & Smart AC Mode**
+
+### Features
+- **Manual Token Authentication** ([#185](https://github.com/hiall-fyi/tado_ce/issues/185)) — New fallback authentication method when Tado's device authorization server is down. Config flow now shows a menu with two options: Device Authorization (recommended) and Manual Token (advanced). Manual Token lets you paste a `refresh_token` extracted from the Tado web app's Local Storage.
+
+### Bug Fixes
+- **Fixed Climate Card Unusable When Zone is OFF** ([#182](https://github.com/hiall-fyi/tado_ce/issues/182)) — When a heating zone is OFF (schedule or manual), the climate card now preserves the last known target temperature instead of clearing it to `null`. This keeps the temperature slider and controls usable without needing a `set_temperature` call first.
+
+### Improvements
+- **Updated Global Settings Description** ([Discussion #76](https://github.com/hiall-fyi/tado_ce/discussions/76)) — Config flow info message now references the v3.1.0 boolean toggle pattern ("toggle off 'Use Outdoor Temperature Entity' in Smart Comfort Settings") instead of the old "leave empty" workaround.
+- **AC Always Defaulting to COOL When Turning On** ([#182](https://github.com/hiall-fyi/tado_ce/issues/182) - @neonsp) — When turning on an AC zone via temperature change, the integration now auto-selects HEAT or COOL based on current vs target temperature (target > current → HEAT, otherwise → COOL). Only applies when AC is OFF and no explicit mode is provided. Requires the AC unit to support HEAT mode.
+
 ## [3.1.0] - 2026-03-14
 
 **Options Flow Zone Configuration, Open Window Services, External Sensor Override & Entity Registry**

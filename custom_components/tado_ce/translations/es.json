@@ -1223,7 +1223,25 @@
     "step": {
       "user": {
         "title": "Configuración de Tado CE",
+        "description": "Elige cómo autenticarte con Tado.",
+        "menu_options": {
+          "device_auth": "Autorización del dispositivo (recomendado)",
+          "manual_token": "Token manual (avanzado)"
+        }
+      },
+      "device_auth": {
+        "title": "Autorización de dispositivo",
         "description": "Haga clic en Enviar para iniciar el proceso de autorización."
+      },
+      "manual_token": {
+        "title": "Token manual",
+        "description": "Si la autorización del dispositivo no funciona (por ejemplo, problemas con el servidor de Tado), puede pegar un token de actualización manualmente. Abra my.tado.com en su navegador, inicie sesión, abra Herramientas para desarrolladores (F12) → Aplicación → Almacenamiento local → https://my.tado.com → tado_token, y copie el valor refresh_token.",
+        "data": {
+          "refresh_token": "Token de actualización"
+        },
+        "data_description": {
+          "refresh_token": "Pegue el valor refresh_token de la aplicación web de Tado"
+        }
       },
       "authorize": {
         "title": "Autorizar Tado",
@@ -1276,6 +1294,7 @@
     },
     "error": {
       "cannot_connect": "No se ha podido conectar con Tado. Compruebe su conexión a Internet.",
+      "invalid_token": "Token de actualización no válido o caducado. Compruebe el token e inténtelo de nuevo.",
       "auth_pending": "La autorización aún no se ha completado. Por favor, autorice en el sitio web de Tado en primer lugar, a continuación, haga clic en Enviar de nuevo.",
       "authorization_failed": "Autorización fallida. Por favor, inténtelo de nuevo desde el principio."
     }
@@ -1292,7 +1311,7 @@
       },
       "global_settings": {
         "title": "Configuración global",
-        "description": "Configure los ajustes de integración de Tado CE.\n\nℹ️ Si no necesita funciones dependientes de las condiciones meteorológicas (riesgo de moho, condensación, temperatura de superficie, nivel de confort, compensación meteorológica), puede dejar \"Entidad de temperatura exterior\" vacía.",
+        "description": "Configure los ajustes de integración de Tado CE.\n\nℹ️ Si no necesita funciones dependientes de las condiciones meteorológicas (riesgo de moho, condensación, temperatura de superficie, nivel de confort, compensación meteorológica), desactive 'Usar entidad de temperatura exterior' en los ajustes de Smart Comfort.",
         "sections": {
           "tado_ce_exclusive": {
             "name": "Tado CE Exclusivo",

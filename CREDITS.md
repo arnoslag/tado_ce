@@ -26,6 +26,13 @@ Thank you to everyone who supported the project through [Buy Me a Coffee](https:
 
 Community contributors who helped shape each release through bug reports, feature requests, testing, and feedback.
 
+### v3.1.1
+
+- **[@MathiasB112](https://github.com/MathiasB112)** — Reported device authorization broken due to Tado server changes ([#185](https://github.com/hiall-fyi/tado_ce/issues/185))
+- **[@UKICS](https://github.com/UKICS)** — Confirmed device authorization issue affecting both Tado CE and official integration ([#185](https://github.com/hiall-fyi/tado_ce/issues/185))
+- **[@driagi](https://github.com/driagi)** — Reported climate card unusable when zone is OFF ([#182](https://github.com/hiall-fyi/tado_ce/issues/182))
+- **[@neonsp](https://github.com/neonsp)** — Reported AC always defaulting to COOL when turning on ([#182](https://github.com/hiall-fyi/tado_ce/issues/182))
+
 ### v3.1.0
 
 - **[@jeverley](https://github.com/jeverley)** — Requested EntityCategory for all entities ([#178](https://github.com/hiall-fyi/tado_ce/issues/178))

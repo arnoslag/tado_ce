@@ -1223,7 +1223,25 @@
     "step": {
       "user": {
         "title": "Configuração do Tado CE",
+        "description": "Escolha como autenticar com o Tado.",
+        "menu_options": {
+          "device_auth": "Autorização do dispositivo (recomendado)",
+          "manual_token": "Token manual (avançado)"
+        }
+      },
+      "device_auth": {
+        "title": "Autorização do dispositivo",
         "description": "Clique em Submeter para iniciar o processo de autorização."
+      },
+      "manual_token": {
+        "title": "Token manual",
+        "description": "Se a autorização do dispositivo não estiver a funcionar (por exemplo, problemas no servidor Tado), pode colar um token de atualização manualmente. Abra my.tado.com no seu browser, inicie sessão, abra Developer Tools (F12) → Aplicação → Armazenamento local → https://my.tado.com → tado_token e copie o valor refresh_token.",
+        "data": {
+          "refresh_token": "Token de atualização"
+        },
+        "data_description": {
+          "refresh_token": "Colar o valor refresh_token da aplicação Web do Tado"
+        }
       },
       "authorize": {
         "title": "Autorizar o Tado",
@@ -1276,6 +1294,7 @@
     },
     "error": {
       "cannot_connect": "Falha na ligação ao Tado. Verifique a sua ligação à Internet.",
+      "invalid_token": "Token de atualização inválido ou expirado. Verifique o token e tente novamente.",
       "auth_pending": "A autorização ainda não está concluída. Efectue primeiro a autorização no sítio Web do Tado e, em seguida, clique novamente em Enviar.",
       "authorization_failed": "A autorização falhou. Por favor, tente novamente desde o início."
     }
@@ -1292,7 +1311,7 @@
       },
       "global_settings": {
         "title": "Definições globais",
-        "description": "Configurar as definições de integração do Tado CE.\n\nℹ️ Se não necessitar de funcionalidades dependentes das condições climatéricas (risco de bolor, condensação, temperatura da superfície, nível de conforto, compensação climatérica), pode deixar 'Entidade de temperatura exterior' em branco.",
+        "description": "Configurar as definições de integração do Tado CE.\n\nℹ️ Se não necessitar de funcionalidades dependentes das condições climatéricas (risco de bolor, condensação, temperatura da superfície, nível de conforto, compensação climatérica), desative 'Usar entidade de temperatura exterior' nas definições Smart Comfort.",
         "sections": {
           "tado_ce_exclusive": {
             "name": "Tado CE Exclusivo",
