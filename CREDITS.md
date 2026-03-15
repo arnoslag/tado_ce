@@ -10,14 +10,15 @@ Thank you to everyone who supported the project through [Buy Me a Coffee](https:
 
 | | Supporter |
 |---|-----------|
-| ☕☕☕☕ | [@ChrisMarriott38](https://github.com/ChrisMarriott38) |
-| ☕☕☕ | [@rodneyha](https://github.com/rodneyha) |
-| ☕☕☕ | Marcel v.H. |
+| ☕☕☕☕☕☕☕☕ | [@ChrisMarriott38](https://github.com/ChrisMarriott38) |
+| ☕☕☕☕☕ | Marcel v.H. |
+| ☕☕☕☕☕ | [@rodneyha](https://github.com/rodneyha) |
+| ☕☕☕☕☕ | [@UKICS](https://github.com/UKICS) |
+| ☕☕ | Arnaud L. |
 | ☕☕ | [@hapklaar](https://github.com/hapklaar) |
-| ☕☕ | [@marcovn](https://github.com/marcovn) |
 | ☕☕ | [@jeverley](https://github.com/jeverley) |
 | ☕☕ | Luke R. |
-| ☕☕ | Arnaud L. |
+| ☕☕ | [@marcovn](https://github.com/marcovn) |
 | ☕ | Alby T. |
 
 ---
