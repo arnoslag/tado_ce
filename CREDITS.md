@@ -8,18 +8,12 @@ Tado CE is built with the help of an amazing community. This page recognises eve
 
 Thank you to everyone who supported the project through [Buy Me a Coffee](https://buymeacoffee.com/hiallfyi). Your generosity keeps the lights on.
 
-| | Supporter |
+| | Supporters |
 |---|-----------|
 | ☕☕☕☕☕☕☕☕ | [@ChrisMarriott38](https://github.com/ChrisMarriott38) |
-| ☕☕☕☕☕ | Marcel v.H. |
-| ☕☕☕☕☕ | [@rodneyha](https://github.com/rodneyha) |
-| ☕☕☕☕☕ | [@UKICS](https://github.com/UKICS) |
-| ☕☕ | Arnaud L. |
-| ☕☕ | [@hapklaar](https://github.com/hapklaar) |
-| ☕☕ | [@jeverley](https://github.com/jeverley) |
-| ☕☕ | Luke R. |
-| ☕☕ | [@marcovn](https://github.com/marcovn) |
-| ☕ | Alby T. |
+| ☕☕☕☕☕ | Marcel v.H., [@rodneyha](https://github.com/rodneyha), [@UKICS](https://github.com/UKICS) |
+| ☕☕ | Arnaud L., [@hapklaar](https://github.com/hapklaar), [@jeverley](https://github.com/jeverley), Luke R., [@marcovn](https://github.com/marcovn) |
+| ☕ | Alby T., [@MathiasB112](https://github.com/MathiasB112) |
 
 ---
 
