@@ -20,6 +20,9 @@ from homeassistant.helpers.selector import (
     SelectSelector,
     SelectSelectorConfig,
     SelectSelectorMode,
+    TextSelector,
+    TextSelectorConfig,
+    TextSelectorType,
 )
 import voluptuous as vol
 
@@ -711,6 +714,23 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                 errors["custom_night_interval"] = "interval_out_of_range"
                 processed_input["custom_night_interval"] = None
 
+            # Flatten bridge_config section
+            if "bridge_config" in user_input:
+                section = user_input["bridge_config"]
+                bridge_serial = (section.get("bridge_serial") or "").strip()
+                bridge_auth_key = (section.get("bridge_auth_key") or "").strip()
+                processed_input["bridge_serial"] = bridge_serial
+                processed_input["bridge_auth_key"] = bridge_auth_key
+
+                # Validate credentials if both fields provided
+                if bridge_serial and bridge_auth_key:
+                    from .bridge_api import TadoBridgeApiClient  # noqa: PLC0415
+
+                    session = async_get_clientsession(self.hass)
+                    bridge_client = TadoBridgeApiClient(session, bridge_serial, bridge_auth_key)
+                    if not await bridge_client.async_validate_credentials():
+                        errors["bridge_config"] = "bridge_auth_failed"
+
             if not errors:
                 # Save previous feature states for cleanup in async_reload_entry
                 prev_options = self.config_entry.options
@@ -1004,6 +1024,22 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                                         unit_of_measurement="d",
                                     ),
                                 ),
+                            },
+                        ),
+                        {"collapsed": True},
+                    ),
+                    # === Bridge Configuration (collapsed) ===
+                    vol.Required("bridge_config"): data_entry_flow.section(
+                        vol.Schema(
+                            {
+                                vol.Optional(
+                                    "bridge_serial",
+                                    description={"suggested_value": opt("bridge_serial", "")},
+                                ): TextSelector(TextSelectorConfig(type=TextSelectorType.TEXT)),
+                                vol.Optional(
+                                    "bridge_auth_key",
+                                    description={"suggested_value": opt("bridge_auth_key", "")},
+                                ): TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD)),
                             },
                         ),
                         {"collapsed": True},

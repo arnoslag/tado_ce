@@ -14,6 +14,9 @@ if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
     from homeassistant.helpers.entity_registry import EntityRegistry
 
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
+
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -121,6 +124,10 @@ _CLEANUP_DEFINITIONS: dict[str, dict[str, Any]] = {
         "label": "Mobile Devices",
         "match_contains": "_device_",
         "platform_filter": "device_tracker",
+    },
+    "_cleanup_bridge": {
+        "label": "Bridge",
+        "match_contains": "_boiler_",
     },
 }
 
@@ -315,15 +322,10 @@ def cleanup_orphan_device(
     Returns:
         True if a device was removed, False otherwise.
     """
-    from homeassistant.helpers import device_registry as dr
-
     device_registry = dr.async_get(hass)
     home_id = entry.data.get("home_id")
 
-    if home_id:
-        identifier = f"tado_ce_{home_id}_{device_suffix}"
-    else:
-        identifier = f"tado_ce_{device_suffix}"
+    identifier = f"tado_ce_{home_id}_{device_suffix}" if home_id else f"tado_ce_{device_suffix}"
 
     device_entry = device_registry.async_get_device(identifiers={(DOMAIN, identifier)})
     if device_entry:
@@ -350,9 +352,6 @@ def cleanup_orphan_devices(
     Returns:
         Number of orphan devices removed.
     """
-    from homeassistant.helpers import device_registry as dr
-    from homeassistant.helpers import entity_registry as er
-
     device_registry = dr.async_get(hass)
     entity_registry = er.async_get(hass)
     home_id = entry.data.get("home_id")
@@ -411,7 +410,65 @@ def detect_cleanup_flags(
         if was_enabled and not now_enabled:
             flags[cleanup_flag] = True
             _LOGGER.info("%s disabled: cleanup scheduled", option_key)
+
+    # Bridge credentials: both serial AND auth_key must be present to be "enabled"
+    had_bridge = bool(prev_options.get("bridge_serial")) and bool(prev_options.get("bridge_auth_key"))
+    has_bridge = bool(new_options.get("bridge_serial")) and bool(new_options.get("bridge_auth_key"))
+    if had_bridge and not has_bridge:
+        flags["_cleanup_bridge"] = True
+        _LOGGER.info("Bridge credentials removed: cleanup scheduled")
+
     return flags
+
+
+def _apply_cleanup_definition(
+    entity_registry: EntityRegistry,
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    defn: dict[str, Any],
+) -> int:
+    """Apply a single cleanup definition and remove matching entities.
+
+    Args:
+        entity_registry: HA entity registry.
+        hass: Home Assistant instance.
+        entry: Config entry being reloaded.
+        defn: Cleanup definition dict from ``_CLEANUP_DEFINITIONS``.
+
+    Returns:
+        Number of entities removed for this definition.
+    """
+    removed = 0
+
+    if "suffixes" in defn:
+        removed += cleanup_entities_by_suffix(
+            entity_registry, DOMAIN, defn.get("prefix", ""), defn["suffixes"],
+        )
+
+    if "patterns" in defn:
+        removed += cleanup_entities_by_pattern(entity_registry, DOMAIN, defn["patterns"])
+
+    if "zone_patterns" in defn:
+        removed += cleanup_entities_by_zone_pattern(entity_registry, DOMAIN, defn["zone_patterns"])
+
+    if "extra_patterns" in defn:
+        removed += cleanup_entities_by_pattern(entity_registry, DOMAIN, defn["extra_patterns"])
+
+    if "exact_suffixes" in defn:
+        removed += cleanup_entities_by_exact_suffix(
+            entity_registry, DOMAIN, defn["exact_suffixes"], defn.get("exclude_suffixes"),
+        )
+
+    if "match_contains" in defn:
+        removed += cleanup_entities_by_contains(
+            entity_registry, DOMAIN, defn["match_contains"], defn.get("platform_filter"),
+        )
+
+    # Remove specific orphan device if defined (e.g., Heating Schedule device)
+    if "remove_device" in defn:
+        cleanup_orphan_device(hass, entry, defn["remove_device"])
+
+    return removed
 
 
 def cleanup_disabled_feature_entities(
@@ -435,8 +492,6 @@ def cleanup_disabled_feature_entities(
     Returns:
         Total number of entities removed.
     """
-    from homeassistant.helpers import entity_registry as er
-
     entity_registry = er.async_get(hass)
 
     coordinator = getattr(entry, "runtime_data", None)
@@ -450,38 +505,10 @@ def cleanup_disabled_feature_entities(
 
         label = defn["label"]
         _LOGGER.info("Tado CE: %s disabled - removing entities", label)
-        removed = 0
 
-        if "suffixes" in defn:
-            removed += cleanup_entities_by_suffix(
-                entity_registry, DOMAIN, defn.get("prefix", ""), defn["suffixes"],
-            )
-
-        if "patterns" in defn:
-            removed += cleanup_entities_by_pattern(entity_registry, DOMAIN, defn["patterns"])
-
-        if "zone_patterns" in defn:
-            removed += cleanup_entities_by_zone_pattern(entity_registry, DOMAIN, defn["zone_patterns"])
-
-        if "extra_patterns" in defn:
-            removed += cleanup_entities_by_pattern(entity_registry, DOMAIN, defn["extra_patterns"])
-
-        if "exact_suffixes" in defn:
-            removed += cleanup_entities_by_exact_suffix(
-                entity_registry, DOMAIN, defn["exact_suffixes"], defn.get("exclude_suffixes"),
-            )
-
-        if "match_contains" in defn:
-            removed += cleanup_entities_by_contains(
-                entity_registry, DOMAIN, defn["match_contains"], defn.get("platform_filter"),
-            )
-
+        removed = _apply_cleanup_definition(entity_registry, hass, entry, defn)
         total_removed += removed
         _LOGGER.info("  Removed %s %s entities", removed, label.lower())
-
-        # Remove specific orphan device if defined (e.g., Heating Schedule device)
-        if "remove_device" in defn:
-            cleanup_orphan_device(hass, entry, defn["remove_device"])
 
     # Generic orphan device cleanup — remove ANY device with zero entities
     if total_removed > 0:

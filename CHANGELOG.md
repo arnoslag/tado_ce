@@ -2,6 +2,19 @@
 
 All notable changes to Tado CE will be documented in this file.
 
+## [3.2.0] - 2026-03-15
+
+**Bridge API Integration — Flow Temperature Control**
+
+### Features
+- **Bridge API Integration** — Connect to your Tado Internet Bridge for direct boiler control. New Options Flow step (Bridge Configuration) accepts bridge serial number and auth key. Creates 2 bridge sensors (Boiler Wiring State, Boiler Output Temperature) and 1 number entity (Boiler Max Output Temperature, 25–80°C range). Bridge data is fetched independently from the cloud API — errors are isolated and never affect main polling.
+- **Bridge Entity Cleanup** — Removing bridge credentials from Options Flow automatically cleans up all bridge-related entities (boiler sensors and number entity).
+
+### Improvements
+- **Entity Cleanup Refactored** — Extracted `_apply_cleanup_definition` helper to reduce `cleanup_disabled_feature_entities` complexity (C901). Moved lazy imports to top-level. Applied SIM108 ternary fix.
+- **Code Quality** — All bridge files pass `ruff --select=ALL` and `mypy --strict`. Pre-existing ruff issues in `entity_cleanup.py` resolved (PLC0415, SIM108, C901).
+- **Test Coverage** — All source files now ≥ 95% individual coverage. Added tests for `read_external_sensor`, `sensor_bridge.py` (14 tests), `number.py` (4 tests). Overall coverage 98% with 3519 tests.
+
 ## [3.1.1] - 2026-03-15
 
 **Manual Token Auth, Climate Card Fix & Smart AC Mode**

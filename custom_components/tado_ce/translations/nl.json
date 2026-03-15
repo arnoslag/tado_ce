@@ -923,6 +923,12 @@
             "name": "Aanbeveling"
           }
         }
+      },
+      "boiler_wiring_state": {
+        "name": "Boiler Wiring State"
+      },
+      "boiler_output_temperature": {
+        "name": "Boiler Output Temperature"
       }
     },
     "select": {
@@ -1037,6 +1043,11 @@
             "name": "Zone-ID"
           }
         }
+      }
+    },
+    "number": {
+      "boiler_max_output_temperature": {
+        "name": "Boiler Max Output Temperature"
       }
     }
   },
@@ -1207,6 +1218,9 @@
     },
     "timer_set_failed": {
       "message": "{duration}min-timer niet ingesteld voor {zone_name}: {error}"
+    },
+    "bridge_auth_failed": {
+      "message": "Invalid bridge serial or auth key"
     }
   },
   "issues": {
@@ -1400,6 +1414,18 @@
               "api_history_retention_days": "Dagen om API oproepgeschiedenis te bewaren (0 = voor altijd)",
               "quota_reserve_enabled": "Pauzeer polling als quota laag is. Alleen uitschakelen als je de risico's begrijpt."
             }
+          },
+          "bridge_config": {
+            "name": "Bridge Configuration",
+            "description": "Optional: connect to your Tado Internet Bridge for flow temperature control",
+            "data": {
+              "bridge_serial": "Bridge Serial Number",
+              "bridge_auth_key": "Bridge Auth Key"
+            },
+            "data_description": {
+              "bridge_serial": "Serial number printed on the bottom of your Internet Bridge (e.g. IB123456789)",
+              "bridge_auth_key": "Auth key from the bridge sticker or Tado app (keep confidential)"
+            }
           }
         }
       },
@@ -1497,7 +1523,8 @@
     },
     "error": {
       "interval_out_of_range": "Polling-interval moet tussen 1 en 1440 minuten liggen",
-      "invalid_number": "Voer een geldig nummer in"
+      "invalid_number": "Voer een geldig nummer in",
+      "bridge_auth_failed": "Invalid bridge serial or auth key — please check and try again"
     }
   }
 }

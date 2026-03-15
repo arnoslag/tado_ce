@@ -21,7 +21,7 @@ from homeassistant.helpers.update_coordinator import (
 )
 
 from .const import DOMAIN, OVERLAY_MODE_DEFAULT, TIMER_DURATION_DEFAULT, get_data_file
-from .exceptions import TadoAuthError, TadoSyncError
+from .exceptions import TadoAuthError, TadoBridgeApiError, TadoSyncError
 from .insight_history import InsightHistoryTracker
 from .polling import get_polling_interval, should_pause_polling
 
@@ -34,6 +34,7 @@ if TYPE_CHECKING:
     from .adaptive_preheat import AdaptivePreheatManager
     from .api_call_tracker import APICallTracker
     from .api_client import TadoApiClient
+    from .bridge_api import TadoBridgeApiClient
     from .config_manager import ConfigurationManager
     from .data_loader import DataLoader
     from .heating_coordinator import HeatingCycleCoordinator
@@ -132,6 +133,9 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Full sync tracking
         self._last_full_sync: datetime | None = None
         self._cached_ratelimit: dict[str, Any] | None = None
+
+        # Bridge API client (lazy-init from options when bridge credentials present)
+        self.bridge_api_client: TadoBridgeApiClient | None = None
 
         # Platforms loaded during setup (used by unload to match exactly)
         self.loaded_platforms: frozenset[Platform] = frozenset()
@@ -295,7 +299,10 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if self.insight_history._dirty:
             await self.insight_history.async_save()
 
-        return {
+        # 10. Bridge API data (optional — only if bridge credentials configured)
+        bridge_data = await self._async_fetch_bridge_data()
+
+        result: dict[str, Any] = {  # noqa: ANN401 — coordinator data dict
             "zones": zone_data or {},
             "config": config_data or {},
             "home_state": home_state_data or {},
@@ -308,12 +315,49 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "offsets": offsets_data or {},
             "schedules": schedules_data or {},
         }
+        if bridge_data is not None:
+            result["bridge"] = bridge_data
+        return result
 
     def _should_do_full_sync(self) -> bool:
         """Check if full sync needed (vs quick). Only on first poll after restart/reload."""
         if self._last_full_sync is None:
             return True
         return False
+
+    async def _async_fetch_bridge_data(self) -> dict[str, object] | None:
+        """Fetch bridge API data if credentials are configured.
+
+        Lazy-initialises the bridge client from entry options on first call.
+        Returns parsed wiring state dict, or None if credentials are missing
+        or the bridge API call fails (graceful degradation — never affects
+        cloud data).
+        """
+        options = self.config_entry.options
+        bridge_serial = options.get("bridge_serial", "")
+        bridge_auth_key = options.get("bridge_auth_key", "")
+
+        if not bridge_serial or not bridge_auth_key:
+            # No credentials → skip silently
+            self.bridge_api_client = None
+            return None
+
+        # Lazy-init (or re-init if credentials changed)
+        if self.bridge_api_client is None:
+            from homeassistant.helpers.aiohttp_client import (  # noqa: PLC0415
+                async_get_clientsession,
+            )
+
+            from .bridge_api import TadoBridgeApiClient  # noqa: PLC0415
+
+            session = async_get_clientsession(self.hass)
+            self.bridge_api_client = TadoBridgeApiClient(session, bridge_serial, bridge_auth_key)
+
+        try:
+            return await self.bridge_api_client.async_get_wiring_state()
+        except TadoBridgeApiError:
+            _LOGGER.debug("Tado CE: Bridge API fetch failed — cloud data unaffected")
+            return None
 
     async def _async_load_ratelimit(self) -> None:
         """Load ratelimit data via async I/O."""

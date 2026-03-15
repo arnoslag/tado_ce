@@ -923,6 +923,12 @@
             "name": "Empfehlung"
           }
         }
+      },
+      "boiler_wiring_state": {
+        "name": "Boiler Wiring State"
+      },
+      "boiler_output_temperature": {
+        "name": "Boiler Output Temperature"
       }
     },
     "select": {
@@ -1037,6 +1043,11 @@
             "name": "Zone ID"
           }
         }
+      }
+    },
+    "number": {
+      "boiler_max_output_temperature": {
+        "name": "Boiler Max Output Temperature"
       }
     }
   },
@@ -1207,6 +1218,9 @@
     },
     "timer_set_failed": {
       "message": "{duration}min Timer für {zone_name} konnte nicht gesetzt werden: {error}"
+    },
+    "bridge_auth_failed": {
+      "message": "Invalid bridge serial or auth key"
     }
   },
   "issues": {
@@ -1400,6 +1414,18 @@
               "api_history_retention_days": "Tage, die der API-Aufrufverlauf aufbewahrt werden soll (0 = für immer)",
               "quota_reserve_enabled": "Pausieren Sie die Abfrage, wenn die Quote niedrig ist. Deaktivieren Sie diese Option nur, wenn Sie die Risiken verstehen."
             }
+          },
+          "bridge_config": {
+            "name": "Bridge Configuration",
+            "description": "Optional: connect to your Tado Internet Bridge for flow temperature control",
+            "data": {
+              "bridge_serial": "Bridge Serial Number",
+              "bridge_auth_key": "Bridge Auth Key"
+            },
+            "data_description": {
+              "bridge_serial": "Serial number printed on the bottom of your Internet Bridge (e.g. IB123456789)",
+              "bridge_auth_key": "Auth key from the bridge sticker or Tado app (keep confidential)"
+            }
           }
         }
       },
@@ -1497,7 +1523,8 @@
     },
     "error": {
       "interval_out_of_range": "Das Abfrageintervall muss zwischen 1 und 1440 Minuten liegen.",
-      "invalid_number": "Bitte geben Sie eine gültige Nummer ein"
+      "invalid_number": "Bitte geben Sie eine gültige Nummer ein",
+      "bridge_auth_failed": "Invalid bridge serial or auth key — please check and try again"
     }
   }
 }

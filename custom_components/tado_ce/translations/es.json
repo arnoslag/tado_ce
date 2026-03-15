@@ -923,6 +923,12 @@
             "name": "Recomendación"
           }
         }
+      },
+      "boiler_wiring_state": {
+        "name": "Boiler Wiring State"
+      },
+      "boiler_output_temperature": {
+        "name": "Boiler Output Temperature"
       }
     },
     "select": {
@@ -1037,6 +1043,11 @@
             "name": "Zona ID"
           }
         }
+      }
+    },
+    "number": {
+      "boiler_max_output_temperature": {
+        "name": "Boiler Max Output Temperature"
       }
     }
   },
@@ -1207,6 +1218,9 @@
     },
     "timer_set_failed": {
       "message": "Fallo al configurar el temporizador {duration}min para {zone_name}: {error}"
+    },
+    "bridge_auth_failed": {
+      "message": "Invalid bridge serial or auth key"
     }
   },
   "issues": {
@@ -1400,6 +1414,18 @@
               "api_history_retention_days": "Días para conservar el historial de llamadas a la API (0 = para siempre)",
               "quota_reserve_enabled": "Pausa el sondeo cuando la cuota es baja. Desactívelo sólo si conoce los riesgos."
             }
+          },
+          "bridge_config": {
+            "name": "Bridge Configuration",
+            "description": "Optional: connect to your Tado Internet Bridge for flow temperature control",
+            "data": {
+              "bridge_serial": "Bridge Serial Number",
+              "bridge_auth_key": "Bridge Auth Key"
+            },
+            "data_description": {
+              "bridge_serial": "Serial number printed on the bottom of your Internet Bridge (e.g. IB123456789)",
+              "bridge_auth_key": "Auth key from the bridge sticker or Tado app (keep confidential)"
+            }
           }
         }
       },
@@ -1497,7 +1523,8 @@
     },
     "error": {
       "interval_out_of_range": "El intervalo de sondeo debe estar comprendido entre 1 y 1440 minutos",
-      "invalid_number": "Introduzca un número válido"
+      "invalid_number": "Introduzca un número válido",
+      "bridge_auth_failed": "Invalid bridge serial or auth key — please check and try again"
     }
   }
 }

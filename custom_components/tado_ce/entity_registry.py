@@ -563,6 +563,27 @@ ENTITY_REGISTRY: dict[str, EntityMeta] = {
         icon=None,
         legacy_name=None,
     ),
+    # ===================================================================
+    # Bridge Sensors / Number (bridge API — flow temperature control)
+    # ===================================================================
+    "sensor_boiler_wiring_state": EntityMeta(
+        translation_key="boiler_wiring_state",
+        unique_id_suffix="boiler_wiring_state",
+        entity_category="diagnostic",
+        icon="mdi:pipe-wrench",
+    ),
+    "sensor_boiler_output_temperature": EntityMeta(
+        translation_key="boiler_output_temperature",
+        unique_id_suffix="boiler_output_temperature",
+        entity_category=None,
+        icon="mdi:thermometer-water",
+    ),
+    "number_boiler_max_output_temperature": EntityMeta(
+        translation_key="boiler_max_output_temperature",
+        unique_id_suffix="boiler_max_output_temperature",
+        entity_category=None,
+        icon="mdi:thermometer-water",
+    ),
 }
 
 

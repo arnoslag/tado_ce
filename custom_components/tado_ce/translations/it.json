@@ -923,6 +923,12 @@
             "name": "Raccomandazione"
           }
         }
+      },
+      "boiler_wiring_state": {
+        "name": "Boiler Wiring State"
+      },
+      "boiler_output_temperature": {
+        "name": "Boiler Output Temperature"
       }
     },
     "select": {
@@ -1037,6 +1043,11 @@
             "name": "ID zona"
           }
         }
+      }
+    },
+    "number": {
+      "boiler_max_output_temperature": {
+        "name": "Boiler Max Output Temperature"
       }
     }
   },
@@ -1207,6 +1218,9 @@
     },
     "timer_set_failed": {
       "message": "Impossibile impostare il timer {duration}min per {zone_name}: {error}"
+    },
+    "bridge_auth_failed": {
+      "message": "Invalid bridge serial or auth key"
     }
   },
   "issues": {
@@ -1400,6 +1414,18 @@
               "api_history_retention_days": "Giorni per conservare la cronologia delle chiamate API (0 = per sempre)",
               "quota_reserve_enabled": "Sospende il polling quando la quota è bassa. Disattivare solo se si conoscono i rischi."
             }
+          },
+          "bridge_config": {
+            "name": "Bridge Configuration",
+            "description": "Optional: connect to your Tado Internet Bridge for flow temperature control",
+            "data": {
+              "bridge_serial": "Bridge Serial Number",
+              "bridge_auth_key": "Bridge Auth Key"
+            },
+            "data_description": {
+              "bridge_serial": "Serial number printed on the bottom of your Internet Bridge (e.g. IB123456789)",
+              "bridge_auth_key": "Auth key from the bridge sticker or Tado app (keep confidential)"
+            }
           }
         }
       },
@@ -1497,7 +1523,8 @@
     },
     "error": {
       "interval_out_of_range": "L'intervallo di polling deve essere compreso tra 1 e 1440 minuti.",
-      "invalid_number": "Inserire un numero valido"
+      "invalid_number": "Inserire un numero valido",
+      "bridge_auth_failed": "Invalid bridge serial or auth key — please check and try again"
     }
   }
 }

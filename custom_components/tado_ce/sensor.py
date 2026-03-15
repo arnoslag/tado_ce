@@ -26,6 +26,12 @@ if TYPE_CHECKING:
     from .coordinator import TadoConfigEntry, TadoDataUpdateCoordinator
     from .data_loader import DataLoader
 
+# Bridge sensors (2 classes)
+from .sensor_bridge import (
+    TadoBoilerOutputTemperatureSensor,
+    TadoBoilerWiringStateSensor,
+)
+
 # Device sensors (2 classes)
 from .sensor_device import (
     TadoBatterySensor,
@@ -343,6 +349,14 @@ async def async_setup_entry(
                         )
         except Exception as e:
             _LOGGER.warning("Failed to load device info: %s", e)
+
+    # Bridge sensors (optional — only when bridge credentials configured)
+    bridge_serial = entry.options.get("bridge_serial")
+    bridge_auth_key = entry.options.get("bridge_auth_key")
+    if bridge_serial and bridge_auth_key:
+        sensors.append(TadoBoilerWiringStateSensor(coordinator))
+        sensors.append(TadoBoilerOutputTemperatureSensor(coordinator))
+        _LOGGER.info("Bridge credentials found — creating bridge sensors")
 
     async_add_entities(sensors, True)
     _LOGGER.info("Tado CE sensors loaded: %s", len(sensors))

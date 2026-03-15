@@ -49,6 +49,7 @@ BASE_PLATFORMS = [
     Platform.SWITCH,
     Platform.BUTTON,
     Platform.SELECT,
+    Platform.NUMBER,
 ]
 CALENDAR_PLATFORM = Platform.CALENDAR
 

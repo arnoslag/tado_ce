@@ -26,3 +26,11 @@ class TadoSyncError(HomeAssistantError):
     The coordinator catches this and raises UpdateFailed,
     which marks the coordinator as failed and retries on next poll.
     """
+
+
+class TadoBridgeApiError(HomeAssistantError):
+    """Raised when a Bridge API call fails (network, HTTP, or parse error).
+
+    Bridge API errors are isolated from the main cloud API — they never
+    trigger OAuth reauth or affect coordinator cloud data.
+    """
