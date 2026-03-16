@@ -21,6 +21,10 @@ Thank you to everyone who supported the project through [Buy Me a Coffee](https:
 
 Community contributors who helped shape each release through bug reports, feature requests, testing, and feedback.
 
+### v3.2.2
+
+- **[@driagi](https://github.com/driagi)** — Provided critical v3.2.1 debug logs that revealed the wrong data path for Boiler Output Temperature sensor, enabling the fix ([#187](https://github.com/hiall-fyi/tado_ce/issues/187))
+
 ### v3.2.1
 
 - **[@driagi](https://github.com/driagi)** — Reported Bridge API sensor showing "Unknown" and provided debug logs for troubleshooting ([#187](https://github.com/hiall-fyi/tado_ce/issues/187))

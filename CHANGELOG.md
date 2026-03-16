@@ -2,6 +2,11 @@
 
 All notable changes to Tado CE will be documented in this file.
 
+## [3.2.2] - 2026-03-16
+
+### Bug Fixes
+- **Fixed Boiler Output Temperature Sensor Reading Wrong Data Path** ([#187](https://github.com/hiall-fyi/tado_ce/issues/187) - @driagi) — Bridge API sensor was reading from non-existent `boilerMaxOutputTemperatureInCelsius` field instead of the correct `boiler.outputTemperature.celsius` path in the wiring state response. Sensor now correctly displays real-time boiler output temperature. Also fixed Wiring State sensor extra attributes to read from the nested `deviceWiredToBoiler` object.
+
 ## [3.2.1] - 2026-03-16
 
 ### Features

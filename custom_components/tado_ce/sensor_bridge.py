@@ -75,16 +75,25 @@ class TadoBoilerWiringStateSensor(TadoBridgeBaseSensor):
         """Return extra state attributes from bridge data."""
         bridge: dict[str, object] = self.coordinator.data.get("bridge") or {}
         attrs: dict[str, object] = {}
-        if "deviceType" in bridge:
-            attrs["device_type"] = bridge["deviceType"]
-        if "serialNo" in bridge:
-            attrs["serial"] = bridge["serialNo"]
-        if "connectionType" in bridge:
-            attrs["connection_type"] = bridge["connectionType"]
-        if "isConnected" in bridge:
-            attrs["connected"] = bridge["isConnected"]
+
+        # Bridge-level attributes
+        if "bridgeConnected" in bridge:
+            attrs["bridge_connected"] = bridge["bridgeConnected"]
         if "hotWaterZonePresent" in bridge:
             attrs["hot_water_zone_present"] = bridge["hotWaterZonePresent"]
+
+        # Device wired to boiler attributes (nested object)
+        device = bridge.get("deviceWiredToBoiler")
+        if isinstance(device, dict):
+            if "type" in device:
+                attrs["device_type"] = device["type"]
+            if "serialNo" in device:
+                attrs["device_serial"] = device["serialNo"]
+            if "thermInterfaceType" in device:
+                attrs["therm_interface_type"] = device["thermInterfaceType"]
+            if "connected" in device:
+                attrs["device_connected"] = device["connected"]
+
         return attrs
 
     @callback
@@ -103,7 +112,7 @@ class TadoBoilerWiringStateSensor(TadoBridgeBaseSensor):
 
 
 class TadoBoilerOutputTemperatureSensor(TadoBridgeBaseSensor):
-    """Sensor showing current boiler max temperature setting from Bridge API."""
+    """Sensor showing real-time boiler output temperature from Bridge API."""
 
     _attr_device_class = SensorDeviceClass.TEMPERATURE
     _attr_state_class = SensorStateClass.MEASUREMENT
@@ -129,18 +138,24 @@ class TadoBoilerOutputTemperatureSensor(TadoBridgeBaseSensor):
             self._attr_available = False
             return
 
-        # Try to get the max temperature setting from bridge data
-        temp = bridge.get("boilerMaxOutputTemperatureInCelsius")
-        _LOGGER.debug("Sensor update - boilerMaxOutputTemperatureInCelsius: %s", temp)
-        if temp is not None:
-            try:
-                float_temp = float(temp)
-                self._attr_native_value = float_temp
-                self._attr_available = True
-                _LOGGER.debug("Sensor update - successfully set value to %s°C", float_temp)
-            except (ValueError, TypeError) as e:
-                _LOGGER.debug("Sensor update - failed to convert temperature: %s", e)
-                self._attr_available = False
-        else:
-            _LOGGER.debug("Sensor update - boilerMaxOutputTemperatureInCelsius field missing")
-            self._attr_available = False
+        # Real-time boiler output temperature lives at boiler.outputTemperature.celsius
+        # in the wiring state API response
+        boiler = bridge.get("boiler")
+        if boiler and isinstance(boiler, dict):
+            output_temp = boiler.get("outputTemperature")
+            if output_temp and isinstance(output_temp, dict):
+                temp = output_temp.get("celsius")
+                _LOGGER.debug("Sensor update - boiler.outputTemperature.celsius: %s", temp)
+                if temp is not None:
+                    try:
+                        float_temp = float(temp)
+                        self._attr_native_value = float_temp
+                        self._attr_available = True
+                        _LOGGER.debug("Sensor update - successfully set value to %s°C", float_temp)
+                    except (ValueError, TypeError) as e:
+                        _LOGGER.debug("Sensor update - failed to convert temperature: %s", e)
+                        self._attr_available = False
+                    return
+
+        _LOGGER.debug("Sensor update - boiler.outputTemperature.celsius not found in bridge data")
+        self._attr_available = False
