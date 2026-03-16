@@ -3,7 +3,7 @@
 <div align="center">
 
 <!-- Platform Badges -->
-![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2026.3.1-blue?style=for-the-badge&logo=home-assistant) ![Python](https://img.shields.io/badge/Python-3.13%2B-blue?style=for-the-badge&logo=python&logoColor=white) ![Tado](https://img.shields.io/badge/Tado-V2%2FV3%2FV3%2B-orange?style=for-the-badge) ![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg?style=for-the-badge)
+![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2026.3.2-blue?style=for-the-badge&logo=home-assistant) ![Python](https://img.shields.io/badge/Python-3.13%2B-blue?style=for-the-badge&logo=python&logoColor=white) ![Tado](https://img.shields.io/badge/Tado-V2%2FV3%2FV3%2B-orange?style=for-the-badge) ![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg?style=for-the-badge)
 
 <!-- Status Badges -->
 ![Version](https://img.shields.io/badge/Version-3.2.2-purple?style=for-the-badge) ![License](https://img.shields.io/badge/License-AGPL--3.0-blue?style=for-the-badge) ![Maintained](https://img.shields.io/badge/Maintained-Yes-green.svg?style=for-the-badge) ![Tests](https://img.shields.io/badge/Tests-3655-blue?style=for-the-badge) ![Coverage](https://img.shields.io/badge/Coverage-98%25-brightgreen?style=for-the-badge)
@@ -127,7 +127,7 @@ See [FEATURES_GUIDE.md](FEATURES_GUIDE.md) for detailed configuration guides and
 
 ## Entities
 
-Quick overview of entities created by Tado CE (75 entity types — see [ENTITIES.md](ENTITIES.md) for full reference):
+Quick overview of entities created by Tado CE (72 entity types — see [ENTITIES.md](ENTITIES.md) for full reference):
 
 - **Hub**: API usage/reset/sync sensors, weather sensors, home insights, presence mode, overlay mode, resume all button
 - **Per Zone**: Climate control, temperature/humidity, heating power, overlay status, battery, connection
@@ -250,23 +250,6 @@ Tado X devices use Matter over Thread - use the [Home Assistant Matter integrati
 ## Troubleshooting
 
 <details>
-<summary><strong>⚠️ Options not saving (v1.9.0+)</strong></summary>
-
-If clicking "Submit" in Configure doesn't show "Successfully saved", the **Outdoor Temperature Entity** field may be empty.
-
-**This is a Home Assistant Core limitation** ([Issue #154795](https://github.com/home-assistant/core/issues/154795)) - EntitySelector cannot handle empty values.
-
-**Workaround:**
-1. Go to **Settings → Devices & Services → Tado CE → Configure**
-2. Expand **Smart Comfort Settings**
-3. Set **Outdoor Temperature Entity** to any weather entity (e.g., `weather.home`)
-4. Click **Submit**
-
-If you don't want weather compensation, set "Smart Comfort Mode" to "None".
-
-</details>
-
-<details>
 <summary><strong>Token refresh failed / Re-authentication required</strong></summary>
 
 1. Go to **Settings > Devices & Services > Tado CE**
@@ -299,6 +282,29 @@ Restart Home Assistant and check **Settings > System > Logs**.
 </details>
 
 For other issues, check logs at **Settings > System > Logs** (filter by "tado_ce") or [open an issue on GitHub](https://github.com/hiall-fyi/tado_ce/issues).
+
+<details>
+<summary><strong>Bridge API sensors showing "Unknown"</strong></summary>
+
+Wrong data path (fixed in v3.2.2), bridge credentials invalid, or bridge offline.
+
+**Solution:**
+1. Update to **v3.2.2+**
+2. Verify credentials in **Configure → Bridge Configuration**
+3. Check bridge is online
+4. Enable debug logging:
+
+```yaml
+logger:
+  default: info
+  logs:
+    custom_components.tado_ce.bridge_api: debug
+    custom_components.tado_ce.sensor_bridge: debug
+```
+
+Look for `Bridge API full response` in logs to verify the API is returning data.
+
+</details>
 
 ---
 

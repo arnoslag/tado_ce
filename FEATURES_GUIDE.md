@@ -15,12 +15,13 @@ Complete guide to all Tado CE exclusive features, configurations, and usage scen
 6. [Enhanced Mold Risk Assessment](#-enhanced-mold-risk-assessment)
 7. [Heating Cycle Detection](#-heating-cycle-detection)
 8. [Enhanced Controls](#-enhanced-controls)
-9. [Optional Features](#-optional-features)
-10. [Per-Zone Configuration](#-per-zone-configuration)
-11. [Zone Features Toggles](#-zone-features-toggles)
-12. [Configuration Scenarios](#-configuration-scenarios)
-13. [Actionable Insights](#-actionable-insights)
-14. [Troubleshooting](#-troubleshooting)
+9. [Bridge API Integration](#-bridge-api-integration)
+10. [Optional Features](#-optional-features)
+11. [Per-Zone Configuration](#-per-zone-configuration)
+12. [Zone Features Toggles](#-zone-features-toggles)
+13. [Configuration Scenarios](#-configuration-scenarios)
+14. [Actionable Insights](#-actionable-insights)
+15. [Troubleshooting](#-troubleshooting)
 
 ---
 
@@ -628,6 +629,176 @@ data:
 
 Supported services: `set_climate_timer`, `set_water_heater_timer`, `resume_schedule`.
 
+#### 7. Open Window Services (v3.1.0+)
+
+Three services for open window management, each serving a different purpose:
+
+| Service | Purpose | When to Use |
+|---------|---------|-------------|
+| `tado_ce.activate_open_window` | Confirm Tado's own detection | Auto-Assist replacement — Tado has already detected an open window |
+| `tado_ce.deactivate_open_window` | Cancel open window mode | Resume normal heating after window is closed |
+| `tado_ce.set_open_window_mode` | Trigger from external sensors | Zigbee/Z-Wave contact sensors — no Tado detection needed |
+
+**Set Open Window Mode** is the most useful for automations. It sets the zone to frost protection (5°C) with a timer:
+
+```yaml
+# Basic — uses zone's Open Window Detection timeout, or 15 min default
+service: tado_ce.set_open_window_mode
+target:
+  entity_id: climate.bedroom
+
+# Custom duration (seconds)
+service: tado_ce.set_open_window_mode
+target:
+  entity_id: climate.bedroom
+data:
+  duration: 1800  # 30 minutes
+
+# Indefinite — stays until manually resumed (v3.2.1+)
+service: tado_ce.set_open_window_mode
+target:
+  entity_id: climate.bedroom
+data:
+  duration: 0
+```
+
+**Duration priority:** user-provided `duration` > zone's `openWindowDetection.timeoutInSeconds` > 15 min default.
+
+**Automation example — contact sensor triggers open window mode:**
+
+```yaml
+automation:
+  - alias: "Open Window — Bedroom"
+    trigger:
+      - platform: state
+        entity_id: binary_sensor.bedroom_window_contact
+        to: "on"
+    action:
+      - service: tado_ce.set_open_window_mode
+        target:
+          entity_id: climate.bedroom
+        data:
+          duration: 0  # indefinite until window closes
+
+  - alias: "Close Window — Bedroom"
+    trigger:
+      - platform: state
+        entity_id: binary_sensor.bedroom_window_contact
+        to: "off"
+    action:
+      - service: tado_ce.deactivate_open_window
+        target:
+          entity_id: climate.bedroom
+```
+
+---
+
+## 🌉 Bridge API Integration
+
+**Available:** v3.2.0+ | **Requirement:** Tado Internet Bridge with serial + auth key | **Opt-in Configuration**
+
+Direct communication with your Tado Internet Bridge for boiler flow temperature monitoring and control. Independent from the cloud API — errors never affect main polling.
+
+### Overview
+
+The Bridge API uses the serial number and auth key printed on the bottom of your Internet Bridge to authenticate directly with `my.tado.com/api/v2/homeByBridge/{serial}/`. This is separate from the OAuth-based cloud API used for zone data.
+
+### Entities
+
+| Entity | Friendly Name | Type | Description |
+|--------|--------------|------|-------------|
+| `sensor.tado_ce_{home_id}_boiler_wiring_state` | Boiler Wiring State | Sensor | Bridge installation status (Ready / Installing / Failed) |
+| `sensor.tado_ce_{home_id}_boiler_output_temperature` | Boiler Output Temperature | Sensor | Real-time boiler output temperature (°C) |
+| `number.tado_ce_{home_id}_boiler_max_output_temperature` | Boiler Max Output Temperature | Number | Control max flow temperature (25–80°C, 0.5°C step) |
+
+### Wiring State Attributes
+
+The Boiler Wiring State sensor includes extra state attributes from the Bridge API response:
+
+| Attribute | Description |
+|-----------|-------------|
+| `bridge_connected` | Whether the bridge is online |
+| `hot_water_zone_present` | Whether hot water zone is detected |
+| `device_type` | Device wired to boiler (e.g. RU02) |
+| `device_serial` | Serial number of the wired device |
+| `therm_interface_type` | Connection type (OPENTHERM, eBUS, relay) |
+| `device_connected` | Whether the wired device is connected |
+
+### Configuration
+
+1. Go to **Settings** → **Devices & Services** → **Tado CE** → **Configure**
+2. Expand the **Bridge Configuration** section (last collapsible section)
+3. Enter your **Bridge Serial Number** (starts with `IB`, printed on the bottom of your Internet Bridge)
+4. Enter your **Bridge Auth Key** (also printed on the bottom)
+5. Save — credentials are validated automatically against the Bridge API
+
+Removing the credentials from Bridge Configuration automatically cleans up all bridge-related entities.
+
+### How It Works
+
+- Bridge data is fetched during each coordinator update cycle alongside cloud API data
+- Bridge API errors are isolated — they never affect cloud data or trigger reauth
+- The `boiler.outputTemperature.celsius` field in the wiring state response provides real-time boiler output temperature
+- Max output temperature control PUTs to `boilerMaxOutputTemperature` endpoint
+
+### Bridge API vs Cloud API Boiler Sensors
+
+| Sensor | Source | Requires |
+|--------|--------|----------|
+| Boiler Flow Temp | Cloud API (`activityDataPoints.boilerFlowTemperature`) | OpenTherm-connected boiler |
+| Boiler Output Temperature | Bridge API (`boiler.outputTemperature.celsius`) | Bridge credentials |
+| Boiler Max Output Temperature | Bridge API (`boilerMaxOutputTemperature`) | Bridge credentials |
+
+Both can coexist — they read from different data sources.
+
+### Usage Scenarios
+
+#### Scenario 1: Monitor Boiler Output Temperature
+
+```yaml
+type: entities
+entities:
+  - entity: sensor.tado_ce_{home_id}_boiler_output_temperature
+    name: "Boiler Output Temp"
+  - entity: sensor.tado_ce_{home_id}_boiler_wiring_state
+    name: "Bridge Status"
+  - entity: number.tado_ce_{home_id}_boiler_max_output_temperature
+    name: "Max Flow Temp"
+```
+
+#### Scenario 2: Weather-Compensated Flow Temperature
+
+```yaml
+automation:
+  - alias: "Lower Flow Temp When Mild"
+    trigger:
+      - platform: numeric_state
+        entity_id: sensor.tado_ce_hub_outside_temp
+        above: 12
+        for:
+          hours: 2
+    action:
+      - service: number.set_value
+        target:
+          entity_id: number.tado_ce_{home_id}_boiler_max_output_temperature
+        data:
+          value: 45
+
+  - alias: "Raise Flow Temp When Cold"
+    trigger:
+      - platform: numeric_state
+        entity_id: sensor.tado_ce_hub_outside_temp
+        below: 2
+        for:
+          hours: 1
+    action:
+      - service: number.set_value
+        target:
+          entity_id: number.tado_ce_{home_id}_boiler_max_output_temperature
+        data:
+          value: 65
+```
+
 ---
 
 ## 🔧 Optional Features
@@ -1128,6 +1299,23 @@ automation:
 
 **Solution:** Verify boiler supports OpenTherm, check Tado app for flow temp data.
 
+### Bridge API Sensors Showing "Unknown"
+
+**Causes:** Wrong data path (fixed in v3.2.2), bridge credentials invalid, bridge offline.
+
+**Solution:** Update to v3.2.2+, verify credentials in Configure → Bridge Configuration, check bridge is online. Enable debug logging:
+
+```yaml
+logger:
+  default: info
+  logs:
+    custom_components.tado_ce.bridge_api: debug
+    custom_components.tado_ce.sensor_bridge: debug
+    custom_components.tado_ce.coordinator: debug
+```
+
+Look for `Bridge API full response` in logs to verify the API is returning data.
+
 ### Device Tracking Not Working
 
 **Causes:** Not enabled, geo-tracking not enabled in Tado app, no mobile devices registered.
@@ -1150,11 +1338,11 @@ automation:
 
 ## 📚 Related Documentation
 
-- [ENTITIES.md](ENTITIES.md) — Complete entity reference (75 entities)
+- [ENTITIES.md](ENTITIES.md) — Complete entity reference (72 entities)
 - [README.md](README.md) — Installation and setup
 - [API_REFERENCE.md](API_REFERENCE.md) — Technical API details
 - [ROADMAP.md](ROADMAP.md) — Planned features and ideas
 
 ---
 
-**Last Updated:** v3.0.0 (2026-03-10)
+**Last Updated:** v3.2.2 (2026-03-16)

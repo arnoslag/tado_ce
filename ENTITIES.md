@@ -1,6 +1,6 @@
-# Tado CE — Entity Reference (v3.2.0)
+# Tado CE — Entity Reference (v3.2.2)
 
-This document lists all 69 entities in Tado CE, organised by function.
+This document lists all 72 entities in Tado CE, organised by function.
 
 > **v3.1.0 change:** Per-zone configuration (overlay mode, timer, min/max temp, temp offset, heating type, window type, sensitivity, external sensors, etc.) moved from 11 HA entities per zone to a centralised Options Flow menu. Zero config entities are created — settings live in **Settings → Tado CE → Configure → Zone Configuration**.
 
@@ -462,4 +462,4 @@ This document lists all 69 entities in Tado CE, organised by function.
 | Calendar | 1 /zone | 1 | 0 | 0 |
 | Zone Config | ~~11 /zone~~ 0 (Options Flow) | — | — | — |
 | Device Tracker | 1 /device | 1 | 0 | 0 |
-| **Total unique types** | **69** | **~51** | **4** | **~12** |
+| **Total unique types** | **72** | **~54** | **4** | **~12** |
