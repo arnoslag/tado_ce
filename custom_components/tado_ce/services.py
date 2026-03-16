@@ -47,6 +47,50 @@ WATER_HEATER_MIN_TEMP = 30
 WATER_HEATER_MAX_TEMP = 80
 
 
+def _raise_api_quota_error() -> None:
+    """Raise API quota critically low error."""
+    raise HomeAssistantError(
+        translation_domain=DOMAIN,
+        translation_key="api_quota_critically_low",
+    )
+
+
+def _raise_time_format_error(time_period: Any) -> None:
+    """Raise time period format error."""
+    msg = f"Invalid time_period format: {time_period}. Expected HH:MM:SS"
+    raise ValueError(msg)
+
+
+def _raise_hours_range_error(hours: int) -> None:
+    """Raise hours range validation error."""
+    msg = f"Hours must be 0-24, got {hours}"
+    raise ValueError(msg)
+
+
+def _raise_minutes_range_error(minutes: int) -> None:
+    """Raise minutes range validation error."""
+    msg = f"Minutes must be 0-59, got {minutes}"
+    raise ValueError(msg)
+
+
+def _raise_seconds_range_error(seconds: int) -> None:
+    """Raise seconds range validation error."""
+    msg = f"Seconds must be 0-59, got {seconds}"
+    raise ValueError(msg)
+
+
+def _raise_duration_min_error(duration_minutes: int) -> None:
+    """Raise minimum duration validation error."""
+    msg = f"Duration must be at least 1 minute, got {duration_minutes}"
+    raise ValueError(msg)
+
+
+def _raise_duration_max_error(duration_minutes: int) -> None:
+    """Raise maximum duration validation error."""
+    msg = f"Duration must be at most 1440 minutes (24 hours), got {duration_minutes}"
+    raise ValueError(msg)
+
+
 def _find_entity_by_id(
     hass: HomeAssistant,
     platform_domain: str,
@@ -852,7 +896,7 @@ async def _async_register_services(hass: HomeAssistant) -> None:
                     if timeout is None:
                         timeout = OPEN_WINDOW_DEFAULT_TIMEOUT
 
-                    # Build overlay: frost protection temp + timer
+                    # Build overlay: frost protection temp + termination
                     # Determine zone type for correct setting format
                     zone_type = getattr(ent, "_zone_type", "HEATING")
                     setting: dict[str, str | dict[str, float]] = (
@@ -868,14 +912,19 @@ async def _async_register_services(hass: HomeAssistant) -> None:
                         }
                     )
 
-                    termination = {"type": "TIMER", "durationInSeconds": int(timeout)}
+                    # Termination: duration=0 means indefinite (MANUAL), otherwise TIMER
+                    if timeout == 0:
+                        termination = {"type": "MANUAL"}
+                        duration_desc = "indefinite"
+                    else:
+                        termination = {"type": "TIMER", "durationInSeconds": str(int(timeout))}
+                        duration_desc = f"{int(timeout) // 60} min"
 
                     success = await _coord.api_client.set_zone_overlay(zone_id, setting, termination)
                     if success:
-                        minutes = int(timeout) // 60
                         _LOGGER.info(
-                            "Set open window mode for %s (%s min, %s°C)",
-                            entity_id, minutes, OPEN_WINDOW_DEFAULT_TEMP,
+                            "Set open window mode for %s (%s, %s°C)",
+                            entity_id, duration_desc, OPEN_WINDOW_DEFAULT_TEMP,
                         )
                     else:
                         _LOGGER.error("Failed to set open window mode for %s", entity_id)
@@ -1039,7 +1088,7 @@ async def _async_register_services(hass: HomeAssistant) -> None:
             {
                 vol.Required("entity_id"): cv.entity_ids,
                 vol.Optional("duration"): vol.All(
-                    vol.Coerce(int), vol.Range(min=60, max=3600),
+                    vol.Coerce(int), vol.Any(0, vol.Range(min=60, max=3600)),
                 ),
             },
         ),

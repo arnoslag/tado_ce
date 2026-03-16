@@ -925,10 +925,17 @@
         }
       },
       "boiler_wiring_state": {
-        "name": "Boiler Wiring State"
+        "name": "État du câblage de la chaudière",
+        "state": {
+          "ready": "Prêt",
+          "installed": "Installé",
+          "not_installed": "Non installé",
+          "installing": "Installation en cours",
+          "failed": "Échec"
+        }
       },
       "boiler_output_temperature": {
-        "name": "Boiler Output Temperature"
+        "name": "Température de sortie de la chaudière"
       }
     },
     "select": {
@@ -1047,7 +1054,7 @@
     },
     "number": {
       "boiler_max_output_temperature": {
-        "name": "Boiler Max Output Temperature"
+        "name": "Température maximale de sortie de la chaudière"
       }
     }
   },
@@ -1230,7 +1237,7 @@
       "message": "Échec du réglage de la minuterie {duration}min pour {zone_name} : {error}"
     },
     "bridge_auth_failed": {
-      "message": "Invalid bridge serial or auth key"
+      "message": "Clé de série ou d'authentification du pont invalide"
     }
   },
   "issues": {
@@ -1335,7 +1342,7 @@
       },
       "global_settings": {
         "title": "Paramètres globaux",
-        "description": "Configurer les paramètres d'intégration de Tado CE.\n\nℹ️ Si vous n'avez pas besoin de fonctions dépendant des conditions météorologiques (risque de moisissure, condensation, température de surface, niveau de confort, compensation météorologique), désactivez « Utiliser l'entité de température extérieure » dans les paramètres Smart Comfort.",
+        "description": "Personnalisez votre expérience de climat intelligent pilotée par la communauté avec des fonctionnalités avancées créées par des utilisateurs comme vous.",
         "sections": {
           "tado_ce_exclusive": {
             "name": "Tado CE Exclusive",
@@ -1426,15 +1433,15 @@
             }
           },
           "bridge_config": {
-            "name": "Bridge Configuration",
-            "description": "Optional: connect to your Tado Internet Bridge for flow temperature control",
+            "name": "Configuration du pont",
+            "description": "En option : connexion à votre pont Internet Tado pour le contrôle de la température de départ.",
             "data": {
-              "bridge_serial": "Bridge Serial Number",
-              "bridge_auth_key": "Bridge Auth Key"
+              "bridge_serial": "Numéro de série du pont",
+              "bridge_auth_key": "Clé d'authentification du pont"
             },
             "data_description": {
-              "bridge_serial": "Serial number printed on the bottom of your Internet Bridge (e.g. IB123456789)",
-              "bridge_auth_key": "Auth key from the bridge sticker or Tado app (keep confidential)"
+              "bridge_serial": "Numéro de série imprimé sous le pont Internet (par exemple IB123456789)",
+              "bridge_auth_key": "Clé d'authentification de l'autocollant du pont ou de l'application Tado (à garder confidentielle)"
             }
           }
         }
@@ -1534,7 +1541,7 @@
     "error": {
       "interval_out_of_range": "L'intervalle d'interrogation doit être compris entre 1 et 1440 minutes.",
       "invalid_number": "Veuillez saisir un numéro valide",
-      "bridge_auth_failed": "Invalid bridge serial or auth key — please check and try again"
+      "bridge_auth_failed": "Le numéro de série ou la clé d'authentification du pont n'est pas valide - veuillez vérifier et réessayer."
     }
   }
 }

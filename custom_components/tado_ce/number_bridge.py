@@ -80,14 +80,19 @@ class TadoBoilerMaxOutputTemperatureNumber(
     def _handle_coordinator_update(self) -> None:
         """Handle coordinator data update."""
         bridge = self.coordinator.data.get("bridge")
+        _LOGGER.debug("Number entity update - bridge data: %s", bridge)
         if not bridge:
+            _LOGGER.debug("Number entity update - no bridge data available")
             self._attr_available = False
             self.async_write_ha_state()
             return
         temp = bridge.get("boilerMaxOutputTemperatureInCelsius")
+        _LOGGER.debug("Number entity update - boilerMaxOutputTemperatureInCelsius: %s", temp)
         if temp is not None:
             self._attr_native_value = float(temp)
             self._attr_available = True
+            _LOGGER.debug("Number entity update - successfully set value to %s°C", float(temp))
         else:
+            _LOGGER.debug("Number entity update - boilerMaxOutputTemperatureInCelsius field missing")
             self._attr_available = False
         self.async_write_ha_state()

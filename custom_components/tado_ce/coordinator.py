@@ -326,19 +326,19 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return self._last_full_sync is None
 
     async def _async_fetch_bridge_data(self) -> dict[str, object] | None:
-        """Fetch bridge API data if credentials are configured.
-
-        Lazy-initialises the bridge client from entry options on first call.
-        Returns parsed wiring state dict, or None if credentials are missing
-        or the bridge API call fails (graceful degradation — never affects
-        cloud data).
-        """
+        """Fetch bridge API data if credentials are configured."""
         options = self.config_entry.options
         bridge_serial = options.get("bridge_serial", "")
         bridge_auth_key = options.get("bridge_auth_key", "")
 
+        _LOGGER.debug(
+            "Bridge credentials check - serial: %s, auth_key: %s",
+            bridge_serial[:8] + "..." if bridge_serial else "EMPTY",
+            "SET" if bridge_auth_key else "EMPTY",
+        )
+
         if not bridge_serial or not bridge_auth_key:
-            # No credentials → skip silently
+            _LOGGER.debug("Bridge API skipped — no credentials configured")
             self.bridge_api_client = None
             return None
 
@@ -352,11 +352,15 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
             session = async_get_clientsession(self.hass)
             self.bridge_api_client = TadoBridgeApiClient(session, bridge_serial, bridge_auth_key)
+            _LOGGER.debug("Bridge API client initialized for serial %s", bridge_serial[:8] + "...")
 
         try:
-            return await self.bridge_api_client.async_get_wiring_state()
-        except TadoBridgeApiError:
-            _LOGGER.debug("Tado CE: Bridge API fetch failed — cloud data unaffected")
+            _LOGGER.debug("Fetching bridge API wiring state...")
+            result = await self.bridge_api_client.async_get_wiring_state()
+            _LOGGER.debug("Bridge API fetch successful: %s", result)
+            return result
+        except TadoBridgeApiError as e:
+            _LOGGER.debug("Bridge API fetch failed — %s — cloud data unaffected", e)
             return None
 
     async def _async_load_ratelimit(self) -> None:

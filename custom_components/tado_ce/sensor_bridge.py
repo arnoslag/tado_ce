@@ -21,6 +21,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .device_manager import get_hub_device_info
 from .entity_registry import ENTITY_REGISTRY, get_entity_category
+from .format_helpers import format_bridge_wiring_state
 
 if TYPE_CHECKING:
     from .coordinator import TadoDataUpdateCoordinator
@@ -95,14 +96,14 @@ class TadoBoilerWiringStateSensor(TadoBridgeBaseSensor):
             return
         state = bridge.get("state")
         if state is not None:
-            self._attr_native_value = str(state)
+            self._attr_native_value = format_bridge_wiring_state(str(state))
             self._attr_available = True
         else:
             self._attr_available = False
 
 
 class TadoBoilerOutputTemperatureSensor(TadoBridgeBaseSensor):
-    """Sensor showing current boiler output temperature from Bridge API."""
+    """Sensor showing current boiler max temperature setting from Bridge API."""
 
     _attr_device_class = SensorDeviceClass.TEMPERATURE
     _attr_state_class = SensorStateClass.MEASUREMENT
@@ -122,12 +123,24 @@ class TadoBoilerOutputTemperatureSensor(TadoBridgeBaseSensor):
     def update(self) -> None:
         """Update sensor state from coordinator bridge data."""
         bridge = self.coordinator.data.get("bridge")
+        _LOGGER.debug("Sensor update - bridge data: %s", bridge)
         if not bridge:
+            _LOGGER.debug("Sensor update - no bridge data available")
             self._attr_available = False
             return
+
+        # Try to get the max temperature setting from bridge data
         temp = bridge.get("boilerMaxOutputTemperatureInCelsius")
+        _LOGGER.debug("Sensor update - boilerMaxOutputTemperatureInCelsius: %s", temp)
         if temp is not None:
-            self._attr_native_value = float(temp)
-            self._attr_available = True
+            try:
+                float_temp = float(temp)
+                self._attr_native_value = float_temp
+                self._attr_available = True
+                _LOGGER.debug("Sensor update - successfully set value to %s°C", float_temp)
+            except (ValueError, TypeError) as e:
+                _LOGGER.debug("Sensor update - failed to convert temperature: %s", e)
+                self._attr_available = False
         else:
+            _LOGGER.debug("Sensor update - boilerMaxOutputTemperatureInCelsius field missing")
             self._attr_available = False

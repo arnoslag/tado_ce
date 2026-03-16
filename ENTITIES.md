@@ -1,6 +1,6 @@
-# Tado CE — Entity Reference (v3.1.0)
+# Tado CE — Entity Reference (v3.2.0)
 
-This document lists all 66 entities in Tado CE, organised by function.
+This document lists all 69 entities in Tado CE, organised by function.
 
 > **v3.1.0 change:** Per-zone configuration (overlay mode, timer, min/max temp, temp offset, heating type, window type, sensitivity, external sensors, etc.) moved from 11 HA entities per zone to a centralised Options Flow menu. Zero config entities are created — settings live in **Settings → Tado CE → Configure → Zone Configuration**.
 
@@ -94,27 +94,47 @@ This document lists all 66 entities in Tado CE, organised by function.
 
 ---
 
+## Bridge API (3 entities)
+
+### Friendly Names
+
+| # | Function | CE? | v3.2.0 Name |
+|---|----------|-----|-------------|
+| 18 | Boiler wiring state | ✓ | Boiler Wiring State |
+| 19 | Boiler output temperature | ✓ | Boiler Output Temperature |
+| 20 | Boiler max output temperature | ✓ | Boiler Max Output Temperature |
+
+### Entity IDs
+
+| # | v3.2.0 entity_id |
+|---|------------------|
+| 18 | `sensor.tado_ce_hub_ce_boiler_wiring_state` |
+| 19 | `sensor.tado_ce_hub_ce_boiler_output_temperature` |
+| 20 | `number.tado_ce_hub_ce_boiler_max_output_temperature` |
+
+---
+
 ## Hub Controls (5 entities)
 
 ### Friendly Names
 
 | # | Function | CE? | v2.3.1 Name | v3.0 Name |
 |---|----------|-----|-------------|-----------|
-| 18 | Resume all schedules | ✓ | Resume All Schedules | Resume All |
-| 19 | Refresh AC cache | ✓ | Refresh AC Capabilities | Refresh AC |
-| 20 | Presence mode | ✓ | Presence Mode | Presence Mode |
-| 21 | Overlay mode | ✓ | Overlay Mode | Overlay Mode |
-| 22 | Overlay timer duration | ✓ | Overlay Timer Duration | Overlay Timer |
+| 21 | Resume all schedules | ✓ | Resume All Schedules | Resume All |
+| 22 | Refresh AC cache | ✓ | Refresh AC Capabilities | Refresh AC |
+| 23 | Presence mode | ✓ | Presence Mode | Presence Mode |
+| 24 | Overlay mode | ✓ | Overlay Mode | Overlay Mode |
+| 25 | Overlay timer duration | ✓ | Overlay Timer Duration | Overlay Timer |
 
 ### Entity IDs
 
 | # | v2.3.1 entity_id | v3.0 entity_id (fresh) |
 |---|-------------------|------------------------|
-| 18 | `button.tado_ce_resume_all_schedules` | `button.tado_ce_hub_ce_resume_all` |
-| 19 | `button.tado_ce_refresh_ac_capabilities` | `button.tado_ce_hub_ce_refresh_ac` |
-| 20 | `select.tado_ce_presence_mode` | `select.tado_ce_hub_ce_presence_mode` |
-| 21 | `select.tado_ce_overlay_mode` | `select.tado_ce_hub_ce_overlay_mode` |
-| 22 | `select.tado_ce_overlay_timer_duration` | `select.tado_ce_hub_ce_overlay_timer` |
+| 21 | `button.tado_ce_resume_all_schedules` | `button.tado_ce_hub_ce_resume_all` |
+| 22 | `button.tado_ce_refresh_ac_capabilities` | `button.tado_ce_hub_ce_refresh_ac` |
+| 23 | `select.tado_ce_presence_mode` | `select.tado_ce_hub_ce_presence_mode` |
+| 24 | `select.tado_ce_overlay_mode` | `select.tado_ce_hub_ce_overlay_mode` |
+| 25 | `select.tado_ce_overlay_timer_duration` | `select.tado_ce_hub_ce_overlay_timer` |
 
 ---
 
@@ -425,6 +445,7 @@ This document lists all 66 entities in Tado CE, organised by function.
 | Category | Count | CE ✓ | Enhanced ⬆ | Standard |
 |----------|-------|------|-----------|----------|
 | Hub Sensors | 17 | 14 | 0 | 3 |
+| Bridge API | 3 | 3 | 0 | 0 |
 | Hub Controls | 5 | 5 | 0 | 0 |
 | Hub Binary Sensor | 1 | 1 | 0 | 0 |
 | Hub Config Switches | 2 | 2 | 0 | 0 |
@@ -441,4 +462,4 @@ This document lists all 66 entities in Tado CE, organised by function.
 | Calendar | 1 /zone | 1 | 0 | 0 |
 | Zone Config | ~~11 /zone~~ 0 (Options Flow) | — | — | — |
 | Device Tracker | 1 /device | 1 | 0 | 0 |
-| **Total unique types** | **66** | **~48** | **4** | **~12** |
+| **Total unique types** | **69** | **~51** | **4** | **~12** |

@@ -925,7 +925,14 @@
         }
       },
       "boiler_wiring_state": {
-        "name": "Boiler Wiring State"
+        "name": "Boiler Wiring State",
+        "state": {
+          "ready": "Ready",
+          "installed": "Installed",
+          "not_installed": "Not Installed",
+          "installing": "Installing",
+          "failed": "Failed"
+        }
       },
       "boiler_output_temperature": {
         "name": "Boiler Output Temperature"
@@ -1335,7 +1342,7 @@
       },
       "global_settings": {
         "title": "Global Settings",
-        "description": "Configure Tado CE integration settings.\n\nℹ️ If you don't need weather-dependent features (mold risk, condensation, surface temp, comfort level, weather compensation), toggle off 'Use Outdoor Temperature Entity' in Smart Comfort Settings.",
+        "description": "Customize your community-driven smart climate experience with advanced features built by users like you.",
         "sections": {
           "tado_ce_exclusive": {
             "name": "Tado CE Exclusive",

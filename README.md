@@ -6,7 +6,7 @@
 ![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2026.3.1-blue?style=for-the-badge&logo=home-assistant) ![Python](https://img.shields.io/badge/Python-3.13%2B-blue?style=for-the-badge&logo=python&logoColor=white) ![Tado](https://img.shields.io/badge/Tado-V2%2FV3%2FV3%2B-orange?style=for-the-badge) ![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg?style=for-the-badge)
 
 <!-- Status Badges -->
-![Version](https://img.shields.io/badge/Version-3.2.0-purple?style=for-the-badge) ![License](https://img.shields.io/badge/License-AGPL--3.0-blue?style=for-the-badge) ![Maintained](https://img.shields.io/badge/Maintained-Yes-green.svg?style=for-the-badge) ![Tests](https://img.shields.io/badge/Tests-3655-blue?style=for-the-badge) ![Coverage](https://img.shields.io/badge/Coverage-98%25-brightgreen?style=for-the-badge)
+![Version](https://img.shields.io/badge/Version-3.2.1-purple?style=for-the-badge) ![License](https://img.shields.io/badge/License-AGPL--3.0-blue?style=for-the-badge) ![Maintained](https://img.shields.io/badge/Maintained-Yes-green.svg?style=for-the-badge) ![Tests](https://img.shields.io/badge/Tests-3655-blue?style=for-the-badge) ![Coverage](https://img.shields.io/badge/Coverage-98%25-brightgreen?style=for-the-badge)
 
 <!-- Community Badges -->
 ![GitHub stars](https://img.shields.io/github/stars/hiall-fyi/tado_ce?style=for-the-badge&logo=github) ![GitHub forks](https://img.shields.io/github/forks/hiall-fyi/tado_ce?style=for-the-badge&logo=github) ![GitHub issues](https://img.shields.io/github/issues/hiall-fyi/tado_ce?style=for-the-badge&logo=github) ![GitHub Release Date](https://img.shields.io/github/release-date/hiall-fyi/tado_ce?style=for-the-badge&logo=github)
@@ -14,9 +14,9 @@
 <!-- Support -->
 [![Buy Me A Coffee](https://img.shields.io/badge/Support-Buy%20Me%20A%20Coffee-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/hiallfyi)
 
-**A comprehensive Tado integration with actionable insights, smart API management, comfort analytics, and environment monitoring.**
+**⭐ Community-driven Tado integration with advanced analytics, smart automation, and features you won't find anywhere else.**
 
-**Made with ❤️ by Joe Yiu ([@hiall-fyi](https://github.com/hiall-fyi))**
+**Built by the community, for the community — join thousands of users taking control of their smart climate.**
 
 [Quick Start](#-quick-start) • [Features](#-features) • [Configuration](#-configuration-options) • [Troubleshooting](#-troubleshooting) • [Discussions](https://github.com/hiall-fyi/tado_ce/discussions)
 
@@ -26,9 +26,11 @@
 
 ## Why Tado CE?
 
-Tado CE was created in response to Tado's 2025 API rate limits (100-20,000 calls/day depending on plan). The official Home Assistant integration doesn't show your actual API usage, leaving users unaware until they get blocked.
+Tado CE was born from the community's response to Tado's 2025 API rate limits (100-20,000 calls/day depending on plan). The official Home Assistant integration doesn't show your actual API usage, leaving users unaware until they get blocked.
 
-What started as an API management solution has grown into a **full smart climate platform** — actionable insights that tell you what's wrong and what to do about it, thermal analytics that learn how your rooms heat, preheat advisors that prevent temperature drops before they happen, mold risk monitoring, multi-home support, and enhanced controls the official integration doesn't offer.
+**What started as a community solution has grown into the most advanced Tado integration available** — actionable insights that tell you what's wrong and what to do about it, thermal analytics that learn how your rooms heat, preheat advisors that prevent temperature drops before they happen, mold risk monitoring, multi-home support, and enhanced controls the official integration doesn't offer.
+
+**Join thousands of users who've taken control of their smart climate with Tado CE.**
 
 ---
 
@@ -85,7 +87,7 @@ Full climate, AC, and hot water control with timer support, geofencing, presence
 
 **Tado CE Exclusive:**
 
-Tado CE provides comprehensive smart climate control with:
+Tado CE provides comprehensive smart climate control with features developed by and for the community:
 
 - **Multi-Home Support** — Multiple Tado accounts/homes in a single HA instance with full data isolation
 - **Actionable Insights** — Per-zone and home-wide intelligent recommendations with priority escalation, correlation/deduplication, history tracking, health score, and 21+ insight types across 7 categories
@@ -99,6 +101,8 @@ Tado CE provides comprehensive smart climate control with:
 - **Zone Features Toggles** — Control which entity types are created for a minimal or full setup
 - **Multi-Language** — Config flow and options UI in 7 languages (English, German, Spanish, French, Italian, Dutch, Portuguese)
 - **Optional Features** — Schedule calendar, boiler flow temperature, device tracking, home state sync
+
+**Every feature requested, tested, and refined by real users like you.**
 
 See [FEATURES_GUIDE.md](FEATURES_GUIDE.md) for detailed documentation, configuration instructions, and usage scenarios for all features.
 
@@ -331,13 +335,17 @@ See [LICENSE](LICENSE) for full details.
 
 ## Contributing
 
-Contributions welcome! 
+**Join the community that's shaping the future of smart climate control!**
+
+Contributions welcome! Every feature in Tado CE started as a community idea.
 
 1. Fork the repository
 2. Create feature branch (`git checkout -b feature/AmazingFeature`)
 3. Commit changes (`git commit -m 'Add AmazingFeature'`)
 4. Push to branch (`git push origin feature/AmazingFeature`)
 5. Open a Pull Request
+
+**Your ideas matter** — check out our [Discussions](https://github.com/hiall-fyi/tado_ce/discussions) to share feature requests, ask questions, or help other users.
 
 ---
 

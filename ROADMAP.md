@@ -8,6 +8,19 @@ For completed features, see [CHANGELOG.md](CHANGELOG.md).
 
 ## Up Next
 
+**State Restoration Enhancement** ([Discussion #184](https://github.com/hiall-fyi/tado_ce/discussions/1184))
+
+Comprehensive state management system that preserves zone states across all overlay operations, not just open window scenarios.
+
+- **Centralized State Management** — Capture and restore previous states for all overlay operations (timers, boost, open window, manual overrides)
+- **New Service** — `tado_ce.restore_previous_state` restores exact previous state instead of always returning to schedule
+- **Enhanced Services** — All overlay services (`set_open_window_mode`, timers, etc.) get optional state capture
+- **Cross-Entity Support** — Handle zones with both climate + water heater entities independently
+- **Persistent Storage** — State survives HA restarts and config entry reloads
+- **Backward Compatible** — Existing `resume_schedule` behavior unchanged, new functionality is opt-in
+
+Target: v3.3.0
+
 **Local API / HomeKit Hybrid** ([Discussion #29](https://github.com/hiall-fyi/tado_ce/discussions/29))
 
 The goal: reduce or eliminate dependency on Tado's cloud API for day-to-day control.

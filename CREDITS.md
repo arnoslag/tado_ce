@@ -21,6 +21,11 @@ Thank you to everyone who supported the project through [Buy Me a Coffee](https:
 
 Community contributors who helped shape each release through bug reports, feature requests, testing, and feedback.
 
+### v3.2.1
+
+- **[@driagi](https://github.com/driagi)** — Reported Bridge API sensor showing "Unknown" and provided debug logs for troubleshooting ([#187](https://github.com/hiall-fyi/tado_ce/issues/187))
+- **[@jeverley](https://github.com/jeverley)** — Requested indefinite open window mode duration ([Discussion #184](https://github.com/hiall-fyi/tado_ce/discussions/184))
+
 ### v3.2.0
 
 - **[@neonsp](https://github.com/neonsp)** — Reported climate card temperature null after HA restart ([#182](https://github.com/hiall-fyi/tado_ce/issues/182))

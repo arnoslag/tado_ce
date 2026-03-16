@@ -576,7 +576,7 @@ ENTITY_REGISTRY: dict[str, EntityMeta] = {
     "sensor_boiler_output_temperature": EntityMeta(
         translation_key="boiler_output_temperature",
         unique_id_suffix="boiler_output_temperature",
-        entity_category=None,
+        entity_category="diagnostic",
         icon="mdi:thermometer-water",
     ),
     "number_boiler_max_output_temperature": EntityMeta(

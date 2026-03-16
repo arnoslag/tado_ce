@@ -925,7 +925,14 @@
         }
       },
       "boiler_wiring_state": {
-        "name": "Boiler Wiring State"
+        "name": "Boiler Wiring State",
+        "state": {
+          "ready": "Ready",
+          "installed": "Installed",
+          "not_installed": "Not Installed",
+          "installing": "Installing",
+          "failed": "Failed"
+        }
       },
       "boiler_output_temperature": {
         "name": "Boiler Output Temperature"
@@ -1168,11 +1175,11 @@
     },
     "set_open_window_mode": {
       "name": "Set Open Window Mode",
-      "description": "Trigger open window mode from external sensors (Zigbee, Z-Wave contact sensors, etc.). Sets the zone to frost protection temperature with a timer — no Tado detection required. Duration defaults to the zone's Open Window Detection timeout setting, or 15 minutes if not configured.",
+      "description": "Trigger open window mode from external sensors (Zigbee, Z-Wave contact sensors, etc.). Sets the zone to frost protection temperature — no Tado detection required. Duration defaults to the zone's Open Window Detection timeout setting, or 15 minutes if not configured.",
       "fields": {
         "duration": {
           "name": "Duration",
-          "description": "How long to keep open window mode active, in seconds (60–3600). Defaults to the zone's Tado Open Window Detection timeout."
+          "description": "How long to keep open window mode active, in seconds (60–3600). Use 0 for indefinite duration until manual resume. Defaults to the zone's Tado Open Window Detection timeout."
         }
       }
     }
@@ -1335,7 +1342,7 @@
       },
       "global_settings": {
         "title": "Global Settings",
-        "description": "Configure Tado CE integration settings.\n\nℹ️ If you don't need weather-dependent features (mold risk, condensation, surface temp, comfort level, weather compensation), toggle off 'Use Outdoor Temperature Entity' in Smart Comfort Settings.",
+        "description": "Customize your community-driven smart climate experience with advanced features built by users like you.",
         "sections": {
           "tado_ce_exclusive": {
             "name": "Tado CE Exclusive",

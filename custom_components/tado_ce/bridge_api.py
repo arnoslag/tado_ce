@@ -53,23 +53,23 @@ class TadoBridgeApiClient:
         self._base_url = f"{_BRIDGE_API_BASE}/{bridge_serial}"
 
     async def async_get_wiring_state(self) -> dict[str, object]:
-        """Fetch boiler wiring installation state from Bridge API.
-
-        Returns parsed JSON dict. Raises TadoBridgeApiError on any failure.
-        """
+        """Fetch boiler wiring installation state from Bridge API."""
         url = f"{self._base_url}/boilerWiringInstallationState"
         params = {"authKey": self._auth_key}
+        _LOGGER.debug("Bridge API GET request - URL: %s", url.replace(self._auth_key, "[AUTH_KEY]"))
         try:
             async with self._session.get(url, params=params) as resp:
+                _LOGGER.debug("Bridge API response status: %s", resp.status)
                 if resp.status != HTTPStatus.OK:
                     msg = "Bridge API GET wiring state failed: HTTP %s"
                     raise TadoBridgeApiError(msg % resp.status)
-                return await resp.json()  # type: ignore[no-any-return]
+                result = await resp.json()
+                _LOGGER.debug("Bridge API full response: %s", result)
+                return result  # type: ignore[no-any-return]
         except TadoBridgeApiError:
             raise
         except aiohttp.ClientError as err:
             msg = "Bridge API network error: %s"
-            _LOGGER.debug(msg, err)
             raise TadoBridgeApiError(msg % err) from err
 
     async def async_set_max_output_temperature(self, celsius: float) -> bool:

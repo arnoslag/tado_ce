@@ -38,6 +38,14 @@ ZONE_TYPE_DISPLAY_MAP: dict[str, str] = {
 
 COMFORT_MODEL_DISPLAY_MAP: dict[str, str] = {"adaptive": "Adaptive", "seasonal": "Seasonal"}
 
+BRIDGE_WIRING_STATE_MAP: dict[str, str] = {
+    "INSTALLATION_COMPLETED": "Ready",
+    "INSTALLED": "Installed",
+    "NOT_INSTALLED": "Not Installed",
+    "INSTALLATION_IN_PROGRESS": "Installing",
+    "INSTALLATION_FAILED": "Failed",
+}
+
 INSIGHT_TYPE_DISPLAY_MAP: dict[str, str] = {
     "mold_risk": "Mold Risk",
     "comfort": "Comfort",
@@ -228,6 +236,11 @@ def format_health_score(score: int) -> str:
     if score >= 25:
         return f"🟠 {score} — Poor"
     return f"🔴 {score} — Critical"
+
+
+def format_bridge_wiring_state(state: str) -> str:
+    """Convert bridge wiring state to user-friendly display value."""
+    return _lookup(BRIDGE_WIRING_STATE_MAP, state)
 
 _PRIORITY_EMOJI: dict[str, str] = {
     "critical": "🔴",

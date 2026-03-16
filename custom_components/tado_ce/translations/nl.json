@@ -925,10 +925,17 @@
         }
       },
       "boiler_wiring_state": {
-        "name": "Boiler Wiring State"
+        "name": "Status van de bedrading van de ketel",
+        "state": {
+          "ready": "Klaar",
+          "installed": "Geïnstalleerd",
+          "not_installed": "Niet geïnstalleerd",
+          "installing": "Installeren",
+          "failed": "Mislukt"
+        }
       },
       "boiler_output_temperature": {
-        "name": "Boiler Output Temperature"
+        "name": "Uitgangstemperatuur van de ketel"
       }
     },
     "select": {
@@ -1047,7 +1054,7 @@
     },
     "number": {
       "boiler_max_output_temperature": {
-        "name": "Boiler Max Output Temperature"
+        "name": "Maximale uitgangstemperatuur van de ketel"
       }
     }
   },
@@ -1230,7 +1237,7 @@
       "message": "{duration}min-timer niet ingesteld voor {zone_name}: {error}"
     },
     "bridge_auth_failed": {
-      "message": "Invalid bridge serial or auth key"
+      "message": "Ongeldige bridge-serienummer of auth-sleutel"
     }
   },
   "issues": {
@@ -1335,7 +1342,7 @@
       },
       "global_settings": {
         "title": "Wereldwijde instellingen",
-        "description": "Configureer de integratie-instellingen van Tado CE.\n\nℹ️ Als je geen weersafhankelijke functies nodig hebt (schimmelrisico, condensatie, oppervlaktetemperatuur, comfortniveau, weerscompensatie), schakel dan 'Buitentemperatuurentiteit gebruiken' uit in de Smart Comfort-instellingen.",
+        "description": "Pas uw door de gemeenschap aangestuurde slimme klimaatervaring aan met geavanceerde functies gebouwd door gebruikers zoals u.",
         "sections": {
           "tado_ce_exclusive": {
             "name": "Tado CE Exclusief",
@@ -1426,15 +1433,15 @@
             }
           },
           "bridge_config": {
-            "name": "Bridge Configuration",
-            "description": "Optional: connect to your Tado Internet Bridge for flow temperature control",
+            "name": "Brugconfiguratie",
+            "description": "Optioneel: aansluiten op je Tado Internet Bridge voor regeling van de stromingstemperatuur",
             "data": {
-              "bridge_serial": "Bridge Serial Number",
-              "bridge_auth_key": "Bridge Auth Key"
+              "bridge_serial": "Serienummer brug",
+              "bridge_auth_key": "Brug Auth Sleutel"
             },
             "data_description": {
-              "bridge_serial": "Serial number printed on the bottom of your Internet Bridge (e.g. IB123456789)",
-              "bridge_auth_key": "Auth key from the bridge sticker or Tado app (keep confidential)"
+              "bridge_serial": "Serienummer dat op de onderkant van uw Internet Bridge staat (bijv. IB123456789)",
+              "bridge_auth_key": "Auth key van de bridge sticker of Tado app (vertrouwelijk bewaren)"
             }
           }
         }
@@ -1534,7 +1541,7 @@
     "error": {
       "interval_out_of_range": "Polling-interval moet tussen 1 en 1440 minuten liggen",
       "invalid_number": "Voer een geldig nummer in",
-      "bridge_auth_failed": "Invalid bridge serial or auth key — please check and try again"
+      "bridge_auth_failed": "Ongeldige bridge-serienummer of auth-sleutel - controleer en probeer opnieuw"
     }
   }
 }

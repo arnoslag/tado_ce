@@ -2,6 +2,14 @@
 
 All notable changes to Tado CE will be documented in this file.
 
+## [3.2.1] - 2026-03-16
+
+### Features
+- **Indefinite Open Window Mode** ([Discussion #184](https://github.com/hiall-fyi/tado_ce/discussions/184) - @jeverley) — `tado_ce.set_open_window_mode` service now supports `duration: 0` for indefinite duration until manual resume. Useful for contact sensor automations that need manual control over schedule resumption.
+
+### Bug Fixes
+- **Fixed Bridge API Sensor Entity Registry Bug** ([#187](https://github.com/hiall-fyi/tado_ce/issues/187) - @driagi) — Fixed critical bug where Bridge API sensor used non-existent entity registry key, causing sensor to show "Unknown" even when Bridge API was working. Sensor now properly displays real-time boiler temperature data. Also added comprehensive debug logging throughout Bridge API flow for better troubleshooting.
+
 ## [3.2.0] - 2026-03-16
 
 **Bridge API Integration — Flow Temperature Control**
