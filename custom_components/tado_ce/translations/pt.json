@@ -1159,12 +1159,22 @@
       }
     },
     "activate_open_window": {
-      "name": "Ativar janela aberta",
-      "description": "Ativar o modo Janela aberta numa zona climática (o mesmo que tocar no ícone na aplicação Tado). O aquecimento/arrefecimento será suspenso."
+      "name": "Ativar janela aberta (Auto-Assist)",
+      "description": "Confirma uma janela aberta que o Tado já detetou — o mesmo que tocar no ícone na aplicação Tado. Só funciona quando a deteção integrada do Tado sinalizou um evento de janela aberta. Para ativar a partir de sensores externos, use 'Definir modo janela aberta'."
     },
     "deactivate_open_window": {
       "name": "Desativar janela aberta",
-      "description": "Desativar o modo Janela aberta numa zona climática, retomando o aquecimento/arrefecimento normal."
+      "description": "Desativa o modo janela aberta numa zona climática, retomando o aquecimento/arrefecimento normal. Funciona tanto para modos detetados pelo Tado como ativados manualmente."
+    },
+    "set_open_window_mode": {
+      "name": "Definir modo janela aberta",
+      "description": "Ativa o modo janela aberta a partir de sensores externos (Zigbee, Z-Wave, etc.). Define a zona para temperatura de proteção contra geada com temporizador — sem necessidade de deteção Tado. A duração predefinida é o timeout de deteção de janela da zona, ou 15 minutos.",
+      "fields": {
+        "duration": {
+          "name": "Duração",
+          "description": "Quanto tempo o modo janela aberta permanece ativo, em segundos (60–3600). Predefinido: timeout de deteção de janela Tado da zona."
+        }
+      }
     }
   },
   "selector": {
@@ -1249,7 +1259,7 @@
       },
       "manual_token": {
         "title": "Token manual",
-        "description": "Se a autorização do dispositivo não estiver a funcionar (por exemplo, problemas no servidor Tado), pode colar um token de atualização manualmente. Abra my.tado.com no seu browser, inicie sessão, abra Developer Tools (F12) → Aplicação → Armazenamento local → https://my.tado.com → tado_token e copie o valor refresh_token.",
+        "description": "Se a autorização do dispositivo não estiver a funcionar (por exemplo, problemas no servidor Tado), pode colar um token de atualização manualmente. Abra {tado_web_app} no seu browser, inicie sessão, abra Developer Tools (F12) → Aplicação → Armazenamento local → {tado_web_app_url} → tado_token e copie o valor refresh_token.",
         "data": {
           "refresh_token": "Token de atualização"
         },

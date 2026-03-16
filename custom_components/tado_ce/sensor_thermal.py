@@ -178,7 +178,7 @@ class TadoPreheatTimeSensor(CoordinatorEntity["HeatingCycleCoordinator"], Sensor
             current_temp,
             target_temp,
         )
-        return estimate
+        return estimate  # noqa: RET504 — readability: named result
 
     @property
     def available(self) -> bool:

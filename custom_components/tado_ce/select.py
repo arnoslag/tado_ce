@@ -86,7 +86,7 @@ class TadoPresenceModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sel
     Uses 1 API call per change.
     """
 
-    _attr_options: list[str] = ["Auto", "Home", "Away"]
+    _attr_options: list[str] = ["auto", "home", "away"]  # noqa: RUF012 — HA entity pattern
     _attr_translation_key = "presence_mode"
 
     def __init__(self, coordinator: TadoDataUpdateCoordinator, home_id: str) -> None:
@@ -97,7 +97,7 @@ class TadoPresenceModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sel
         self._attr_unique_id = f"tado_ce_{home_id}_{_meta.unique_id_suffix}"
         assert _meta.translation_key is not None  # presence_mode always has translation_key
         self._attr_translation_key = _meta.translation_key
-        self._attr_current_option = "Auto"
+        self._attr_current_option = "auto"
         self._attr_available = True
         self._attr_device_info = get_hub_device_info(home_id)
 
@@ -124,9 +124,9 @@ class TadoPresenceModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sel
     @property
     def icon(self) -> str | None:
         """Return icon based on current mode."""
-        if self._attr_current_option == "Auto":
+        if self._attr_current_option == "auto":
             return "mdi:home-account"
-        if self._attr_current_option == "Home":
+        if self._attr_current_option == "home":
             return "mdi:home"
         # Away
         return "mdi:home-export-outline"
@@ -178,11 +178,11 @@ class TadoPresenceModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sel
             if self._optimistic_sequence is not None and self._expected_mode is not None:
                 # Determine what mode API is showing
                 if not api_locked:
-                    api_mode = "Auto"
+                    api_mode = "auto"
                 elif api_presence == "HOME":
-                    api_mode = "Home"
+                    api_mode = "home"
                 else:
-                    api_mode = "Away"
+                    api_mode = "away"
 
                 if api_mode == self._expected_mode:
                     # API confirmed - clear optimistic state
@@ -202,11 +202,11 @@ class TadoPresenceModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sel
 
             # Determine mode from API state
             if not api_locked:
-                self._attr_current_option = "Auto"
+                self._attr_current_option = "auto"
             elif api_presence == "HOME":
-                self._attr_current_option = "Home"
+                self._attr_current_option = "home"
             else:
-                self._attr_current_option = "Away"
+                self._attr_current_option = "away"
 
         except (AttributeError, TypeError, KeyError) as e:
             _LOGGER.warning("Failed to update presence mode: %s", e)
@@ -233,7 +233,7 @@ class TadoPresenceModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sel
         self._expected_mode = option
 
         # Update internal state optimistically
-        if option == "Auto":
+        if option == "auto":
             self._presence_locked = False
         else:
             self._presence_locked = True

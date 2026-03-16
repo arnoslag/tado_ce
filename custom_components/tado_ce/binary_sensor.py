@@ -11,7 +11,8 @@ from homeassistant.components.binary_sensor import (
     BinarySensorDeviceClass,
     BinarySensorEntity,
 )
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import CALLBACK_TYPE, Event, EventStateChangedData, HomeAssistant, callback
+from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .climate_helpers import read_external_sensor
@@ -60,7 +61,7 @@ async def async_setup_entry(
     # Check if Smart Comfort is enabled (required for Preheat Now sensor)
     smart_comfort_enabled = config_manager.get_smart_comfort_enabled()
 
-    sensors = []
+    sensors: list[BinarySensorEntity] = []
 
     # Home/Away sensor (global)
     sensors.append(TadoHomeSensor(coordinator))
@@ -76,15 +77,15 @@ async def async_setup_entry(
             if zone_type == "HEATING":
                 owd = zone.get("openWindowDetection") or {}
                 if owd.get("supported", False):
-                    sensors.append(TadoOpenWindowSensor(coordinator, zone_id, zone_name, zone_type, home_id))  # type: ignore[arg-type]
+                    sensors.append(TadoOpenWindowSensor(coordinator, zone_id, zone_name, zone_type, home_id))
 
                 # Add Preheat Now sensor if Smart Comfort is enabled
                 if smart_comfort_enabled:
-                    sensors.append(TadoPreheatNowSensor(coordinator, zone_id, zone_name, zone_type, home_id))  # type: ignore[arg-type]
+                    sensors.append(TadoPreheatNowSensor(coordinator, zone_id, zone_name, zone_type, home_id))
 
             # Window Predicted sensor for all climate zones (HEATING and AIR_CONDITIONING)
             if zone_type in ("HEATING", "AIR_CONDITIONING"):
-                sensors.append(TadoWindowPredictedSensor(coordinator, zone_id, zone_name, zone_type, home_id))  # type: ignore[arg-type]
+                sensors.append(TadoWindowPredictedSensor(coordinator, zone_id, zone_name, zone_type, home_id))
 
     async_add_entities(sensors, False)  # Don't update before add - self.hass not set yet
     _LOGGER.debug("Tado CE binary sensors loaded: %s", len(sensors))
@@ -172,6 +173,8 @@ class TadoHomeSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], BinarySenso
         except Exception as e:
             _LOGGER.warning("TadoHomeSensor update failed: %s", e)
             self._attr_available = False
+
+
 
 
 class TadoOpenWindowSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], BinarySensorEntity):
@@ -474,6 +477,59 @@ class TadoWindowPredictedSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], 
         # Rolling temperature history for consecutive-reading comparison
         self._temp_history: deque = deque(maxlen=10)  # type: ignore[type-arg]
         self._last_reading_time: datetime = None  # type: ignore[assignment]
+
+        # Unsubscribe callbacks for external sensor state change listeners
+        self._unsub_external_sensors: list[CALLBACK_TYPE] = []
+
+    async def async_added_to_hass(self) -> None:
+        """Register listeners when entity is added to hass."""
+        await super().async_added_to_hass()
+        self._subscribe_external_sensors()
+
+    async def async_will_remove_from_hass(self) -> None:
+        """Unregister listeners when entity is removed."""
+        self._unsubscribe_external_sensors()
+        await super().async_will_remove_from_hass()
+
+    @callback
+    def _subscribe_external_sensors(self) -> None:
+        """Subscribe to external temp sensor state changes for real-time window detection."""
+        self._unsubscribe_external_sensors()
+
+        zcm = self.coordinator.zone_config_manager
+        if not zcm:
+            return
+
+        config = zcm.get_zone_config(self._zone_id)
+        temp_sensor = config.get("external_temp_sensor", "")
+        if not temp_sensor:
+            return
+
+        @callback
+        def _handle_external_sensor_change(event: Event[EventStateChangedData]) -> None:
+            """Handle external temp sensor state change — re-run window detection."""
+            new_state = event.data.get("new_state")
+            if new_state is None or new_state.state in ("unknown", "unavailable", ""):
+                return
+
+            try:
+                float(new_state.state)
+            except (ValueError, TypeError):
+                return
+
+            # Re-run full update to incorporate new temperature reading
+            self.update()
+            self.async_write_ha_state()
+
+        unsub = async_track_state_change_event(self.hass, [temp_sensor], _handle_external_sensor_change)
+        self._unsub_external_sensors.append(unsub)
+
+    @callback
+    def _unsubscribe_external_sensors(self) -> None:
+        """Unsubscribe from external sensor state change listeners."""
+        for unsub in self._unsub_external_sensors:
+            unsub()
+        self._unsub_external_sensors.clear()
 
     @callback
     def _handle_coordinator_update(self) -> None:

@@ -45,7 +45,7 @@ async def async_setup_entry(
     # Get config manager for feature toggles
     config_manager = coordinator.config_manager
 
-    switches = []
+    switches: list[SwitchEntity] = []
 
     # Away Mode switch removed - replaced by select.tado_ce_presence_mode
 
@@ -78,7 +78,7 @@ async def async_setup_entry(
                     serial = device.get("shortSerialNo")
                     device_type = device.get("deviceType", "unknown")
                     switches.append(
-                        TadoChildLockSwitch(  # type: ignore[arg-type]
+                        TadoChildLockSwitch(
                             coordinator,
                             zone_id,
                             serial,
@@ -258,6 +258,8 @@ class TadoEarlyStartSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switc
 
         _LOGGER.error("Failed to set early start for %s", self._zone_name)
         return False
+
+
 
 
 class TadoChildLockSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], SwitchEntity):
@@ -457,11 +459,11 @@ class TadoHubToggleSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switch
         self._attr_is_on = self._read_option()
         self.async_write_ha_state()
 
-    async def async_turn_on(self, **kwargs: Any) -> None:  # noqa: ANN401 — HA interface
+    async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn on the toggle."""
         await self._async_set_option(True)
 
-    async def async_turn_off(self, **kwargs: Any) -> None:  # noqa: ANN401 — HA interface
+    async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn off the toggle."""
         await self._async_set_option(False)
 

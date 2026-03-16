@@ -1159,12 +1159,22 @@
       }
     },
     "activate_open_window": {
-      "name": "Open venster activeren",
-      "description": "Activeer de modus Open Venster op een klimaatzone (hetzelfde als tikken op het pictogram in de Tado app). Verwarming/koeling wordt opgeschort."
+      "name": "Open venster activeren (Auto-Assist)",
+      "description": "Bevestigt een open venster dat Tado al heeft gedetecteerd — hetzelfde als tikken op het pictogram in de Tado app. Werkt alleen wanneer Tado's ingebouwde detectie een open venster heeft gemeld. Gebruik 'Open venster modus instellen' voor externe sensoren."
     },
     "deactivate_open_window": {
       "name": "Open venster deactiveren",
-      "description": "Deactiveer de modus Open Venster op een klimaatzone en hervat de normale verwarming/koeling."
+      "description": "Deactiveer de modus Open Venster op een klimaatzone en hervat de normale verwarming/koeling. Werkt voor zowel door Tado gedetecteerde als handmatig geactiveerde modi."
+    },
+    "set_open_window_mode": {
+      "name": "Open venster modus instellen",
+      "description": "Activeer de open venster modus via externe sensoren (Zigbee, Z-Wave contactsensoren, enz.). Stelt de zone in op vorstbeschermingstemperatuur met timer — geen Tado-detectie vereist. Standaardduur is de Tado vensterdetectie-timeout van de zone, of 15 minuten.",
+      "fields": {
+        "duration": {
+          "name": "Duur",
+          "description": "Hoe lang de open venster modus actief blijft, in seconden (60–3600). Standaard de Tado vensterdetectie-timeout van de zone."
+        }
+      }
     }
   },
   "selector": {
@@ -1249,7 +1259,7 @@
       },
       "manual_token": {
         "title": "Handmatig token",
-        "description": "Als de apparaatautorisatie niet werkt (bijv. problemen met de Tado-server), kun je handmatig een refresh token plakken. Open my.tado.com in je browser, log in, open Developer Tools (F12) → Applicatie → Lokale opslag → https://my.tado.com → tado_token, en kopieer de refresh_token waarde.",
+        "description": "Als de apparaatautorisatie niet werkt (bijv. problemen met de Tado-server), kun je handmatig een refresh token plakken. Open {tado_web_app} in je browser, log in, open Developer Tools (F12) → Applicatie → Lokale opslag → {tado_web_app_url} → tado_token, en kopieer de refresh_token waarde.",
         "data": {
           "refresh_token": "Vernieuwingstoken"
         },

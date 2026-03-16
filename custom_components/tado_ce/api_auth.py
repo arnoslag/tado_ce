@@ -6,12 +6,11 @@ caching logic. Designed as a mixin class for TadoApiClient.
 
 from __future__ import annotations
 
-import asyncio
+import asyncio  # noqa: TC003 — used in Protocol class body annotation
 from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
 import json
 import logging
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
 import aiohttp
@@ -20,6 +19,8 @@ from .const import CLIENT_ID, CONFIG_FILE, TADO_AUTH_URL
 from .exceptions import TadoAuthError
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from homeassistant.config_entries import ConfigEntry
     from homeassistant.core import HomeAssistant
 

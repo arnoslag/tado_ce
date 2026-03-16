@@ -34,6 +34,7 @@ PER_HOME_FILES = [
     "schedules",
     "outdoor_temp_history",
     "insight_history",
+    "home_details",
 ]
 
 
@@ -75,6 +76,7 @@ SERVICE_IDENTIFY_DEVICE = "identify_device"
 SERVICE_SET_AWAY_CONFIG = "set_away_configuration"
 SERVICE_ACTIVATE_OPEN_WINDOW = "activate_open_window"
 SERVICE_DEACTIVATE_OPEN_WINDOW = "deactivate_open_window"
+SERVICE_SET_OPEN_WINDOW_MODE = "set_open_window_mode"
 
 # API Base URLs
 TADO_API_BASE = "https://my.tado.com/api/v2"
@@ -315,6 +317,11 @@ ZONE_MIN_TEMP_MAX = 25.0
 ZONE_MAX_TEMP_MIN = 15.0
 ZONE_MAX_TEMP_MAX = 30.0
 ZONE_TEMP_STEP = 0.5
+
+# Open window mode defaults
+OPEN_WINDOW_DEFAULT_TEMP = 5.0  # Frost protection temperature (°C)
+OPEN_WINDOW_DEFAULT_TIMEOUT = 900  # 15 minutes in seconds (Tado default)
+OPEN_WINDOW_MAX_TIMEOUT = 3600  # 60 minutes max
 
 # Timer duration limits
 TIMER_DURATION_MIN = 15

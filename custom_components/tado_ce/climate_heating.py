@@ -16,7 +16,9 @@ from homeassistant.components.climate.const import (
     HVACMode,
 )
 from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
-from homeassistant.core import callback
+from homeassistant.core import CALLBACK_TYPE, Event, EventStateChangedData, callback
+from homeassistant.helpers.event import async_track_state_change_event
+from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .action_helpers import (
@@ -53,7 +55,7 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 
-class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity):
+class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity, RestoreEntity):
     """Tado CE Heating Climate Entity."""
 
     _attr_has_entity_name = True
@@ -121,6 +123,9 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity)
 
         # Unsubscribe callback for zone config changes
         self._unsub_zone_config = None
+
+        # Unsubscribe callbacks for external sensor state change listeners
+        self._unsub_external_sensors: list[CALLBACK_TYPE] = []
 
     def _clear_optimistic_state(self) -> None:
         """Clear all optimistic state tracking.
@@ -199,6 +204,16 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity)
         """
         await super().async_added_to_hass()
 
+        # Restore last known target temperature across HA restarts (#182)
+        last_state = await self.async_get_last_state()
+        if last_state and last_state.attributes.get(ATTR_TEMPERATURE) is not None:
+            self._attr_target_temperature = last_state.attributes[ATTR_TEMPERATURE]
+            _LOGGER.debug(
+                "%s: Restored target temperature %s from previous state",
+                self._zone_name,
+                self._attr_target_temperature,
+            )
+
         # Listen for zone config changes
         zone_config_manager = self.coordinator.zone_config_manager
         if zone_config_manager:
@@ -215,16 +230,80 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity)
             # Initial update of temp limits
             self._update_temp_limits()
 
+        # Subscribe to external sensor state changes for real-time updates
+        self._subscribe_external_sensors()
+
     async def async_will_remove_from_hass(self) -> None:
         """Unregister listeners when entity is removed.
 
         CoordinatorEntity handles update unsubscription.
         Only zone config listener needs manual cleanup.
         """
+        self._unsubscribe_external_sensors()
         if self._unsub_zone_config:
             self._unsub_zone_config()
             self._unsub_zone_config = None
         await super().async_will_remove_from_hass()
+
+    @callback
+    def _subscribe_external_sensors(self) -> None:
+        """Subscribe to external sensor state changes for real-time updates."""
+        self._unsubscribe_external_sensors()
+
+        zcm = self.coordinator.zone_config_manager
+        if not zcm:
+            return
+
+        config = zcm.get_zone_config(self._zone_id)
+        entity_ids: list[str] = []
+
+        temp_sensor = config.get("external_temp_sensor", "")
+        if temp_sensor:
+            entity_ids.append(temp_sensor)
+
+        humidity_sensor = config.get("external_humidity_sensor", "")
+        if humidity_sensor:
+            entity_ids.append(humidity_sensor)
+
+        if not entity_ids:
+            return
+
+        @callback
+        def _handle_external_sensor_change(event: Event[EventStateChangedData]) -> None:
+            """Handle external sensor state change — update climate entity immediately."""
+            new_state = event.data.get("new_state")
+            if new_state is None or new_state.state in ("unknown", "unavailable", ""):
+                return
+
+            try:
+                float(new_state.state)
+            except (ValueError, TypeError):
+                return
+
+            # Re-read external sensors and update state
+            ext_temp = read_external_sensor(self.hass, zcm, self._zone_id, "external_temp_sensor")
+            if ext_temp is not None:
+                self._attr_current_temperature = ext_temp
+                self._temperature_source = "external"
+
+            ext_hum = read_external_sensor(self.hass, zcm, self._zone_id, "external_humidity_sensor")
+            if ext_hum is not None:
+                self._attr_current_humidity = ext_hum
+                self._humidity_source = "external"
+
+            self.async_write_ha_state()
+            _LOGGER.debug("%s: External sensor updated → refreshed climate state", self._zone_name)
+
+        unsub = async_track_state_change_event(self.hass, entity_ids, _handle_external_sensor_change)
+        self._unsub_external_sensors.append(unsub)
+        _LOGGER.debug("%s: Subscribed to external sensor updates: %s", self._zone_name, entity_ids)
+
+    @callback
+    def _unsubscribe_external_sensors(self) -> None:
+        """Unsubscribe from external sensor state change listeners."""
+        for unsub in self._unsub_external_sensors:
+            unsub()
+        self._unsub_external_sensors.clear()
 
     @callback
     def _update_temp_limits(self) -> None:

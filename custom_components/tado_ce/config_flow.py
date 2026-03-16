@@ -156,6 +156,10 @@ class TadoCEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 },
             ),
             errors=errors,
+            description_placeholders={
+                "tado_web_app": "app.tado.com",
+                "tado_web_app_url": "https://app.tado.com",
+            },
         )
 
     async def _request_device_code(self) -> None:
@@ -724,7 +728,7 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
 
                 # Validate credentials if both fields provided
                 if bridge_serial and bridge_auth_key:
-                    from .bridge_api import TadoBridgeApiClient  # noqa: PLC0415
+                    from .bridge_api import TadoBridgeApiClient
 
                     session = async_get_clientsession(self.hass)
                     bridge_client = TadoBridgeApiClient(session, bridge_serial, bridge_auth_key)
@@ -1101,7 +1105,7 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
 
         if user_input is not None:
             # Flatten sections and save each key to zone_config.json
-            all_values: dict[str, Any] = {}  # noqa: ANN401 — mixed types from zone config
+            all_values: dict[str, Any] = {}
 
             if "heating_section" in user_input:
                 s = user_input["heating_section"]

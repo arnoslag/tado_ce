@@ -1159,12 +1159,22 @@
       }
     },
     "activate_open_window": {
-      "name": "Offenes Fenster aktivieren",
-      "description": "Aktivieren Sie den Modus \"Offenes Fenster\" für eine Klimazone (wie beim Tippen auf das Symbol in der Tado-App). Die Heizung/Kühlung wird ausgesetzt."
+      "name": "Offenes Fenster aktivieren (Auto-Assist)",
+      "description": "Bestätigt ein offenes Fenster, das Tado bereits erkannt hat — wie das Tippen auf das Symbol in der Tado-App. Funktioniert nur, wenn Tados integrierte Erkennung ein offenes Fenster gemeldet hat. Verwenden Sie 'Offenes-Fenster-Modus setzen' für externe Sensoren."
     },
     "deactivate_open_window": {
       "name": "Offenes Fenster deaktivieren",
-      "description": "Deaktivieren Sie den Modus \"Offenes Fenster\" für eine Klimazone und nehmen Sie die normale Heizung/Kühlung wieder auf."
+      "description": "Deaktiviert den Offenes-Fenster-Modus für eine Klimazone und nimmt die normale Heizung/Kühlung wieder auf. Funktioniert sowohl für Tado-erkannte als auch manuell ausgelöste Modi."
+    },
+    "set_open_window_mode": {
+      "name": "Offenes-Fenster-Modus setzen",
+      "description": "Löst den Offenes-Fenster-Modus über externe Sensoren aus (Zigbee, Z-Wave Kontaktsensoren usw.). Setzt die Zone auf Frostschutztemperatur mit Timer — keine Tado-Erkennung erforderlich. Dauer entspricht standardmäßig der Tado-Fenstererkennungs-Timeout-Einstellung oder 15 Minuten.",
+      "fields": {
+        "duration": {
+          "name": "Dauer",
+          "description": "Wie lange der Offenes-Fenster-Modus aktiv bleiben soll, in Sekunden (60–3600). Standardmäßig das Tado-Fenstererkennungs-Timeout der Zone."
+        }
+      }
     }
   },
   "selector": {
@@ -1249,7 +1259,7 @@
       },
       "manual_token": {
         "title": "Manuelles Token",
-        "description": "Wenn die Geräteautorisierung nicht funktioniert (z. B. wegen Problemen mit dem Tado-Server), können Sie ein Refresh-Token manuell einfügen. Öffnen Sie my.tado.com in Ihrem Browser, melden Sie sich an, öffnen Sie die Entwicklertools (F12) → Anwendung → Lokaler Speicher → https://my.tado.com → tado_token, und kopieren Sie den Wert refresh_token.",
+        "description": "Wenn die Geräteautorisierung nicht funktioniert (z. B. wegen Problemen mit dem Tado-Server), können Sie ein Refresh-Token manuell einfügen. Öffnen Sie {tado_web_app} in Ihrem Browser, melden Sie sich an, öffnen Sie die Entwicklertools (F12) → Anwendung → Lokaler Speicher → {tado_web_app_url} → tado_token, und kopieren Sie den Wert refresh_token.",
         "data": {
           "refresh_token": "Refresh-Token"
         },

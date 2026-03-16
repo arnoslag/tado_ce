@@ -386,7 +386,7 @@ ENTITY_REGISTRY: dict[str, EntityMeta] = {
         legacy_name="Connection{device_suffix}",
     ),
     # ===================================================================
-    # Binary Sensors (binary_sensor.py) — 4 entries
+    # Binary Sensors (binary_sensor.py) — 5 entries
     # ===================================================================
     "binary_sensor_home": EntityMeta(
         translation_key="home",
@@ -416,6 +416,7 @@ ENTITY_REGISTRY: dict[str, EntityMeta] = {
         icon=None,  # uses device_class
         legacy_name="Window Predicted",
     ),
+
     # ===================================================================
     # Buttons (button.py) — 6 entries
     # ===================================================================
@@ -608,6 +609,6 @@ def get_entity_category(meta: EntityMeta) -> EntityCategory | None:
     """
     if meta.entity_category is None:
         return None
-    from homeassistant.const import EntityCategory  # noqa: PLC0415
+    from homeassistant.const import EntityCategory
 
     return EntityCategory(meta.entity_category)

@@ -22,7 +22,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup_entry(
-    hass: HomeAssistant,  # noqa: ARG001 — required by HA platform signature
+    hass: HomeAssistant,
     entry: TadoConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
@@ -37,4 +37,4 @@ async def async_setup_entry(
         entities.append(TadoBoilerMaxOutputTemperatureNumber(coordinator))
         _LOGGER.info("Bridge credentials found — creating bridge number entity")
 
-    async_add_entities(entities, True)  # noqa: FBT003 — HA platform convention
+    async_add_entities(entities, True)

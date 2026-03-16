@@ -163,3 +163,20 @@ deactivate_open_window:
     entity:
       integration: tado_ce
       domain: climate
+
+set_open_window_mode:
+  target:
+    entity:
+      integration: tado_ce
+      domain: climate
+  fields:
+    duration:
+      required: false
+      example: 900
+      selector:
+        number:
+          min: 60
+          max: 3600
+          step: 60
+          unit_of_measurement: "s"
+          mode: box

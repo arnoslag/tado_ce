@@ -12,6 +12,8 @@ import voluptuous as vol
 
 from .const import (
     DOMAIN,
+    OPEN_WINDOW_DEFAULT_TEMP,
+    OPEN_WINDOW_DEFAULT_TIMEOUT,
     SERVICE_ACTIVATE_OPEN_WINDOW,
     SERVICE_ADD_METER_READING,
     SERVICE_DEACTIVATE_OPEN_WINDOW,
@@ -20,6 +22,7 @@ from .const import (
     SERVICE_RESUME_SCHEDULE,
     SERVICE_SET_AWAY_CONFIG,
     SERVICE_SET_CLIMATE_TIMER,
+    SERVICE_SET_OPEN_WINDOW_MODE,
     SERVICE_SET_TEMP_OFFSET,
     SERVICE_SET_WATER_HEATER_TIMER,
 )
@@ -795,6 +798,88 @@ async def _async_register_services(hass: HomeAssistant) -> None:
                     else:
                         _LOGGER.error("Failed to deactivate open window for %s", entity_id)
 
+    async def handle_set_open_window_mode(call: ServiceCall) -> None:
+        """Handle set_open_window_mode service call.
+
+        Simulates open window mode using an overlay — sets zone to frost protection
+        temperature with a timer. Works independently of Tado's built-in detection,
+        making it suitable for external contact sensors (Zigbee, Z-Wave, etc.).
+
+        Uses the zone's openWindowDetection.timeoutInSeconds if available,
+        otherwise falls back to OPEN_WINDOW_DEFAULT_TIMEOUT (15 min).
+
+        Per-entry API client routing with bootstrap reserve check.
+        """
+        entity_ids = call.data.get("entity_id", [])
+        if isinstance(entity_ids, str):
+            entity_ids = [entity_ids]
+
+        # Expand groups to individual entity IDs
+        entity_ids = _expand_group_entity_ids(hass, entity_ids, allowed_domains=["climate"])
+
+        # Optional user-provided duration (seconds)
+        duration_seconds = call.data.get("duration")
+
+        for entity_id in entity_ids:
+            try:
+                _coord = _resolve_coordinator(hass, entity_id)
+            except HomeAssistantError:
+                _LOGGER.exception("set_open_window_mode")
+                continue
+
+            should_block, reason = await async_check_bootstrap_reserve(hass, coordinator=_coord)
+            if should_block:
+                await async_show_api_limit_notification(hass, reason)
+                raise HomeAssistantError(
+                    translation_domain=DOMAIN,
+                    translation_key="api_quota_critically_low",
+                )
+
+            ent = _find_entity_by_id(hass, "climate", entity_id)
+            if ent:
+                zone_id = getattr(ent, "_zone_id", None)
+                if zone_id:
+                    # Determine timeout: user param > zone setting > default
+                    timeout = duration_seconds
+                    if timeout is None:
+                        # Try to get from zone's openWindowDetection config
+                        zones_info = _coord.data.get("zones_info") or []
+                        for zone in zones_info:
+                            if str(zone.get("id")) == zone_id:
+                                owd = zone.get("openWindowDetection") or {}
+                                timeout = owd.get("timeoutInSeconds")
+                                break
+                    if timeout is None:
+                        timeout = OPEN_WINDOW_DEFAULT_TIMEOUT
+
+                    # Build overlay: frost protection temp + timer
+                    # Determine zone type for correct setting format
+                    zone_type = getattr(ent, "_zone_type", "HEATING")
+                    setting: dict[str, str | dict[str, float]] = (
+                        {
+                            "type": "AIR_CONDITIONING",
+                            "power": "OFF",
+                        }
+                        if zone_type == "AIR_CONDITIONING"
+                        else {
+                            "type": "HEATING",
+                            "power": "ON",
+                            "temperature": {"celsius": OPEN_WINDOW_DEFAULT_TEMP},
+                        }
+                    )
+
+                    termination = {"type": "TIMER", "durationInSeconds": int(timeout)}
+
+                    success = await _coord.api_client.set_zone_overlay(zone_id, setting, termination)
+                    if success:
+                        minutes = int(timeout) // 60
+                        _LOGGER.info(
+                            "Set open window mode for %s (%s min, %s°C)",
+                            entity_id, minutes, OPEN_WINDOW_DEFAULT_TEMP,
+                        )
+                    else:
+                        _LOGGER.error("Failed to set open window mode for %s", entity_id)
+
     async def handle_get_temp_offset(call: ServiceCall) -> None:
         """Handle get_temperature_offset service call.
 
@@ -942,6 +1027,20 @@ async def _async_register_services(hass: HomeAssistant) -> None:
         schema=vol.Schema(
             {
                 vol.Required("entity_id"): cv.entity_ids,
+            },
+        ),
+    )
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_SET_OPEN_WINDOW_MODE,
+        handle_set_open_window_mode,
+        schema=vol.Schema(
+            {
+                vol.Required("entity_id"): cv.entity_ids,
+                vol.Optional("duration"): vol.All(
+                    vol.Coerce(int), vol.Range(min=60, max=3600),
+                ),
             },
         ),
     )

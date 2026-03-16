@@ -2,7 +2,7 @@
 
 All notable changes to Tado CE will be documented in this file.
 
-## [3.2.0] - 2026-03-15
+## [3.2.0] - 2026-03-16
 
 **Bridge API Integration — Flow Temperature Control**
 
@@ -10,10 +10,10 @@ All notable changes to Tado CE will be documented in this file.
 - **Bridge API Integration** — Connect to your Tado Internet Bridge for direct boiler control. New Options Flow step (Bridge Configuration) accepts bridge serial number and auth key. Creates 2 bridge sensors (Boiler Wiring State, Boiler Output Temperature) and 1 number entity (Boiler Max Output Temperature, 25–80°C range). Bridge data is fetched independently from the cloud API — errors are isolated and never affect main polling.
 - **Bridge Entity Cleanup** — Removing bridge credentials from Options Flow automatically cleans up all bridge-related entities (boiler sensors and number entity).
 
-### Improvements
-- **Entity Cleanup Refactored** — Extracted `_apply_cleanup_definition` helper to reduce `cleanup_disabled_feature_entities` complexity (C901). Moved lazy imports to top-level. Applied SIM108 ternary fix.
-- **Code Quality** — All bridge files pass `ruff --select=ALL` and `mypy --strict`. Pre-existing ruff issues in `entity_cleanup.py` resolved (PLC0415, SIM108, C901).
-- **Test Coverage** — All source files now ≥ 95% individual coverage. Added tests for `read_external_sensor`, `sensor_bridge.py` (14 tests), `number.py` (4 tests). Overall coverage 98% with 3519 tests.
+### Bug Fixes
+- **Fixed Climate Card Temperature Null After HA Restart** ([#182](https://github.com/hiall-fyi/tado_ce/issues/182) - @neonsp) — Target temperature is now restored from previous state after HA restart, keeping the climate card controls usable even when the zone is OFF. Previously required manually setting the temperature once after each restart. Applied to both heating and AC climate entities.
+- **Fixed External Sensor Not Updating in Real-Time** ([#143](https://github.com/hiall-fyi/tado_ce/issues/143) - @BirbByte) — External temperature/humidity sensors (HomeKit, Zigbee, etc.) configured via Zone Configuration now update the climate card immediately when the sensor value changes, instead of waiting for the next Tado API poll cycle. Applied to heating climate, AC climate, and Window Predicted binary sensor entities.
+- **Set Open Window Mode Service** ([#172](https://github.com/hiall-fyi/tado_ce/issues/172), [Discussion #184](https://github.com/hiall-fyi/tado_ce/discussions/184) - @driagi) — New `set_open_window_mode` service triggers open window mode from external sensors (Zigbee, Z-Wave contact sensors, etc.) by setting the zone to frost protection temperature (5°C) with a timer. Works independently of Tado's built-in detection — no need to wait for Tado to detect the open window first. Duration defaults to the zone's Open Window Detection timeout setting, or 15 minutes. The existing `activate_open_window` service is now clarified as Auto-Assist confirmation only (confirms Tado's own detection).
 
 ## [3.1.1] - 2026-03-15
 

@@ -13,6 +13,10 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
+# Thermal analysis thresholds
+_MIN_READINGS_PER_HALF = 3
+_MIN_RATE_THRESHOLD = 0.001
+
 
 class ThermalAnalyzer:
     """Analyze second-order thermal dynamics from heating cycles.
@@ -137,7 +141,7 @@ class ThermalAnalyzer:
 
         acceleration = (final_rate_h - initial_rate_h) / duration_hours
 
-        return acceleration
+        return acceleration  # noqa: RET504 — readability: named result
 
     def _calculate_rate_from_readings(
         self,
@@ -169,7 +173,7 @@ class ThermalAnalyzer:
         # Slope = rate in °C/min
         rate = (n * sum_t_temp - sum_t * sum_temp) / denominator
 
-        return rate
+        return rate  # noqa: RET504 — readability: named result
 
     def calculate_approach_factor(
         self,
@@ -313,11 +317,6 @@ class ThermalAnalyzer:
         Returns:
             Factor between 0.0 and 2.0, or None if cannot calculate
         """
-        # Minimum readings required for reliable averaging
-        MIN_READINGS_PER_HALF = 3
-        # Minimum rate threshold (°C/min)
-        MIN_RATE_THRESHOLD = 0.001
-
         # Find midpoint by temperature, not time
         mid_temp = cycle.start_temp + temp_delta * 0.5  # type: ignore[operator]
 
@@ -325,7 +324,7 @@ class ThermalAnalyzer:
         first_half = [r for r in readings if r.temp < mid_temp]
         second_half = [r for r in readings if r.temp >= mid_temp]
 
-        if len(first_half) < MIN_READINGS_PER_HALF or len(second_half) < MIN_READINGS_PER_HALF:
+        if len(first_half) < _MIN_READINGS_PER_HALF or len(second_half) < _MIN_READINGS_PER_HALF:
             _LOGGER.debug(
                 "Rate ratio skip: insufficient readings in halves (first=%d, second=%d)",
                 len(first_half),
@@ -345,7 +344,7 @@ class ThermalAnalyzer:
             _LOGGER.debug("Rate ratio skip: could not calculate first half rate")
             return None
 
-        if rate_first <= MIN_RATE_THRESHOLD:
+        if rate_first <= _MIN_RATE_THRESHOLD:
             _LOGGER.debug(
                 "Rate ratio skip: first half rate (%.6f) below threshold",
                 rate_first,
@@ -536,9 +535,6 @@ class ThermalAnalyzer:
         Returns:
             Factor between 0.0 and 2.0, or None if cannot calculate
         """
-        # Minimum rate threshold (°C/min)
-        MIN_RATE_THRESHOLD = 0.001
-
         # Find readings at ~50% and ~90% of temperature delta
         temp_50 = cycle.start_temp + temp_delta * 0.5  # type: ignore[operator]
         temp_90 = cycle.start_temp + temp_delta * 0.9  # type: ignore[operator]
@@ -566,7 +562,7 @@ class ThermalAnalyzer:
             )
             return None
 
-        if abs(rate_50) < MIN_RATE_THRESHOLD:
+        if abs(rate_50) < _MIN_RATE_THRESHOLD:
             _LOGGER.debug(
                 "Point-based skip: rate_50 (%.6f) below threshold",
                 rate_50,

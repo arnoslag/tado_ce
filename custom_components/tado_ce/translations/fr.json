@@ -1159,12 +1159,22 @@
       }
     },
     "activate_open_window": {
-      "name": "Activer la fenêtre ouverte",
-      "description": "Activez le mode Fenêtre Ouverte sur une zone climatique (de la même manière qu'en appuyant sur l'icône dans l'application Tado). Le chauffage/refroidissement sera suspendu."
+      "name": "Activer la fenêtre ouverte (Auto-Assist)",
+      "description": "Confirme une fenêtre ouverte que Tado a déjà détectée — comme appuyer sur l'icône dans l'application Tado. Ne fonctionne que lorsque la détection intégrée de Tado a signalé un événement de fenêtre ouverte. Pour déclencher depuis des capteurs externes, utilisez 'Définir le mode fenêtre ouverte'."
     },
     "deactivate_open_window": {
       "name": "Désactiver la fenêtre ouverte",
-      "description": "Désactive le mode fenêtre ouverte sur une zone climatique, rétablissant le chauffage/refroidissement normal."
+      "description": "Désactive le mode fenêtre ouverte sur une zone climatique, rétablissant le chauffage/refroidissement normal. Fonctionne pour les modes détectés par Tado et déclenchés manuellement."
+    },
+    "set_open_window_mode": {
+      "name": "Définir le mode fenêtre ouverte",
+      "description": "Déclenche le mode fenêtre ouverte depuis des capteurs externes (Zigbee, Z-Wave, etc.). Règle la zone à la température de protection antigel avec minuterie — aucune détection Tado requise. La durée par défaut est le timeout de détection de fenêtre de la zone, ou 15 minutes.",
+      "fields": {
+        "duration": {
+          "name": "Durée",
+          "description": "Durée du mode fenêtre ouverte, en secondes (60–3600). Par défaut, le timeout de détection de fenêtre Tado de la zone."
+        }
+      }
     }
   },
   "selector": {
@@ -1249,7 +1259,7 @@
       },
       "manual_token": {
         "title": "Token manuel",
-        "description": "Si l'autorisation de l'appareil ne fonctionne pas (par exemple, problèmes de serveur Tado), vous pouvez coller un jeton de rafraîchissement manuellement. Ouvrez my.tado.com dans votre navigateur, connectez-vous, ouvrez Developer Tools (F12) → Application → Local Storage → https://my.tado.com → tado_token, et copiez la valeur refresh_token.",
+        "description": "Si l'autorisation de l'appareil ne fonctionne pas (par exemple, problèmes de serveur Tado), vous pouvez coller un jeton de rafraîchissement manuellement. Ouvrez {tado_web_app} dans votre navigateur, connectez-vous, ouvrez Developer Tools (F12) → Application → Local Storage → {tado_web_app_url} → tado_token, et copiez la valeur refresh_token.",
         "data": {
           "refresh_token": "Jeton de rafraîchissement"
         },

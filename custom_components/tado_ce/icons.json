@@ -73,9 +73,9 @@
       "presence_mode": {
         "default": "mdi:home-account",
         "state": {
-          "Auto": "mdi:home-automation",
-          "Home": "mdi:home-account",
-          "Away": "mdi:home-export-outline"
+          "auto": "mdi:home-automation",
+          "home": "mdi:home-account",
+          "away": "mdi:home-export-outline"
         }
       },
       "overlay_mode": {

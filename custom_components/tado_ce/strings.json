@@ -1159,12 +1159,22 @@
       }
     },
     "activate_open_window": {
-      "name": "Activate Open Window",
-      "description": "Activate Open Window mode on a climate zone (same as tapping the icon in the Tado app). Heating/cooling will be suspended."
+      "name": "Activate Open Window (Auto-Assist)",
+      "description": "Confirm an open window that Tado has already detected — same as tapping the icon in the Tado app. Only works when Tado's built-in detection has flagged an open window event. For triggering open window mode from external sensors, use 'Set Open Window Mode' instead."
     },
     "deactivate_open_window": {
       "name": "Deactivate Open Window",
-      "description": "Deactivate Open Window mode on a climate zone, resuming normal heating/cooling."
+      "description": "Deactivate Open Window mode on a climate zone, resuming normal heating/cooling. Works for both Tado-detected and manually triggered open window modes."
+    },
+    "set_open_window_mode": {
+      "name": "Set Open Window Mode",
+      "description": "Trigger open window mode from external sensors (Zigbee, Z-Wave contact sensors, etc.). Sets the zone to frost protection temperature with a timer — no Tado detection required. Duration defaults to the zone's Open Window Detection timeout setting, or 15 minutes if not configured.",
+      "fields": {
+        "duration": {
+          "name": "Duration",
+          "description": "How long to keep open window mode active, in seconds (60–3600). Defaults to the zone's Tado Open Window Detection timeout."
+        }
+      }
     }
   },
   "selector": {
@@ -1249,7 +1259,7 @@
       },
       "manual_token": {
         "title": "Manual Token",
-        "description": "If device authorization is not working (e.g. Tado server issues), you can paste a refresh token obtained from the Tado web app.\n\n**How to get a token (Chrome):**\n1. Open [app.tado.com](https://app.tado.com) in Chrome\n2. Press `F12` to open Developer Tools → **Network** tab\n3. Type `token` in the filter bar\n4. Log in to your Tado account\n5. Click the `token` request → **Response** tab\n6. Copy the `refresh_token` value\n\n⚠️ This may not work if Tado has also changed their web app login flow.",
+        "description": "If device authorization is not working (e.g. Tado server issues), you can paste a refresh token obtained from the Tado web app.\n\n**How to get a token (Chrome):**\n1. Open [{tado_web_app}]({tado_web_app_url}) in Chrome\n2. Press `F12` to open Developer Tools → **Network** tab\n3. Type `token` in the filter bar\n4. Log in to your Tado account\n5. Click the `token` request → **Response** tab\n6. Copy the `refresh_token` value\n\n⚠️ This may not work if Tado has also changed their web app login flow.",
         "data": {
           "refresh_token": "Refresh Token"
         },

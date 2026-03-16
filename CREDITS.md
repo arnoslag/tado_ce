@@ -21,6 +21,12 @@ Thank you to everyone who supported the project through [Buy Me a Coffee](https:
 
 Community contributors who helped shape each release through bug reports, feature requests, testing, and feedback.
 
+### v3.2.0
+
+- **[@neonsp](https://github.com/neonsp)** — Reported climate card temperature null after HA restart ([#182](https://github.com/hiall-fyi/tado_ce/issues/182))
+- **[@BirbByte](https://github.com/BirbByte)** — Reported external sensor not updating in real-time ([#143](https://github.com/hiall-fyi/tado_ce/issues/143))
+- **[@driagi](https://github.com/driagi)** — Requested set open window mode service ([#172](https://github.com/hiall-fyi/tado_ce/issues/172), [Discussion #184](https://github.com/hiall-fyi/tado_ce/discussions/184))
+
 ### v3.1.1
 
 - **[@MathiasB112](https://github.com/MathiasB112)** — Reported device authorization broken due to Tado server changes ([#185](https://github.com/hiall-fyi/tado_ce/issues/185))

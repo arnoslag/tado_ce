@@ -349,5 +349,5 @@ def estimate_cooling_crossover(
     temp_margin = current_temp - target_temp
     hours = temp_margin / abs(effective_rate)
 
-    return hours
+    return hours  # noqa: RET504 — readability: named result
 

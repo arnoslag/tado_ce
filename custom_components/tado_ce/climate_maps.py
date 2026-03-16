@@ -49,6 +49,23 @@ HA_TO_TADO_FAN = {
     FAN_HIGH: "LEVEL5",
 }
 
+# Canonical ordering of Tado fan levels (quietest → loudest)
+_TADO_FAN_ORDER = [
+    "SILENT",
+    "LOW",
+    "LEVEL1",
+    "ONE",
+    "MIDDLE",
+    "LEVEL2",
+    "TWO",
+    "LEVEL3",
+    "THREE",
+    "LEVEL4",
+    "FOUR",
+    "HIGH",
+    "LEVEL5",
+]
+
 
 def build_fan_mapping(fan_levels: set[Any]) -> tuple[dict[str, Any], dict[str, Any]]:
     """Build bidirectional fan level mapping from actual AC capabilities.
@@ -70,24 +87,8 @@ def build_fan_mapping(fan_levels: set[Any]) -> tuple[dict[str, Any], dict[str, A
     Returns:
         (tado_to_ha, ha_to_tado) mapping dicts
     """
-    TADO_FAN_ORDER = [
-        "SILENT",
-        "LOW",
-        "LEVEL1",
-        "ONE",
-        "MIDDLE",
-        "LEVEL2",
-        "TWO",
-        "LEVEL3",
-        "THREE",
-        "LEVEL4",
-        "FOUR",
-        "HIGH",
-        "LEVEL5",
-    ]
-
-    tado_to_ha = {}
-    ha_to_tado = {}
+    tado_to_ha: dict[str, str] = {}
+    ha_to_tado: dict[str, str] = {}
 
     # AUTO always maps to FAN_AUTO
     if "AUTO" in fan_levels:
@@ -101,7 +102,7 @@ def build_fan_mapping(fan_levels: set[Any]) -> tuple[dict[str, Any], dict[str, A
     # Sort remaining non-AUTO, non-SILENT levels by known order
     other_levels = sorted(
         [f for f in fan_levels if f not in ("AUTO", "SILENT")],
-        key=lambda x: TADO_FAN_ORDER.index(x) if x in TADO_FAN_ORDER else 99,
+        key=lambda x: _TADO_FAN_ORDER.index(x) if x in _TADO_FAN_ORDER else 99,
     )
 
     n = len(other_levels)

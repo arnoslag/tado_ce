@@ -7,17 +7,21 @@ from typing import TYPE_CHECKING, Any
 
 from homeassistant.const import Platform
 from homeassistant.exceptions import ConfigEntryNotReady
+import homeassistant.helpers.config_validation as cv
 
 from .config_manager import ConfigurationManager
 from .const import (
     DATA_DIR,
     DOMAIN,
+    SERVICE_ACTIVATE_OPEN_WINDOW,
     SERVICE_ADD_METER_READING,
+    SERVICE_DEACTIVATE_OPEN_WINDOW,
     SERVICE_GET_TEMP_OFFSET,
     SERVICE_IDENTIFY_DEVICE,
     SERVICE_RESUME_SCHEDULE,
     SERVICE_SET_AWAY_CONFIG,
     SERVICE_SET_CLIMATE_TIMER,
+    SERVICE_SET_OPEN_WINDOW_MODE,
     SERVICE_SET_TEMP_OFFSET,
     SERVICE_SET_WATER_HEATER_TIMER,
 )
@@ -39,6 +43,8 @@ if TYPE_CHECKING:
     from homeassistant.helpers import device_registry as dr
 
 _LOGGER = logging.getLogger(__name__)
+
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 BASE_PLATFORMS = [
     Platform.SENSOR,
@@ -364,6 +370,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             SERVICE_ADD_METER_READING,
             SERVICE_IDENTIFY_DEVICE,
             SERVICE_SET_AWAY_CONFIG,
+            SERVICE_ACTIVATE_OPEN_WINDOW,
+            SERVICE_DEACTIVATE_OPEN_WINDOW,
+            SERVICE_SET_OPEN_WINDOW_MODE,
         ]:
             if hass.services.has_service(DOMAIN, service_name):
                 hass.services.async_remove(DOMAIN, service_name)

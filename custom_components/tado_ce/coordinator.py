@@ -252,6 +252,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         offsets_data = self.data_loader.get_cached("offsets")
         schedules_data = self.data_loader.get_cached("schedules")
         ac_capabilities = self.data_loader.get_cached("ac_capabilities")
+        home_details_data = self.data_loader.get_cached("home_details")
 
         # 5e. Accumulate outdoor temp history (depends on weather_data above)
         if weather_data:
@@ -302,7 +303,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # 10. Bridge API data (optional — only if bridge credentials configured)
         bridge_data = await self._async_fetch_bridge_data()
 
-        result: dict[str, Any] = {  # noqa: ANN401 — coordinator data dict
+        result: dict[str, Any] = {
             "zones": zone_data or {},
             "config": config_data or {},
             "home_state": home_state_data or {},
@@ -314,6 +315,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "mobile_devices": mobile_devices_data or [],
             "offsets": offsets_data or {},
             "schedules": schedules_data or {},
+            "home_details": home_details_data or {},
         }
         if bridge_data is not None:
             result["bridge"] = bridge_data
@@ -321,9 +323,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     def _should_do_full_sync(self) -> bool:
         """Check if full sync needed (vs quick). Only on first poll after restart/reload."""
-        if self._last_full_sync is None:
-            return True
-        return False
+        return self._last_full_sync is None
 
     async def _async_fetch_bridge_data(self) -> dict[str, object] | None:
         """Fetch bridge API data if credentials are configured.
@@ -344,11 +344,11 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         # Lazy-init (or re-init if credentials changed)
         if self.bridge_api_client is None:
-            from homeassistant.helpers.aiohttp_client import (  # noqa: PLC0415
+            from homeassistant.helpers.aiohttp_client import (
                 async_get_clientsession,
             )
 
-            from .bridge_api import TadoBridgeApiClient  # noqa: PLC0415
+            from .bridge_api import TadoBridgeApiClient
 
             session = async_get_clientsession(self.hass)
             self.bridge_api_client = TadoBridgeApiClient(session, bridge_serial, bridge_auth_key)

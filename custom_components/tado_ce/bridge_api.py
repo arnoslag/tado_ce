@@ -63,7 +63,7 @@ class TadoBridgeApiClient:
             async with self._session.get(url, params=params) as resp:
                 if resp.status != HTTPStatus.OK:
                     msg = "Bridge API GET wiring state failed: HTTP %s"
-                    raise TadoBridgeApiError(msg % resp.status)  # noqa: TRY301 — raise before except is intentional
+                    raise TadoBridgeApiError(msg % resp.status)
                 return await resp.json()  # type: ignore[no-any-return]
         except TadoBridgeApiError:
             raise
@@ -86,7 +86,7 @@ class TadoBridgeApiClient:
             async with self._session.put(url, params=params, json=payload) as resp:
                 if resp.status not in (HTTPStatus.OK, HTTPStatus.NO_CONTENT):
                     msg = "Bridge API PUT max temp failed: HTTP %s"
-                    raise TadoBridgeApiError(msg % resp.status)  # noqa: TRY301 — raise before except is intentional
+                    raise TadoBridgeApiError(msg % resp.status)
                 return True
         except TadoBridgeApiError:
             raise
