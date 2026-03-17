@@ -1,0 +1,221 @@
+blueprint:
+  name: "Tado CE: Weather Compensation (Heating Curve)"
+  description: >
+    Automatically adjusts the boiler max output (flow) temperature based on
+    outdoor temperature using a linear heating curve.
+
+
+    **How it works:** When the outdoor temperature drops, the flow temperature
+    rises (more heat needed). When outdoor temperature rises, the flow
+    temperature drops (less heat needed).
+
+
+    **Heating curve formula:**
+
+    `flow_temp = max_flow - slope × (outdoor_temp - design_outdoor_temp)`
+
+
+    Clamped to the min/max flow temperature range (default 25–65°C).
+
+
+    **Requirements:**
+
+    - Tado CE v3.2.2+ with Bridge API configured
+
+    - A `number.*_boiler_max_output_temperature` entity
+
+    - An outdoor temperature sensor (Tado CE, weather integration, or any sensor)
+
+
+    **Typical heating curve examples:**
+
+    - Mild climate: slope 1.2, design outdoor -5°C, max flow 55°C
+
+    - Cold climate: slope 1.5, design outdoor -15°C, max flow 75°C
+
+    - Well-insulated home: slope 0.8, design outdoor -5°C, max flow 50°C
+  domain: automation
+  author: Tado CE
+  homeassistant:
+    min_version: "2024.6.0"
+  input:
+    outdoor_temp_section:
+      name: Outdoor Temperature
+      icon: mdi:thermometer
+      description: Configure the outdoor temperature source.
+      input:
+        outdoor_temp_entity:
+          name: Outdoor Temperature Sensor
+          description: >
+            The sensor that provides outdoor temperature readings.
+            Can be from Tado CE (Outside Temperature), a weather integration,
+            or any temperature sensor.
+          selector:
+            entity:
+              filter:
+                domain: sensor
+                device_class: temperature
+
+    boiler_section:
+      name: Boiler Control
+      icon: mdi:water-boiler
+      description: Configure the boiler flow temperature entity.
+      input:
+        boiler_max_temp_entity:
+          name: Boiler Max Output Temperature
+          description: >
+            The Tado CE number entity for controlling boiler max output
+            temperature via Bridge API.
+          selector:
+            entity:
+              filter:
+                domain: number
+
+    heating_curve_section:
+      name: Heating Curve Parameters
+      icon: mdi:chart-line
+      description: >
+        Configure the heating curve. The formula is:
+        `flow_temp = max_flow - slope × (outdoor_temp - design_outdoor_temp)`.
+        Start with the defaults and adjust based on your comfort.
+      input:
+        curve_slope:
+          name: Heating Curve Slope
+          description: >
+            How aggressively the flow temperature changes with outdoor
+            temperature. Higher = more responsive. Typical range 0.5–2.5.
+          default: 1.5
+          selector:
+            number:
+              min: 0.3
+              max: 3.0
+              step: 0.1
+              mode: slider
+
+        design_outdoor_temp:
+          name: Design Outdoor Temperature (°C)
+          description: >
+            The coldest outdoor temperature your heating system is designed for.
+            At this temperature, the boiler runs at max flow temperature.
+          default: -5
+          selector:
+            number:
+              min: -30
+              max: 10
+              step: 1
+              unit_of_measurement: "°C"
+              mode: slider
+
+        max_flow_temp:
+          name: Maximum Flow Temperature (°C)
+          description: >
+            The highest flow temperature the boiler should use (at design
+            outdoor temperature). Must be within your boiler's range (25–80°C).
+          default: 65
+          selector:
+            number:
+              min: 25
+              max: 80
+              step: 0.5
+              unit_of_measurement: "°C"
+              mode: slider
+
+        min_flow_temp:
+          name: Minimum Flow Temperature (°C)
+          description: >
+            The lowest flow temperature the boiler should use (warm weather).
+            Below this, the boiler won't reduce further.
+          default: 25
+          selector:
+            number:
+              min: 25
+              max: 60
+              step: 0.5
+              unit_of_measurement: "°C"
+              mode: slider
+
+    advanced_section:
+      name: Advanced Options
+      icon: mdi:cog
+      description: Fine-tune trigger behavior and safety settings.
+      collapsed: true
+      input:
+        shutoff_outdoor_temp:
+          name: Heating Shutoff Temperature (°C)
+          description: >
+            When outdoor temperature exceeds this value, set flow temperature
+            to minimum (heating not needed). Set to 20°C or higher to disable.
+          default: 18
+          selector:
+            number:
+              min: 5
+              max: 30
+              step: 1
+              unit_of_measurement: "°C"
+              mode: slider
+
+# Expose inputs as template variables
+variables:
+  outdoor_entity: !input outdoor_temp_entity
+  boiler_entity: !input boiler_max_temp_entity
+  slope: !input curve_slope
+  design_temp: !input design_outdoor_temp
+  max_flow: !input max_flow_temp
+  min_flow: !input min_flow_temp
+  shutoff_temp: !input shutoff_outdoor_temp
+
+mode: single
+max_exceeded: silent
+
+triggers:
+  # Trigger on any state change of outdoor temp sensor
+  - trigger: state
+    entity_id: !input outdoor_temp_entity
+    id: state_change
+  # Periodic recalculation every 30 minutes
+  - trigger: time_pattern
+    minutes: "/30"
+    id: periodic
+
+conditions:
+  # Only run if both entities are available with valid values
+  - condition: template
+    value_template: >
+      {{ states(outdoor_entity) not in ['unknown', 'unavailable'] and
+         states(outdoor_entity) | float(none) is not none }}
+  - condition: template
+    value_template: >
+      {{ states(boiler_entity) not in ['unknown', 'unavailable'] }}
+
+actions:
+  - variables:
+      outdoor_temp: "{{ states(outdoor_entity) | float(0) }}"
+      # Heating curve: flow = max_flow - slope × (outdoor - design_temp)
+      # When outdoor = design_temp → flow = max_flow
+      # When outdoor rises above design_temp → flow decreases
+      raw_flow: >
+        {% if outdoor_temp >= (shutoff_temp | float(18)) %}
+          {{ min_flow | float(25) }}
+        {% else %}
+          {{ (max_flow | float(65)) - (slope | float(1.5)) * (outdoor_temp - (design_temp | float(-5))) }}
+        {% endif %}
+      # Clamp to min/max range and snap to nearest 0.5°C
+      target_flow: >
+        {% set val = raw_flow | float %}
+        {% set lo = min_flow | float(25) %}
+        {% set hi = max_flow | float(65) %}
+        {% set clamped = [lo, [val, hi] | min] | max %}
+        {{ (clamped * 2) | round(0) / 2 }}
+      current_flow: "{{ states(boiler_entity) | float(0) }}"
+
+  # Only send command if calculated value differs from current by ≥ 0.5°C
+  # This prevents unnecessary API calls to the Bridge
+  - condition: template
+    value_template: >
+      {{ (target_flow | float - current_flow | float) | abs >= 0.5 }}
+
+  - action: number.set_value
+    target:
+      entity_id: !input boiler_max_temp_entity
+    data:
+      value: "{{ target_flow }}"
