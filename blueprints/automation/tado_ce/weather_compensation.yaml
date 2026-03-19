@@ -168,24 +168,30 @@ mode: single
 max_exceeded: silent
 
 triggers:
-  # Trigger on any state change of outdoor temp sensor
+  # Trigger on outdoor temp change, but only after value is stable for 10 min.
+  # This debounces rapid fluctuations and replaces the broken hold-time check.
+  # (last_triggered updates when the actions block starts, even if the deadband
+  #  condition later fails, so a hold-time condition inside actions never works.)
   - trigger: state
     entity_id: !input outdoor_temp_entity
+    for:
+      minutes: 10
     id: state_change
   # Periodic recalculation every 30 minutes
   - trigger: time_pattern
     minutes: "/30"
     id: periodic
+  # Restore boiler entity value after HA restart
+  - trigger: homeassistant
+    event: start
+    id: startup
 
 conditions:
-  # Only run if both entities are available with valid values
+  # Only run if outdoor entity is available with a valid numeric value
   - condition: template
     value_template: >
       {{ states(outdoor_entity) not in ['unknown', 'unavailable'] and
          states(outdoor_entity) | float(none) is not none }}
-  - condition: template
-    value_template: >
-      {{ states(boiler_entity) not in ['unknown', 'unavailable'] }}
 
 actions:
   - variables:
@@ -206,20 +212,15 @@ actions:
         {% set hi = max_flow | float(65) %}
         {% set clamped = [lo, [val, hi] | min] | max %}
         {{ clamped | round(0) | int }}
-      current_flow: "{{ states(boiler_entity) | float(0) }}"
+      current_flow: >
+        {{ states(boiler_entity) | float(0) | round(0) | int }}
 
-  # Only send command if calculated value differs from current by ≥ 1.0°C
-  # This prevents unnecessary API calls to the Bridge
+  # On startup, always send to restore boiler entity from UNKNOWN.
+  # Otherwise, only send when the rounded target actually differs.
   - condition: template
     value_template: >
-      {{ (target_flow | float - current_flow | float) | abs >= 1.0 }}
-
-  # Hold time: skip if last adjustment was less than 10 minutes ago
-  - condition: template
-    value_template: >
-      {{ this.attributes.last_triggered is not defined or
-         this.attributes.last_triggered is none or
-         (now() - this.attributes.last_triggered).total_seconds() >= 600 }}
+      {{ trigger.id == 'startup' or
+         (target_flow | int) != (current_flow | int) }}
 
   - action: number.set_value
     target:
