@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from .config_manager import ConfigurationManager
     from .coordinator import TadoDataUpdateCoordinator
     from .data_loader import DataLoader
+    from .zone_config_manager import ZoneConfigManager
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -31,6 +32,7 @@ class AdaptivePreheatManager:
         config_manager: ConfigurationManager,
         api_client: TadoApiClient | None = None,
         data_loader: DataLoader | None = None,
+        zone_config_manager: ZoneConfigManager | None = None,
     ) -> None:
         """Initialize the Adaptive Preheat Manager.
 
@@ -39,11 +41,13 @@ class AdaptivePreheatManager:
             config_manager: Configuration manager with settings
             api_client: Per-entry API client (multi-home)
             data_loader: DataLoader instance for per-entry file access
+            zone_config_manager: Per-zone configuration manager
         """
         self._hass = hass
         self._config_manager = config_manager
         self._api_client = api_client
         self._data_loader = data_loader
+        self._zone_config_manager = zone_config_manager
         self._coordinator: TadoDataUpdateCoordinator | None = None
         self._enabled = False
         self._enabled_zones: list[str] = []  # Zone IDs enabled for adaptive preheat
@@ -102,8 +106,14 @@ class AdaptivePreheatManager:
             zone_id = str(zone.get("id"))
             zone_name = zone.get("name", f"Zone {zone_id}")
 
-            # Check if this zone is enabled
-            if configured_zones and zone_id not in configured_zones:
+            # Check per-zone adaptive_preheat mode (off/active/passive)
+            if self._zone_config_manager:
+                zone_cfg = self._zone_config_manager.get_zone_config(zone_id)
+                preheat_mode = zone_cfg.get("adaptive_preheat", "off")
+                if preheat_mode not in ("active", "passive"):
+                    continue
+            elif configured_zones and zone_id not in configured_zones:
+                # Legacy fallback: use global configured_zones list
                 continue
 
             # Build entity IDs
@@ -186,6 +196,12 @@ class AdaptivePreheatManager:
         # since state listeners will catch future transitions anyway.
         if self._coordinator:
             for zone_id in self._enabled_zones:
+                # Skip if home is in AWAY mode (#171)
+                home_state = (self._coordinator.data or {}).get("home_state")
+                if home_state and home_state.get("presence") != "HOME":
+                    _LOGGER.debug("Adaptive Preheat: Skipping initial check — home is in away mode")
+                    break
+
                 preheat_data = self._coordinator.get_entity_data(zone_id, "preheat_now")
                 if preheat_data and preheat_data.get("state") == "on":
                     _LOGGER.info(
@@ -209,10 +225,35 @@ class AdaptivePreheatManager:
 
         zone_name = zone_info["name"]
 
+        # Defense-in-depth: suppress preheat when home is in AWAY mode (#171)
+        if self._coordinator:
+            home_state = (self._coordinator.data or {}).get("home_state")
+            if home_state and home_state.get("presence") != "HOME":
+                _LOGGER.info("Adaptive Preheat: %s suppressed — home is in away mode", zone_name)
+                return
+
         # Check if we already have an active overlay for this zone
         if zone_id in self._active_overlays:
             _LOGGER.debug("Adaptive Preheat: %s already has active overlay", zone_name)
             return
+
+        # Per-zone preheat mode check (passive suppresses when zone has existing overlay)
+        preheat_mode = "active"  # default
+        if self._zone_config_manager:
+            zone_cfg = self._zone_config_manager.get_zone_config(zone_id)
+            preheat_mode = zone_cfg.get("adaptive_preheat", "off")
+
+        if preheat_mode == "passive":
+            coord_data_check = self._coordinator.data or {}  # type: ignore[union-attr]
+            zone_states_check = (coord_data_check.get("zones") or {}).get("zoneStates") or {}
+            zd = zone_states_check.get(zone_id) or zone_states_check.get(str(zone_id))
+            if zd and zd.get("overlay") is not None:
+                _LOGGER.info(
+                    "Adaptive Preheat: %s suppressed (passive mode) — zone has active overlay (%s)",
+                    zone_name,
+                    zd["overlay"].get("type", "unknown"),
+                )
+                return
 
         # Get target temperature from coordinator.entity_data (published by TadoPreheatAdvisorSensor)
         preheat_data = self._coordinator.get_entity_data(zone_id, "preheat_advisor")  # type: ignore[union-attr]
@@ -254,6 +295,12 @@ class AdaptivePreheatManager:
         # Note: TADO_MODE termination = "until next schedule block" in Tado API
         # The API doesn't accept NEXT_TIME_BLOCK directly
         _LOGGER.info("Adaptive Preheat: Triggering %s to %s°C (until next schedule block)", zone_name, target_temp)
+
+        # Active mode: capture state before setting overlay (state restoration)
+        if preheat_mode == "active" and self._coordinator and self._coordinator._sr_manager:
+            await self._coordinator._sr_manager.capture(
+                zone_id, "climate_heating", source="preheat",
+            )
 
         try:
             client = self._api_client

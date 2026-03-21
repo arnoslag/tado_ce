@@ -90,7 +90,7 @@ async def async_cleanup_entry_components(
     if coordinator is None:
         return
 
-    def _attr(field: str) -> Any:
+    def _attr(field: str) -> Any:  # noqa: ANN401 — coordinator attributes are heterogeneous
         """Get field from coordinator, or None if missing."""
         return getattr(coordinator, field, None)
 

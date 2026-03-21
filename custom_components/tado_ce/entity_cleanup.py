@@ -38,6 +38,7 @@ FEATURE_CLEANUP_MAP: list[tuple[str, str, bool]] = [
     ("schedule_calendar_enabled", "_cleanup_schedule_calendar", False),
     ("weather_enabled", "_cleanup_weather", False),
     ("mobile_devices_enabled", "_cleanup_mobile_devices", False),
+    ("wc_enabled", "_cleanup_weather_compensation", False),
 ]
 
 # ---------------------------------------------------------------------------
@@ -127,7 +128,11 @@ _CLEANUP_DEFINITIONS: dict[str, dict[str, Any]] = {
     },
     "_cleanup_bridge": {
         "label": "Bridge",
-        "match_contains": "_boiler_",
+        "match_contains_list": ["_bridge_", "_boiler_"],
+    },
+    "_cleanup_weather_compensation": {
+        "label": "Weather Compensation",
+        "patterns": ["_wc_target_flow_temp", "_wc_status"],
     },
 
 }
@@ -464,6 +469,12 @@ def _apply_cleanup_definition(
         removed += cleanup_entities_by_contains(
             entity_registry, DOMAIN, defn["match_contains"], defn.get("platform_filter"),
         )
+
+    if "match_contains_list" in defn:
+        for contains_str in defn["match_contains_list"]:
+            removed += cleanup_entities_by_contains(
+                entity_registry, DOMAIN, contains_str, defn.get("platform_filter"),
+            )
 
     # Remove specific orphan device if defined (e.g., Heating Schedule device)
     if "remove_device" in defn:

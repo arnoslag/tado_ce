@@ -416,6 +416,12 @@ ENTITY_REGISTRY: dict[str, EntityMeta] = {
         icon=None,  # uses device_class
         legacy_name="Window Predicted",
     ),
+    "binary_sensor_bridge_connected": EntityMeta(
+        translation_key="bridge_connected",
+        unique_id_suffix="bridge_connected",
+        entity_category="diagnostic",
+        icon=None,  # uses device_class CONNECTIVITY
+    ),
 
     # ===================================================================
     # Buttons (button.py) — 6 entries
@@ -565,25 +571,46 @@ ENTITY_REGISTRY: dict[str, EntityMeta] = {
         legacy_name=None,
     ),
     # ===================================================================
-    # Bridge Sensors / Number (bridge API — flow temperature control)
+    # Bridge Number (bridge API — flow temperature control, hardcoded)
+    # Dynamic bridge sensors get EntityMeta at runtime from enrichment.
     # ===================================================================
-    "sensor_boiler_wiring_state": EntityMeta(
-        translation_key="boiler_wiring_state",
-        unique_id_suffix="boiler_wiring_state",
-        entity_category="diagnostic",
-        icon="mdi:pipe-wrench",
-    ),
-    "sensor_boiler_output_temperature": EntityMeta(
-        translation_key="boiler_output_temperature",
-        unique_id_suffix="boiler_output_temperature",
-        entity_category="diagnostic",
-        icon="mdi:thermometer-water",
-    ),
     "number_boiler_max_output_temperature": EntityMeta(
         translation_key="boiler_max_output_temperature",
         unique_id_suffix="boiler_max_output_temperature",
         entity_category=None,
         icon="mdi:thermometer-water",
+    ),
+    # ===================================================================
+    # Bridge Meta Sensors (sensor_bridge_meta.py) — 2 entries, DIAGNOSTIC
+    # ===================================================================
+    "sensor_bridge_capabilities": EntityMeta(
+        translation_key="bridge_capabilities",
+        unique_id_suffix="bridge_capabilities",
+        entity_category="diagnostic",
+        icon="mdi:information-outline",
+        enabled_default=False,
+    ),
+    "sensor_bridge_schema_version": EntityMeta(
+        translation_key="bridge_schema_version",
+        unique_id_suffix="bridge_schema_version",
+        entity_category="diagnostic",
+        icon="mdi:file-tree",
+        enabled_default=False,
+    ),
+    # ===================================================================
+    # Weather Compensation Sensors (sensor_weather_compensation.py) — 2 entries
+    # ===================================================================
+    "sensor_wc_target_flow_temp": EntityMeta(
+        translation_key="wc_target_flow_temp",
+        unique_id_suffix="wc_target_flow_temp",
+        entity_category="diagnostic",
+        icon="mdi:thermometer-auto",
+    ),
+    "sensor_wc_status": EntityMeta(
+        translation_key="wc_status",
+        unique_id_suffix="wc_status",
+        entity_category="diagnostic",
+        icon="mdi:thermostat-auto",
     ),
 }
 

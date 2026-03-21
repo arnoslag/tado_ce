@@ -21,6 +21,13 @@ Thank you to everyone who supported the project through [Buy Me a Coffee](https:
 
 Community contributors who helped shape each release through bug reports, feature requests, testing, and feedback.
 
+### v3.3.0
+
+- **[@driagi](https://github.com/driagi)** — Proposed weather compensation for boiler flow temperature, provided extensive Blueprint testing and feedback including oscillation fix and temperature averaging suggestions ([#187](https://github.com/hiall-fyi/tado_ce/issues/187))
+- **[@thefern69](https://github.com/thefern69)** — Reported preheat still triggering during Away mode transition, proposed passive preheat mode to respect external manual overrides ([#171](https://github.com/hiall-fyi/tado_ce/issues/171))
+- **[@ChrisMarriott38](https://github.com/ChrisMarriott38)** — Investigated V2 vs V3 bridge compatibility, provided serial format details that led to bridge serial validation, tested Bridge entity visibility ([#187](https://github.com/hiall-fyi/tado_ce/issues/187))
+- **[@neonsp](https://github.com/neonsp)** — Confirmed climate card null temperature on first install, suggested default temperature values and smart AC mode selection ([#182](https://github.com/hiall-fyi/tado_ce/issues/182))
+
 ### v3.2.2
 
 - **[@driagi](https://github.com/driagi)** — Provided critical v3.2.1 debug logs that revealed the wrong data path for Boiler Output Temperature sensor, enabling the fix ([#187](https://github.com/hiall-fyi/tado_ce/issues/187))

@@ -24,6 +24,7 @@ from .const import DOMAIN, OVERLAY_MODE_DEFAULT, TIMER_DURATION_DEFAULT, get_dat
 from .exceptions import TadoAuthError, TadoBridgeApiError, TadoSyncError
 from .insight_history import InsightHistoryTracker
 from .polling import get_polling_interval, should_pause_polling
+from .weather_compensation import WeatherCompensationConfig, WeatherCompensationState, evaluate
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -35,15 +36,17 @@ if TYPE_CHECKING:
     from .api_call_tracker import APICallTracker
     from .api_client import TadoApiClient
     from .bridge_api import TadoBridgeApiClient
+    from .bridge_health import BridgeHealthTracker
     from .config_manager import ConfigurationManager
     from .data_loader import DataLoader
     from .heating_coordinator import HeatingCycleCoordinator
     from .smart_comfort import SmartComfortManager
+    from .state_restore_manager import StateRestoreManager
     from .zone_config_manager import ZoneConfigManager
 
 _LOGGER = logging.getLogger(__name__)
 
-# Outdoor temperature history — 14 days × 24 hourly readings
+# Outdoor temperature history — 14 days x 24 hourly readings
 _OUTDOOR_TEMP_HISTORY_MAX = 336
 
 
@@ -72,6 +75,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         smart_comfort_manager: SmartComfortManager | None = None,
         heating_cycle_coordinator: HeatingCycleCoordinator | None = None,
         adaptive_preheat_manager: AdaptivePreheatManager | None = None,
+        state_restore_manager: StateRestoreManager | None = None,
     ) -> None:
         """Initialize the coordinator with all per-entry dependencies."""
         initial_interval = get_polling_interval(config_manager)
@@ -92,6 +96,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.smart_comfort_manager = smart_comfort_manager
         self.heating_cycle_coordinator = heating_cycle_coordinator
         self.adaptive_preheat_manager = adaptive_preheat_manager
+        self._sr_manager = state_restore_manager
 
         # RefreshHandler (self-reference resolves chicken-and-egg dependency)
         from .refresh_handler import RefreshHandler
@@ -137,8 +142,15 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Bridge API client (lazy-init from options when bridge credentials present)
         self.bridge_api_client: TadoBridgeApiClient | None = None
 
+        # Bridge health tracking (init when bridge credentials present)
+        self.bridge_health_tracker: BridgeHealthTracker | None = None
+        self._bridge_first_fetch_logged: bool = False
+
         # Platforms loaded during setup (used by unload to match exactly)
         self.loaded_platforms: frozenset[Platform] = frozenset()
+
+        # Weather compensation mutable runtime state (persists across polls)
+        self._wc_state = WeatherCompensationState()
 
     @property
     def outdoor_temp_history(self) -> list[float]:
@@ -303,6 +315,14 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # 10. Bridge API data (optional — only if bridge credentials configured)
         bridge_data = await self._async_fetch_bridge_data()
 
+        # 11. Weather compensation (after bridge data — needs bridge client)
+        # Type narrowing: get_cached returns dict|list|None but zone/weather are always dict|None
+        _zone_dict = zone_data if isinstance(zone_data, dict) else None
+        _weather_dict = weather_data if isinstance(weather_data, dict) else None
+        wc_data = await self._async_run_weather_compensation(
+            bridge_data, _zone_dict, _weather_dict,
+        )
+
         result: dict[str, Any] = {
             "zones": zone_data or {},
             "config": config_data or {},
@@ -319,6 +339,21 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         }
         if bridge_data is not None:
             result["bridge"] = bridge_data
+        if wc_data is not None:
+            result["weather_compensation"] = wc_data
+
+        # 12. State restore: Away → Home clears captured states, then detect timer expiration
+        if self._sr_manager:
+            old_home_state = self.data.get("home_state", {}) if self.data else {}
+            old_presence = old_home_state.get("presence")
+            _hsd = home_state_data if isinstance(home_state_data, dict) else {}
+            new_presence = _hsd.get("presence")
+            if old_presence == "AWAY" and new_presence == "HOME":
+                await self._sr_manager.clear_all()
+                _LOGGER.info("State Restore: Cleared all captured states (home returned from Away)")
+
+            self._sr_manager.on_poll_update(result)
+
         return result
 
     def _should_do_full_sync(self) -> bool:
@@ -326,7 +361,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return self._last_full_sync is None
 
     async def _async_fetch_bridge_data(self) -> dict[str, object] | None:
-        """Fetch bridge API data if credentials are configured."""
+        """Fetch bridge API data with health tracking."""
         options = self.config_entry.options
         bridge_serial = options.get("bridge_serial", "")
         bridge_auth_key = options.get("bridge_auth_key", "")
@@ -340,7 +375,14 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if not bridge_serial or not bridge_auth_key:
             _LOGGER.debug("Bridge API skipped — no credentials configured")
             self.bridge_api_client = None
+            self.bridge_health_tracker = None
             return None
+
+        # Lazy-init health tracker when bridge credentials present
+        if self.bridge_health_tracker is None:
+            from .bridge_health import BridgeHealthTracker as _BridgeHealthTracker
+
+            self.bridge_health_tracker = _BridgeHealthTracker()
 
         # Lazy-init (or re-init if credentials changed)
         if self.bridge_api_client is None:
@@ -356,11 +398,180 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         try:
             _LOGGER.debug("Fetching bridge API wiring state...")
+            start_time = time.monotonic()
             result = await self.bridge_api_client.async_get_wiring_state()
-            _LOGGER.debug("Bridge API fetch successful: %s", result)
+            elapsed_ms = (time.monotonic() - start_time) * 1000
+            self.bridge_health_tracker.record_success(elapsed_ms)
+            _LOGGER.debug("Bridge API fetch successful (%.0f ms): %s", elapsed_ms, result)
+
+            # First-time field inventory logging
+            if not self._bridge_first_fetch_logged:
+                from .bridge_discovery import flatten_response
+
+                fields = flatten_response(result)
+                _LOGGER.info(
+                    "Bridge API field inventory (%d fields): %s",
+                    len(fields),
+                    ", ".join(f.path for f in fields),
+                )
+                self._bridge_first_fetch_logged = True
+
             return result
         except TadoBridgeApiError as e:
+            self.bridge_health_tracker.record_failure(str(e))
             _LOGGER.debug("Bridge API fetch failed — %s — cloud data unaffected", e)
+            return None
+
+    async def _async_run_weather_compensation(
+        self,
+        bridge_data: dict[str, object] | None,
+        zone_data: dict[str, Any] | None,
+        weather_data: dict[str, Any] | None,
+    ) -> dict[str, Any] | None:
+        """Run one weather compensation evaluation cycle.
+
+        Resolve outdoor/indoor temps, call the pure engine, and send the
+        target flow temperature to the Bridge API when needed.
+
+        Returns a dict suitable for ``coordinator.data["weather_compensation"]``
+        or *None* when the feature is disabled / unavailable.
+
+        CP-7 (independence): wrapped in try/except so failures never block
+        the main coordinator update.
+        """
+        cm = self.config_manager
+        if not cm.get_wc_enabled() or self.bridge_api_client is None:
+            self._wc_state.status = "disabled"
+            return None
+
+        try:
+            # --- Build config from options ---
+            config = WeatherCompensationConfig(
+                enabled=True,
+                heating_system_preset=cm.get_wc_heating_system_preset(),
+                slope=cm.get_wc_slope(),
+                design_outdoor_temp=cm.get_wc_design_outdoor_temp(),
+                max_flow_temp=cm.get_wc_max_flow_temp(),
+                min_flow_temp=cm.get_wc_min_flow_temp(),
+                shutoff_temp=cm.get_wc_shutoff_temp(),
+                smoothing_method=cm.get_wc_smoothing_method(),
+                smoothing_window_minutes=cm.get_wc_smoothing_window(),
+                room_compensation_enabled=cm.get_wc_room_compensation_enabled(),
+                room_compensation_factor=cm.get_wc_room_compensation_factor(),
+                step_size=cm.get_wc_step_size(),
+                hysteresis=cm.get_wc_hysteresis(),
+            )
+
+            # --- Resolve outdoor temperature ---
+            from .sensor_helpers import get_outdoor_temperature
+
+            outdoor_entity = cm.get_outdoor_temp_entity()
+            outdoor_temp: float | None = None
+            if outdoor_entity:
+                outdoor_temp = get_outdoor_temperature(
+                    self.hass, outdoor_entity, cm.get_use_feels_like(),
+                )
+            # Fallback to Tado weather API
+            if outdoor_temp is None and weather_data:
+                outside = weather_data.get("outsideTemperature")
+                if isinstance(outside, dict):
+                    raw = outside.get("celsius")
+                    if raw is not None:
+                        outdoor_temp = float(raw)
+
+            # --- Resolve indoor temp + target (room compensation) ---
+            indoor_temp: float | None = None
+            target_temp: float | None = None
+            if config.room_compensation_enabled and zone_data:
+                zone_states = zone_data.get("zoneStates") or {}
+                temps: list[float] = []
+                targets: list[float] = []
+                for zdata in zone_states.values():
+                    activity = zdata.get("activityDataPoints") or {}
+                    hp = activity.get("heatingPower")
+                    if hp is None:
+                        continue
+                    hp_val = hp.get("percentage") if isinstance(hp, dict) else hp
+                    if hp_val is None:
+                        continue
+                    try:
+                        if float(hp_val) <= 0:
+                            continue
+                    except (TypeError, ValueError):
+                        continue
+                    sensor_pts = zdata.get("sensorDataPoints") or {}
+                    inside = (sensor_pts.get("insideTemperature") or {}).get("celsius")
+                    setting = (zdata.get("setting") or {}).get("temperature") or {}
+                    tgt = setting.get("celsius")
+                    if inside is not None:
+                        temps.append(float(inside))
+                    if tgt is not None:
+                        targets.append(float(tgt))
+                if temps:
+                    indoor_temp = sum(temps) / len(temps)
+                if targets:
+                    target_temp = sum(targets) / len(targets)
+
+            # --- Current flow temp from bridge ---
+            current_flow: float | None = None
+            if bridge_data:
+                raw_flow = bridge_data.get("boilerMaxOutputTemperatureInCelsius")
+                if raw_flow is not None:
+                    current_flow = float(raw_flow)  # type: ignore[arg-type]
+
+            # --- Poll interval (minutes) ---
+            poll_min = self.update_interval.total_seconds() / 60.0 if self.update_interval else 5.0
+
+            # --- Evaluate ---
+            result = evaluate(
+                config,
+                self._wc_state,
+                outdoor_temp,
+                indoor_temp,
+                target_temp,
+                current_flow,
+                time.monotonic(),
+                poll_min,
+            )
+
+            # --- Send to Bridge API if needed ---
+            if result.should_send and result.target_flow_temp is not None:
+                try:
+                    await self.bridge_api_client.async_set_max_output_temperature(
+                        result.target_flow_temp,
+                    )
+                    _LOGGER.info(
+                        "Weather compensation: set flow temp to %.1f°C "
+                        "(outdoor=%.1f°C, preset=%s)",
+                        result.target_flow_temp,
+                        result.smoothed_outdoor_temp or 0.0,
+                        result.heating_system_preset,
+                    )
+                except TadoBridgeApiError:
+                    _LOGGER.warning(
+                        "Weather compensation: Bridge API call failed — "
+                        "will retry next cycle",
+                    )
+                    # Reset sent state so next cycle retries
+                    self._wc_state.last_sent_flow_temp = None
+                    self._wc_state.last_adjustment_time = 0.0
+
+            return {
+                "target_flow_temp": result.target_flow_temp,
+                "status": result.status,
+                "smoothed_outdoor_temp": result.smoothed_outdoor_temp,
+                "raw_outdoor_temp": result.raw_outdoor_temp,
+                "smoothing_method": result.smoothing_method,
+                "smoothing_window": result.smoothing_window,
+                "room_compensation_offset": result.room_compensation_offset,
+                "heating_system_preset": result.heating_system_preset,
+                "should_send": result.should_send,
+            }
+        except Exception:
+            _LOGGER.debug(
+                "Weather compensation evaluation failed — main update unaffected",
+                exc_info=True,
+            )
             return None
 
     async def _async_load_ratelimit(self) -> None:

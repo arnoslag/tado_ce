@@ -77,6 +77,9 @@
             "name": "Anomaly readings"
           }
         }
+      },
+      "bridge_connected": {
+        "name": "Bridge Connected"
       }
     },
     "button": {
@@ -936,6 +939,54 @@
       },
       "boiler_output_temperature": {
         "name": "Boiler Output Temperature"
+      },
+      "bridge_wiring_state": {
+        "name": "Bridge Wiring State"
+      },
+      "bridge_boiler_output_temp": {
+        "name": "Bridge Boiler Output Temperature"
+      },
+      "bridge_boiler_output_temp_time": {
+        "name": "Bridge Boiler Output Temperature Time"
+      },
+      "bridge_boiler_flow_temp": {
+        "name": "Bridge Boiler Flow Temperature"
+      },
+      "bridge_boiler_flow_temp_time": {
+        "name": "Bridge Boiler Flow Temperature Time"
+      },
+      "bridge_boiler_max_output_temp": {
+        "name": "Bridge Boiler Max Output Temperature"
+      },
+      "bridge_connected_state": {
+        "name": "Bridge Connected"
+      },
+      "bridge_hot_water_present": {
+        "name": "Bridge Hot Water Present"
+      },
+      "bridge_device_type": {
+        "name": "Bridge Device Type"
+      },
+      "bridge_device_serial": {
+        "name": "Bridge Device Serial"
+      },
+      "bridge_therm_interface_type": {
+        "name": "Bridge Therm Interface Type"
+      },
+      "bridge_device_connected": {
+        "name": "Bridge Device Connected"
+      },
+      "bridge_capabilities": {
+        "name": "Bridge Capabilities"
+      },
+      "bridge_schema_version": {
+        "name": "Bridge Schema Version"
+      },
+      "wc_target_flow_temp": {
+        "name": "Weather Compensation Target"
+      },
+      "wc_status": {
+        "name": "Weather Compensation Status"
       }
     },
     "select": {
@@ -1175,13 +1226,21 @@
     },
     "set_open_window_mode": {
       "name": "Set Open Window Mode",
-      "description": "Trigger open window mode from external sensors (Zigbee, Z-Wave contact sensors, etc.). Sets the zone to frost protection temperature with a timer — no Tado detection required. Duration defaults to the zone's Open Window Detection timeout setting, or 15 minutes if not configured.",
+      "description": "Trigger open window mode from external sensors (Zigbee, Z-Wave contact sensors, etc.). Sets the zone to frost protection temperature — no Tado detection required. Duration defaults to the zone's Open Window Detection timeout setting, or 15 minutes if not configured.",
       "fields": {
         "duration": {
           "name": "Duration",
-          "description": "How long to keep open window mode active, in seconds (60–3600). Defaults to the zone's Tado Open Window Detection timeout."
+          "description": "How long to keep open window mode active, in seconds (60–3600). Use 0 for indefinite duration until manual resume. Defaults to the zone's Tado Open Window Detection timeout."
+        },
+        "capture_state": {
+          "name": "Capture State",
+          "description": "Capture the current zone state before applying open window mode, allowing restoration later via the Restore Previous State service. Enabled by default."
         }
       }
+    },
+    "restore_previous_state": {
+      "name": "Restore Previous State",
+      "description": "Restore a zone to its state before the last overlay operation. If no captured state exists, falls back to resuming the schedule."
     }
   },
   "selector": {
@@ -1199,6 +1258,28 @@
         "double_pane": "Double Pane (U=2.7)",
         "triple_pane": "Triple Pane (U=1.0)",
         "passive_house": "Passive House (U=0.8)"
+      }
+    },
+    "window_predicted_mode": {
+      "options": {
+        "Active": "Active (HVAC-dependent)",
+        "Passive": "Passive (HVAC-independent)",
+        "Auto": "Auto (recommended)"
+      }
+    },
+    "wc_heating_system_preset": {
+      "options": {
+        "radiators_standard": "Radiators (Standard)",
+        "radiators_low_temp": "Radiators (Low Temperature)",
+        "underfloor": "Underfloor Heating",
+        "custom": "Custom"
+      }
+    },
+    "wc_smoothing_method": {
+      "options": {
+        "none": "None (Real-time)",
+        "ema": "EMA (Exponential Moving Average)",
+        "rolling_average": "Rolling Average"
       }
     }
   },
@@ -1384,7 +1465,7 @@
               "offset_enabled": "Add offset_celsius attribute to climate entities (+1 API call per device)"
             }
           },
-          "settings": {
+          "smart_comfort": {
             "name": "Smart Comfort",
             "data": {
               "use_outdoor_temp_entity": "Use Outdoor Temperature Entity",
@@ -1432,16 +1513,41 @@
               "quota_reserve_enabled": "Pause polling when quota is low. Disable only if you understand the risks."
             }
           },
-          "bridge_config": {
-            "name": "Bridge Configuration",
-            "description": "Optional: connect to your Tado Internet Bridge for flow temperature control",
+          "flow_temperature_control": {
+            "name": "Flow Temperature Control",
+            "description": "Connect to your Tado Internet Bridge (v3+ with HomeKit support) and configure automatic flow temperature adjustment",
             "data": {
+              "bridge_enabled": "Enable Internet Bridge",
               "bridge_serial": "Bridge Serial Number",
-              "bridge_auth_key": "Bridge Auth Key"
+              "bridge_auth_key": "Bridge Auth Code",
+              "wc_enabled": "Enable Weather Compensation",
+              "wc_heating_system_preset": "Heating System Type",
+              "wc_slope": "Heating Curve Slope",
+              "wc_design_outdoor_temp": "Design Outdoor Temperature",
+              "wc_max_flow_temp": "Maximum Flow Temperature",
+              "wc_min_flow_temp": "Minimum Flow Temperature",
+              "wc_shutoff_temp": "Heating Shutoff Temperature",
+              "wc_smoothing_method": "Temperature Smoothing Method",
+              "wc_smoothing_window": "Smoothing Window (minutes)",
+              "wc_room_compensation_enabled": "Enable Room Compensation",
+              "wc_room_compensation_factor": "Room Compensation Factor",
+              "wc_step_size": "Flow Temperature Step Size",
+              "wc_hysteresis": "Change Hysteresis"
             },
             "data_description": {
-              "bridge_serial": "Serial number printed on the bottom of your Internet Bridge (e.g. IB123456789)",
-              "bridge_auth_key": "Auth key from the bridge sticker or Tado app (keep confidential)"
+              "bridge_enabled": "Enable to connect to your Tado Internet Bridge. Requires v3+ bridge (HomeKit-compatible). Disabling will remove bridge credentials and all bridge entities",
+              "bridge_serial": "Serial number printed on the bottom of your Internet Bridge v3+ (starts with IB, e.g. IB0123456789)",
+              "bridge_auth_key": "4-digit auth code from the bridge sticker (keep confidential)",
+              "wc_slope": "Higher = steeper curve = more flow temp change per degree outdoor change (0.3–3.0)",
+              "wc_design_outdoor_temp": "Coldest expected outdoor temperature for your region (-30 to 10°C)",
+              "wc_max_flow_temp": "Flow temperature at design outdoor temperature (25–80°C)",
+              "wc_min_flow_temp": "Minimum flow temperature, also used at shutoff (25–60°C)",
+              "wc_shutoff_temp": "Outdoor temperature above which heating is reduced to minimum (5–30°C)",
+              "wc_smoothing_method": "How outdoor temperature readings are smoothed before use in the heating curve",
+              "wc_smoothing_window": "Duration of outdoor temperature averaging (15–1440 min)",
+              "wc_room_compensation_factor": "Flow adjustment per degree indoor deviation from setpoint (1.0–5.0)",
+              "wc_step_size": "Flow temperature is rounded to this step size — larger = fewer API calls, less oscillation (0.5–2.0°C)",
+              "wc_hysteresis": "Minimum change from last sent value before a new API call is made (0.5–3.0°C)"
             }
           }
         }
@@ -1462,12 +1568,12 @@
             "data": {
               "heating_type": "Heat Emitter Type",
               "ufh_buffer_minutes": "UFH Buffer (minutes)",
-              "adaptive_preheat": "Adaptive Preheat"
+              "adaptive_preheat": "Adaptive Preheat Mode"
             },
             "data_description": {
               "heating_type": "Radiator or underfloor heating",
               "ufh_buffer_minutes": "Extra minutes for UFH warm-up (0-60)",
-              "adaptive_preheat": "Auto-start heating before schedule"
+              "adaptive_preheat": "Off: disabled. Active: auto-start heating and capture state for restoration. Passive: auto-start only when no overlay is active."
             }
           },
           "comfort_section": {
@@ -1475,11 +1581,13 @@
             "data": {
               "smart_comfort_mode": "Smart Comfort Mode",
               "window_type": "Window Type",
+              "window_predicted_mode": "Window Detection Mode",
               "window_predicted_sensitivity": "Window Detection Sensitivity"
             },
             "data_description": {
               "smart_comfort_mode": "Adjust target temp based on outdoor conditions",
               "window_type": "Window type for mold risk calculation",
+              "window_predicted_mode": "Active: detects only when HVAC is running. Passive: detects regardless of HVAC state. Auto: uses Active when HVAC is on, Passive when off.",
               "window_predicted_sensitivity": "Sensitivity for predicted window open detection"
             }
           },
@@ -1541,7 +1649,9 @@
     "error": {
       "interval_out_of_range": "Polling interval must be between 1 and 1440 minutes",
       "invalid_number": "Please enter a valid number",
-      "bridge_auth_failed": "Invalid bridge serial or auth key — please check and try again"
+      "bridge_auth_failed": "Invalid bridge serial or auth code — please check and try again",
+      "wc_min_exceeds_max": "Minimum flow temperature cannot exceed maximum flow temperature",
+      "bridge_serial_invalid": "Only v3+ Internet Bridges (serial starting with IB) support the local API. Your serial suggests a v2 bridge (GW prefix) which does not have a local API. Weather Compensation can still be used without a bridge via cloud data."
     }
   }
 }

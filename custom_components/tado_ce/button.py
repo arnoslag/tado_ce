@@ -256,6 +256,12 @@ class TadoWaterHeaterTimerButton(CoordinatorEntity[TadoDataUpdateCoordinator], B
 
         _LOGGER.info("Timer button pressed - %s for %s minutes", self._zone_name, self._duration)
 
+        # Capture state before timer overlay (state restoration)
+        if self.coordinator._sr_manager:
+            await self.coordinator._sr_manager.capture(
+                self._zone_id, "water_heater", source="set_timer",
+            )
+
         # Find water heater entity by unique_id (more reliable than constructing from name)
         # This handles cases where HA adds suffix like _2 due to entity_id conflicts
         registry = er.async_get(self.hass)
@@ -458,6 +464,12 @@ class TadoBoostButton(CoordinatorEntity[TadoDataUpdateCoordinator], ButtonEntity
 
         _LOGGER.info("Boost button pressed for %s", self._zone_name)
 
+        # Capture state before boost overlay (state restoration)
+        if self.coordinator._sr_manager:
+            await self.coordinator._sr_manager.capture(
+                self._zone_id, "climate_heating", source="boost",
+            )
+
         client = self.coordinator.api_client
 
         setting = {
@@ -560,6 +572,12 @@ class TadoSmartBoostButton(CoordinatorEntity[TadoDataUpdateCoordinator], ButtonE
         await _check_bootstrap_reserve(self.hass, f"Smart Boost {self._zone_name}", entry_id=self._entry_id)
 
         _LOGGER.info("Smart Boost button pressed for %s", self._zone_name)
+
+        # Capture state before smart boost overlay (state restoration)
+        if self.coordinator._sr_manager:
+            await self.coordinator._sr_manager.capture(
+                self._zone_id, "climate_heating", source="smart_boost",
+            )
 
         coord_data = self.coordinator.data or {}
         zones_data = coord_data.get("zones") or {}

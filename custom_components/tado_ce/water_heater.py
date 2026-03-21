@@ -110,6 +110,7 @@ class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeate
         self._attr_operation_list = OPERATION_MODES
 
         self._overlay_type = None
+        self._entity_type = "water_heater"
 
         # Optimistic update tracking
         self._optimistic_set_at: float | None = None
@@ -277,6 +278,12 @@ class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeate
         """Set new operation mode with retry logic (async)."""
         await _check_bootstrap_reserve(self.hass, f"hot water {self._zone_name}", entry_id=self._entry_id)
 
+        # Capture state before overlay (non-AUTO only — AUTO is a restoration point)
+        if operation_mode != STATE_AUTO and self.coordinator._sr_manager:
+            await self.coordinator._sr_manager.capture(
+                self._zone_id, self._entity_type, source="manual_override",
+            )
+
         previous_mode = self._attr_current_operation
         previous_overlay = self._overlay_type
 
@@ -382,6 +389,12 @@ class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeate
             _LOGGER.error("No home_id configured")
             return False
 
+        # Capture state before overlay
+        if self.coordinator._sr_manager:
+            await self.coordinator._sr_manager.capture(
+                self._zone_id, self._entity_type, source="manual_override",
+            )
+
         client = self.coordinator.api_client
 
         setting = {"type": "HOT_WATER", "power": "ON"}
@@ -399,6 +412,12 @@ class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeate
             _LOGGER.error("No home_id configured for hot water zone")
             return False
 
+        # Capture state before overlay
+        if self.coordinator._sr_manager:
+            await self.coordinator._sr_manager.capture(
+                self._zone_id, self._entity_type, source="manual_override",
+            )
+
         client = self.coordinator.api_client
 
         setting = {"type": "HOT_WATER", "power": "OFF"}
@@ -415,6 +434,12 @@ class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeate
         if not self._home_id:
             _LOGGER.error("No home_id configured for hot water zone")
             return False
+
+        # Capture state before timer overlay
+        if self.coordinator._sr_manager:
+            await self.coordinator._sr_manager.capture(
+                self._zone_id, self._entity_type, source="set_timer",
+            )
 
         client = self.coordinator.api_client
 
@@ -443,7 +468,7 @@ class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeate
             await async_trigger_immediate_refresh(self.hass, self.entity_id, "hot_water_timer")
         return success
 
-    async def async_set_temperature(self, **kwargs: Any) -> None:
+    async def async_set_temperature(self, **kwargs: Any) -> None:  # noqa: ANN401 — HA entity interface
         """Set new target temperature (async)."""
         temperature = kwargs.get("temperature")
         if temperature is None:
@@ -459,6 +484,12 @@ class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeate
             return
 
         await _check_bootstrap_reserve(self.hass, f"hot water {self._zone_name}", entry_id=self._entry_id)
+
+        # Capture state before temperature overlay
+        if self.coordinator._sr_manager:
+            await self.coordinator._sr_manager.capture(
+                self._zone_id, self._entity_type, source="manual_override",
+            )
 
         old_temp = self._attr_target_temperature
         old_operation = self._attr_current_operation

@@ -15,6 +15,8 @@ if TYPE_CHECKING:
     from .data_loader import DataLoader
     from .heating_coordinator import HeatingCycleCoordinator
     from .smart_comfort import SmartComfortManager
+    from .state_restore_manager import StateRestoreManager
+    from .zone_config_manager import ZoneConfigManager
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -187,6 +189,7 @@ async def async_init_adaptive_preheat(
     *,
     api_client: TadoApiClient | None,
     data_loader: DataLoader | None,
+    zone_config_manager: ZoneConfigManager | None = None,
 ) -> AdaptivePreheatManager | None:
     """Initialize Adaptive Preheat Manager if enabled.
 
@@ -203,6 +206,7 @@ async def async_init_adaptive_preheat(
             config_manager,
             api_client=api_client,
             data_loader=data_loader,
+            zone_config_manager=zone_config_manager,
         )
         await apm.async_setup()
         _LOGGER.info("Tado CE: Adaptive Preheat enabled")
@@ -210,6 +214,31 @@ async def async_init_adaptive_preheat(
     except Exception:
         _LOGGER.exception("Tado CE: Failed to initialize Adaptive Preheat")
         return None
+
+async def async_init_state_restore(
+    hass: HomeAssistant,
+    config_manager: ConfigurationManager,
+    data_loader: DataLoader,
+) -> StateRestoreManager | None:
+    """Initialize State Restore Manager.
+
+    Returns the manager instance, or None on failure.
+    """
+    try:
+        from .state_restore_manager import StateRestoreManager
+
+        srm = StateRestoreManager(
+            hass,
+            config_manager,
+            data_loader,
+        )
+        await srm.async_setup()
+        _LOGGER.info("Tado CE: State Restore Manager enabled")
+        return srm
+    except Exception:
+        _LOGGER.exception("Tado CE: Failed to initialize State Restore Manager")
+        return None
+
 
 
 def schedule_heating_cycle_timeouts(

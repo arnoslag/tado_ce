@@ -95,8 +95,8 @@ class TadoPresenceModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sel
         _meta = ENTITY_REGISTRY["select_presence_mode"]
         self._entry_id = coordinator.config_entry.entry_id
         self._attr_unique_id = f"tado_ce_{home_id}_{_meta.unique_id_suffix}"
-        assert _meta.translation_key is not None  # presence_mode always has translation_key
-        self._attr_translation_key = _meta.translation_key
+        if _meta.translation_key is not None:
+            self._attr_translation_key = _meta.translation_key
         self._attr_current_option = "auto"
         self._attr_available = True
         self._attr_device_info = get_hub_device_info(home_id)
@@ -295,8 +295,8 @@ class TadoOverlayModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sele
         _meta = ENTITY_REGISTRY["select_overlay_mode"]
         self._entry_id = coordinator.config_entry.entry_id
         self._attr_unique_id = f"tado_ce_{home_id}_{_meta.unique_id_suffix}"
-        assert _meta.translation_key is not None  # overlay_mode always has translation_key
-        self._attr_translation_key = _meta.translation_key
+        if _meta.translation_key is not None:
+            self._attr_translation_key = _meta.translation_key
         self._attr_entity_category = get_entity_category(_meta)
         self._attr_current_option = OVERLAY_MODE_DEFAULT_DISPLAY
         self._attr_available = True
@@ -377,8 +377,8 @@ class TadoTimerDurationSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Se
         _meta = ENTITY_REGISTRY["select_timer_duration"]
         self._entry_id = coordinator.config_entry.entry_id
         self._attr_unique_id = f"tado_ce_{home_id}_{_meta.unique_id_suffix}"
-        assert _meta.translation_key is not None  # timer_duration always has translation_key
-        self._attr_translation_key = _meta.translation_key
+        if _meta.translation_key is not None:
+            self._attr_translation_key = _meta.translation_key
         self._attr_entity_category = get_entity_category(_meta)
         self._attr_current_option = str(TIMER_DURATION_DEFAULT)
         self._attr_available = True

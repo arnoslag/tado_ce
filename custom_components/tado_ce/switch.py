@@ -194,7 +194,7 @@ class TadoEarlyStartSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switc
 
         # Early start state is not in the cached files, so we keep the last known state
 
-    async def async_turn_on(self, **kwargs: Any) -> None:
+    async def async_turn_on(self, **kwargs: Any) -> None:  # noqa: ANN401 — HA entity interface
         """Turn on early start - async.
 
         Added optimistic tracking and proper rollback (parity with climate entities).
@@ -218,7 +218,7 @@ class TadoEarlyStartSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switc
             self._optimistic_set_at = None
             self.async_write_ha_state()
 
-    async def async_turn_off(self, **kwargs: Any) -> None:
+    async def async_turn_off(self, **kwargs: Any) -> None:  # noqa: ANN401 — HA entity interface
         """Turn off early start - async.
 
         Added optimistic tracking and proper rollback (parity with climate entities).
@@ -363,7 +363,7 @@ class TadoChildLockSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switch
         except Exception:
             self._attr_available = False
 
-    async def async_turn_on(self, **kwargs: Any) -> None:
+    async def async_turn_on(self, **kwargs: Any) -> None:  # noqa: ANN401 — HA entity interface
         """Turn on child lock - async.
 
         Added optimistic tracking and proper rollback (parity with climate entities).
@@ -387,7 +387,7 @@ class TadoChildLockSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switch
             self._optimistic_set_at = None
             self.async_write_ha_state()
 
-    async def async_turn_off(self, **kwargs: Any) -> None:
+    async def async_turn_off(self, **kwargs: Any) -> None:  # noqa: ANN401 — HA entity interface
         """Turn off child lock - async.
 
         Added optimistic tracking and proper rollback (parity with climate entities).
@@ -459,11 +459,11 @@ class TadoHubToggleSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switch
         self._attr_is_on = self._read_option()
         self.async_write_ha_state()
 
-    async def async_turn_on(self, **kwargs: Any) -> None:
+    async def async_turn_on(self, **kwargs: Any) -> None:  # noqa: ANN401 — HA entity interface
         """Turn on the toggle."""
         await self._async_set_option(True)
 
-    async def async_turn_off(self, **kwargs: Any) -> None:
+    async def async_turn_off(self, **kwargs: Any) -> None:  # noqa: ANN401 — HA entity interface
         """Turn off the toggle."""
         await self._async_set_option(False)
 

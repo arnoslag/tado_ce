@@ -1,161 +1,232 @@
-"""Tado CE Bridge Sensors — boiler wiring state and output temperature.
+"""Tado CE Dynamic Bridge Sensor — single generic class for all Bridge API fields.
 
-Reads bridge API data from coordinator.data["bridge"] (populated by
-_async_fetch_bridge_data). Only created when bridge credentials
-(bridge_serial + bridge_auth_key) are present in config entry options.
+Replaces the previous hardcoded TadoBridgeBaseSensor, TadoBoilerWiringStateSensor,
+and TadoBoilerOutputTemperatureSensor with a data-driven approach. Each sensor is
+initialised from a ResolvedEntity produced by the discovery engine.
 """
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorEntity,
     SensorStateClass,
 )
-from homeassistant.const import UnitOfTemperature
+from homeassistant.const import EntityCategory
 from homeassistant.core import callback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from .bridge_type_inference import format_display_value
 from .device_manager import get_hub_device_info
-from .entity_registry import ENTITY_REGISTRY, get_entity_category
-from .format_helpers import format_bridge_wiring_state
 
 if TYPE_CHECKING:
+    from .bridge_discovery import ResolvedEntity
     from .coordinator import TadoDataUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Named formatter registry — maps value_formatter strings to callables.
+# Populated lazily on first use to avoid circular imports.
+# ---------------------------------------------------------------------------
 
-class TadoBridgeBaseSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], SensorEntity):
-    """Base class for Tado CE bridge sensors.
+_FORMATTER_REGISTRY: dict[str, Any] | None = None
 
-    Follows the same pattern as TadoHubSensor: common init with
-    device_info on the hub device, _handle_coordinator_update -> update().
-    Subclasses set sensor-specific attrs in __init__ and implement update().
+
+def _get_formatter_registry() -> dict[str, Any]:
+    """Build and cache the named formatter registry."""
+    global _FORMATTER_REGISTRY  # noqa: PLW0603
+    if _FORMATTER_REGISTRY is None:
+        from . import format_helpers as fh
+
+        _FORMATTER_REGISTRY = {
+            "format_bridge_wiring_state": fh.format_bridge_wiring_state,
+            "format_boolean_connected": fh.format_boolean_connected,
+            "format_boolean_yes_no": fh.format_boolean_yes_no,
+        }
+    return _FORMATTER_REGISTRY
+
+
+# ---------------------------------------------------------------------------
+# Helper functions
+# ---------------------------------------------------------------------------
+
+
+def _resolve_dot_path(data: dict[str, object], path: str) -> object | None:
+    """Navigate nested dict by dot-notation path.
+
+    Returns None if any key is missing along the path.
     """
+    current: object = data
+    for key in path.split("."):
+        if not isinstance(current, dict):
+            return None
+        current = current.get(key)
+        if current is None:
+            return None
+    return current
+
+
+def _detect_value_type(data: dict[str, object] | None, path: str) -> str:
+    """Detect the runtime value type at a dot-path for extra_state_attributes."""
+    if data is None:
+        return "unknown"
+    value = _resolve_dot_path(data, path)
+    if value is None:
+        return "unknown"
+    if isinstance(value, bool):
+        return "boolean"
+    if isinstance(value, (int, float)):
+        return "number"
+    return "string"
+
+
+def _format_value(
+    value: object,
+    path: str,
+    value_type: str,
+    formatter_name: str | None,
+) -> str | float:
+    """Format a raw value using a named formatter or type inference fallback.
+
+    For numeric sensor values (temperature etc.), returns float directly
+    so HA can apply unit conversion. For everything else, returns a string.
+    """
+    # Named formatter takes priority
+    if formatter_name:
+        registry = _get_formatter_registry()
+        fn = registry.get(formatter_name)
+        if fn is not None:
+            return fn(value)  # type: ignore[no-any-return]
+        _LOGGER.debug("Formatter %s not found in registry, falling back to inference", formatter_name)
+
+    # Numeric values: return as float for HA native_value
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return float(value)
+
+    # Fallback to type inference display formatting
+    return format_display_value(value, value_type, path)
+
+
+def _parse_timestamp(value: str) -> datetime | None:
+    """Parse ISO 8601 timestamp string into a timezone-aware datetime.
+
+    Handles formats like '2026-03-18T12:06:53.035Z' from the Tado Bridge API.
+    Returns None if parsing fails.
+    """
+    try:
+        dt = datetime.fromisoformat(value)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=UTC)
+        return dt
+    except (ValueError, TypeError):
+        _LOGGER.debug("Failed to parse timestamp: %s", value)
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Dynamic Bridge Sensor
+# ---------------------------------------------------------------------------
+
+
+class TadoDynamicBridgeSensor(
+    CoordinatorEntity["TadoDataUpdateCoordinator"],
+    SensorEntity,
+):
+    """Generic sensor for any discovered Bridge API field."""
 
     _attr_has_entity_name = True
 
-    def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
-        """Initialize the TadoBridgeBaseSensor."""
+    def __init__(
+        self,
+        coordinator: TadoDataUpdateCoordinator,
+        resolved: ResolvedEntity,
+    ) -> None:
+        """Initialize from a ResolvedEntity."""
         super().__init__(coordinator)
+        self._field_path = resolved.path
+        self._value_type = resolved.value_type
+        self._value_formatter_name: str | None = None
         self._attr_device_info = get_hub_device_info(coordinator.home_id)
         self._attr_available = False
         self._attr_native_value = None
 
+        # Unique ID
+        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{resolved.unique_id_suffix}"
+
+        # Translation key (enriched fields have one, inferred fields use suggested_name)
+        if resolved.translation_key:
+            self._attr_translation_key = resolved.translation_key
+        else:
+            self._attr_name = resolved.suggested_name
+
+        self._attr_entity_registry_enabled_default = resolved.enabled_default
+
+        # Device class
+        if resolved.device_class:
+            self._attr_device_class = SensorDeviceClass(resolved.device_class)
+
+        # State class
+        if resolved.state_class:
+            self._attr_state_class = SensorStateClass(resolved.state_class)
+
+        # Unit
+        if resolved.unit_of_measurement:
+            self._attr_native_unit_of_measurement = resolved.unit_of_measurement
+
+        # Icon
+        if resolved.icon:
+            self._attr_icon = resolved.icon
+
+        # Entity category
+        if resolved.entity_category:
+            self._attr_entity_category = EntityCategory(resolved.entity_category)
+
+        # Store value_formatter name from enrichment (if source is enrichment)
+        if resolved.source == "enrichment":
+            from .bridge_enrichment import FIELD_ENRICHMENT
+
+            enrichment = FIELD_ENRICHMENT.get(resolved.path)
+            if enrichment and enrichment.value_formatter:
+                self._value_formatter_name = enrichment.value_formatter
+
     @callback
     def _handle_coordinator_update(self) -> None:
-        """Handle coordinator data update."""
-        self.update()
+        """Update sensor from coordinator bridge data."""
+        bridge = self.coordinator.data.get("bridge")
+        if not bridge:
+            self._attr_available = False
+            self.async_write_ha_state()
+            return
+
+        value = _resolve_dot_path(bridge, self._field_path)
+        if value is None:
+            self._attr_available = False
+        else:
+            # Timestamp device class requires datetime object, not raw string
+            if getattr(self, "_attr_device_class", None) == SensorDeviceClass.TIMESTAMP and isinstance(value, str):
+                self._attr_native_value = _parse_timestamp(value)
+            else:
+                self._attr_native_value = _format_value(
+                    value,
+                    self._field_path,
+                    self._value_type,
+                    self._value_formatter_name,
+                )
+            self._attr_available = self._attr_native_value is not None
         self.async_write_ha_state()
-
-    @callback
-    def update(self) -> None:
-        """Update sensor state from coordinator data. Override in subclasses."""
-
-
-class TadoBoilerWiringStateSensor(TadoBridgeBaseSensor):
-    """Sensor showing boiler wiring installation state from Bridge API."""
-
-    def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
-        """Initialize the TadoBoilerWiringStateSensor."""
-        super().__init__(coordinator)
-        _meta = ENTITY_REGISTRY["sensor_boiler_wiring_state"]
-        self._attr_translation_key = _meta.translation_key
-        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix}"
-        if _meta.icon:
-            self._attr_icon = _meta.icon
-        self._attr_entity_category = get_entity_category(_meta)
 
     @property
     def extra_state_attributes(self) -> dict[str, object]:
-        """Return extra state attributes from bridge data."""
-        bridge: dict[str, object] = self.coordinator.data.get("bridge") or {}
-        attrs: dict[str, object] = {}
-
-        # Bridge-level attributes
-        if "bridgeConnected" in bridge:
-            attrs["bridge_connected"] = bridge["bridgeConnected"]
-        if "hotWaterZonePresent" in bridge:
-            attrs["hot_water_zone_present"] = bridge["hotWaterZonePresent"]
-
-        # Device wired to boiler attributes (nested object)
-        device = bridge.get("deviceWiredToBoiler")
-        if isinstance(device, dict):
-            if "type" in device:
-                attrs["device_type"] = device["type"]
-            if "serialNo" in device:
-                attrs["device_serial"] = device["serialNo"]
-            if "thermInterfaceType" in device:
-                attrs["therm_interface_type"] = device["thermInterfaceType"]
-            if "connected" in device:
-                attrs["device_connected"] = device["connected"]
-
-        return attrs
-
-    @callback
-    def update(self) -> None:
-        """Update sensor state from coordinator bridge data."""
-        bridge = self.coordinator.data.get("bridge")
-        if not bridge:
-            self._attr_available = False
-            return
-        state = bridge.get("state")
-        if state is not None:
-            self._attr_native_value = format_bridge_wiring_state(str(state))
-            self._attr_available = True
-        else:
-            self._attr_available = False
-
-
-class TadoBoilerOutputTemperatureSensor(TadoBridgeBaseSensor):
-    """Sensor showing real-time boiler output temperature from Bridge API."""
-
-    _attr_device_class = SensorDeviceClass.TEMPERATURE
-    _attr_state_class = SensorStateClass.MEASUREMENT
-    _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
-
-    def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
-        """Initialize the TadoBoilerOutputTemperatureSensor."""
-        super().__init__(coordinator)
-        _meta = ENTITY_REGISTRY["sensor_boiler_output_temperature"]
-        self._attr_translation_key = _meta.translation_key
-        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix}"
-        if _meta.icon:
-            self._attr_icon = _meta.icon
-        self._attr_entity_category = get_entity_category(_meta)
-
-    @callback
-    def update(self) -> None:
-        """Update sensor state from coordinator bridge data."""
-        bridge = self.coordinator.data.get("bridge")
-        _LOGGER.debug("Sensor update - bridge data: %s", bridge)
-        if not bridge:
-            _LOGGER.debug("Sensor update - no bridge data available")
-            self._attr_available = False
-            return
-
-        # Real-time boiler output temperature lives at boiler.outputTemperature.celsius
-        # in the wiring state API response
-        boiler = bridge.get("boiler")
-        if boiler and isinstance(boiler, dict):
-            output_temp = boiler.get("outputTemperature")
-            if output_temp and isinstance(output_temp, dict):
-                temp = output_temp.get("celsius")
-                _LOGGER.debug("Sensor update - boiler.outputTemperature.celsius: %s", temp)
-                if temp is not None:
-                    try:
-                        float_temp = float(temp)
-                        self._attr_native_value = float_temp
-                        self._attr_available = True
-                        _LOGGER.debug("Sensor update - successfully set value to %s°C", float_temp)
-                    except (ValueError, TypeError) as e:
-                        _LOGGER.debug("Sensor update - failed to convert temperature: %s", e)
-                        self._attr_available = False
-                    return
-
-        _LOGGER.debug("Sensor update - boiler.outputTemperature.celsius not found in bridge data")
-        self._attr_available = False
+        """Return source metadata for debugging and auto-documentation."""
+        return {
+            "source_path": self._field_path,
+            "value_type": _detect_value_type(
+                self.coordinator.data.get("bridge"),
+                self._field_path,
+            ),
+        }

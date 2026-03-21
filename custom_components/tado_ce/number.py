@@ -20,6 +20,8 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
+PARALLEL_UPDATES = 1
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -30,11 +32,19 @@ async def async_setup_entry(
     coordinator: TadoDataUpdateCoordinator = entry.runtime_data
     entities = []
 
-    # Bridge number entity (optional — only when bridge credentials configured)
+    # Bridge number entity (optional — only when bridge credentials configured
+    # AND the bridge response actually contains the temperature field)
     bridge_serial = entry.options.get("bridge_serial")
     bridge_auth_key = entry.options.get("bridge_auth_key")
     if bridge_serial and bridge_auth_key:
-        entities.append(TadoBoilerMaxOutputTemperatureNumber(coordinator))
-        _LOGGER.info("Bridge credentials found — creating bridge number entity")
+        bridge_data = coordinator.data.get("bridge")
+        if isinstance(bridge_data, dict) and "boilerMaxOutputTemperatureInCelsius" in bridge_data:
+            entities.append(TadoBoilerMaxOutputTemperatureNumber(coordinator))
+            _LOGGER.info("Bridge credentials found with temperature field — creating bridge number entity")
+        else:
+            _LOGGER.debug(
+                "Bridge credentials present but boilerMaxOutputTemperatureInCelsius not in response — "
+                "skipping number entity",
+            )
 
     async_add_entities(entities, True)

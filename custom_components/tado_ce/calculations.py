@@ -72,6 +72,88 @@ COMFORT_HOT: float = 26.0  # °C — above → Hot
 COOLING_RATE_MIN: float = -5.0  # °C/min — floor clamp for outlier rejection
 COOLING_RATE_STABLE: float = -0.1  # °C/min — abs(rate) below this → room is stable
 
+# ============ Heat Index Constants (NOAA/NWS) ============
+HEAT_INDEX_ACTIVATION_TEMP: float = 26.7  # °C — below this, Heat Index = air temp
+
+HEAT_RISK_THRESHOLDS: tuple[tuple[float, str], ...] = (
+    (51.0, "Extreme Danger"),
+    (39.0, "Danger"),
+    (32.0, "Extreme Caution"),
+    (27.0, "Caution"),
+)
+
+
+# ============ Heat Index Calculation (NOAA/NWS) ============
+
+
+def calculate_heat_index(temperature: float, humidity: float) -> float:
+    """Calculate Heat Index using NOAA/NWS Rothfusz regression.
+
+    Implements the 3-step NOAA algorithm: Steadman simple formula first,
+    then full Rothfusz regression with low-RH and high-RH adjustments.
+    All intermediate math in °F; result converted back to °C.
+
+    Args:
+        temperature: Air temperature in °C.
+        humidity: Relative humidity in % (0-100).
+
+    Returns:
+        Heat Index in °C. Returns input temperature unchanged when < 26.7 °C.
+    """
+    if temperature < HEAT_INDEX_ACTIVATION_TEMP:
+        return temperature
+
+    # Convert to °F for NOAA formulas
+    t_f = temperature * 9.0 / 5.0 + 32.0
+    rh = humidity
+
+    # Step 1: Steadman simple formula
+    hi_simple = 0.5 * (t_f + 61.0 + (t_f - 68.0) * 1.2 + rh * 0.094)
+
+    if (hi_simple + t_f) / 2.0 < 80.0:
+        return (hi_simple - 32.0) * 5.0 / 9.0
+
+    # Step 2: Full Rothfusz regression
+    hi = (
+        -42.379
+        + 2.04901523 * t_f
+        + 10.14333127 * rh
+        - 0.22475541 * t_f * rh
+        - 0.00683783 * t_f * t_f
+        - 0.05481717 * rh * rh
+        + 0.00122874 * t_f * t_f * rh
+        + 0.00085282 * t_f * rh * rh
+        - 0.00000199 * t_f * t_f * rh * rh
+    )
+
+    # Step 3a: Low-RH adjustment
+    if rh < 13.0 and 80.0 < t_f < 112.0:
+        hi -= ((13.0 - rh) / 4.0) * math.sqrt((17.0 - abs(t_f - 95.0)) / 17.0)
+
+    # Step 3b: High-RH adjustment
+    elif rh > 85.0 and 80.0 < t_f < 87.0:
+        hi += ((rh - 85.0) / 10.0) * ((87.0 - t_f) / 5.0)
+
+    return (hi - 32.0) * 5.0 / 9.0
+
+
+# ============ Heat Risk Level Classification ============
+
+
+def classify_heat_risk_level(heat_index: float) -> str:
+    """Classify Heat Index into NOAA risk level.
+
+    Args:
+        heat_index: Heat Index value in °C.
+
+    Returns:
+        Risk level: "Extreme Danger", "Danger", "Extreme Caution", "Caution", or "None".
+    """
+    for threshold, level in HEAT_RISK_THRESHOLDS:
+        if heat_index >= threshold:
+            return level
+    return "None"
+
 
 # ============ Dew Point Calculation ============
 

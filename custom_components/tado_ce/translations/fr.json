@@ -77,6 +77,9 @@
             "name": "Relevés d'anomalies"
           }
         }
+      },
+      "bridge_connected": {
+        "name": "Pont connecté"
       }
     },
     "button": {
@@ -936,6 +939,54 @@
       },
       "boiler_output_temperature": {
         "name": "Température de sortie de la chaudière"
+      },
+      "bridge_wiring_state": {
+        "name": "État du câblage du pont"
+      },
+      "bridge_boiler_output_temp": {
+        "name": "Température de sortie de la chaudière à pont"
+      },
+      "bridge_boiler_output_temp_time": {
+        "name": "Bridge Boiler Output Temperature Time"
+      },
+      "bridge_boiler_flow_temp": {
+        "name": "Température de départ de la chaudière de Bridge"
+      },
+      "bridge_boiler_flow_temp_time": {
+        "name": "Bridge Boiler Flow Temperature Time"
+      },
+      "bridge_boiler_max_output_temp": {
+        "name": "Température de sortie maximale de la chaudière Bridge"
+      },
+      "bridge_connected_state": {
+        "name": "Pont connecté"
+      },
+      "bridge_hot_water_present": {
+        "name": "Pont Eau Chaude Présente"
+      },
+      "bridge_device_type": {
+        "name": "Type de dispositif de pont"
+      },
+      "bridge_device_serial": {
+        "name": "Bridge Device Serial"
+      },
+      "bridge_therm_interface_type": {
+        "name": "Bridge Therm Type d'interface"
+      },
+      "bridge_device_connected": {
+        "name": "Dispositif de pont connecté"
+      },
+      "bridge_capabilities": {
+        "name": "Capacités des ponts"
+      },
+      "bridge_schema_version": {
+        "name": "Version du schéma Bridge"
+      },
+      "wc_target_flow_temp": {
+        "name": "Objectif de la compensation météorologique"
+      },
+      "wc_status": {
+        "name": "Situation de l'indemnisation en fonction des conditions météorologiques"
       }
     },
     "select": {
@@ -1180,8 +1231,16 @@
         "duration": {
           "name": "Durée",
           "description": "Durée du mode fenêtre ouverte, en secondes (60–3600). Par défaut, le timeout de détection de fenêtre Tado de la zone."
+        },
+        "capture_state": {
+          "name": "État de capture",
+          "description": "Capture l'état actuel de la zone avant d'appliquer le mode fenêtre ouverte, ce qui permet de le restaurer ultérieurement via le service Restore Previous State (Restaurer l'état précédent). Activé par défaut."
         }
       }
+    },
+    "restore_previous_state": {
+      "name": "Rétablir l'état antérieur",
+      "description": "Rétablir une zone dans l'état où elle se trouvait avant la dernière opération de superposition. S'il n'y a pas d'état capturé, il y a reprise de la programmation."
     }
   },
   "selector": {
@@ -1199,6 +1258,13 @@
         "double_pane": "Double vitrage (U=2,7)",
         "triple_pane": "Triple vitrage (U=1.0)",
         "passive_house": "Maison passive (U=0,8)"
+      }
+    },
+    "window_predicted_mode": {
+      "options": {
+        "Active": "Actif (dépendant du système CVC)",
+        "Passive": "Passif (indépendant du système CVC)",
+        "Auto": "Automatique (recommandé)"
       }
     }
   },
@@ -1384,7 +1450,7 @@
               "offset_enabled": "Ajout de l'attribut offset_celsius aux entités climatiques (+1 appel API par appareil)"
             }
           },
-          "settings": {
+          "smart_comfort": {
             "name": "Confort intelligent",
             "data": {
               "use_outdoor_temp_entity": "Utiliser l'entité température extérieure",
@@ -1432,16 +1498,41 @@
               "quota_reserve_enabled": "Interrompre l'interrogation lorsque le quota est faible. Ne le désactivez que si vous comprenez les risques."
             }
           },
-          "bridge_config": {
-            "name": "Configuration du pont",
-            "description": "En option : connexion à votre pont Internet Tado pour le contrôle de la température de départ.",
+          "flow_temperature_control": {
+            "name": "Contrôle de la température du flux",
+            "description": "Connectez-vous à votre pont Internet Tado et configurez l'ajustement automatique de la température de départ.",
             "data": {
               "bridge_serial": "Numéro de série du pont",
-              "bridge_auth_key": "Clé d'authentification du pont"
+              "bridge_auth_key": "Clé d'authentification du pont",
+              "wc_enabled": "Activer la compensation météorologique",
+              "wc_heating_system_preset": "Type de système de chauffage",
+              "wc_slope": "Pente de la courbe de chauffe",
+              "wc_design_outdoor_temp": "Température extérieure de référence",
+              "wc_max_flow_temp": "Température maximale d'écoulement",
+              "wc_min_flow_temp": "Température minimale d'écoulement",
+              "wc_shutoff_temp": "Température d'arrêt du chauffage",
+              "wc_smoothing_method": "Méthode de lissage de la température",
+              "wc_smoothing_window": "Fenêtre de lissage (minutes)",
+              "wc_room_compensation_enabled": "Activer la compensation de la pièce",
+              "wc_room_compensation_factor": "Facteur de compensation de la pièce",
+              "wc_step_size": "Température d'écoulement Taille de l'échelon",
+              "wc_hysteresis": "Modifier l'hystérésis",
+              "bridge_enabled": "Activer le pont Internet"
             },
             "data_description": {
               "bridge_serial": "Numéro de série imprimé sous le pont Internet (par exemple IB123456789)",
-              "bridge_auth_key": "Clé d'authentification de l'autocollant du pont ou de l'application Tado (à garder confidentielle)"
+              "bridge_auth_key": "Clé d'authentification de l'autocollant du pont ou de l'application Tado (à garder confidentielle)",
+              "wc_slope": "Plus élevée = courbe plus raide = plus de changement de température du débit par degré de changement extérieur (0,3-3,0)",
+              "wc_design_outdoor_temp": "Température extérieure la plus froide prévue pour votre région (-30 à 10°C)",
+              "wc_max_flow_temp": "Température de départ à la température extérieure de calcul (25-80°C)",
+              "wc_min_flow_temp": "Température minimale de départ, également utilisée pour l'arrêt (25-60°C)",
+              "wc_shutoff_temp": "Température extérieure au-dessus de laquelle le chauffage est réduit au minimum (5-30°C)",
+              "wc_smoothing_method": "Comment les relevés de température extérieure sont lissés avant d'être utilisés dans la courbe de chauffage ?",
+              "wc_smoothing_window": "Durée du calcul de la moyenne de la température extérieure (15-1440 min)",
+              "wc_room_compensation_factor": "Ajustement du débit par degré d'écart intérieur par rapport au point de consigne (1,0-5,0)",
+              "wc_step_size": "La température de départ est arrondie à cette taille de pas - plus grande = moins d'appels API, moins d'oscillation (0,5-2,0°C).",
+              "wc_hysteresis": "Variation minimale par rapport à la dernière valeur envoyée avant qu'un nouvel appel API ne soit effectué (0,5-3,0°C)",
+              "bridge_enabled": "Activer pour se connecter à votre pont Internet Tado. La désactivation supprimera les informations d'identification du pont et toutes les entités du pont."
             }
           }
         }
@@ -1475,11 +1566,13 @@
             "data": {
               "smart_comfort_mode": "Mode confort intelligent",
               "window_type": "Type de fenêtre",
+              "window_predicted_mode": "Mode de détection des fenêtres",
               "window_predicted_sensitivity": "Sensibilité de la détection de la fenêtre"
             },
             "data_description": {
               "smart_comfort_mode": "Ajuster la température cible en fonction des conditions extérieures",
               "window_type": "Type de fenêtre pour le calcul du risque de moisissure",
+              "window_predicted_mode": "Actif : détecte uniquement lorsque le système CVC est en marche. Passif : détecte quel que soit l'état du système CVC. Auto : utilise le mode Actif lorsque le système CVC est en marche, et le mode Passif lorsqu'il est à l'arrêt.",
               "window_predicted_sensitivity": "Sensibilité de la détection de l'ouverture prédite d'une fenêtre"
             }
           },
@@ -1541,7 +1634,9 @@
     "error": {
       "interval_out_of_range": "L'intervalle d'interrogation doit être compris entre 1 et 1440 minutes.",
       "invalid_number": "Veuillez saisir un numéro valide",
-      "bridge_auth_failed": "Le numéro de série ou la clé d'authentification du pont n'est pas valide - veuillez vérifier et réessayer."
+      "bridge_auth_failed": "Le numéro de série ou la clé d'authentification du pont n'est pas valide - veuillez vérifier et réessayer.",
+      "wc_min_exceeds_max": "La température minimale de départ ne peut pas dépasser la température maximale de départ",
+      "bridge_serial_invalid": "Seules les passerelles Internet v3+ (série commençant par IB) prennent en charge l'API locale. Votre numéro de série suggère un pont v2 (préfixe GW) qui n'a pas d'API locale. La compensation météorologique peut toujours être utilisée sans passerelle via les données du nuage."
     }
   }
 }

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import deque
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -33,7 +33,14 @@ from .format_helpers import (
 from .format_helpers import (
     strip_zone_prefix as _strip_zone_prefix,
 )
-from .insights import TemperatureReading, detect_window_predicted
+from .insights import (
+    COOLDOWN_READINGS,
+    SEASONAL_BASELINE_MIN_SAMPLES,
+    TemperatureReading,
+    WindowPredictedResult,
+    detect_window_passive,
+    detect_window_predicted,
+)
 
 if TYPE_CHECKING:
     from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
@@ -86,6 +93,15 @@ async def async_setup_entry(
             # Window Predicted sensor for all climate zones (HEATING and AIR_CONDITIONING)
             if zone_type in ("HEATING", "AIR_CONDITIONING"):
                 sensors.append(TadoWindowPredictedSensor(coordinator, zone_id, zone_name, zone_type, home_id))
+
+    # Bridge connected sensor (only when bridge credentials configured)
+    bridge_serial = entry.options.get("bridge_serial")
+    bridge_auth_key = entry.options.get("bridge_auth_key")
+    if bridge_serial and bridge_auth_key:
+        from .binary_sensor_bridge import TadoBridgeConnectedSensor
+
+        sensors.append(TadoBridgeConnectedSensor(coordinator))
+        _LOGGER.debug("Bridge connected binary sensor created")
 
     async_add_entities(sensors, False)  # Don't update before add - self.hass not set yet
     _LOGGER.debug("Tado CE binary sensors loaded: %s", len(sensors))
@@ -481,6 +497,21 @@ class TadoWindowPredictedSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], 
         # Unsubscribe callbacks for external sensor state change listeners
         self._unsub_external_sensors: list[CALLBACK_TYPE] = []
 
+        # Detection mode (active/passive/auto)
+        self._detection_mode: str = "auto"
+
+        # Cooldown state
+        self._cooldown_counter: int = 0
+
+        # Detection history
+        self._last_detected_at: datetime | None = None
+        self._detection_count_today: int = 0
+        self._last_count_reset_date: date | None = None
+        self._detection_mode_used: str = "none"
+
+        # Previous detection state for event firing
+        self._prev_detected: bool = False
+
     async def async_added_to_hass(self) -> None:
         """Register listeners when entity is added to hass."""
         await super().async_added_to_hass()
@@ -549,6 +580,11 @@ class TadoWindowPredictedSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], 
             "readings_count": len(self._temp_history),
             "anomaly_readings": self._anomaly_readings,
             "sensitivity": self._sensitivity,
+            "detection_mode": self._detection_mode,
+            "detection_mode_used": self._detection_mode_used,
+            "cooldown_active": self._cooldown_counter > 0,
+            "last_detected_at": self._last_detected_at.isoformat() if self._last_detected_at else None,
+            "detection_count_today": self._detection_count_today,
         }
 
     @property
@@ -558,6 +594,90 @@ class TadoWindowPredictedSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], 
             return "mdi:window-open-variant"
         return "mdi:window-closed-variant"
 
+    def _get_outdoor_temp(self) -> float | None:
+        """Get outdoor temperature from global config entity."""
+        outdoor_entity = self.coordinator.config_manager.get_outdoor_temp_entity()
+        if outdoor_entity and self.hass:
+            state = self.hass.states.get(outdoor_entity)
+            if state and state.state not in ("unknown", "unavailable", ""):
+                try:
+                    return float(state.state)
+                except (ValueError, TypeError):
+                    pass
+        return None
+
+    def _get_seasonal_baseline(self) -> float | None:
+        """Get seasonal baseline from outdoor temp history."""
+        history = self.coordinator.outdoor_temp_history
+        if len(history) < SEASONAL_BASELINE_MIN_SAMPLES:
+            return None
+        recent = history[-168:]
+        return sum(recent) / len(recent)
+
+    def _apply_cooldown(self, result: WindowPredictedResult) -> WindowPredictedResult:
+        """Apply cooldown/hysteresis to prevent flickering.
+
+        After detection clears, require N consecutive non-anomaly readings
+        before actually clearing. N depends on sensitivity preset.
+        """
+        if result.detected:
+            self._cooldown_counter = 0
+            return result
+
+        if self._attr_is_on and not result.detected:
+            self._cooldown_counter += 1
+            cooldown_needed = COOLDOWN_READINGS.get(self._sensitivity, 2)
+
+            if self._cooldown_counter < cooldown_needed:
+                return WindowPredictedResult(
+                    detected=True,
+                    confidence=self._confidence,
+                    temp_drop=result.temp_drop,
+                    time_window_minutes=result.time_window_minutes,
+                    recommendation=self._recommendation,
+                    anomaly_readings=result.anomaly_readings,
+                    cooldown_active=True,
+                    detection_mode=result.detection_mode,
+                )
+            self._cooldown_counter = 0
+
+        return result
+
+    def _fire_detection_events(self, result: WindowPredictedResult) -> None:
+        """Fire HA events on detection state transitions."""
+        if not self.hass:
+            return
+
+        if result.detected and not self._prev_detected:
+            self.hass.bus.async_fire("tado_ce_window_predicted", {
+                "zone_id": self._zone_id,
+                "zone_name": self._zone_name,
+                "confidence": result.confidence,
+                "temp_drop": result.temp_drop,
+                "anomaly_readings": result.anomaly_readings,
+                "detection_mode": result.detection_mode,
+                "recommendation": result.recommendation,
+            })
+        elif not result.detected and self._prev_detected and not result.cooldown_active:
+            self.hass.bus.async_fire("tado_ce_window_predicted_cleared", {
+                "zone_id": self._zone_id,
+                "zone_name": self._zone_name,
+            })
+
+        self._prev_detected = result.detected
+
+    def _update_detection_history(self, result: WindowPredictedResult) -> None:
+        """Update detection history attributes."""
+        today = datetime.now(tz=UTC).date()
+        if self._last_count_reset_date != today:
+            self._detection_count_today = 0
+            self._last_count_reset_date = today
+
+        if result.detected and not self._prev_detected:
+            self._last_detected_at = datetime.now(UTC)
+            self._detection_count_today += 1
+            self._detection_mode_used = result.detection_mode
+
     @callback
     def update(self) -> None:
         """Update window predicted detection via heating anomaly algorithm.
@@ -566,7 +686,8 @@ class TadoWindowPredictedSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], 
         1. Get current temperature and humidity from zone data
         2. Add to rolling history
         3. Determine HVAC state and mode (heating vs cooling)
-        4. Run anomaly detection — heating active but temp dropping = open window
+        4. Dispatch to active or passive detection based on mode config
+        5. Apply cooldown, fire events, update history
         """
         try:
             coord_data = self.coordinator.data or {}
@@ -622,22 +743,54 @@ class TadoWindowPredictedSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], 
             # Determine hvac_mode for anomaly direction
             hvac_mode = "cooling" if ac_on else "heating"
 
-            # Read sensitivity from zone config manager (if available)
-            zcm = self.coordinator.zone_config_manager
+            # Read sensitivity and detection mode from zone config manager
             if zcm:
                 self._sensitivity = zcm.get_zone_value(
                     self._zone_id, "window_predicted_sensitivity", "medium",
                 )
+                self._detection_mode = zcm.get_zone_value(
+                    self._zone_id, "window_predicted_mode", "auto",
+                )
 
-            # Run heating/cooling anomaly detection
-            result = detect_window_predicted(
-                readings=list(self._temp_history),
-                hvac_active=hvac_active,
-                zone_name=self._zone_name,
-                time_window_minutes=self._time_window,
-                hvac_mode=hvac_mode,
-                sensitivity=self._sensitivity,
+            # Determine which detection path to use
+            use_passive = (
+                self._detection_mode == "passive"
+                or (self._detection_mode == "auto" and not hvac_active)
             )
+
+            if use_passive:
+                outdoor_temp = self._get_outdoor_temp()
+                window_u_value = zcm.get_window_u_value(self._zone_id) if zcm else 2.7
+                seasonal_baseline = self._get_seasonal_baseline()
+
+                result = detect_window_passive(
+                    readings=list(self._temp_history),
+                    zone_name=self._zone_name,
+                    sensitivity=self._sensitivity,
+                    hvac_mode=hvac_mode,
+                    outdoor_temp=outdoor_temp,
+                    window_u_value=window_u_value,
+                    seasonal_baseline=seasonal_baseline,
+                )
+            else:
+                # Active path — unchanged
+                result = detect_window_predicted(
+                    readings=list(self._temp_history),
+                    hvac_active=hvac_active,
+                    zone_name=self._zone_name,
+                    time_window_minutes=self._time_window,
+                    hvac_mode=hvac_mode,
+                    sensitivity=self._sensitivity,
+                )
+
+            # Apply cooldown/hysteresis
+            result = self._apply_cooldown(result)
+
+            # Fire events on state transitions
+            self._fire_detection_events(result)
+
+            # Update history attributes
+            self._update_detection_history(result)
 
             self._attr_is_on = result.detected
             self._confidence = result.confidence

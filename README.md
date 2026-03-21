@@ -3,10 +3,10 @@
 <div align="center">
 
 <!-- Platform Badges -->
-![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2026.3.2-blue?style=for-the-badge&logo=home-assistant) ![Python](https://img.shields.io/badge/Python-3.13%2B-blue?style=for-the-badge&logo=python&logoColor=white) ![Tado](https://img.shields.io/badge/Tado-V2%2FV3%2FV3%2B-orange?style=for-the-badge) ![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg?style=for-the-badge)
+![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2026.3.3-blue?style=for-the-badge&logo=home-assistant) ![Python](https://img.shields.io/badge/Python-3.13%2B-blue?style=for-the-badge&logo=python&logoColor=white) ![Tado](https://img.shields.io/badge/Tado-V2%2FV3%2FV3%2B-orange?style=for-the-badge) ![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg?style=for-the-badge)
 
 <!-- Status Badges -->
-![Version](https://img.shields.io/badge/Version-3.2.2-purple?style=for-the-badge) ![License](https://img.shields.io/badge/License-AGPL--3.0-blue?style=for-the-badge) ![Maintained](https://img.shields.io/badge/Maintained-Yes-green.svg?style=for-the-badge) ![Tests](https://img.shields.io/badge/Tests-3655-blue?style=for-the-badge) ![Coverage](https://img.shields.io/badge/Coverage-98%25-brightgreen?style=for-the-badge)
+![Version](https://img.shields.io/badge/Version-3.3.0-purple?style=for-the-badge) ![License](https://img.shields.io/badge/License-AGPL--3.0-blue?style=for-the-badge) ![Maintained](https://img.shields.io/badge/Maintained-Yes-green.svg?style=for-the-badge) ![Coverage](https://img.shields.io/badge/Coverage-98%25-brightgreen?style=for-the-badge)
 
 <!-- Community Badges -->
 ![GitHub stars](https://img.shields.io/github/stars/hiall-fyi/tado_ce?style=for-the-badge&logo=github) ![GitHub forks](https://img.shields.io/github/forks/hiall-fyi/tado_ce?style=for-the-badge&logo=github) ![GitHub issues](https://img.shields.io/github/issues/hiall-fyi/tado_ce?style=for-the-badge&logo=github) ![GitHub Release Date](https://img.shields.io/github/release-date/hiall-fyi/tado_ce?style=for-the-badge&logo=github)
@@ -96,7 +96,8 @@ Tado CE provides comprehensive smart climate control with features developed by 
 - **Environment Monitoring** — Mold risk assessment, comfort level tracking, condensation risk (AC)
 - **Smart Comfort** — Historical patterns, preheat advisor with cooling rate prediction, schedule sensors, AI recommendations
 - **Thermal Analytics** — Heating rate analysis, preheat estimates, thermal inertia, confidence scoring
-- **Enhanced Controls** — Smart boost, hot water timer (min 1 min), immediate refresh, temperature offset
+- **Weather Compensation** — Automatic boiler flow temperature adjustment based on outdoor temperature with preset heating curves
+- **Enhanced Controls** — Smart boost, hot water timer (min 1 min), immediate refresh, temperature offset, restore previous state
 - **Per-Zone Configuration** — Individual overlay modes, temperature limits, UFH settings per zone
 - **Zone Features Toggles** — Control which entity types are created for a minimal or full setup
 - **Multi-Language** — Config flow and options UI in 7 languages (English, German, Spanish, French, Italian, Dutch, Portuguese)
@@ -127,7 +128,7 @@ See [FEATURES_GUIDE.md](FEATURES_GUIDE.md) for detailed configuration guides and
 
 ## Entities
 
-Quick overview of entities created by Tado CE (72 entity types — see [ENTITIES.md](ENTITIES.md) for full reference):
+Quick overview of entities created by Tado CE (86 entity types — see [ENTITIES.md](ENTITIES.md) for full reference):
 
 - **Hub**: API usage/reset/sync sensors, weather sensors, home insights, presence mode, overlay mode, resume all button
 - **Per Zone**: Climate control, temperature/humidity, heating power, overlay status, battery, connection
@@ -136,7 +137,7 @@ Quick overview of entities created by Tado CE (72 entity types — see [ENTITIES
 - **Smart Comfort**: Heating/cooling rates, time-to-target, preheat advisor (with cooling rate prediction), schedule sensors (opt-in)
 - **Thermal Analytics**: Thermal inertia, heating rate, preheat time, confidence scoring (heating zones)
 - **Hot Water**: Water heater with AUTO/HEAT/OFF modes, timer buttons (min 1 min)
-- **Per-Zone Config**: Overlay mode, temperature limits, UFH buffer, window type, surface temp offset per zone
+- **Weather Compensation**: Target flow temperature, compensation status (when bridge configured)
 - **Switches**: Child lock, early start per zone
 - **Zone Features Toggles**: Control which entity types are created for a minimal or full setup
 
@@ -151,6 +152,8 @@ Quick overview of entities created by Tado CE (72 entity types — see [ENTITIES
 | `resume_schedule` | Delete overlay, return to schedule |
 | `set_climate_temperature_offset` | Calibrate device temperature (-10 to +10°C) |
 | `get_temperature_offset` | Fetch current offset (Tado CE exclusive) |
+| `set_open_window_mode` | Trigger open window mode from external sensors (Zigbee, Z-Wave) with optional duration |
+| `restore_previous_state` | Restore zone to whatever it was doing before the last change |
 | `identify_device` | Flash device LED |
 | `set_away_configuration` | Configure away temperature |
 | `add_meter_reading` | Add Energy IQ reading (supports historical dates) |

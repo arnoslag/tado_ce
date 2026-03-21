@@ -180,3 +180,16 @@ set_open_window_mode:
           step: 60
           unit_of_measurement: "s"
           mode: box
+    capture_state:
+      required: false
+      default: true
+      selector:
+        boolean:
+
+restore_previous_state:
+  target:
+    entity:
+      integration: tado_ce
+      domain:
+        - climate
+        - water_heater

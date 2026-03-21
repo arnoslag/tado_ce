@@ -13,9 +13,12 @@ from homeassistant.const import UnitOfTemperature
 from homeassistant.core import callback
 
 from .calculations import (
+    HEAT_INDEX_ACTIVATION_TEMP,
     calculate_ashrae_comfort_temp,
+    calculate_heat_index,
     calculate_seasonal_comfort_target,
     classify_condensation_risk,
+    classify_heat_risk_level,
     classify_mold_risk_by_margin,
 )
 from .calculations import (
@@ -955,6 +958,8 @@ class TadoComfortLevelSensor(TadoZoneSensor):
         self._comfort_model: str = "unknown"
         self._dew_point: float | None = None
         self._recommendation: str = ""
+        self._heat_index: float | None = None
+        self._heat_risk_level: str | None = None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
@@ -966,6 +971,8 @@ class TadoComfortLevelSensor(TadoZoneSensor):
             "comfort_target": self._comfort_temp,
             "comfort_model": _format_comfort_model(self._comfort_model),
             "dew_point": round(self._dew_point, 1) if self._dew_point is not None else None,
+            "heat_index": round(self._heat_index, 1) if self._heat_index is not None else None,
+            "heat_risk_level": self._heat_risk_level,
             "zone_type": _format_zone_type(self._zone_type),
             "recommendation": _strip_zone_prefix(self._recommendation, self._zone_name),
         }
@@ -1013,6 +1020,18 @@ class TadoComfortLevelSensor(TadoZoneSensor):
             # Calculate dew point if humidity available
             if self._humidity is not None:
                 self._dew_point = _calculate_dew_point(self._temperature, self._humidity)
+
+            # Compute Heat Index (warm side only)
+            if (
+                self._temperature is not None
+                and self._humidity is not None
+                and self._temperature >= HEAT_INDEX_ACTIVATION_TEMP
+            ):
+                self._heat_index = calculate_heat_index(self._temperature, self._humidity)
+                self._heat_risk_level = classify_heat_risk_level(self._heat_index)
+            else:
+                self._heat_index = None
+                self._heat_risk_level = None
 
             # Get outdoor temperature from config
             config_manager_ref = self.coordinator.config_manager
@@ -1062,6 +1081,8 @@ class TadoComfortLevelSensor(TadoZoneSensor):
                 target_temp=self._comfort_temp,
                 humidity=self._humidity,
                 hvac_mode=hvac_mode,
+                heat_index=self._heat_index,
+                heat_risk_level=self._heat_risk_level,
             )
 
             self._attr_available = True
@@ -1083,7 +1104,8 @@ class TadoComfortLevelSensor(TadoZoneSensor):
         self._comfort_temp = round(calculate_ashrae_comfort_temp(self._outdoor_temp), 1)  # type: ignore[arg-type]
 
         # Calculate deviation from comfort
-        deviation = self._temperature - self._comfort_temp  # type: ignore[operator]
+        effective_temp = self._heat_index if self._heat_index is not None else self._temperature
+        deviation = effective_temp - self._comfort_temp  # type: ignore[operator]
 
         # Determine comfort level based on deviation
         if deviation < -6:
@@ -1122,7 +1144,8 @@ class TadoComfortLevelSensor(TadoZoneSensor):
         self._comfort_temp = comfort_target
 
         # Calculate deviation from comfort target
-        deviation = self._temperature - comfort_target  # type: ignore[operator]
+        effective_temp = self._heat_index if self._heat_index is not None else self._temperature
+        deviation = effective_temp - comfort_target  # type: ignore[operator]
 
         # Determine comfort level based on deviation (same ranges as adaptive)
         if deviation < -6:

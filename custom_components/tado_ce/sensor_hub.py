@@ -632,7 +632,7 @@ class TadoNextSyncSensor(TadoHubSensor):
         from homeassistant.helpers.event import async_track_time_interval
 
         @callback
-        def _refresh_countdown(_now: Any) -> None:  # HA datetime arg
+        def _refresh_countdown(_now: Any) -> None:  # noqa: ANN401 — HA async_track_time_interval callback signature
             """Recalculate countdown attribute periodically."""
             self._recalculate_countdown()
             self.async_write_ha_state()

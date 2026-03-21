@@ -19,6 +19,7 @@ from .const import (
     SERVICE_DEACTIVATE_OPEN_WINDOW,
     SERVICE_GET_TEMP_OFFSET,
     SERVICE_IDENTIFY_DEVICE,
+    SERVICE_RESTORE_PREVIOUS_STATE,
     SERVICE_RESUME_SCHEDULE,
     SERVICE_SET_AWAY_CONFIG,
     SERVICE_SET_CLIMATE_TIMER,
@@ -32,6 +33,7 @@ if TYPE_CHECKING:
 
     from .coordinator import TadoDataUpdateCoordinator
     from .data_loader import DataLoader
+    from .state_restore_manager import CapturedState
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -55,7 +57,7 @@ def _raise_api_quota_error() -> None:
     )
 
 
-def _raise_time_format_error(time_period: Any) -> None:
+def _raise_time_format_error(time_period: Any) -> None:  # noqa: ANN401 — HA service call data can be any type
     """Raise time period format error."""
     msg = f"Invalid time_period format: {time_period}. Expected HH:MM:SS"
     raise ValueError(msg)
@@ -376,6 +378,43 @@ def _resolve_single_coordinator(hass: HomeAssistant) -> TadoDataUpdateCoordinato
     )
 
 
+def _build_setting_from_captured(
+    captured: CapturedState,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Rebuild API setting and termination dicts from captured state.
+
+    Returns a (setting, termination) tuple suitable for ``set_zone_overlay``.
+    """
+    setting: dict[str, Any] = {}
+
+    if captured.entity_type in ("climate_heating", "climate_ac"):
+        setting["type"] = (
+            "HEATING" if captured.entity_type == "climate_heating" else "AIR_CONDITIONING"
+        )
+        setting["power"] = captured.power or "ON"
+        if captured.entity_type == "climate_ac" and captured.hvac_mode is not None:
+            setting["mode"] = captured.hvac_mode  # Raw API mode: COOL/HEAT/DRY/FAN
+        if captured.temperature is not None:
+            setting["temperature"] = {"celsius": captured.temperature}
+        if captured.fan_mode is not None:  # AC only
+            setting["fanLevel"] = captured.fan_mode
+        if captured.swing_mode is not None:  # AC only
+            setting["verticalSwing"] = captured.swing_mode
+        if captured.horizontal_swing_mode is not None:  # AC only
+            setting["horizontalSwing"] = captured.horizontal_swing_mode
+
+    elif captured.entity_type == "water_heater":
+        setting["type"] = "HOT_WATER"
+        setting["power"] = captured.power or "ON"
+        if captured.temperature is not None:
+            setting["temperature"] = {"celsius": captured.temperature}
+
+    # Termination: use captured termination or fall back to MANUAL
+    termination: dict[str, Any] = captured.termination or {"type": "MANUAL"}
+
+    return setting, termination
+
+
 async def _async_register_services(hass: HomeAssistant) -> None:
     """Register Tado CE services."""
     # Lazy imports to avoid circular dependencies
@@ -485,6 +524,13 @@ async def _async_register_services(hass: HomeAssistant) -> None:
                 ent = _find_entity_by_id(hass, "climate", entity_id)
                 if ent and hasattr(ent, "async_set_timer"):
                     try:
+                        # Capture state before timer overlay
+                        zone_id: str | None = getattr(ent, "_zone_id", None)
+                        entity_type: str = getattr(ent, "_entity_type", "climate_heating")
+                        if zone_id and _coord._sr_manager:
+                            await _coord._sr_manager.capture(
+                                zone_id, entity_type, source="set_timer",
+                            )
                         await ent.async_set_timer(temperature, duration_minutes, overlay)
                         if duration_minutes:
                             _LOGGER.info(
@@ -594,6 +640,17 @@ async def _async_register_services(hass: HomeAssistant) -> None:
             ent = _find_entity_by_id(hass, "water_heater", entity_id)
             if ent and hasattr(ent, "async_set_timer"):
                 try:
+                    # Capture state before timer overlay
+                    zone_id: str | None = getattr(ent, "_zone_id", None)
+                    if zone_id:
+                        try:
+                            wh_coord = _resolve_coordinator(hass, entity_id)
+                            if wh_coord._sr_manager:
+                                await wh_coord._sr_manager.capture(
+                                    zone_id, "water_heater", source="set_timer",
+                                )
+                        except HomeAssistantError:
+                            _LOGGER.debug("State capture skipped for %s: coordinator not resolved", entity_id)
                     await ent.async_set_timer(duration_minutes, temperature)
                     _LOGGER.info("Set timer for %s: %smin", entity_id, duration_minutes)
                 except Exception as e:
@@ -863,6 +920,7 @@ async def _async_register_services(hass: HomeAssistant) -> None:
 
         # Optional user-provided duration (seconds)
         duration_seconds = call.data.get("duration")
+        capture_state = call.data.get("capture_state", True)
 
         for entity_id in entity_ids:
             try:
@@ -883,6 +941,12 @@ async def _async_register_services(hass: HomeAssistant) -> None:
             if ent:
                 zone_id = getattr(ent, "_zone_id", None)
                 if zone_id:
+                    # Capture state before applying frost protection overlay
+                    if capture_state and _coord._sr_manager:
+                        entity_type: str = getattr(ent, "_entity_type", "climate_heating")
+                        await _coord._sr_manager.capture(
+                            zone_id, entity_type, source="set_open_window_mode",
+                        )
                     # Determine timeout: user param > zone setting > default
                     timeout = duration_seconds
                     if timeout is None:
@@ -913,11 +977,12 @@ async def _async_register_services(hass: HomeAssistant) -> None:
                     )
 
                     # Termination: duration=0 means indefinite (MANUAL), otherwise TIMER
+                    termination: dict[str, str | int]
                     if timeout == 0:
                         termination = {"type": "MANUAL"}
                         duration_desc = "indefinite"
                     else:
-                        termination = {"type": "TIMER", "durationInSeconds": str(int(timeout))}
+                        termination = {"type": "TIMER", "durationInSeconds": int(timeout)}
                         duration_desc = f"{int(timeout) // 60} min"
 
                     success = await _coord.api_client.set_zone_overlay(zone_id, setting, termination)
@@ -967,6 +1032,71 @@ async def _async_register_services(hass: HomeAssistant) -> None:
 
         _LOGGER.error("Entity not found: %s", entity_id)
         return {"offset_celsius": None, "error": "Entity not found"}  # type: ignore[return-value]
+
+    async def handle_restore_previous_state(call: ServiceCall) -> None:
+        """Handle restore_previous_state service call.
+
+        Restore a zone to its state before the last overlay operation.
+        Falls back to resume_schedule if no captured state exists.
+        """
+        entity_ids = call.data.get("entity_id", [])
+        if isinstance(entity_ids, str):
+            entity_ids = [entity_ids]
+
+        # Expand groups to individual entity IDs
+        entity_ids = _expand_group_entity_ids(hass, entity_ids, allowed_domains=["climate", "water_heater"])
+
+        for entity_id in entity_ids:
+            try:
+                _coord = _resolve_coordinator(hass, entity_id)
+            except HomeAssistantError:
+                _LOGGER.exception("restore_previous_state: failed to resolve coordinator for %s", entity_id)
+                continue
+
+            sr_manager = _coord._sr_manager
+            if sr_manager is None:
+                _LOGGER.warning("restore_previous_state: StateRestoreManager not available for %s", entity_id)
+                continue
+
+            # Resolve entity to get zone_id and entity_type
+            domain = entity_id.split(".")[0]
+            ent = _find_entity_by_id(hass, domain, entity_id)
+            if ent is None:
+                _LOGGER.warning("restore_previous_state: entity not found: %s", entity_id)
+                continue
+
+            zone_id: str | None = getattr(ent, "_zone_id", None)
+            entity_type: str | None = getattr(ent, "_entity_type", None)
+            if not zone_id or not entity_type:
+                _LOGGER.warning(
+                    "restore_previous_state: missing zone_id or entity_type for %s",
+                    entity_id,
+                )
+                continue
+
+            # Consume captured state
+            captured = await sr_manager.restore(zone_id, entity_type)
+
+            if captured is None:
+                # Fallback: resume schedule (delete overlay)
+                await _coord.api_client.delete_zone_overlay(zone_id)
+                _LOGGER.info("restore_previous_state: no captured state for %s, resumed schedule", entity_id)
+                continue
+
+            if captured.overlay_type is None:
+                # Was on schedule — resume schedule
+                await _coord.api_client.delete_zone_overlay(zone_id)
+                _LOGGER.info("restore_previous_state: restored schedule for %s", entity_id)
+            else:
+                # Was on overlay — rebuild and re-apply
+                setting, termination = _build_setting_from_captured(captured)
+                await _coord.api_client.set_zone_overlay(zone_id, setting, termination)
+                _LOGGER.info(
+                    "restore_previous_state: restored overlay for %s (type=%s, temp=%s)",
+                    entity_id,
+                    captured.overlay_type,
+                    captured.temperature,
+                )
 
     # Register services
     # Use cv.entity_ids + handler expansion to support climate groups
@@ -1090,6 +1220,7 @@ async def _async_register_services(hass: HomeAssistant) -> None:
                 vol.Optional("duration"): vol.All(
                     vol.Coerce(int), vol.Any(0, vol.Range(min=60, max=3600)),
                 ),
+                vol.Optional("capture_state", default=True): cv.boolean,
             },
         ),
     )
@@ -1104,6 +1235,17 @@ async def _async_register_services(hass: HomeAssistant) -> None:
             },
         ),
         supports_response=True,  # type: ignore[arg-type]
+    )
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_RESTORE_PREVIOUS_STATE,
+        handle_restore_previous_state,
+        schema=vol.Schema(
+            {
+                vol.Required("entity_id"): cv.entity_ids,
+            },
+        ),
     )
 
     _LOGGER.info("Tado CE: Services registered")

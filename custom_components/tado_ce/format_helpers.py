@@ -107,6 +107,15 @@ BATTERY_STATE_DISPLAY_MAP: dict[str, str] = {
     "LOW": "Low",
     "CRITICAL": "Critical",
 }
+
+HEAT_RISK_DISPLAY_MAP: dict[str, str] = {
+    "None": "✅ None",
+    "Caution": "🟡 Caution",
+    "Extreme Caution": "🟠 Extreme Caution",
+    "Danger": "🔴 Danger",
+    "Extreme Danger": "🔴 Extreme Danger",
+}
+
 CONNECTION_STATE_DISPLAY_MAP: dict[bool, str] = {True: "Online", False: "Offline"}
 CONNECTION_STATE_ATTR_MAP: dict[bool, str] = {True: "online", False: "offline"}
 
@@ -114,7 +123,7 @@ CONNECTION_STATE_ATTR_MAP: dict[bool, str] = {True: "online", False: "offline"}
 # === Generic lookup helper ===
 
 
-def _lookup(mapping: dict[str, Any], value: Any, fallback_fn: Callable[..., Any] | None = None) -> str:
+def _lookup(mapping: dict[str, Any], value: Any, fallback_fn: Callable[..., Any] | None = None) -> str:  # noqa: ANN401 — generic lookup accepts any hashable value
     """Look up value in mapping. Falsy value -> 'Unknown', unmapped -> fallback."""
     if value is None or value == "":
         return "Unknown"
@@ -241,6 +250,35 @@ def format_health_score(score: int) -> str:
 def format_bridge_wiring_state(state: str) -> str:
     """Convert bridge wiring state to user-friendly display value."""
     return _lookup(BRIDGE_WIRING_STATE_MAP, state)
+
+
+def format_heat_risk_level(level: str | None) -> str:
+    """Format heat risk level with emoji prefix.
+
+    Args:
+        level: NOAA risk level string, or None.
+
+    Returns:
+        Emoji-prefixed display string, or "Unknown" for None/unrecognised.
+    """
+    if level is None:
+        return "Unknown"
+    return HEAT_RISK_DISPLAY_MAP.get(level, "Unknown")
+
+
+def format_boolean_connected(value: bool | None) -> str:
+    """Format boolean as Connected/Disconnected for bridge connectivity fields."""
+    if value is True:
+        return "Connected"
+    return "Disconnected"
+
+
+def format_boolean_yes_no(value: bool | None) -> str:
+    """Format boolean as Yes/No for bridge presence fields."""
+    if value is True:
+        return "Yes"
+    return "No"
+
 
 _PRIORITY_EMOJI: dict[str, str] = {
     "critical": "🔴",

@@ -82,6 +82,7 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
         self._home_id = home_id
         self._capabilities = capabilities
         self._entry_id = coordinator.config_entry.entry_id
+        self._entity_type = "climate_ac"
 
         _meta = ENTITY_REGISTRY["climate_ac"]
         self._attr_name = None
@@ -377,13 +378,22 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
                 self._zone_name,
                 self._attr_target_temperature,
             )
+        elif self._attr_target_temperature is None:
+            # First install or no previous state — default to 24°C so climate
+            # card controls are usable immediately (#182 follow-up)
+            self._attr_target_temperature = 24.0
+            _LOGGER.debug(
+                "AC %s: No previous state, defaulting target temperature to %s",
+                self._zone_name,
+                self._attr_target_temperature,
+            )
 
         # Listen for zone config changes
         zone_config_manager = self.coordinator.zone_config_manager
         if zone_config_manager:
 
             @callback
-            def _handle_zone_config_change(zone_id: str, key: str, value: Any) -> None:
+            def _handle_zone_config_change(zone_id: str, key: str, value: Any) -> None:  # noqa: ANN401 — zone config values are heterogeneous
                 """Handle zone config change."""
                 if zone_id == self._zone_id and key in ("min_temp", "max_temp"):
                     self._update_temp_limits()
@@ -730,7 +740,7 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
             _LOGGER.warning("Failed to update %s: %s", self.name, e)
             self._attr_available = False
 
-    async def async_set_temperature(self, **kwargs: Any) -> None:
+    async def async_set_temperature(self, **kwargs: Any) -> None:  # noqa: ANN401 — HA entity interface
         """Set new target temperature.
 
         Optimized to use single API call when both temperature and hvac_mode are provided.
@@ -764,6 +774,12 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
             return
 
         await _check_bootstrap_reserve(self.hass, f"AC {self._zone_name}", entry_id=self._entry_id)
+
+        # Capture current state before overlay (state restoration)
+        if self.coordinator._sr_manager:
+            await self.coordinator._sr_manager.capture(
+                self._zone_id, self._entity_type, source="set_temperature",
+            )
 
         # Convert hvac_mode to Tado mode for the overlay
         tado_mode = HA_TO_TADO_HVAC_MODE.get(hvac_mode) if hvac_mode else None
@@ -840,6 +856,12 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
         client = self.coordinator.api_client
 
         if hvac_mode == HVACMode.OFF:
+            # Capture current state before overlay (state restoration)
+            if self.coordinator._sr_manager:
+                await self.coordinator._sr_manager.capture(
+                    self._zone_id, self._entity_type, source="set_hvac_mode",
+                )
+
             setting = {
                 "type": "AIR_CONDITIONING",
                 "power": "OFF",
@@ -863,6 +885,12 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
                 reason="AC Set AUTO mode (deleted overlay)",
             )
         else:
+            # Capture current state before overlay (state restoration)
+            if self.coordinator._sr_manager:
+                await self.coordinator._sr_manager.capture(
+                    self._zone_id, self._entity_type, source="set_hvac_mode",
+                )
+
             # Include all attributes that will be set by _async_set_ac_overlay
             old_mode = self._attr_hvac_mode
             old_temp = self._attr_target_temperature
@@ -931,6 +959,12 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
         """
         await _check_bootstrap_reserve(self.hass, f"AC {self._zone_name}", entry_id=self._entry_id)
 
+        # Capture current state before overlay (state restoration)
+        if self.coordinator._sr_manager:
+            await self.coordinator._sr_manager.capture(
+                self._zone_id, self._entity_type, source="set_fan_mode",
+            )
+
         old_fan = self._attr_fan_mode
         old_mode = self._attr_hvac_mode
         old_action = self._attr_hvac_action
@@ -988,6 +1022,12 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
         Added bootstrap reserve check - blocks action when quota critically low.
         """
         await _check_bootstrap_reserve(self.hass, f"AC {self._zone_name}", entry_id=self._entry_id)
+
+        # Capture current state before overlay (state restoration)
+        if self.coordinator._sr_manager:
+            await self.coordinator._sr_manager.capture(
+                self._zone_id, self._entity_type, source="set_swing_mode",
+            )
 
         if swing_mode == "off":
             v_swing, h_swing = "OFF", "OFF"
@@ -1199,6 +1239,12 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
         Simplified — delegates to _async_set_ac_overlay with overlay param.
         """
         await _check_bootstrap_reserve(self.hass, f"AC {self._zone_name}", entry_id=self._entry_id)
+
+        # Capture current state before overlay (state restoration)
+        if self.coordinator._sr_manager:
+            await self.coordinator._sr_manager.capture(
+                self._zone_id, self._entity_type, source="set_timer",
+            )
 
         api_success = False
         try:

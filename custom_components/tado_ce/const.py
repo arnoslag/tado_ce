@@ -35,6 +35,7 @@ PER_HOME_FILES = [
     "outdoor_temp_history",
     "insight_history",
     "home_details",
+    "state_restore",
 ]
 
 
@@ -77,6 +78,13 @@ SERVICE_SET_AWAY_CONFIG = "set_away_configuration"
 SERVICE_ACTIVATE_OPEN_WINDOW = "activate_open_window"
 SERVICE_DEACTIVATE_OPEN_WINDOW = "deactivate_open_window"
 SERVICE_SET_OPEN_WINDOW_MODE = "set_open_window_mode"
+SERVICE_RESTORE_PREVIOUS_STATE = "restore_previous_state"
+
+# Adaptive Preheat Override Mode
+ADAPTIVE_PREHEAT_OFF = "off"
+ADAPTIVE_PREHEAT_ACTIVE = "active"
+ADAPTIVE_PREHEAT_PASSIVE = "passive"
+ADAPTIVE_PREHEAT_OPTIONS = ["Off", "Active", "Passive"]
 
 # API Base URLs
 TADO_API_BASE = "https://my.tado.com/api/v2"
@@ -279,9 +287,10 @@ TIMER_DURATION_DEFAULT = 60
 DEFAULT_ZONE_CONFIG = {
     "heating_type": "radiator",  # radiator or ufh (Heating only)
     "ufh_buffer_minutes": 30,  # 0-60 minutes (Heating only, when UFH)
-    "adaptive_preheat": False,  # Heating + AC
+    "adaptive_preheat": "off",  # off / active / passive (Heating + AC)
     "smart_comfort_mode": "none",  # none/light/moderate/aggressive (Heating + AC)
     "window_type": "double_pane",  # single_pane/double_pane/triple_pane/passive_house (Heating + AC)
+    "window_predicted_mode": "auto",  # active/passive/auto (Heating + AC)
     "window_predicted_sensitivity": "medium",  # low/medium/high (Heating + AC)
     "external_temp_sensor": "",  # HA entity_id for external temperature sensor (Heating + AC)
     "external_humidity_sensor": "",  # HA entity_id for external humidity sensor (Heating + AC)
@@ -351,6 +360,16 @@ WINDOW_SENSITIVITY_OPTIONS = ["Low", "Medium", "High"]
 WINDOW_SENSITIVITY_MAP = {"Low": "low", "Medium": "medium", "High": "high"}
 WINDOW_SENSITIVITY_REVERSE_MAP = {v: k for k, v in WINDOW_SENSITIVITY_MAP.items()}
 WINDOW_SENSITIVITY_DEFAULT = "medium"
+
+# Window detection mode options (for per-zone select)
+WINDOW_DETECTION_MODE_OPTIONS = ["Active", "Passive", "Auto"]
+WINDOW_DETECTION_MODE_MAP = {
+    "Active": "active",
+    "Passive": "passive",
+    "Auto": "auto",
+}
+WINDOW_DETECTION_MODE_REVERSE_MAP = {v: k for k, v in WINDOW_DETECTION_MODE_MAP.items()}
+WINDOW_DETECTION_MODE_DEFAULT = "auto"
 
 # External sensor entity ID default (empty = not configured, use Tado API values)
 EXTERNAL_SENSOR_DEFAULT = ""

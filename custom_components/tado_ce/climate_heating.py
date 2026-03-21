@@ -67,6 +67,7 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity,
         self._zone_name = zone_name
         self._home_id = home_id
         self._entry_id = coordinator.config_entry.entry_id
+        self._entity_type = "climate_heating"
 
         _meta = ENTITY_REGISTRY["climate_heating"]
         self._attr_name = None
@@ -213,13 +214,22 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity,
                 self._zone_name,
                 self._attr_target_temperature,
             )
+        elif self._attr_target_temperature is None:
+            # First install or no previous state — default to 20°C so climate
+            # card controls are usable immediately (#182 follow-up)
+            self._attr_target_temperature = 20.0
+            _LOGGER.debug(
+                "%s: No previous state, defaulting target temperature to %s",
+                self._zone_name,
+                self._attr_target_temperature,
+            )
 
         # Listen for zone config changes
         zone_config_manager = self.coordinator.zone_config_manager
         if zone_config_manager:
 
             @callback
-            def _handle_zone_config_change(zone_id: str, key: str, value: Any) -> None:
+            def _handle_zone_config_change(zone_id: str, key: str, value: Any) -> None:  # noqa: ANN401 — zone config values are heterogeneous
                 """Handle zone config change."""
                 if zone_id == self._zone_id and key in ("min_temp", "max_temp"):
                     self._update_temp_limits()
@@ -559,7 +569,7 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity,
             self._clear_optimistic_state()
             self.async_write_ha_state()
 
-    async def async_set_temperature(self, **kwargs: Any) -> None:
+    async def async_set_temperature(self, **kwargs: Any) -> None:  # noqa: ANN401 — HA entity interface
         """Set new target temperature.
 
         Optimized to use single API call when both temperature and hvac_mode are provided.
@@ -592,6 +602,12 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity,
             return
 
         await _check_bootstrap_reserve(self.hass, self._zone_name, entry_id=self._entry_id)
+
+        # Capture current state before overlay (state restoration)
+        if self.coordinator._sr_manager:
+            await self.coordinator._sr_manager.capture(
+                self._zone_id, self._entity_type, source="set_temperature",
+            )
 
         old_temp = self._attr_target_temperature
         old_mode = self._attr_hvac_mode
@@ -664,6 +680,12 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity,
         client = self.coordinator.api_client
 
         if hvac_mode == HVACMode.HEAT:
+            # Capture current state before overlay (state restoration)
+            if self.coordinator._sr_manager:
+                await self.coordinator._sr_manager.capture(
+                    self._zone_id, self._entity_type, source="set_hvac_mode",
+                )
+
             temp = self._attr_target_temperature or 20
             setting = {
                 "type": "HEATING",
@@ -682,6 +704,12 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity,
             )
 
         elif hvac_mode == HVACMode.OFF:
+            # Capture current state before overlay (state restoration)
+            if self.coordinator._sr_manager:
+                await self.coordinator._sr_manager.capture(
+                    self._zone_id, self._entity_type, source="set_hvac_mode",
+                )
+
             setting = {
                 "type": "HEATING",
                 "power": "OFF",
@@ -719,6 +747,12 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity,
 
         """
         await _check_bootstrap_reserve(self.hass, self._zone_name, entry_id=self._entry_id)
+
+        # Capture current state before overlay (state restoration)
+        if self.coordinator._sr_manager:
+            await self.coordinator._sr_manager.capture(
+                self._zone_id, self._entity_type, source="set_timer",
+            )
 
         client = self.coordinator.api_client
 

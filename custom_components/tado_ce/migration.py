@@ -266,8 +266,8 @@ async def _migrate_to_per_zone_config(
 
         # Adaptive preheat (Heating + AC)
         if zone_id in adaptive_preheat_zones:
-            config_updates["adaptive_preheat"] = True  # type: ignore[assignment]
-            _LOGGER.debug("  Zone %s: Adaptive preheat enabled", zone_name)
+            config_updates["adaptive_preheat"] = "active"
+            _LOGGER.debug("  Zone %s: Adaptive preheat enabled (active)", zone_name)
 
         # Smart comfort mode (inherit global)
         if smart_comfort_mode != "none":

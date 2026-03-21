@@ -55,6 +55,16 @@ class ZoneConfigManager:
             return {}
 
         self._config = await self._hass.async_add_executor_job(_load)
+        # Cumulative migration: adaptive_preheat bool → str (persisted)
+        migrated = False
+        for zone_cfg in self._config.values():
+            ap = zone_cfg.get("adaptive_preheat")
+            if isinstance(ap, bool):
+                zone_cfg["adaptive_preheat"] = "active" if ap else "off"
+                migrated = True
+        if migrated:
+            await self.async_save()
+            _LOGGER.info("Migrated adaptive_preheat bool → str in zone config")
         _LOGGER.debug("Loaded zone config for %s zones", len(self._config))
 
     async def async_save(self) -> None:
@@ -86,7 +96,12 @@ class ZoneConfigManager:
         """
         zone_config = self._config.get(str(zone_id), {})
         # Merge with defaults (zone config overrides defaults)
-        return {**DEFAULT_ZONE_CONFIG, **zone_config}
+        merged = {**DEFAULT_ZONE_CONFIG, **zone_config}
+        # Cumulative migration: adaptive_preheat bool → str
+        ap = merged.get("adaptive_preheat")
+        if isinstance(ap, bool):
+            merged["adaptive_preheat"] = "active" if ap else "off"
+        return merged
 
     def has_zone_override(self, zone_id: str, key: str) -> bool:
         """Check if a zone has an explicit user-set override for a key.
@@ -97,7 +112,7 @@ class ZoneConfigManager:
         zone_config = self._config.get(str(zone_id), {})
         return key in zone_config
 
-    def get_zone_value(self, zone_id: str, key: str, default: Any = None) -> Any:
+    def get_zone_value(self, zone_id: str, key: str, default: Any = None) -> Any:  # noqa: ANN401 — generic config store, values are heterogeneous
         """Get a specific configuration value for a zone.
 
         Args:
@@ -113,7 +128,7 @@ class ZoneConfigManager:
             return config.get(key, DEFAULT_ZONE_CONFIG.get(key))
         return config.get(key, default)
 
-    async def async_set_zone_value(self, zone_id: str, key: str, value: Any) -> None:
+    async def async_set_zone_value(self, zone_id: str, key: str, value: Any) -> None:  # noqa: ANN401 — generic config store, values are heterogeneous
         """Set a configuration value for a zone.
 
         Args:

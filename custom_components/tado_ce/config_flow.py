@@ -45,6 +45,10 @@ from .const import (
     SURFACE_TEMP_OFFSET_STEP,
     TIMER_DURATION_DEFAULT,
     TIMER_DURATION_OPTIONS,
+    WINDOW_DETECTION_MODE_DEFAULT,
+    WINDOW_DETECTION_MODE_MAP,
+    WINDOW_DETECTION_MODE_OPTIONS,
+    WINDOW_DETECTION_MODE_REVERSE_MAP,
     WINDOW_SENSITIVITY_DEFAULT,
     WINDOW_SENSITIVITY_MAP,
     WINDOW_SENSITIVITY_OPTIONS,
@@ -664,9 +668,9 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                     if key in section:
                         processed_input[key] = section[key]
 
-            # Flatten settings section
-            if "settings" in user_input:
-                section = user_input["settings"]
+            # Flatten smart_comfort section
+            if "smart_comfort" in user_input:
+                section = user_input["smart_comfort"]
                 settings_keys = [
                     "hot_water_timer_duration",
                     "smart_comfort_mode",
@@ -718,22 +722,58 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                 errors["custom_night_interval"] = "interval_out_of_range"
                 processed_input["custom_night_interval"] = None
 
-            # Flatten bridge_config section
-            if "bridge_config" in user_input:
-                section = user_input["bridge_config"]
-                bridge_serial = (section.get("bridge_serial") or "").strip()
-                bridge_auth_key = (section.get("bridge_auth_key") or "").strip()
-                processed_input["bridge_serial"] = bridge_serial
-                processed_input["bridge_auth_key"] = bridge_auth_key
+            # Flatten flow_temperature_control section (bridge + weather compensation)
+            if "flow_temperature_control" in user_input:
+                section = user_input["flow_temperature_control"]
 
-                # Validate credentials if both fields provided
-                if bridge_serial and bridge_auth_key:
-                    from .bridge_api import TadoBridgeApiClient
+                # Bridge toggle controls whether credentials are kept
+                if section.get("bridge_enabled", False):
+                    bridge_serial = (section.get("bridge_serial") or "").strip()
+                    bridge_auth_key = (section.get("bridge_auth_key") or "").strip()
+                    processed_input["bridge_serial"] = bridge_serial
+                    processed_input["bridge_auth_key"] = bridge_auth_key
 
-                    session = async_get_clientsession(self.hass)
-                    bridge_client = TadoBridgeApiClient(session, bridge_serial, bridge_auth_key)
-                    if not await bridge_client.async_validate_credentials():
-                        errors["bridge_config"] = "bridge_auth_failed"
+                    # Validate credentials if both fields provided
+                    if bridge_serial and bridge_auth_key:
+                        # Serial must start with IB (v3+ Internet Bridge)
+                        if not bridge_serial.upper().startswith("IB"):
+                            errors["flow_temperature_control"] = "bridge_serial_invalid"
+                        else:
+                            from .bridge_api import TadoBridgeApiClient
+
+                            session = async_get_clientsession(self.hass)
+                            bridge_client = TadoBridgeApiClient(session, bridge_serial, bridge_auth_key)
+                            if not await bridge_client.async_validate_credentials():
+                                errors["flow_temperature_control"] = "bridge_auth_failed"
+                else:
+                    # Toggle off — clear credentials (triggers bridge entity cleanup)
+                    processed_input["bridge_serial"] = ""
+                    processed_input["bridge_auth_key"] = ""
+
+                # Weather compensation settings
+                for key in [
+                    "wc_enabled",
+                    "wc_heating_system_preset",
+                    "wc_slope",
+                    "wc_design_outdoor_temp",
+                    "wc_max_flow_temp",
+                    "wc_min_flow_temp",
+                    "wc_shutoff_temp",
+                    "wc_smoothing_method",
+                    "wc_smoothing_window",
+                    "wc_room_compensation_enabled",
+                    "wc_room_compensation_factor",
+                    "wc_step_size",
+                    "wc_hysteresis",
+                ]:
+                    if key in section:
+                        processed_input[key] = section[key]
+
+                # Validate min_flow <= max_flow
+                wc_min = processed_input.get("wc_min_flow_temp", 25.0)
+                wc_max = processed_input.get("wc_max_flow_temp", 65.0)
+                if wc_min > wc_max:
+                    errors["flow_temperature_control"] = "wc_min_exceeds_max"
 
             if not errors:
                 # Save previous feature states for cleanup in async_reload_entry
@@ -857,8 +897,8 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                         ),
                         {"collapsed": True},
                     ),
-                    # === Settings (collapsed) ===
-                    vol.Required("settings"): data_entry_flow.section(
+                    # === Smart Comfort (collapsed) ===
+                    vol.Required("smart_comfort"): data_entry_flow.section(
                         vol.Schema(
                             {
                                 # General
@@ -960,7 +1000,169 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                         ),
                         {"collapsed": True},
                     ),
-                    # === Polling & API (collapsed) ===
+                    # === Flow Temperature Control (collapsed) ===
+                    vol.Required("flow_temperature_control"): data_entry_flow.section(
+                        vol.Schema(
+                            {
+                                # Bridge toggle (controls credential fields)
+                                vol.Optional(
+                                    "bridge_enabled",
+                                    default=bool(opt("bridge_serial", "")) and bool(opt("bridge_auth_key", "")),
+                                ): BooleanSelector(),
+                                # Bridge credentials
+                                vol.Optional(
+                                    "bridge_serial",
+                                    description={"suggested_value": opt("bridge_serial", "")},
+                                ): TextSelector(TextSelectorConfig(type=TextSelectorType.TEXT)),
+                                vol.Optional(
+                                    "bridge_auth_key",
+                                    description={"suggested_value": opt("bridge_auth_key", "")},
+                                ): TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD)),
+                                # Weather compensation
+                                vol.Optional(
+                                    "wc_enabled",
+                                    default=opt("wc_enabled", False),
+                                ): BooleanSelector(),
+                                vol.Optional(
+                                    "wc_heating_system_preset",
+                                    default=opt("wc_heating_system_preset", "radiators_standard"),
+                                ): SelectSelector(
+                                    SelectSelectorConfig(
+                                        options=[
+                                            "radiators_standard",
+                                            "radiators_low_temp",
+                                            "underfloor",
+                                            "custom",
+                                        ],
+                                        translation_key="wc_heating_system_preset",
+                                        mode=SelectSelectorMode.DROPDOWN,
+                                    ),
+                                ),
+                                vol.Optional(
+                                    "wc_slope",
+                                    default=opt("wc_slope", 1.5),
+                                ): NumberSelector(
+                                    NumberSelectorConfig(
+                                        min=0.3,
+                                        max=3.0,
+                                        step=0.1,
+                                        mode=NumberSelectorMode.BOX,
+                                    ),
+                                ),
+                                vol.Optional(
+                                    "wc_design_outdoor_temp",
+                                    default=opt("wc_design_outdoor_temp", -5.0),
+                                ): NumberSelector(
+                                    NumberSelectorConfig(
+                                        min=-30,
+                                        max=10,
+                                        step=1,
+                                        mode=NumberSelectorMode.BOX,
+                                        unit_of_measurement="°C",
+                                    ),
+                                ),
+                                vol.Optional(
+                                    "wc_max_flow_temp",
+                                    default=opt("wc_max_flow_temp", 65.0),
+                                ): NumberSelector(
+                                    NumberSelectorConfig(
+                                        min=25,
+                                        max=80,
+                                        step=0.5,
+                                        mode=NumberSelectorMode.BOX,
+                                        unit_of_measurement="°C",
+                                    ),
+                                ),
+                                vol.Optional(
+                                    "wc_min_flow_temp",
+                                    default=opt("wc_min_flow_temp", 25.0),
+                                ): NumberSelector(
+                                    NumberSelectorConfig(
+                                        min=25,
+                                        max=60,
+                                        step=0.5,
+                                        mode=NumberSelectorMode.BOX,
+                                        unit_of_measurement="°C",
+                                    ),
+                                ),
+                                vol.Optional(
+                                    "wc_shutoff_temp",
+                                    default=opt("wc_shutoff_temp", 18.0),
+                                ): NumberSelector(
+                                    NumberSelectorConfig(
+                                        min=5,
+                                        max=30,
+                                        step=1,
+                                        mode=NumberSelectorMode.BOX,
+                                        unit_of_measurement="°C",
+                                    ),
+                                ),
+                                vol.Optional(
+                                    "wc_smoothing_method",
+                                    default=opt("wc_smoothing_method", "ema"),
+                                ): SelectSelector(
+                                    SelectSelectorConfig(
+                                        options=["none", "ema", "rolling_average"],
+                                        translation_key="wc_smoothing_method",
+                                        mode=SelectSelectorMode.DROPDOWN,
+                                    ),
+                                ),
+                                vol.Optional(
+                                    "wc_smoothing_window",
+                                    default=opt("wc_smoothing_window", 60),
+                                ): NumberSelector(
+                                    NumberSelectorConfig(
+                                        min=15,
+                                        max=1440,
+                                        step=15,
+                                        mode=NumberSelectorMode.BOX,
+                                        unit_of_measurement="min",
+                                    ),
+                                ),
+                                vol.Optional(
+                                    "wc_room_compensation_enabled",
+                                    default=opt("wc_room_compensation_enabled", False),
+                                ): BooleanSelector(),
+                                vol.Optional(
+                                    "wc_room_compensation_factor",
+                                    default=opt("wc_room_compensation_factor", 3.0),
+                                ): NumberSelector(
+                                    NumberSelectorConfig(
+                                        min=1.0,
+                                        max=5.0,
+                                        step=0.5,
+                                        mode=NumberSelectorMode.BOX,
+                                        unit_of_measurement="°C/°C",
+                                    ),
+                                ),
+                                vol.Optional(
+                                    "wc_step_size",
+                                    default=opt("wc_step_size", 1.0),
+                                ): NumberSelector(
+                                    NumberSelectorConfig(
+                                        min=0.5,
+                                        max=2.0,
+                                        step=0.5,
+                                        mode=NumberSelectorMode.BOX,
+                                        unit_of_measurement="°C",
+                                    ),
+                                ),
+                                vol.Optional(
+                                    "wc_hysteresis",
+                                    default=opt("wc_hysteresis", 1.0),
+                                ): NumberSelector(
+                                    NumberSelectorConfig(
+                                        min=0.5,
+                                        max=3.0,
+                                        step=0.5,
+                                        mode=NumberSelectorMode.BOX,
+                                        unit_of_measurement="°C",
+                                    ),
+                                ),
+                            },
+                        ),
+                        {"collapsed": True},
+                    ),
                     vol.Required("polling_api"): data_entry_flow.section(
                         vol.Schema(
                             {
@@ -1032,22 +1234,6 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                         ),
                         {"collapsed": True},
                     ),
-                    # === Bridge Configuration (collapsed) ===
-                    vol.Required("bridge_config"): data_entry_flow.section(
-                        vol.Schema(
-                            {
-                                vol.Optional(
-                                    "bridge_serial",
-                                    description={"suggested_value": opt("bridge_serial", "")},
-                                ): TextSelector(TextSelectorConfig(type=TextSelectorType.TEXT)),
-                                vol.Optional(
-                                    "bridge_auth_key",
-                                    description={"suggested_value": opt("bridge_auth_key", "")},
-                                ): TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD)),
-                            },
-                        ),
-                        {"collapsed": True},
-                    ),
                 },
             ),
             errors=errors,
@@ -1113,7 +1299,7 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                     "heating_type", HEATING_TYPE_RADIATOR,
                 ).lower()
                 all_values["ufh_buffer_minutes"] = int(s.get("ufh_buffer_minutes", 30))
-                all_values["adaptive_preheat"] = s.get("adaptive_preheat", False)
+                all_values["adaptive_preheat"] = s.get("adaptive_preheat", "off")
 
             if "comfort_section" in user_input:
                 s = user_input["comfort_section"]
@@ -1121,6 +1307,10 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                 all_values["smart_comfort_mode"] = raw_mode.lower() if raw_mode != "None" else "none"
                 raw_wt = s.get("window_type", "double_pane")
                 all_values["window_type"] = raw_wt
+                raw_det_mode = s.get("window_predicted_mode", "Auto")
+                all_values["window_predicted_mode"] = WINDOW_DETECTION_MODE_MAP.get(
+                    raw_det_mode, WINDOW_DETECTION_MODE_DEFAULT,
+                )
                 raw_sens = s.get("window_predicted_sensitivity", "Medium")
                 all_values["window_predicted_sensitivity"] = WINDOW_SENSITIVITY_MAP.get(raw_sens, "medium")
 
@@ -1173,13 +1363,19 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
         if cur_heating == "Ufh":
             cur_heating = "UFH"
         cur_ufh_buffer = config.get("ufh_buffer_minutes", 30)
-        cur_adaptive = config.get("adaptive_preheat", False)
+        cur_adaptive = config.get("adaptive_preheat", "off")
+        # Handle legacy bool values from pre-migration configs
+        if isinstance(cur_adaptive, bool):
+            cur_adaptive = "active" if cur_adaptive else "off"
         cur_comfort = config.get("smart_comfort_mode", "none").capitalize()
         if cur_comfort == "None":
             cur_comfort = "None"
         cur_window_type = config.get("window_type", "double_pane")
         cur_sensitivity = WINDOW_SENSITIVITY_REVERSE_MAP.get(
             config.get("window_predicted_sensitivity", WINDOW_SENSITIVITY_DEFAULT), "Medium",
+        )
+        cur_detection_mode = WINDOW_DETECTION_MODE_REVERSE_MAP.get(
+            config.get("window_predicted_mode", WINDOW_DETECTION_MODE_DEFAULT), "Auto",
         )
         cur_temp_sensor = config.get("external_temp_sensor", "")
         cur_humidity_sensor = config.get("external_humidity_sensor", "")
@@ -1221,7 +1417,13 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                                 ),
                                 vol.Optional(
                                     "adaptive_preheat", default=cur_adaptive,
-                                ): BooleanSelector(),
+                                ): SelectSelector(
+                                    SelectSelectorConfig(
+                                        options=["off", "active", "passive"],
+                                        mode=SelectSelectorMode.DROPDOWN,
+                                        translation_key="adaptive_preheat_mode",
+                                    ),
+                                ),
                             },
                         ),
                         {"collapsed": False},
@@ -1244,6 +1446,15 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                                     SelectSelectorConfig(
                                         options=["single_pane", "double_pane", "triple_pane", "passive_house"],
                                         translation_key="mold_risk_window_type",
+                                        mode=SelectSelectorMode.DROPDOWN,
+                                    ),
+                                ),
+                                vol.Optional(
+                                    "window_predicted_mode", default=cur_detection_mode,
+                                ): SelectSelector(
+                                    SelectSelectorConfig(
+                                        options=WINDOW_DETECTION_MODE_OPTIONS,
+                                        translation_key="window_predicted_mode",
                                         mode=SelectSelectorMode.DROPDOWN,
                                     ),
                                 ),

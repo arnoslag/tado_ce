@@ -54,6 +54,17 @@ Toggle in Settings → Devices & Services → Tado CE → Configure:
 
 Not polling calls — only happen when you take an action.
 
+### Bridge API Calls (v3.2.0+)
+
+Bridge API calls are separate from the cloud API — they use a different endpoint (`my.tado.com/api/v2/homeByBridge/{serial}/`) and don't count toward your daily API quota. Bridge data is fetched during each coordinator update cycle alongside cloud data, but errors are isolated and never affect cloud polling.
+
+| Call | Description | When |
+|------|-------------|------|
+| Wiring state | Bridge installation status, boiler output temp | Every sync (if bridge configured) |
+| Max output temp | Read/write boiler max flow temperature | Every sync + on user action |
+
+Bridge calls require the serial number and auth key from your Internet Bridge (configured in Flow Temperature Control settings).
+
 ---
 
 ## What is "Overlay"?
@@ -87,7 +98,7 @@ Typical: 1–2 calls per quick sync.
 
 ### Full Sync
 
-Runs every 6 hours. Everything from quick sync plus:
+Runs on HA restart (v3.1.0+, previously every 6 hours). Everything from quick sync plus:
 - zones (Code 3)
 - weather (Code 2) — if enabled
 - mobileDevices (Code 4) — if enabled
@@ -186,6 +197,7 @@ Tado CE stores data in `/config/.storage/tado_ce/`. All per-home files include `
 | `thermal_analytics_cache_{home_id}.json` | Thermal analytics data (heating cycles, rates) |
 | `zone_config_{home_id}.json` | Per-zone configuration settings |
 | `insight_history_{home_id}.json` | Insight appearance/disappearance tracking |
+| `state_restore_{home_id}.json` | Captured zone states for restore_previous_state service |
 
 ### Legacy Files (pre-v3.0.0)
 
@@ -228,11 +240,11 @@ These files persist across restarts and upgrades.
 
 ## Related Documentation
 
-- [ENTITIES.md](ENTITIES.md) — Complete entity reference (75 entities)
+- [ENTITIES.md](ENTITIES.md) — Complete entity reference (86 entities)
 - [FEATURES_GUIDE.md](FEATURES_GUIDE.md) — Features, configuration, and usage scenarios
 - [README.md](README.md) — Installation and setup
 - [ROADMAP.md](ROADMAP.md) — Planned features and ideas
 
 ---
 
-**Last Updated:** v3.0.0 (2026-03-10)
+**Last Updated:** v3.3.0 (2026-03-21)

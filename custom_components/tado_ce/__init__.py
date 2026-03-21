@@ -18,6 +18,7 @@ from .const import (
     SERVICE_DEACTIVATE_OPEN_WINDOW,
     SERVICE_GET_TEMP_OFFSET,
     SERVICE_IDENTIFY_DEVICE,
+    SERVICE_RESTORE_PREVIOUS_STATE,
     SERVICE_RESUME_SCHEDULE,
     SERVICE_SET_AWAY_CONFIG,
     SERVICE_SET_CLIMATE_TIMER,
@@ -155,6 +156,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         async_init_adaptive_preheat,
         async_init_heating_cycle,
         async_init_smart_comfort,
+        async_init_state_restore,
     )
 
     smart_comfort_manager = await async_init_smart_comfort(
@@ -173,6 +175,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         config_manager,
         api_client=components["api_client"],
         data_loader=data_loader,
+        zone_config_manager=zone_config_manager,
+    )
+
+    state_restore_manager = await async_init_state_restore(
+        hass,
+        config_manager,
+        data_loader,
     )
 
     coordinator = TadoDataUpdateCoordinator(
@@ -186,11 +195,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         smart_comfort_manager=smart_comfort_manager,
         heating_cycle_coordinator=heating_cycle_coordinator,
         adaptive_preheat_manager=adaptive_preheat_manager,
+        state_restore_manager=state_restore_manager,
     )
 
     # Wire back-reference: AdaptivePreheatManager needs coordinator for entity_data access
     if adaptive_preheat_manager is not None:
         adaptive_preheat_manager.set_coordinator(coordinator)
+
+    # Wire back-reference: StateRestoreManager needs coordinator for zone state access
+    if state_restore_manager is not None:
+        state_restore_manager.set_coordinator(coordinator)
 
     # Schedule heating cycle timeout check if coordinator exists
     if heating_cycle_coordinator:
@@ -338,6 +352,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if coordinator and hasattr(coordinator, "insight_history"):
         await coordinator.insight_history.async_save()
 
+    # Persist captured state before shutdown
+    if coordinator and coordinator._sr_manager is not None:
+        await coordinator._sr_manager.async_shutdown()
+
     # Per-entry cleanup (API client, timers, managers) — via coordinator
     from .entry_lifecycle import async_cleanup_entry_components
 
@@ -373,6 +391,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             SERVICE_ACTIVATE_OPEN_WINDOW,
             SERVICE_DEACTIVATE_OPEN_WINDOW,
             SERVICE_SET_OPEN_WINDOW_MODE,
+            SERVICE_RESTORE_PREVIOUS_STATE,
         ]:
             if hass.services.has_service(DOMAIN, service_name):
                 hass.services.async_remove(DOMAIN, service_name)

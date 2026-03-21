@@ -74,7 +74,7 @@ class ConfigurationManager:
         self._hass = hass
         # Don't sync on init to avoid blocking - will be synced when needed
 
-    def _get_option(self, key: str, default: Any) -> Any:
+    def _get_option(self, key: str, default: Any) -> Any:  # noqa: ANN401 — generic config store, values are heterogeneous
         """Get option value with real-time update support.
 
         Reads directly from config_entry.options to get real-time value
@@ -757,6 +757,151 @@ class ConfigurationManager:
             True if Zone Configuration entities should be created
         """
         return self._get_option("zone_configuration_enabled", True)  # type: ignore[no-any-return]
+
+
+    # ------------------------------------------------------------------
+    # Weather Compensation (Bridge API heating curve)
+    # ------------------------------------------------------------------
+
+    def get_wc_enabled(self) -> bool:
+        """Check if weather compensation is enabled.
+
+        Returns:
+            True if weather compensation should run
+        """
+        return self._get_option("wc_enabled", False)  # type: ignore[no-any-return]
+
+    def get_wc_heating_system_preset(self) -> str:
+        """Get the heating system preset name.
+
+        Returns:
+            Preset: 'radiators_standard', 'radiators_low_temp', 'underfloor', or 'custom'
+        """
+        preset = self._get_option("wc_heating_system_preset", "radiators_standard")
+        if preset in ("radiators_standard", "radiators_low_temp", "underfloor", "custom"):
+            return preset  # type: ignore[no-any-return]
+        return "radiators_standard"
+
+    def get_wc_slope(self) -> float:
+        """Get the heating curve slope.
+
+        Returns:
+            Slope value (0.3–3.0, default 1.5)
+        """
+        slope = self._get_option("wc_slope", 1.5)
+        if isinstance(slope, (int, float)) and 0.3 <= slope <= 3.0:
+            return float(slope)
+        return 1.5
+
+    def get_wc_design_outdoor_temp(self) -> float:
+        """Get the design outdoor temperature.
+
+        Returns:
+            Temperature in °C (-30 to 10, default -5)
+        """
+        temp = self._get_option("wc_design_outdoor_temp", -5.0)
+        if isinstance(temp, (int, float)) and -30 <= temp <= 10:
+            return float(temp)
+        return -5.0
+
+    def get_wc_max_flow_temp(self) -> float:
+        """Get the maximum flow temperature.
+
+        Returns:
+            Temperature in °C (25–80, default 65)
+        """
+        temp = self._get_option("wc_max_flow_temp", 65.0)
+        if isinstance(temp, (int, float)) and 25 <= temp <= 80:
+            return float(temp)
+        return 65.0
+
+    def get_wc_min_flow_temp(self) -> float:
+        """Get the minimum flow temperature.
+
+        Returns:
+            Temperature in °C (25–60, default 25)
+        """
+        temp = self._get_option("wc_min_flow_temp", 25.0)
+        if isinstance(temp, (int, float)) and 25 <= temp <= 60:
+            return float(temp)
+        return 25.0
+
+    def get_wc_shutoff_temp(self) -> float:
+        """Get the heating shutoff outdoor temperature.
+
+        Returns:
+            Temperature in °C (5–30, default 18)
+        """
+        temp = self._get_option("wc_shutoff_temp", 18.0)
+        if isinstance(temp, (int, float)) and 5 <= temp <= 30:
+            return float(temp)
+        return 18.0
+
+    def get_wc_smoothing_method(self) -> str:
+        """Get the outdoor temperature smoothing method.
+
+        Returns:
+            Method: 'none', 'ema', or 'rolling_average' (default 'ema')
+        """
+        method = self._get_option("wc_smoothing_method", "ema")
+        if method in ("none", "ema", "rolling_average"):
+            return method  # type: ignore[no-any-return]
+        return "ema"
+
+    def get_wc_smoothing_window(self) -> int:
+        """Get the smoothing window duration in minutes.
+
+        Returns:
+            Window in minutes (15–1440, default 60)
+        """
+        window = self._get_option("wc_smoothing_window", 60)
+        if isinstance(window, float):
+            window = int(window)
+        if isinstance(window, int) and 15 <= window <= 1440:
+            return window
+        return 60
+
+    def get_wc_room_compensation_enabled(self) -> bool:
+        """Check if indoor temperature feedback (room compensation) is enabled.
+
+        Returns:
+            True if room compensation should adjust flow temperature
+        """
+        return self._get_option("wc_room_compensation_enabled", False)  # type: ignore[no-any-return]
+
+    def get_wc_room_compensation_factor(self) -> float:
+        """Get the room compensation factor.
+
+        Returns:
+            Factor in °C flow per °C indoor deviation (1.0–5.0, default 3.0)
+        """
+        factor = self._get_option("wc_room_compensation_factor", 3.0)
+        if isinstance(factor, (int, float)) and 1.0 <= factor <= 5.0:
+            return float(factor)
+        return 3.0
+
+    def get_wc_step_size(self) -> float:
+        """Get the flow temperature step size.
+
+        Returns:
+            Step size in °C (0.5–2.0, default 1.0)
+        """
+        step = self._get_option("wc_step_size", 1.0)
+        if isinstance(step, (int, float)) and 0.5 <= step <= 2.0:
+            return float(step)
+        return 1.0
+
+    def get_wc_hysteresis(self) -> float:
+        """Get the hysteresis dead band for flow temperature changes.
+
+        Returns:
+            Hysteresis in °C (0.5–3.0, default 1.0)
+        """
+        hyst = self._get_option("wc_hysteresis", 1.0)
+        if isinstance(hyst, (int, float)) and 0.5 <= hyst <= 3.0:
+            return float(hyst)
+        return 1.0
+
 
     def sync_all_to_config_json(self) -> None:
         """Sync all configuration values to config.json for tado_api.py to read.

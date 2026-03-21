@@ -77,6 +77,47 @@ WINDOW_SENSITIVITY_PRESETS: dict[str, dict[str, int | float]] = {
     },
 }
 
+# Passive mode signal weights
+PASSIVE_WEIGHT_TEMP = 0.60
+PASSIVE_WEIGHT_HUMIDITY = 0.25
+PASSIVE_WEIGHT_OUTDOOR = 0.15
+
+# Passive mode sensitivity presets — stricter than active
+WINDOW_PASSIVE_SENSITIVITY_PRESETS: dict[str, dict[str, float]] = {
+    "low": {
+        "temp_rate_threshold": 0.4,
+        "high_confidence_score": 0.85,
+        "medium_confidence_score": 0.60,
+        "humidity_boost_threshold": 8.0,
+        "min_readings": 4,
+    },
+    "medium": {
+        "temp_rate_threshold": 0.25,
+        "high_confidence_score": 0.75,
+        "medium_confidence_score": 0.50,
+        "humidity_boost_threshold": 5.0,
+        "min_readings": 3,
+    },
+    "high": {
+        "temp_rate_threshold": 0.15,
+        "high_confidence_score": 0.65,
+        "medium_confidence_score": 0.40,
+        "humidity_boost_threshold": 3.0,
+        "min_readings": 2,
+    },
+}
+
+# Cooldown readings required per sensitivity
+COOLDOWN_READINGS: dict[str, int] = {"low": 3, "medium": 2, "high": 1}
+
+# Outdoor differential thresholds (°C)
+OUTDOOR_DIFF_HIGH = 10.0
+OUTDOOR_DIFF_LOW = 5.0
+
+# Seasonal baseline defaults
+SEASONAL_BASELINE_MIN_SAMPLES = 168  # 7 days of hourly readings
+SEASONAL_COLD_THRESHOLD = 5.0  # °C outdoor — winter mode
+
 # Mold risk — humidity thresholds (%)
 MOLD_HUMIDITY_CRITICAL = 70
 MOLD_HUMIDITY_HIGH = 70
@@ -341,6 +382,8 @@ class WindowPredictedResult:
     time_window_minutes: int
     recommendation: str
     anomaly_readings: int = 0
+    cooldown_active: bool = False
+    detection_mode: str = "active"
 
 
 # ============ Window Predicted Detection ============
@@ -450,6 +493,276 @@ def detect_window_predicted(
         time_window_minutes=time_window_minutes,
         recommendation=recommendation,
         anomaly_readings=anomaly_count,
+    )
+
+
+# ============ Passive Window Detection Helpers ============
+
+
+def _redistribute_weights(
+    has_humidity: bool,
+    has_outdoor: bool,
+) -> tuple[float, float, float]:
+    """Redistribute signal weights when signals are unavailable.
+
+    Returns (temp_weight, humidity_weight, outdoor_weight) summing to 1.0.
+    Missing signal weight is distributed proportionally to remaining signals.
+    """
+    if has_humidity and has_outdoor:
+        return PASSIVE_WEIGHT_TEMP, PASSIVE_WEIGHT_HUMIDITY, PASSIVE_WEIGHT_OUTDOOR
+
+    available_weight = PASSIVE_WEIGHT_TEMP
+    if has_humidity:
+        available_weight += PASSIVE_WEIGHT_HUMIDITY
+    if has_outdoor:
+        available_weight += PASSIVE_WEIGHT_OUTDOOR
+
+    # Avoid division by zero — temp is always available
+    if available_weight == 0.0:
+        return 1.0, 0.0, 0.0
+
+    temp_w = PASSIVE_WEIGHT_TEMP / available_weight
+    hum_w = PASSIVE_WEIGHT_HUMIDITY / available_weight if has_humidity else 0.0
+    out_w = PASSIVE_WEIGHT_OUTDOOR / available_weight if has_outdoor else 0.0
+    return temp_w, hum_w, out_w
+
+
+def _apply_window_type_scaling(
+    threshold: float,
+    u_value: float,
+) -> float:
+    """Scale threshold based on window U-value.
+
+    Higher U-value (single_pane=5.0) produces a looser threshold (stronger signal expected).
+    Lower U-value (passive_house=0.8) produces a tighter threshold (weaker signal).
+    Baseline: double_pane (U=2.7) gives scale factor 1.0.
+    """
+    baseline = 2.7
+    if u_value <= 0.0:
+        return threshold
+    scale_factor = u_value / baseline
+    return threshold / scale_factor
+
+
+def _calc_temp_rate_score(
+    readings: list[TemperatureReading],
+    threshold: float,
+    hvac_mode: str,
+    flat_tolerant: bool = True,
+) -> tuple[float, int]:
+    """Calculate temperature drop rate score (0.0-1.0) and anomaly count.
+
+    flat_tolerant=True: flat readings do not break streak (passive mode).
+    flat_tolerant=False: flat readings break streak (active mode compat).
+    """
+    if len(readings) < 2:  # noqa: PLR2004
+        return 0.0, 0
+
+    anomaly_count = 0
+    for i in range(len(readings) - 1, 0, -1):
+        newer = readings[i].temperature
+        older = readings[i - 1].temperature
+
+        if hvac_mode == "heating":
+            # Anomaly: temp dropped
+            is_anomaly = newer < older
+            # Flat: temp unchanged — tolerated in passive mode
+            is_flat = newer == older
+            # Streak breaks on temp RISE (wrong direction)
+            streak_broken = newer > older
+        else:
+            # Cooling mode: anomaly is temp rising
+            is_anomaly = newer > older
+            is_flat = newer == older
+            streak_broken = newer < older
+
+        if is_anomaly:
+            anomaly_count += 1
+        elif is_flat and flat_tolerant:
+            # Flat reading — don't break streak in passive mode
+            anomaly_count += 1
+        elif streak_broken or (is_flat and not flat_tolerant):
+            break
+
+    if anomaly_count == 0:
+        return 0.0, 0
+
+    # Calculate rate across anomalous span
+    start_idx = len(readings) - 1 - anomaly_count
+    total_change = abs(readings[start_idx].temperature - readings[-1].temperature)
+
+    # Time span in minutes
+    time_span = (readings[-1].timestamp - readings[start_idx].timestamp).total_seconds() / 60.0
+    if time_span <= 0:
+        return 0.0, anomaly_count
+
+    temp_rate = total_change / time_span
+    score = min(temp_rate / threshold, 1.0)
+    return score, anomaly_count
+
+
+def _calc_humidity_rate_score(
+    readings: list[TemperatureReading],
+    boost_threshold: float,
+) -> float:
+    """Calculate humidity drop rate score (0.0-1.0).
+
+    Directional analysis:
+    - Rapid drop (>=threshold %/reading) gives high score (0.5-1.0).
+    - Slow decline gives low score (0.0-0.5).
+    - Rise or stable returns 0.0 (not open-window pattern).
+    """
+    # Collect humidity changes between consecutive readings
+    changes: list[float] = []
+    for i in range(1, len(readings)):
+        h_new = readings[i].humidity
+        h_old = readings[i - 1].humidity
+        if h_new is not None and h_old is not None:
+            changes.append(h_new - h_old)
+
+    if not changes:
+        return 0.0
+
+    avg_change = sum(changes) / len(changes)
+
+    # Rising or stable humidity — not an open-window pattern
+    if avg_change >= 0:
+        return 0.0
+
+    abs_change = abs(avg_change)
+    if abs_change >= boost_threshold:
+        return min(abs_change / (boost_threshold * 2) + 0.5, 1.0)
+    return abs_change / boost_threshold * 0.5
+
+
+def _calc_outdoor_diff_score(
+    indoor_temp: float,
+    outdoor_temp: float | None,
+) -> float:
+    """Calculate outdoor differential score (0.0-1.0).
+
+    >=10C diff gives 1.0, <5C diff gives 0.0, linear interpolation between.
+    None outdoor_temp returns 0.0 (no penalty via weight redistribution).
+    """
+    if outdoor_temp is None:
+        return 0.0
+
+    diff = indoor_temp - outdoor_temp
+    if diff >= OUTDOOR_DIFF_HIGH:
+        return 1.0
+    if diff <= OUTDOOR_DIFF_LOW:
+        return 0.0
+    return (diff - OUTDOOR_DIFF_LOW) / (OUTDOOR_DIFF_HIGH - OUTDOOR_DIFF_LOW)
+
+
+def detect_window_passive(
+    readings: list[TemperatureReading],
+    zone_name: str = "Room",
+    sensitivity: str = "medium",
+    hvac_mode: str = "heating",
+    outdoor_temp: float | None = None,
+    window_u_value: float = 2.7,
+    seasonal_baseline: float | None = None,
+) -> WindowPredictedResult:
+    """Detect open window using rate-based multi-signal scoring.
+
+    Unlike detect_window_predicted() (active mode), this function
+    does NOT require hvac_active. It analyzes temperature drop RATE
+    and humidity changes to distinguish open-window cooling from
+    natural cooling.
+
+    Flat readings (temp unchanged) do NOT break the anomaly streak.
+    Only temperature rises break the streak (for heating mode).
+    """
+    preset = WINDOW_PASSIVE_SENSITIVITY_PRESETS.get(
+        sensitivity, WINDOW_PASSIVE_SENSITIVITY_PRESETS["medium"],
+    )
+    min_readings = int(preset["min_readings"])
+    temp_rate_threshold = float(preset["temp_rate_threshold"])
+    humidity_boost_threshold = float(preset["humidity_boost_threshold"])
+
+    _not_detected = WindowPredictedResult(
+        detected=False,
+        confidence="none",
+        temp_drop=0.0,
+        time_window_minutes=0,
+        recommendation="",
+        anomaly_readings=0,
+        detection_mode="passive",
+    )
+
+    if len(readings) < WINDOW_MIN_READINGS:
+        return _not_detected
+
+    # Apply window type scaling to threshold
+    adjusted_threshold = _apply_window_type_scaling(temp_rate_threshold, window_u_value)
+
+    # Apply seasonal baseline adjustment
+    if seasonal_baseline is not None and seasonal_baseline < SEASONAL_COLD_THRESHOLD:
+        adjusted_threshold *= 1.15  # 15% stricter in winter
+
+    # Step 1: Temperature rate score
+    temp_score, anomaly_count = _calc_temp_rate_score(
+        readings, adjusted_threshold, hvac_mode, flat_tolerant=True,
+    )
+
+    if anomaly_count < min_readings:
+        return _not_detected
+
+    # Step 2: Humidity rate score
+    has_humidity = any(r.humidity is not None for r in readings)
+    humidity_score = _calc_humidity_rate_score(readings, humidity_boost_threshold) if has_humidity else 0.0
+
+    # Step 3: Outdoor differential score
+    has_outdoor = outdoor_temp is not None
+    indoor_temp = readings[-1].temperature
+    outdoor_score = _calc_outdoor_diff_score(indoor_temp, outdoor_temp)
+
+    # Step 4: Weight redistribution
+    temp_w, hum_w, out_w = _redistribute_weights(has_humidity, has_outdoor)
+
+    # Step 5: Final weighted score
+    final_score = temp_score * temp_w + humidity_score * hum_w + outdoor_score * out_w
+
+    # Step 6: Map score to confidence
+    high_threshold = float(preset["high_confidence_score"])
+    medium_threshold = float(preset["medium_confidence_score"])
+
+    if final_score >= high_threshold:
+        confidence = "high"
+    elif final_score >= medium_threshold:
+        confidence = "medium"
+    else:
+        confidence = "low"
+
+    # Calculate total temp change for reporting
+    start_idx = len(readings) - 1 - anomaly_count
+    total_change = abs(readings[start_idx].temperature - readings[-1].temperature)
+
+    detected = confidence != "low"
+
+    if not detected:
+        return _not_detected
+
+    # Context-aware recommendation
+    if confidence == "high":
+        recommendation = (
+            f"{zone_name}: Close window now — temperature dropping {total_change:.1f}°C"
+            f" over {anomaly_count} readings (passive detection)"
+        )
+    else:
+        recommendation = (
+            f"{zone_name}: Check windows — {total_change:.1f}°C drop detected (passive detection)"
+        )
+
+    return WindowPredictedResult(
+        detected=True,
+        confidence=confidence,
+        temp_drop=round(total_change, 2),
+        time_window_minutes=0,
+        recommendation=recommendation,
+        anomaly_readings=anomaly_count,
+        detection_mode="passive",
     )
 
 
@@ -584,6 +897,8 @@ def calculate_comfort_recommendation(
     humidity: float | None = None,
     hvac_mode: str | None = None,
     hvac_action: str | None = None,
+    heat_index: float | None = None,
+    heat_risk_level: str | None = None,
 ) -> str:
     """Calculate SMART recommendation for comfort level with time frame.
 
@@ -598,6 +913,8 @@ def calculate_comfort_recommendation(
         humidity: Current humidity percentage
         hvac_mode: Current HVAC mode (heat, cool, off, auto)
         hvac_action: Current HVAC action (heating, idle, off)
+        heat_index: Calculated Heat Index in °C, or None.
+        heat_risk_level: NOAA risk level string, or None.
 
     Returns:
         SMART recommendation string (empty if comfortable)
@@ -641,19 +958,34 @@ def calculate_comfort_recommendation(
 
     # Hot states
     if comfort_state in ("Too Hot", "Hot", "Warm", "Sweltering"):
+        # Build heat index suffix
+        hi_suffix = ""
+        if heat_index is not None and heat_risk_level is not None and heat_risk_level != "None":
+            hi_suffix = f" (feels like {heat_index:.1f}°C — {heat_risk_level})"
+
         if current_temp is not None:
             if target_temp is not None and current_temp > target_temp:
                 over = round(current_temp - target_temp, 1)
-                return (
-                    f"{zone_name}: {current_temp:.1f}\u00b0C, "
-                    f"{over:.1f}\u00b0C above target - open window or reduce heating"
+                rec = (
+                    f"{zone_name}: {current_temp:.1f}°C, "
+                    f"{over:.1f}°C above target - open window or reduce heating"
+                    f"{hi_suffix}"
                 )
-            suggested = max(current_temp - 2, 18)
-            return (
-                f"{zone_name}: {current_temp:.1f}\u00b0C too warm - "
-                f"reduce setpoint to {suggested:.0f}\u00b0C or open window"
-            )
-        return f"{zone_name}: Room too hot - reduce heating setpoint by 2\u00b0C or open window"
+            else:
+                suggested = max(current_temp - 2, 18)
+                rec = (
+                    f"{zone_name}: {current_temp:.1f}°C too warm - "
+                    f"reduce setpoint to {suggested:.0f}°C or open window"
+                    f"{hi_suffix}"
+                )
+        else:
+            rec = f"{zone_name}: Room too hot - reduce heating setpoint by 2°C or open window{hi_suffix}"
+
+        # Prepend urgency for Danger / Extreme Danger
+        if heat_risk_level in ("Danger", "Extreme Danger"):
+            rec = f"⚠️ {zone_name}: Heat risk {heat_risk_level} — {rec[len(zone_name) + 2:]}"
+
+        return rec
 
     if comfort_state == "Too Humid":
         if humidity is not None:

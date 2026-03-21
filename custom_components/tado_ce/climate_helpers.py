@@ -119,7 +119,7 @@ def read_external_sensor(
 
 
 async def api_call_with_rollback(
-    entity: Any,
+    entity: Any,  # noqa: ANN401 — accepts any HA entity type (ClimateEntity, WaterHeaterEntity, etc.)
     api_coro: Coroutine,  # type: ignore[type-arg]
     *,
     hvac_mode: HVACMode,

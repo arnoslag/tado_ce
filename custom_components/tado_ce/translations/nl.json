@@ -77,6 +77,9 @@
             "name": "Anomaliemetingen"
           }
         }
+      },
+      "bridge_connected": {
+        "name": "Verbonden brug"
       }
     },
     "button": {
@@ -936,6 +939,54 @@
       },
       "boiler_output_temperature": {
         "name": "Uitgangstemperatuur van de ketel"
+      },
+      "bridge_wiring_state": {
+        "name": "Staat van brugbedrading"
+      },
+      "bridge_boiler_output_temp": {
+        "name": "Uitgangstemperatuur brugketel"
+      },
+      "bridge_boiler_output_temp_time": {
+        "name": "Brug Boiler Uitgang Temperatuur Tijd"
+      },
+      "bridge_boiler_flow_temp": {
+        "name": "Brug Ketel Aanvoertemperatuur"
+      },
+      "bridge_boiler_flow_temp_time": {
+        "name": "Brug Ketel Debiet Temperatuur Tijd"
+      },
+      "bridge_boiler_max_output_temp": {
+        "name": "Brug Boiler Max Uitgangstemperatuur"
+      },
+      "bridge_connected_state": {
+        "name": "Verbonden brug"
+      },
+      "bridge_hot_water_present": {
+        "name": "Brug Warm Water Aanwezig"
+      },
+      "bridge_device_type": {
+        "name": "Type brugapparaat"
+      },
+      "bridge_device_serial": {
+        "name": "Brug Apparaat Serieel"
+      },
+      "bridge_therm_interface_type": {
+        "name": "Brug Therm Interface Type"
+      },
+      "bridge_device_connected": {
+        "name": "Aangesloten bridgeapparaat"
+      },
+      "bridge_capabilities": {
+        "name": "Brugmogelijkheden"
+      },
+      "bridge_schema_version": {
+        "name": "Versie brugschema"
+      },
+      "wc_target_flow_temp": {
+        "name": "Weer Compensatie Doel"
+      },
+      "wc_status": {
+        "name": "Weer Compensatie Status"
       }
     },
     "select": {
@@ -1180,8 +1231,16 @@
         "duration": {
           "name": "Duur",
           "description": "Hoe lang de open venster modus actief blijft, in seconden (60–3600). Standaard de Tado vensterdetectie-timeout van de zone."
+        },
+        "capture_state": {
+          "name": "Staat vastleggen",
+          "description": "Legt de huidige zonestatus vast voordat de open venstermodus wordt toegepast, zodat deze later kan worden hersteld via de Restore Previous State-service. Standaard ingeschakeld."
         }
       }
+    },
+    "restore_previous_state": {
+      "name": "Vorige staat herstellen",
+      "description": "Herstelt een zone naar de toestand van voor de laatste overlay-bewerking. Als er geen vastgelegde staat bestaat, wordt het schema hervat."
     }
   },
   "selector": {
@@ -1199,6 +1258,13 @@
         "double_pane": "Dubbele beglazing (U=2,7)",
         "triple_pane": "Driedubbel glas (U=1,0)",
         "passive_house": "Passiefhuis (U=0,8)"
+      }
+    },
+    "window_predicted_mode": {
+      "options": {
+        "Active": "Actief (afhankelijk van HVAC)",
+        "Passive": "Passief (HVAC-onafhankelijk)",
+        "Auto": "Automatisch (aanbevolen)"
       }
     }
   },
@@ -1384,7 +1450,7 @@
               "offset_enabled": "Voeg offset_celsius attribuut toe aan klimaatentiteiten (+1 API-aanroep per apparaat)"
             }
           },
-          "settings": {
+          "smart_comfort": {
             "name": "Slim comfort",
             "data": {
               "use_outdoor_temp_entity": "Gebruik buitentemperatuur entiteit",
@@ -1432,16 +1498,41 @@
               "quota_reserve_enabled": "Pauzeer polling als quota laag is. Alleen uitschakelen als je de risico's begrijpt."
             }
           },
-          "bridge_config": {
-            "name": "Brugconfiguratie",
-            "description": "Optioneel: aansluiten op je Tado Internet Bridge voor regeling van de stromingstemperatuur",
+          "flow_temperature_control": {
+            "name": "Stromingstemperatuurregeling",
+            "description": "Maak verbinding met je Tado Internet Bridge en configureer automatische aanpassing van de aanvoertemperatuur",
             "data": {
               "bridge_serial": "Serienummer brug",
-              "bridge_auth_key": "Brug Auth Sleutel"
+              "bridge_auth_key": "Brug Auth Sleutel",
+              "wc_enabled": "Weercompensatie inschakelen",
+              "wc_heating_system_preset": "Type verwarmingssysteem",
+              "wc_slope": "Helling verwarmingscurve",
+              "wc_design_outdoor_temp": "Ontwerp Buitentemperatuur",
+              "wc_max_flow_temp": "Maximale stromingstemperatuur",
+              "wc_min_flow_temp": "Minimale stromingstemperatuur",
+              "wc_shutoff_temp": "Uitschakeltemperatuur verwarming",
+              "wc_smoothing_method": "Afvlakmethode voor temperatuur",
+              "wc_smoothing_window": "Afvlakvenster (minuten)",
+              "wc_room_compensation_enabled": "Kamercompensatie inschakelen",
+              "wc_room_compensation_factor": "Compensatiefactor kamer",
+              "wc_step_size": "Stromingstemperatuur Stapgrootte",
+              "wc_hysteresis": "Hysterese wijzigen",
+              "bridge_enabled": "Internetbrug inschakelen"
             },
             "data_description": {
               "bridge_serial": "Serienummer dat op de onderkant van uw Internet Bridge staat (bijv. IB123456789)",
-              "bridge_auth_key": "Auth key van de bridge sticker of Tado app (vertrouwelijk bewaren)"
+              "bridge_auth_key": "Auth key van de bridge sticker of Tado app (vertrouwelijk bewaren)",
+              "wc_slope": "Hoger = steilere curve = meer verandering van de flowtemperatuur per graad verandering van de buitentemperatuur (0,3-3,0)",
+              "wc_design_outdoor_temp": "Verwachte koudste buitentemperatuur voor jouw regio (-30 tot 10°C)",
+              "wc_max_flow_temp": "Aanvoertemperatuur bij ontworpen buitentemperatuur (25-80°C)",
+              "wc_min_flow_temp": "Minimale aanvoertemperatuur, ook gebruikt bij afsluiten (25-60°C)",
+              "wc_shutoff_temp": "Buitentemperatuur waarboven verwarming tot minimum wordt gereduceerd (5-30°C)",
+              "wc_smoothing_method": "Hoe buitentemperatuurmetingen worden afgevlakt voor gebruik in de verwarmingscurve",
+              "wc_smoothing_window": "Duur van middeling buitentemperatuur (15-1440 min)",
+              "wc_room_compensation_factor": "Debietaanpassing per graad binnenafwijking van instelpunt (1,0-5,0)",
+              "wc_step_size": "De aanvoertemperatuur wordt afgerond op deze stapgrootte - groter = minder API-oproepen, minder oscillatie (0,5-2,0°C)",
+              "wc_hysteresis": "Minimale verandering ten opzichte van de laatst verzonden waarde voordat een nieuwe API-oproep wordt gedaan (0,5-3,0°C)",
+              "bridge_enabled": "Inschakelen om verbinding te maken met uw Tado Internet Bridge. Uitschakelen verwijdert de bridge gegevens en alle bridge entiteiten"
             }
           }
         }
@@ -1475,11 +1566,13 @@
             "data": {
               "smart_comfort_mode": "Slimme Comfortmodus",
               "window_type": "Raamtype",
+              "window_predicted_mode": "Vensterdetectiemodus",
               "window_predicted_sensitivity": "Gevoeligheid vensterdetectie"
             },
             "data_description": {
               "smart_comfort_mode": "Richttemperatuur aanpassen op basis van buitencondities",
               "window_type": "Venstertype voor schimmelrisicoberekening",
+              "window_predicted_mode": "Actief: detecteert alleen wanneer de verwarming/airconditioning in werking is. Passief: detecteert ongeacht de status van de verwarming/airconditioning. Auto: gebruikt de modus Actief wanneer de verwarming/airconditioning aan staat, en de modus Passief wanneer deze uit staat.",
               "window_predicted_sensitivity": "Gevoeligheid voor detectie van voorspelde geopende vensters"
             }
           },
@@ -1541,7 +1634,9 @@
     "error": {
       "interval_out_of_range": "Polling-interval moet tussen 1 en 1440 minuten liggen",
       "invalid_number": "Voer een geldig nummer in",
-      "bridge_auth_failed": "Ongeldige bridge-serienummer of auth-sleutel - controleer en probeer opnieuw"
+      "bridge_auth_failed": "Ongeldige bridge-serienummer of auth-sleutel - controleer en probeer opnieuw",
+      "wc_min_exceeds_max": "De minimale aanvoertemperatuur kan niet hoger zijn dan de maximale aanvoertemperatuur",
+      "bridge_serial_invalid": "Alleen v3+ Internet Bridges (serieel beginnend met IB) ondersteunen de lokale API. Uw serie suggereert een v2 bridge (GW prefix) die geen lokale API heeft. Weercompensatie kan nog steeds worden gebruikt zonder een bridge via cloudgegevens."
     }
   }
 }

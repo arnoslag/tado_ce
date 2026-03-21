@@ -1,6 +1,6 @@
-# Tado CE — Entity Reference (v3.2.2)
+# Tado CE — Entity Reference (v3.3.0)
 
-This document lists all 72 entities in Tado CE, organised by function.
+This document lists all 86 entity types in Tado CE, organised by function.
 
 > **v3.1.0 change:** Per-zone configuration (overlay mode, timer, min/max temp, temp offset, heating type, window type, sensitivity, external sensors, etc.) moved from 11 HA entities per zone to a centralised Options Flow menu. Zero config entities are created — settings live in **Settings → Tado CE → Configure → Zone Configuration**.
 
@@ -94,23 +94,36 @@ This document lists all 72 entities in Tado CE, organised by function.
 
 ---
 
-## Bridge API (3 entities)
+## Bridge API — Dynamic Discovery (up to 15 entities)
 
-### Friendly Names
+> Entities are dynamically discovered from the Bridge API response. Which entities appear depends on your wiring type (OpenTherm, eBUS, Relay). Entities marked 🟢 are enabled by default; entities marked 🔘 require manual enabling in the HA UI.
 
-| # | Function | CE? | v3.2.0 Name |
-|---|----------|-----|-------------|
-| 18 | Boiler wiring state | ✓ | Boiler Wiring State |
-| 19 | Boiler output temperature | ✓ | Boiler Output Temperature |
-| 20 | Boiler max output temperature | ✓ | Boiler Max Output Temperature |
+### Default Enabled (visible when Bridge API is configured)
 
-### Entity IDs
+| # | Function | CE? | Name | Platform | Wiring |
+|---|----------|-----|------|----------|--------|
+| 18 | Bridge API health | ✓ | Bridge Connected | `binary_sensor` | All |
+| 19 | Boiler wiring state | ✓ | Bridge Wiring State | `sensor` | All |
+| 20 | Boiler output temperature | ✓ | Bridge Boiler Output Temp | `sensor` | OpenTherm |
+| 21 | Boiler flow temperature | ✓ | Bridge Boiler Flow Temp | `sensor` | eBUS |
+| 22 | Max output temp control | ✓ | Boiler Max Output Temperature | `number` | OpenTherm |
 
-| # | v3.2.0 entity_id |
-|---|------------------|
-| 18 | `sensor.tado_ce_hub_ce_boiler_wiring_state` |
-| 19 | `sensor.tado_ce_hub_ce_boiler_output_temperature` |
-| 20 | `number.tado_ce_hub_ce_boiler_max_output_temperature` |
+### Default Disabled (user must manually enable)
+
+| # | Function | CE? | Name | Platform | Wiring |
+|---|----------|-----|------|----------|--------|
+| 23 | Output temp timestamp | ✓ | Bridge Boiler Output Temp Time | `sensor` | OpenTherm |
+| 24 | Flow temp timestamp | ✓ | Bridge Boiler Flow Temp Time | `sensor` | eBUS |
+| 25 | Max output temperature (read-only) | ✓ | Bridge Boiler Max Output Temp | `sensor` | OpenTherm |
+| 26 | Hot water zone present | ✓ | Bridge Hot Water Present | `sensor` | All |
+| 27 | Bridge device type | ✓ | Bridge Device Type | `sensor` | All |
+| 28 | Bridge device serial | ✓ | Bridge Device Serial | `sensor` | All |
+| 29 | Therm interface type | ✓ | Bridge Therm Interface Type | `sensor` | All |
+| 30 | Bridge device connected | ✓ | Bridge Device Connected | `sensor` | All |
+| 31 | Bridge capabilities summary | ✓ | Bridge Capabilities | `sensor` | All |
+| 32 | Bridge schema version | ✓ | Bridge Schema Version | `sensor` | All |
+
+> **Note:** Any additional unknown fields discovered from the Bridge API are automatically created as disabled diagnostic sensors. The `number` entity (#22) provides flow temperature control via the Bridge API.
 
 ---
 
@@ -120,21 +133,21 @@ This document lists all 72 entities in Tado CE, organised by function.
 
 | # | Function | CE? | v2.3.1 Name | v3.0 Name |
 |---|----------|-----|-------------|-----------|
-| 21 | Resume all schedules | ✓ | Resume All Schedules | Resume All |
-| 22 | Refresh AC cache | ✓ | Refresh AC Capabilities | Refresh AC |
-| 23 | Presence mode | ✓ | Presence Mode | Presence Mode |
-| 24 | Overlay mode | ✓ | Overlay Mode | Overlay Mode |
-| 25 | Overlay timer duration | ✓ | Overlay Timer Duration | Overlay Timer |
+| 33 | Resume all schedules | ✓ | Resume All Schedules | Resume All |
+| 34 | Refresh AC cache | ✓ | Refresh AC Capabilities | Refresh AC |
+| 35 | Presence mode | ✓ | Presence Mode | Presence Mode |
+| 36 | Overlay mode | ✓ | Overlay Mode | Overlay Mode |
+| 37 | Overlay timer duration | ✓ | Overlay Timer Duration | Overlay Timer |
 
 ### Entity IDs
 
 | # | v2.3.1 entity_id | v3.0 entity_id (fresh) |
 |---|-------------------|------------------------|
-| 21 | `button.tado_ce_resume_all_schedules` | `button.tado_ce_hub_ce_resume_all` |
-| 22 | `button.tado_ce_refresh_ac_capabilities` | `button.tado_ce_hub_ce_refresh_ac` |
-| 23 | `select.tado_ce_presence_mode` | `select.tado_ce_hub_ce_presence_mode` |
-| 24 | `select.tado_ce_overlay_mode` | `select.tado_ce_hub_ce_overlay_mode` |
-| 25 | `select.tado_ce_overlay_timer_duration` | `select.tado_ce_hub_ce_overlay_timer` |
+| 33 | `button.tado_ce_resume_all_schedules` | `button.tado_ce_hub_ce_resume_all` |
+| 34 | `button.tado_ce_refresh_ac_capabilities` | `button.tado_ce_hub_ce_refresh_ac` |
+| 35 | `select.tado_ce_presence_mode` | `select.tado_ce_hub_ce_presence_mode` |
+| 36 | `select.tado_ce_overlay_mode` | `select.tado_ce_hub_ce_overlay_mode` |
+| 37 | `select.tado_ce_overlay_timer_duration` | `select.tado_ce_hub_ce_overlay_timer` |
 
 ---
 
@@ -144,13 +157,13 @@ This document lists all 72 entities in Tado CE, organised by function.
 
 | # | Function | CE? | v2.3.1 Name | v3.0 Name |
 |---|----------|-----|-------------|-----------|
-| 23 | Home/Away status | ✓ | Home | Home |
+| 38 | Home/Away status | ✓ | Home | Home |
 
 ### Entity IDs
 
 | # | v2.3.1 entity_id | v3.0 entity_id (fresh) |
 |---|-------------------|------------------------|
-| 23 | `binary_sensor.tado_ce_home` | `binary_sensor.tado_ce_hub_ce_home` |
+| 38 | `binary_sensor.tado_ce_home` | `binary_sensor.tado_ce_hub_ce_home` |
 
 ---
 
@@ -160,15 +173,15 @@ This document lists all 72 entities in Tado CE, organised by function.
 
 | # | Function | CE? | v2.3.1 Name | v3.0 Name |
 |---|----------|-----|-------------|-----------|
-| 76 | Test mode toggle | ✓ | — | Test Mode |
-| 77 | Quota reserve toggle | ✓ | — | Quota Reserve |
+| 39 | Test mode toggle | ✓ | — | Test Mode |
+| 40 | Quota reserve toggle | ✓ | — | Quota Reserve |
 
 ### Entity IDs
 
 | # | v2.3.1 entity_id | v3.0 entity_id (fresh) |
 |---|-------------------|------------------------|
-| 76 | — | `switch.tado_ce_hub_ce_test_mode` |
-| 77 | — | `switch.tado_ce_hub_ce_quota_reserve` |
+| 39 | — | `switch.tado_ce_hub_ce_test_mode` |
+| 40 | — | `switch.tado_ce_hub_ce_quota_reserve` |
 
 ---
 
@@ -178,13 +191,13 @@ This document lists all 72 entities in Tado CE, organised by function.
 
 | # | Function | CE? | v2.3.1 Name | v3.0 Name |
 |---|----------|-----|-------------|-----------|
-| 24 | Temperature | | Lounge Temperature | Lounge Temp |
-| 25 | Humidity | | Lounge Humidity | Lounge Humidity |
-| 26 | Heating power % | | Lounge Heating Power | Lounge Heating |
-| 27 | AC power % | | Lounge AC Power | Lounge AC |
-| 28 | Target temperature | ✓ | Lounge Target | Lounge Target |
-| 29 | Overlay status | ✓ | Lounge Mode | Lounge Overlay |
-| 30 | Hot water power | ✓ | Lounge Power | Lounge Power |
+| 41 | Temperature | | Lounge Temperature | Lounge Temp |
+| 42 | Humidity | | Lounge Humidity | Lounge Humidity |
+| 43 | Heating power % | | Lounge Heating Power | Lounge Heating |
+| 44 | AC power % | | Lounge AC Power | Lounge AC |
+| 45 | Target temperature | ✓ | Lounge Target | Lounge Target |
+| 46 | Overlay status | ✓ | Lounge Mode | Lounge Overlay |
+| 47 | Hot water power | ✓ | Lounge Power | Lounge Power |
 
 > **Note:** Boiler Flow Temp (#4 in Hub Sensors) is defined in `sensor_zone.py` but attached to the hub device, not a zone device.
 
@@ -192,13 +205,13 @@ This document lists all 72 entities in Tado CE, organised by function.
 
 | # | v2.3.1 entity_id | v3.0 entity_id (fresh) |
 |---|-------------------|------------------------|
-| 24 | `sensor.lounge_temperature` | `sensor.lounge_temp` |
-| 25 | `sensor.lounge_humidity` | `sensor.lounge_humidity` |
-| 26 | `sensor.lounge_heating` | `sensor.lounge_heating` |
-| 27 | `sensor.lounge_ac_power` | `sensor.lounge_ac` |
-| 28 | `sensor.lounge_target` | `sensor.lounge_ce_target` |
-| 29 | `sensor.lounge_mode` | `sensor.lounge_ce_overlay` |
-| 30 | `sensor.lounge_power` | `sensor.lounge_ce_power` |
+| 41 | `sensor.lounge_temperature` | `sensor.lounge_temp` |
+| 42 | `sensor.lounge_humidity` | `sensor.lounge_humidity` |
+| 43 | `sensor.lounge_heating` | `sensor.lounge_heating` |
+| 44 | `sensor.lounge_ac_power` | `sensor.lounge_ac` |
+| 45 | `sensor.lounge_target` | `sensor.lounge_ce_target` |
+| 46 | `sensor.lounge_mode` | `sensor.lounge_ce_overlay` |
+| 47 | `sensor.lounge_power` | `sensor.lounge_ce_power` |
 
 ---
 
@@ -208,21 +221,21 @@ This document lists all 72 entities in Tado CE, organised by function.
 
 | # | Function | CE? | v2.3.1 Name | v3.0 Name |
 |---|----------|-----|-------------|-----------|
-| 31 | Schedule deviation | ✓ | Lounge Historical Deviation | Lounge Schedule Deviation |
-| 32 | Next schedule time | ✓ | Lounge Next Schedule | Lounge Next Schedule |
-| 33 | Next schedule temp | ✓ | Lounge Next Schedule Temp | Lounge Next Sched Temp |
-| 34 | Preheat advisor | ✓ | Lounge Preheat Advisor | Lounge Preheat Advisor |
-| 35 | Comfort target | ✓ | Lounge Smart Comfort Target | Lounge Comfort Target |
+| 48 | Schedule deviation | ✓ | Lounge Historical Deviation | Lounge Schedule Deviation |
+| 49 | Next schedule time | ✓ | Lounge Next Schedule | Lounge Next Schedule |
+| 50 | Next schedule temp | ✓ | Lounge Next Schedule Temp | Lounge Next Sched Temp |
+| 51 | Preheat advisor | ✓ | Lounge Preheat Advisor | Lounge Preheat Advisor |
+| 52 | Comfort target | ✓ | Lounge Smart Comfort Target | Lounge Comfort Target |
 
 ### Entity IDs
 
 | # | v2.3.1 entity_id | v3.0 entity_id (fresh) |
 |---|-------------------|------------------------|
-| 31 | `sensor.lounge_historical_deviation` | `sensor.lounge_ce_schedule_deviation` |
-| 32 | `sensor.lounge_next_schedule_time` | `sensor.lounge_ce_next_schedule` |
-| 33 | `sensor.lounge_next_schedule_temp` | `sensor.lounge_ce_next_sched_temp` |
-| 34 | `sensor.lounge_preheat_advisor` | `sensor.lounge_ce_preheat_advisor` |
-| 35 | `sensor.lounge_smart_comfort_target` | `sensor.lounge_ce_comfort_target` |
+| 48 | `sensor.lounge_historical_deviation` | `sensor.lounge_ce_schedule_deviation` |
+| 49 | `sensor.lounge_next_schedule_time` | `sensor.lounge_ce_next_schedule` |
+| 50 | `sensor.lounge_next_schedule_temp` | `sensor.lounge_ce_next_sched_temp` |
+| 51 | `sensor.lounge_preheat_advisor` | `sensor.lounge_ce_preheat_advisor` |
+| 52 | `sensor.lounge_smart_comfort_target` | `sensor.lounge_ce_comfort_target` |
 
 ---
 
@@ -232,23 +245,23 @@ This document lists all 72 entities in Tado CE, organised by function.
 
 | # | Function | CE? | v2.3.1 Name | v3.0 Name |
 |---|----------|-----|-------------|-----------|
-| 36 | Mold risk level | ✓ | Lounge Mold Risk | Lounge Mold Risk |
-| 37 | Mold risk % | ✓ | Lounge Mold Risk Percentage | Lounge Mold Risk % |
-| 38 | Condensation risk | ✓ | Lounge Condensation Risk | Lounge Condensation |
-| 39 | Surface temperature | ✓ | Lounge Surface Temperature | Lounge Surface Temp |
-| 40 | Dew point | ✓ | Lounge Dew Point | Lounge Dew Point |
-| 41 | Comfort level | ✓ | Lounge Comfort Level | Lounge Comfort Level |
+| 53 | Mold risk level | ✓ | Lounge Mold Risk | Lounge Mold Risk |
+| 54 | Mold risk % | ✓ | Lounge Mold Risk Percentage | Lounge Mold Risk % |
+| 55 | Condensation risk | ✓ | Lounge Condensation Risk | Lounge Condensation |
+| 56 | Surface temperature | ✓ | Lounge Surface Temperature | Lounge Surface Temp |
+| 57 | Dew point | ✓ | Lounge Dew Point | Lounge Dew Point |
+| 58 | Comfort level | ✓ | Lounge Comfort Level | Lounge Comfort Level |
 
 ### Entity IDs
 
 | # | v2.3.1 entity_id | v3.0 entity_id (fresh) |
 |---|-------------------|------------------------|
-| 36 | `sensor.lounge_mold_risk` | `sensor.lounge_ce_mold_risk` |
-| 37 | `sensor.lounge_mold_risk_percentage` | `sensor.lounge_ce_mold_risk_pct` |
-| 38 | `sensor.lounge_condensation_risk` | `sensor.lounge_ce_condensation` |
-| 39 | `sensor.lounge_surface_temperature` | `sensor.lounge_ce_surface_temp` |
-| 40 | `sensor.lounge_dew_point` | `sensor.lounge_ce_dew_point` |
-| 41 | `sensor.lounge_comfort_level` | `sensor.lounge_ce_comfort_level` |
+| 53 | `sensor.lounge_mold_risk` | `sensor.lounge_ce_mold_risk` |
+| 54 | `sensor.lounge_mold_risk_percentage` | `sensor.lounge_ce_mold_risk_pct` |
+| 55 | `sensor.lounge_condensation_risk` | `sensor.lounge_ce_condensation` |
+| 56 | `sensor.lounge_surface_temperature` | `sensor.lounge_ce_surface_temp` |
+| 57 | `sensor.lounge_dew_point` | `sensor.lounge_ce_dew_point` |
+| 58 | `sensor.lounge_comfort_level` | `sensor.lounge_ce_comfort_level` |
 
 ---
 
@@ -258,23 +271,23 @@ This document lists all 72 entities in Tado CE, organised by function.
 
 | # | Function | CE? | v2.3.1 Name | v3.0 Name |
 |---|----------|-----|-------------|-----------|
-| 42 | Thermal inertia | ✓ | Lounge Thermal Inertia | Lounge Thermal Inertia |
-| 43 | Heating rate | ✓ | Lounge Avg Heating Rate | Lounge Heating Rate |
-| 44 | Preheat time | ✓ | Lounge Preheat Time | Lounge Preheat Time |
-| 45 | Analysis confidence | ✓ | Lounge Analysis Confidence | Lounge Confidence |
-| 46 | Heating acceleration | ✓ | Lounge Heating Acceleration | Lounge Heat Accel |
-| 47 | Approach factor | ✓ | Lounge Approach Factor | Lounge Approach Factor |
+| 59 | Thermal inertia | ✓ | Lounge Thermal Inertia | Lounge Thermal Inertia |
+| 60 | Heating rate | ✓ | Lounge Avg Heating Rate | Lounge Heating Rate |
+| 61 | Preheat time | ✓ | Lounge Preheat Time | Lounge Preheat Time |
+| 62 | Analysis confidence | ✓ | Lounge Analysis Confidence | Lounge Confidence |
+| 63 | Heating acceleration | ✓ | Lounge Heating Acceleration | Lounge Heat Accel |
+| 64 | Approach factor | ✓ | Lounge Approach Factor | Lounge Approach Factor |
 
 ### Entity IDs
 
 | # | v2.3.1 entity_id | v3.0 entity_id (fresh) |
 |---|-------------------|------------------------|
-| 42 | `sensor.lounge_thermal_inertia` | `sensor.lounge_ce_thermal_inertia` |
-| 43 | `sensor.lounge_avg_heating_rate` | `sensor.lounge_ce_heating_rate` |
-| 44 | `sensor.lounge_preheat_time` | `sensor.lounge_ce_preheat_time` |
-| 45 | `sensor.lounge_analysis_confidence` | `sensor.lounge_ce_confidence` |
-| 46 | `sensor.lounge_heating_acceleration` | `sensor.lounge_ce_heat_accel` |
-| 47 | `sensor.lounge_approach_factor` | `sensor.lounge_ce_approach_factor` |
+| 59 | `sensor.lounge_thermal_inertia` | `sensor.lounge_ce_thermal_inertia` |
+| 60 | `sensor.lounge_avg_heating_rate` | `sensor.lounge_ce_heating_rate` |
+| 61 | `sensor.lounge_preheat_time` | `sensor.lounge_ce_preheat_time` |
+| 62 | `sensor.lounge_analysis_confidence` | `sensor.lounge_ce_confidence` |
+| 63 | `sensor.lounge_heating_acceleration` | `sensor.lounge_ce_heat_accel` |
+| 64 | `sensor.lounge_approach_factor` | `sensor.lounge_ce_approach_factor` |
 
 ---
 
@@ -284,13 +297,13 @@ This document lists all 72 entities in Tado CE, organised by function.
 
 | # | Function | CE? | v2.3.1 Name | v3.0 Name |
 |---|----------|-----|-------------|-----------|
-| 48 | Zone insights | ✓ | Lounge Insights | Lounge Insights |
+| 65 | Zone insights | ✓ | Lounge Insights | Lounge Insights |
 
 ### Entity IDs
 
 | # | v2.3.1 entity_id | v3.0 entity_id (fresh) |
 |---|-------------------|------------------------|
-| 48 | `sensor.lounge_insights` | `sensor.lounge_ce_insights` |
+| 65 | `sensor.lounge_insights` | `sensor.lounge_ce_insights` |
 
 ---
 
@@ -300,17 +313,17 @@ This document lists all 72 entities in Tado CE, organised by function.
 
 | # | Function | CE? | v2.3.1 Name | v3.0 Name |
 |---|----------|-----|-------------|-----------|
-| 49 | Open window detected | | Lounge Window | Lounge Window |
-| 50 | Preheat trigger | ✓ | Lounge Preheat Now | Lounge Preheat Now |
-| 51 | Window predicted | ✓ | Lounge Window Predicted | Lounge Window Predicted |
+| 66 | Open window detected | | Lounge Window | Lounge Window |
+| 67 | Preheat trigger | ✓ | Lounge Preheat Now | Lounge Preheat Now |
+| 68 | Window predicted | ✓ | Lounge Window Predicted | Lounge Window Predicted |
 
 ### Entity IDs
 
 | # | v2.3.1 entity_id | v3.0 entity_id (fresh) |
 |---|-------------------|------------------------|
-| 49 | `binary_sensor.lounge_open_window` | `binary_sensor.lounge_window` |
-| 50 | `binary_sensor.lounge_preheat_now` | `binary_sensor.lounge_ce_preheat_now` |
-| 51 | `binary_sensor.lounge_window_predicted` | `binary_sensor.lounge_ce_window_predicted` |
+| 66 | `binary_sensor.lounge_open_window` | `binary_sensor.lounge_window` |
+| 67 | `binary_sensor.lounge_preheat_now` | `binary_sensor.lounge_ce_preheat_now` |
+| 68 | `binary_sensor.lounge_window_predicted` | `binary_sensor.lounge_ce_window_predicted` |
 
 ---
 
@@ -320,8 +333,8 @@ This document lists all 72 entities in Tado CE, organised by function.
 
 | # | Function | CE? | v2.3.1 Name | v3.0 Name |
 |---|----------|-----|-------------|-----------|
-| 52 | Battery status | ⬆ | Lounge SU1234 Battery | Lounge Battery |
-| 53 | Connection status | ⬆ | Lounge SU1234 Connection | Lounge Connection |
+| 69 | Battery status | ⬆ | Lounge SU1234 Battery | Lounge Battery |
+| 70 | Connection status | ⬆ | Lounge SU1234 Connection | Lounge Connection |
 
 > ⬆ HA official exposes battery/connection as binary sensors (on/off).
 > CE provides detailed sensor entities with state attributes (firmware, device type, recommendations).
@@ -330,8 +343,8 @@ This document lists all 72 entities in Tado CE, organised by function.
 
 | # | v2.3.1 entity_id | v3.0 entity_id (fresh) |
 |---|-------------------|------------------------|
-| 52 | `sensor.lounge_su1234_battery` | `sensor.lounge_battery` |
-| 53 | `sensor.lounge_su1234_connection` | `sensor.lounge_connection` |
+| 69 | `sensor.lounge_su1234_battery` | `sensor.lounge_battery` |
+| 70 | `sensor.lounge_su1234_connection` | `sensor.lounge_connection` |
 
 ---
 
@@ -341,17 +354,17 @@ This document lists all 72 entities in Tado CE, organised by function.
 
 | # | Function | CE? | v2.3.1 Name | v3.0 Name |
 |---|----------|-----|-------------|-----------|
-| 54 | Heating climate | | Lounge | Lounge |
-| 55 | AC climate | | Lounge | Lounge |
-| 56 | Water heater | | Lounge | Lounge |
+| 71 | Heating climate | | Lounge | Lounge |
+| 72 | AC climate | | Lounge | Lounge |
+| 73 | Water heater | | Lounge | Lounge |
 
 ### Entity IDs
 
 | # | v2.3.1 entity_id | v3.0 entity_id (fresh) |
 |---|-------------------|------------------------|
-| 54 | `climate.lounge` | `climate.lounge` |
-| 55 | `climate.lounge` | `climate.lounge` |
-| 56 | `water_heater.lounge` | `water_heater.lounge` |
+| 71 | `climate.lounge` | `climate.lounge` |
+| 72 | `climate.lounge` | `climate.lounge` |
+| 73 | `water_heater.lounge` | `water_heater.lounge` |
 
 ---
 
@@ -361,8 +374,8 @@ This document lists all 72 entities in Tado CE, organised by function.
 
 | # | Function | CE? | v2.3.1 Name | v3.0 Name |
 |---|----------|-----|-------------|-----------|
-| 57 | Early start | ⬆ | Lounge Early Start | Lounge Early Start |
-| 58 | Child lock | | Lounge SU1234 Child Lock | Lounge Child Lock |
+| 74 | Early start | ⬆ | Lounge Early Start | Lounge Early Start |
+| 75 | Child lock | | Lounge SU1234 Child Lock | Lounge Child Lock |
 
 > ⬆ HA official exposes early start as a read-only binary sensor.
 > CE provides a controllable switch to toggle the Tado early start feature on/off.
@@ -371,8 +384,8 @@ This document lists all 72 entities in Tado CE, organised by function.
 
 | # | v2.3.1 entity_id | v3.0 entity_id (fresh) |
 |---|-------------------|------------------------|
-| 57 | `switch.lounge_early_start` | `switch.lounge_early_start` |
-| 58 | `switch.lounge_su1234_child_lock` | `switch.lounge_child_lock` |
+| 74 | `switch.lounge_early_start` | `switch.lounge_early_start` |
+| 75 | `switch.lounge_su1234_child_lock` | `switch.lounge_child_lock` |
 
 ---
 
@@ -382,23 +395,23 @@ This document lists all 72 entities in Tado CE, organised by function.
 
 | # | Function | CE? | v2.3.1 Name | v3.0 Name |
 |---|----------|-----|-------------|-----------|
-| 59 | Timer buttons | ✓ | Lounge {dur}min Timer | Lounge {dur}min Timer |
-| 60 | Refresh schedule | ✓ | Lounge Refresh Schedule | Lounge Refresh Schedule |
-| 61 | Boost | ⬆ | Lounge Boost | Lounge Boost |
-| 62 | Smart boost | ✓ | Lounge Smart Boost | Lounge Smart Boost |
+| 76 | Timer buttons | ✓ | Lounge {dur}min Timer | Lounge {dur}min Timer |
+| 77 | Refresh schedule | ✓ | Lounge Refresh Schedule | Lounge Refresh Schedule |
+| 78 | Boost | ⬆ | Lounge Boost | Lounge Boost |
+| 79 | Smart boost | ✓ | Lounge Smart Boost | Lounge Smart Boost |
 
 > ⬆ Boost replicates the Tado app's boost feature (25°C for 30min).
-> HA official Tado integration does not expose this. Smart Boost (#62) is CE exclusive
+> HA official Tado integration does not expose this. Smart Boost (#79) is CE exclusive
 > — it uses thermal analytics to calculate optimal duration.
 
 ### Entity IDs
 
 | # | v2.3.1 entity_id | v3.0 entity_id (fresh) |
 |---|-------------------|------------------------|
-| 59 | `button.lounge_timer_30min` | `button.lounge_ce_30min_timer` |
-| 60 | `button.lounge_refresh_schedule` | `button.lounge_ce_refresh_schedule` |
-| 61 | `button.lounge_boost` | `button.lounge_boost` |
-| 62 | `button.lounge_smart_boost` | `button.lounge_ce_smart_boost` |
+| 76 | `button.lounge_timer_30min` | `button.lounge_ce_30min_timer` |
+| 77 | `button.lounge_refresh_schedule` | `button.lounge_ce_refresh_schedule` |
+| 78 | `button.lounge_boost` | `button.lounge_boost` |
+| 79 | `button.lounge_smart_boost` | `button.lounge_ce_smart_boost` |
 
 ---
 
@@ -408,13 +421,13 @@ This document lists all 72 entities in Tado CE, organised by function.
 
 | # | Function | CE? | v2.3.1 Name | v3.0 Name |
 |---|----------|-----|-------------|-----------|
-| 63 | Zone schedule | ✓ | Lounge | Lounge Schedule |
+| 80 | Zone schedule | ✓ | Lounge | Lounge Schedule |
 
 ### Entity IDs
 
 | # | v2.3.1 entity_id | v3.0 entity_id (fresh) |
 |---|-------------------|------------------------|
-| 63 | `calendar.lounge` | `calendar.heating_schedule_ce_schedule` |
+| 80 | `calendar.lounge` | `calendar.heating_schedule_ce_schedule` |
 
 ---
 
@@ -430,13 +443,33 @@ This document lists all 72 entities in Tado CE, organised by function.
 
 | # | Function | CE? | v2.3.1 Name | v3.0 Name |
 |---|----------|-----|-------------|-----------|
-| 75 | Mobile presence | ✓ | Tado CE {device_name} | {device_name} |
+| 81 | Mobile presence | ✓ | Tado CE {device_name} | {device_name} |
 
 ### Entity IDs
 
 | # | v2.3.1 entity_id | v3.0 entity_id (fresh) |
 |---|-------------------|------------------------|
-| 75 | `device_tracker.tado_ce_{device_name}` | `device_tracker.tado_ce_hub_ce_{device_name}` |
+| 81 | `device_tracker.tado_ce_{device_name}` | `device_tracker.tado_ce_hub_ce_{device_name}` |
+
+---
+
+## Weather Compensation Sensors (2 entities, CE exclusive)
+
+> **v3.3.0:** Requires Bridge API configured and Weather Compensation enabled in **Settings → Tado CE → Configure → Global Settings → Flow Temperature Control**.
+
+### Friendly Names
+
+| # | Function | CE? | v3.3.0 Name |
+|---|----------|-----|-------------|
+| 82 | Target flow temperature | ✓ | WC Target Flow Temp |
+| 83 | Compensation status | ✓ | WC Status |
+
+### Entity IDs
+
+| # | v3.3.0 entity_id (fresh) |
+|---|--------------------------|
+| 82 | `sensor.tado_ce_hub_ce_wc_target_flow_temp` |
+| 83 | `sensor.tado_ce_hub_ce_wc_status` |
 
 ---
 
@@ -445,7 +478,7 @@ This document lists all 72 entities in Tado CE, organised by function.
 | Category | Count | CE ✓ | Enhanced ⬆ | Standard |
 |----------|-------|------|-----------|----------|
 | Hub Sensors | 17 | 14 | 0 | 3 |
-| Bridge API | 3 | 3 | 0 | 0 |
+| Bridge API — Dynamic Discovery | up to 15 | 15 | 0 | 0 |
 | Hub Controls | 5 | 5 | 0 | 0 |
 | Hub Binary Sensor | 1 | 1 | 0 | 0 |
 | Hub Config Switches | 2 | 2 | 0 | 0 |
@@ -462,4 +495,5 @@ This document lists all 72 entities in Tado CE, organised by function.
 | Calendar | 1 /zone | 1 | 0 | 0 |
 | Zone Config | ~~11 /zone~~ 0 (Options Flow) | — | — | — |
 | Device Tracker | 1 /device | 1 | 0 | 0 |
-| **Total unique types** | **72** | **~54** | **4** | **~12** |
+| Weather Compensation | 2 | 2 | 0 | 0 |
+| **Total unique types** | **86** | **~68** | **4** | **~12** |

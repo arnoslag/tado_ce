@@ -79,8 +79,8 @@ class TadoDeviceTracker(CoordinatorEntity["TadoDataUpdateCoordinator"], TrackerE
         self._attr_name = device_name
         self._attr_unique_id = f"tado_ce_{home_id}_{_meta.unique_id_suffix.format(device_id=device_id)}"
         entity_category = get_entity_category(_meta)
-        assert entity_category is not None  # device_tracker is always diagnostic
-        self._attr_entity_category = entity_category
+        if entity_category is not None:
+            self._attr_entity_category = entity_category
         self._attr_available = False
         # Use hub device info for global entities
         self._attr_device_info = get_hub_device_info(home_id)  # type: ignore[assignment]

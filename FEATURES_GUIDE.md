@@ -16,12 +16,13 @@ Complete guide to all Tado CE exclusive features, configurations, and usage scen
 7. [Heating Cycle Detection](#-heating-cycle-detection)
 8. [Enhanced Controls](#-enhanced-controls)
 9. [Bridge API Integration](#-bridge-api-integration)
-10. [Optional Features](#-optional-features)
-11. [Per-Zone Configuration](#-per-zone-configuration)
-12. [Zone Features Toggles](#-zone-features-toggles)
-13. [Configuration Scenarios](#-configuration-scenarios)
-14. [Actionable Insights](#-actionable-insights)
-15. [Troubleshooting](#-troubleshooting)
+10. [Weather Compensation](#-weather-compensation)
+11. [Optional Features](#-optional-features)
+12. [Per-Zone Configuration](#-per-zone-configuration)
+13. [Zone Features Toggles](#-zone-features-toggles)
+14. [Configuration Scenarios](#-configuration-scenarios)
+15. [Actionable Insights](#-actionable-insights)
+16. [Troubleshooting](#-troubleshooting)
 
 ---
 
@@ -362,6 +363,18 @@ The Preheat Advisor now considers cooling trends when the room is above the targ
 | `is_cooling_prediction` | `true` when cooling prediction is active |
 | `summary` | Human-readable explanation of the prediction |
 
+### Adaptive Preheat Passive Mode (v3.3.0+)
+
+Preheat now has three modes per zone, configured via **Options Flow → Zone Configuration**:
+
+| Mode | Behavior |
+|------|----------|
+| Off | Preheat disabled for this zone |
+| Active | Always triggers preheat before the next schedule change |
+| Passive | Only triggers when the zone is following its schedule — skips preheat if you've set a manual override from HomeKit, the Tado app, etc. |
+
+Existing users with preheat enabled are automatically migrated to Active mode. Passive mode is useful if you frequently override temperatures manually and don't want preheat fighting your changes.
+
 ### Configuration
 
 1. Settings → Devices & Services → Tado CE → Configure
@@ -447,6 +460,29 @@ Uses surface temperature calculation to accurately detect cold spots where mold 
 | `sensor.{zone}_dew_point` | Dew Point | Dew point temperature |
 | `sensor.{zone}_comfort_level` | Comfort Level | Overall comfort assessment |
 
+### Heat Index & Heat Risk (v3.3.0+)
+
+The Comfort Level sensor now includes "feels like" temperature when it's warm (above 26.7°C), factoring in humidity using the NOAA/NWS Rothfusz regression. Risk levels appear in the sensor attributes and in comfort recommendations.
+
+**Comfort Level extra attributes (when heat index is active):**
+
+| Attribute | Description |
+|-----------|-------------|
+| `heat_index` | Calculated "feels like" temperature (°C) |
+| `heat_risk_level` | NOAA risk level (see table below) |
+
+**Heat Risk Levels:**
+
+| Risk Level | Heat Index | Guidance |
+|------------|-----------|----------|
+| None | Below 26.7°C | No heat risk |
+| Caution | 26.7–32°C | Fatigue possible with prolonged exposure |
+| Extreme Caution | 32–39°C | Heat cramps and exhaustion possible |
+| Danger | 39–51°C | Heat cramps/exhaustion likely, heatstroke possible |
+| Extreme Danger | Above 51°C | Heatstroke highly likely |
+
+When heat index is active, the comfort level calculation uses the "feels like" temperature instead of the raw air temperature for deviation and recommendation logic.
+
 ### Window Type Settings
 
 | Window Type | U-Value (W/m²K) | Mold Risk |
@@ -503,6 +539,50 @@ automation:
 | Winter | 20°C | 0°C | 12.0°C (⚠️ 85% RH) | 15.4°C (⚠️ 72% RH) | 17.8°C (✅ 58% RH) |
 | Cold Day | 20°C | 5°C | 14.5°C (⚠️ 78% RH) | 16.7°C (⚠️ 65% RH) | 18.5°C (✅ 55% RH) |
 | Mild Day | 20°C | 10°C | 16.5°C (⚠️ 68% RH) | 17.8°C (✅ 58% RH) | 19.0°C (✅ 52% RH) |
+
+### Passive Window Detection (v3.3.0+)
+
+Detects open windows even when your heating or AC is off. Combines temperature drop speed, humidity changes, and indoor-outdoor temperature difference to tell the difference between a natural cooldown and an open window. Adjusts for your window type and is stricter in winter.
+
+**How it differs from active detection:**
+
+| Mode | When It Works | How It Detects |
+|------|---------------|----------------|
+| Active | Only when heating/cooling is running | Rapid temperature drop while HVAC is active |
+| Passive | Anytime, even when HVAC is off | Temperature drop speed + humidity + outdoor differential |
+
+### Window Detection Mode Per Zone (v3.3.0+)
+
+Choose how each zone detects open windows. Configured via **Options Flow → Zone Configuration**.
+
+| Mode | Behavior |
+|------|----------|
+| Active | Only detects when heating/cooling is running (original behavior) |
+| Passive | Detects anytime, including when HVAC is off |
+| Auto | Picks the best method automatically — uses active when HVAC is running, passive when it's off |
+
+**Sensitivity presets (per zone):**
+
+| Sensitivity | Min Readings | Temp Rate Threshold | Best For |
+|-------------|-------------|---------------------|----------|
+| Low | 4 readings | 0.4°C/min | Reducing false alarms in drafty rooms |
+| Medium | 3 readings | 0.25°C/min | Most rooms (default) |
+| High | 2 readings | 0.15°C/min | Rooms where you want fast detection |
+
+### Window Detection Events (v3.3.0+)
+
+HA events fire when a window is detected or cleared — useful for building your own automations:
+
+| Event | When |
+|-------|------|
+| `tado_ce_window_predicted` | Window open detected |
+| `tado_ce_window_predicted_cleared` | Detection cleared |
+
+The Window Predicted sensor also tracks when the last detection happened, how many times today, and which detection mode was used. Daily count resets at midnight.
+
+### Smoother Detection (v3.3.0+)
+
+The Window Predicted sensor no longer flickers on/off rapidly. It waits for several stable readings before clearing a detection (3 readings on Low sensitivity, 2 on Medium, 1 on High).
 
 ---
 
@@ -691,6 +771,41 @@ automation:
           entity_id: climate.bedroom
 ```
 
+#### 8. Restore Previous State (v3.3.0+)
+
+Puts a zone back to whatever it was doing before the last change. Works with heating, AC, and hot water.
+
+State is saved automatically before any overlay action (timers, temperature changes, open window mode, preheat). If nothing was saved, it falls back to resuming the schedule. Saved state survives HA restarts and clears when you arrive home.
+
+```yaml
+# Restore a single zone
+service: tado_ce.restore_previous_state
+target:
+  entity_id: climate.bedroom
+
+# Restore multiple zones
+service: tado_ce.restore_previous_state
+target:
+  entity_id:
+    - climate.bedroom
+    - climate.living_room
+```
+
+**Pairs well with open window mode:**
+
+```yaml
+automation:
+  - alias: "Close Window — Restore State"
+    trigger:
+      - platform: state
+        entity_id: binary_sensor.bedroom_window_contact
+        to: "off"
+    action:
+      - service: tado_ce.restore_previous_state
+        target:
+          entity_id: climate.bedroom
+```
+
 ---
 
 ## 🌉 Bridge API Integration
@@ -707,9 +822,22 @@ The Bridge API uses the serial number and auth key printed on the bottom of your
 
 | Entity | Friendly Name | Type | Description |
 |--------|--------------|------|-------------|
+| `binary_sensor.tado_ce_{home_id}_bridge_connected` | Bridge Connected | Binary Sensor | Whether the Internet Bridge is reachable |
 | `sensor.tado_ce_{home_id}_boiler_wiring_state` | Boiler Wiring State | Sensor | Bridge installation status (Ready / Installing / Failed) |
 | `sensor.tado_ce_{home_id}_boiler_output_temperature` | Boiler Output Temperature | Sensor | Real-time boiler output temperature (°C) |
 | `number.tado_ce_{home_id}_boiler_max_output_temperature` | Boiler Max Output Temperature | Number | Control max flow temperature (25–80°C, 0.5°C step) |
+
+### Bridge Connected Sensor (v3.3.0+)
+
+The Bridge Connected binary sensor shows whether your Internet Bridge is reachable. It tolerates brief hiccups — the bridge is only marked as disconnected after 3 consecutive failures, so a single timeout won't trigger a false alarm.
+
+**Attributes:**
+
+| Attribute | Description |
+|-----------|-------------|
+| `response_time` | Last successful response time |
+| `failure_count` | Consecutive failure count |
+| `last_successful_connection` | Timestamp of last successful connection |
 
 ### Wiring State Attributes
 
@@ -726,13 +854,13 @@ The Boiler Wiring State sensor includes extra state attributes from the Bridge A
 
 ### Configuration
 
-1. Go to **Settings** → **Devices & Services** → **Tado CE** → **Configure**
-2. Expand the **Bridge Configuration** section (last collapsible section)
+1. Go to **Settings → Devices & Services → Tado CE → Configure → Global Settings → Flow Temperature Control**
+2. Enable the **Internet Bridge** toggle
 3. Enter your **Bridge Serial Number** (starts with `IB`, printed on the bottom of your Internet Bridge)
 4. Enter your **Bridge Auth Key** (also printed on the bottom)
 5. Save — credentials are validated automatically against the Bridge API
 
-Removing the credentials from Bridge Configuration automatically cleans up all bridge-related entities.
+Turning off the Internet Bridge toggle automatically cleans up all bridge-related entities. V2 bridges (`GW` serial) aren't supported by the Bridge API.
 
 ### How It Works
 
@@ -797,6 +925,110 @@ automation:
           entity_id: number.tado_ce_{home_id}_boiler_max_output_temperature
         data:
           value: 65
+```
+
+---
+
+## 🌡️ Weather Compensation
+
+**Available:** v3.3.0+ | **Requirement:** Bridge API configured OR cloud outdoor temperature | **Opt-in Configuration**
+
+Automatically adjusts your boiler's flow temperature based on outdoor temperature, so your heating runs more efficiently in mild weather and ramps up when it's cold.
+
+### Overview
+
+Weather compensation uses a heating curve to map outdoor temperature to a target boiler flow temperature. When it's mild outside, the boiler runs at a lower flow temperature (saving energy). When it's cold, the flow temperature increases to maintain comfort.
+
+The engine runs every coordinator update cycle. A 10-minute hold between adjustments prevents oscillation, and outdoor temperature is smoothed (EMA or rolling average) to avoid reacting to brief fluctuations.
+
+### Heating System Presets
+
+| Preset | Slope | Max Flow Temp | Description |
+|--------|-------|---------------|-------------|
+| Radiators Standard | 1.5 | 65°C | Traditional radiators |
+| Radiators Low Temp | 1.2 | 55°C | Modern low-temperature radiators |
+| Underfloor | 0.8 | 45°C | Underfloor heating systems |
+| Custom | User-defined | User-defined | Full control over all parameters |
+
+### Configuration
+
+1. Go to **Settings → Tado CE → Configure → Global Settings → Flow Temperature Control**
+2. Enable the **Internet Bridge** toggle (or use cloud outdoor temperature)
+3. Enable **Weather Compensation**
+4. Select a **Heating System Preset** (or choose Custom for full control)
+5. Save — the engine starts adjusting on the next update cycle
+
+**Custom parameters (when preset = Custom):**
+
+| Parameter | Default | Range | Description |
+|-----------|---------|-------|-------------|
+| Slope | 1.5 | 0.1–3.0 | Heating curve steepness |
+| Design Outdoor Temp | -5°C | -30 to 10°C | Coldest expected outdoor temperature |
+| Max Flow Temp | 65°C | 25–80°C | Maximum boiler flow temperature |
+| Min Flow Temp | 25°C | 20–50°C | Minimum boiler flow temperature |
+| Shutoff Temp | 18°C | 5–25°C | Outdoor temp above which heating stops |
+| Smoothing Method | EMA | EMA / Rolling Avg | How outdoor temperature is smoothed |
+| Smoothing Window | 60 min | 15–240 min | Smoothing time window |
+| Room Compensation | Off | On/Off | Adjust flow temp based on room temperature |
+| Room Compensation Factor | 3.0 | 1.0–5.0 | How strongly room temp affects flow temp |
+| Step Size | 1.0°C | 0.5–5.0°C | Minimum change between adjustments |
+| Hysteresis | 1.0°C | 0.5–5.0°C | Deadband to prevent oscillation |
+
+### Sensors
+
+| Entity | Name | Description |
+|--------|------|-------------|
+| `sensor.tado_ce_hub_ce_wc_target_flow_temp` | WC Target Flow Temp | Calculated target flow temperature |
+| `sensor.tado_ce_hub_ce_wc_status` | WC Status | Engine status: active / paused / disabled |
+
+**WC Target Flow Temp attributes:**
+
+| Attribute | Description |
+|-----------|-------------|
+| `outdoor_temperature` | Smoothed outdoor temperature |
+| `outdoor_temperature_raw` | Raw outdoor temperature reading |
+| `heating_system_preset` | Active preset name |
+| `room_compensation_offset` | Room feedback adjustment (°C) |
+| `smoothing_method` | EMA or rolling_avg |
+| `smoothing_window` | Smoothing window in minutes |
+
+### How the Heating Curve Works
+
+```
+Target Flow Temp = Max Flow Temp - Slope × (Outdoor Temp - Design Outdoor Temp)
+```
+
+Example with Radiators Standard (slope 1.5, max 65°C, design -5°C):
+- Outdoor -5°C → Flow 65°C (full power)
+- Outdoor 5°C → Flow 50°C
+- Outdoor 10°C → Flow 42.5°C
+- Outdoor 18°C+ → Heating off (shutoff)
+
+### Usage Scenarios
+
+#### Scenario 1: Standard Radiator Setup
+
+Select "Radiators Standard" preset. The default curve works well for most homes with traditional radiators. Monitor `wc_target_flow_temp` for a few days to verify the curve matches your comfort needs.
+
+#### Scenario 2: Underfloor Heating
+
+Select "Underfloor" preset. The gentler slope (0.8) and lower max flow temp (45°C) protect UFH systems from overheating. If your floors feel cold in very cold weather, increase the slope slightly using Custom mode.
+
+#### Scenario 3: Fine-Tuning with Room Compensation
+
+Enable Room Compensation to let the engine adjust flow temperature based on actual room temperatures. If rooms are consistently too warm, the engine reduces flow temp. If rooms are cold, it increases. The compensation factor controls how aggressively it responds.
+
+#### Scenario 4: Dashboard Card
+
+```yaml
+type: entities
+entities:
+  - entity: sensor.tado_ce_hub_ce_wc_target_flow_temp
+    name: "Target Flow Temp"
+  - entity: sensor.tado_ce_hub_ce_wc_status
+    name: "WC Status"
+  - entity: number.tado_ce_{home_id}_boiler_max_output_temperature
+    name: "Current Max Flow Temp"
 ```
 
 ---
@@ -1338,11 +1570,11 @@ Look for `Bridge API full response` in logs to verify the API is returning data.
 
 ## 📚 Related Documentation
 
-- [ENTITIES.md](ENTITIES.md) — Complete entity reference (72 entities)
+- [ENTITIES.md](ENTITIES.md) — Complete entity reference (86 entities)
 - [README.md](README.md) — Installation and setup
 - [API_REFERENCE.md](API_REFERENCE.md) — Technical API details
 - [ROADMAP.md](ROADMAP.md) — Planned features and ideas
 
 ---
 
-**Last Updated:** v3.2.2 (2026-03-16)
+**Last Updated:** v3.3.0 (2026-03-21)

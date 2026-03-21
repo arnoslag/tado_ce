@@ -26,11 +26,8 @@ if TYPE_CHECKING:
     from .coordinator import TadoConfigEntry, TadoDataUpdateCoordinator
     from .data_loader import DataLoader
 
-# Bridge sensors (2 classes)
-from .sensor_bridge import (
-    TadoBoilerOutputTemperatureSensor,
-    TadoBoilerWiringStateSensor,
-)
+# Bridge sensors (dynamic discovery)
+from .sensor_bridge import TadoDynamicBridgeSensor
 
 # Device sensors (2 classes)
 from .sensor_device import (
@@ -350,13 +347,55 @@ async def async_setup_entry(
         except Exception as e:
             _LOGGER.warning("Failed to load device info: %s", e)
 
-    # Bridge sensors (optional — only when bridge credentials configured)
+    # Bridge sensors (dynamic discovery — only when bridge credentials configured)
     bridge_serial = entry.options.get("bridge_serial")
     bridge_auth_key = entry.options.get("bridge_auth_key")
     if bridge_serial and bridge_auth_key:
-        sensors.append(TadoBoilerWiringStateSensor(coordinator))
-        sensors.append(TadoBoilerOutputTemperatureSensor(coordinator))
-        _LOGGER.info("Bridge credentials found — creating bridge sensors")
+        bridge_data = coordinator.data.get("bridge")
+        if bridge_data:
+            from .bridge_discovery import flatten_response, resolve_entities
+            from .bridge_enrichment import FIELD_ENRICHMENT, LEGACY_UNIQUE_ID_MAP
+
+            fields = flatten_response(bridge_data)
+            # Skip bridgeConnected — handled by binary_sensor_bridge.py health tracker
+            resolved = resolve_entities(
+                fields, FIELD_ENRICHMENT, LEGACY_UNIQUE_ID_MAP,
+                skip_paths=frozenset({"bridgeConnected"}),
+            )
+            bridge_sensor_count = 0
+            for entity in resolved:
+                if entity.platform == "sensor":
+                    sensors.append(TadoDynamicBridgeSensor(coordinator, entity))
+                    bridge_sensor_count += 1
+            _LOGGER.info(
+                "Bridge dynamic discovery — %d sensor entities from %d fields",
+                bridge_sensor_count,
+                len(fields),
+            )
+
+        # Meta sensors — always create when bridge credentials configured
+        from .sensor_bridge_meta import (
+            TadoBridgeCapabilitiesSensor,
+            TadoBridgeSchemaVersionSensor,
+        )
+
+        sensors.append(TadoBridgeCapabilitiesSensor(coordinator))
+        sensors.append(TadoBridgeSchemaVersionSensor(coordinator))
+        _LOGGER.debug("Bridge meta sensors created (capabilities + schema version)")
+
+        if not bridge_data:
+            _LOGGER.info("Bridge credentials found but no bridge data yet — sensors will appear after first poll")
+
+    # Weather Compensation sensors (requires bridge + wc_enabled)
+    if config_manager.get_wc_enabled() and coordinator.bridge_api_client:
+        from .sensor_weather_compensation import (
+            TadoWeatherCompensationStatusSensor,
+            TadoWeatherCompensationTargetSensor,
+        )
+
+        sensors.append(TadoWeatherCompensationTargetSensor(coordinator))
+        sensors.append(TadoWeatherCompensationStatusSensor(coordinator))
+        _LOGGER.debug("Weather compensation sensors created (target + status)")
 
     async_add_entities(sensors, True)
     _LOGGER.info("Tado CE sensors loaded: %s", len(sensors))
