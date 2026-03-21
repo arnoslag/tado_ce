@@ -90,6 +90,28 @@ class WeatherCompensationResult:
 # ---------------------------------------------------------------------------
 
 
+def calculate_auto_slope(
+    max_flow_temp: float,
+    min_flow_temp: float,
+    shutoff_temp: float,
+    design_outdoor_temp: float,
+) -> float:
+    """Calculate slope so the curve spans exactly min→max over the outdoor range.
+
+    Formula: (max_flow - min_flow) / (shutoff_temp - design_outdoor_temp)
+
+    This ensures flow temperature reaches *min_flow_temp* precisely at
+    *shutoff_temp* without premature clamping.
+
+    Returns the preset's default slope (1.5) as a safe fallback when the
+    outdoor range is zero or negative (misconfiguration guard).
+    """
+    outdoor_range = shutoff_temp - design_outdoor_temp
+    if outdoor_range <= 0:
+        return 1.5
+    return (max_flow_temp - min_flow_temp) / outdoor_range
+
+
 def calculate_base_flow_temp(
     outdoor_temp: float,
     config: WeatherCompensationConfig,

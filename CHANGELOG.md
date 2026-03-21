@@ -2,6 +2,11 @@
 
 All notable changes to Tado CE will be documented in this file.
 
+## [3.3.1] - 2026-03-21
+
+### Improvements
+- **Smarter Weather Compensation Curve** ([#187](https://github.com/hiall-fyi/tado_ce/issues/187) - @driagi) — Preset heating curves (Radiators Standard, Radiators Low Temp, Underfloor) now automatically calculate the slope from your min/max flow and design/shutoff temperatures. Previously, a fixed slope could cause the flow temperature to hit the minimum floor well before the shutoff temperature, creating a flat zone where outdoor changes had no effect. Now the curve modulates smoothly across the entire outdoor range. Custom preset still gives you full manual control.
+
 ## [3.3.0] - 2026-03-21
 
 ### Features

@@ -1,4 +1,4 @@
-# Tado CE — Entity Reference (v3.3.0)
+# Tado CE — Entity Reference (v3.3.1)
 
 This document lists all 86 entity types in Tado CE, organised by function.
 

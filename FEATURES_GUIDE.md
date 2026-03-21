@@ -943,12 +943,14 @@ The engine runs every coordinator update cycle. A 10-minute hold between adjustm
 
 ### Heating System Presets
 
-| Preset | Slope | Max Flow Temp | Description |
-|--------|-------|---------------|-------------|
-| Radiators Standard | 1.5 | 65°C | Traditional radiators |
-| Radiators Low Temp | 1.2 | 55°C | Modern low-temperature radiators |
-| Underfloor | 0.8 | 45°C | Underfloor heating systems |
-| Custom | User-defined | User-defined | Full control over all parameters |
+| Preset | Max Flow Temp | Description |
+|--------|---------------|-------------|
+| Radiators Standard | 65°C | Traditional radiators |
+| Radiators Low Temp | 55°C | Modern low-temperature radiators |
+| Underfloor | 45°C | Underfloor heating systems |
+| Custom | User-defined | Full control over all parameters |
+
+Presets automatically calculate the slope from your min/max flow and design/shutoff temperatures, so the heating curve spans the full outdoor range without flat zones. Custom preset gives you full manual control over the slope.
 
 ### Configuration
 
@@ -998,10 +1000,17 @@ The engine runs every coordinator update cycle. A 10-minute hold between adjustm
 Target Flow Temp = Max Flow Temp - Slope × (Outdoor Temp - Design Outdoor Temp)
 ```
 
-Example with Radiators Standard (slope 1.5, max 65°C, design -5°C):
+For presets, the slope is automatically calculated:
+```
+Auto Slope = (Max Flow - Min Flow) / (Shutoff Temp - Design Outdoor Temp)
+```
+
+This ensures the curve reaches exactly `min_flow_temp` at the shutoff temperature — no flat zones where outdoor changes have no effect.
+
+Example with Radiators Standard (max 65°C, min 25°C, design -5°C, shutoff 18°C → auto-slope 1.74):
 - Outdoor -5°C → Flow 65°C (full power)
-- Outdoor 5°C → Flow 50°C
-- Outdoor 10°C → Flow 42.5°C
+- Outdoor 5°C → Flow 47.6°C
+- Outdoor 10°C → Flow 38.9°C
 - Outdoor 18°C+ → Heating off (shutoff)
 
 ### Usage Scenarios

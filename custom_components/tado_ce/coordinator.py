@@ -24,7 +24,12 @@ from .const import DOMAIN, OVERLAY_MODE_DEFAULT, TIMER_DURATION_DEFAULT, get_dat
 from .exceptions import TadoAuthError, TadoBridgeApiError, TadoSyncError
 from .insight_history import InsightHistoryTracker
 from .polling import get_polling_interval, should_pause_polling
-from .weather_compensation import WeatherCompensationConfig, WeatherCompensationState, evaluate
+from .weather_compensation import (
+    WeatherCompensationConfig,
+    WeatherCompensationState,
+    calculate_auto_slope,
+    evaluate,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -446,14 +451,28 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         try:
             # --- Build config from options ---
+            preset = cm.get_wc_heating_system_preset()
+            max_flow = cm.get_wc_max_flow_temp()
+            min_flow = cm.get_wc_min_flow_temp()
+            shutoff = cm.get_wc_shutoff_temp()
+            design = cm.get_wc_design_outdoor_temp()
+
+            # Presets use auto-slope so the curve spans the full
+            # outdoor range without premature clamping at min_flow.
+            # Custom preset keeps the user-specified slope.
+            if preset == "custom":
+                slope = cm.get_wc_slope()
+            else:
+                slope = calculate_auto_slope(max_flow, min_flow, shutoff, design)
+
             config = WeatherCompensationConfig(
                 enabled=True,
-                heating_system_preset=cm.get_wc_heating_system_preset(),
-                slope=cm.get_wc_slope(),
-                design_outdoor_temp=cm.get_wc_design_outdoor_temp(),
-                max_flow_temp=cm.get_wc_max_flow_temp(),
-                min_flow_temp=cm.get_wc_min_flow_temp(),
-                shutoff_temp=cm.get_wc_shutoff_temp(),
+                heating_system_preset=preset,
+                slope=slope,
+                design_outdoor_temp=design,
+                max_flow_temp=max_flow,
+                min_flow_temp=min_flow,
+                shutoff_temp=shutoff,
                 smoothing_method=cm.get_wc_smoothing_method(),
                 smoothing_window_minutes=cm.get_wc_smoothing_window(),
                 room_compensation_enabled=cm.get_wc_room_compensation_enabled(),

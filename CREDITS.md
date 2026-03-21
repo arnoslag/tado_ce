@@ -21,6 +21,10 @@ Thank you to everyone who supported the project through [Buy Me a Coffee](https:
 
 Community contributors who helped shape each release through bug reports, feature requests, testing, and feedback.
 
+### v3.3.1
+
+- **[@driagi](https://github.com/driagi)** — Identified that fixed-slope heating curves hit the min flow floor prematurely, proposed the auto-slope formula that now powers all preset curves ([#187](https://github.com/hiall-fyi/tado_ce/issues/187))
+
 ### v3.3.0
 
 - **[@driagi](https://github.com/driagi)** — Proposed weather compensation for boiler flow temperature, provided extensive Blueprint testing and feedback including oscillation fix and temperature averaging suggestions ([#187](https://github.com/hiall-fyi/tado_ce/issues/187))
