@@ -10,19 +10,20 @@ Complete guide to all Tado CE exclusive features, configurations, and usage scen
 1. [Multi-Home Support](#-multi-home-support)
 2. [API Management](#-api-management)
 3. [Smart Polling](#-smart-polling)
-4. [Thermal Analytics](#-thermal-analytics)
-5. [Smart Comfort Analytics](#-smart-comfort-analytics)
-6. [Enhanced Mold Risk Assessment](#-enhanced-mold-risk-assessment)
-7. [Heating Cycle Detection](#-heating-cycle-detection)
-8. [Enhanced Controls](#-enhanced-controls)
-9. [Bridge API Integration](#-bridge-api-integration)
-10. [Weather Compensation](#-weather-compensation)
-11. [Optional Features](#-optional-features)
-12. [Per-Zone Configuration](#-per-zone-configuration)
-13. [Zone Features Toggles](#-zone-features-toggles)
-14. [Configuration Scenarios](#-configuration-scenarios)
-15. [Actionable Insights](#-actionable-insights)
-16. [Troubleshooting](#-troubleshooting)
+4. [API Write Optimization](#-api-write-optimization)
+5. [Thermal Analytics](#-thermal-analytics)
+6. [Smart Comfort Analytics](#-smart-comfort-analytics)
+7. [Enhanced Mold Risk Assessment](#-enhanced-mold-risk-assessment)
+8. [Heating Cycle Detection](#-heating-cycle-detection)
+9. [Enhanced Controls](#-enhanced-controls)
+10. [Bridge API Integration](#-bridge-api-integration)
+11. [Weather Compensation](#-weather-compensation)
+12. [Optional Features](#-optional-features)
+13. [Per-Zone Configuration](#-per-zone-configuration)
+14. [Zone Features Toggles](#-zone-features-toggles)
+15. [Configuration Scenarios](#-configuration-scenarios)
+16. [Actionable Insights](#-actionable-insights)
+17. [Troubleshooting](#-troubleshooting)
 
 ---
 
@@ -229,6 +230,133 @@ Leave custom intervals empty. Adaptive polling uses 5-minute minimum. Enable all
 - Weather off: saves ~144 calls/day (at 10 min intervals)
 - Mobile tracking off: saves ~4 calls/day
 - Home State Sync off: saves 1 call/sync
+
+---
+
+## ⚡ API Write Optimization
+
+**Available:** v3.4.0+ | **Requirement:** None | **All Enabled by Default**
+
+Reduces unnecessary API calls when you interact with climate controls — temperature changes, mode switches, device toggles, and schedule resumes are all optimized automatically.
+
+### Overview
+
+Every time you adjust a temperature slider, toggle a switch, or resume a schedule, Tado CE sends API calls to the Tado cloud. Without optimization, rapid interactions (dragging a slider, toggling multiple devices) can waste dozens of calls on intermediate or redundant values. API Write Optimization tackles this with five complementary strategies that work together transparently.
+
+### How Much Does It Save?
+
+The savings depend on how you use your system:
+
+| Scenario | Without Optimization | With Optimization | Savings |
+|----------|---------------------|-------------------|---------|
+| Drag temperature slider from 18°C to 22°C | ~8 API calls (one per 0.5°C step) | 1 API call (final value only) | ~87% |
+| Set 22°C when already at 22°C | 1 API call | 0 API calls (skipped) | 100% |
+| Toggle child lock + early start quickly | 2 simultaneous calls (race condition risk) | 2 sequential calls with delay | Safer |
+| Change temp + mode + fan in quick succession | 3 refreshes | 1 coalesced refresh | ~66% fewer refreshes |
+| Resume schedule when already on schedule | 1 API call | 0 API calls (skipped) | 100% |
+
+For a typical household making 10–20 manual adjustments per day, you can expect roughly 30–50% fewer write-related API calls.
+
+### Components
+
+#### 1. Smart Actions Debounce
+
+When you drag a temperature slider, each position fires a `set_temperature` call. Smart Actions waits for you to stop adjusting before sending the final value.
+
+| Setting | Value |
+|---------|-------|
+| Default | 3 seconds |
+| Range | 0–10 seconds |
+| Disable | Set to 0 |
+
+**Where to configure:** Settings → Tado CE → Configure → Global Settings → Polling & API
+
+**How it works:** Each slider movement resets a per-zone timer. Only when the timer expires (no new movement for N seconds) does the API call fire. If you drag from 18°C to 22°C over 2 seconds, only one call is made for 22°C.
+
+#### 2. Action Guard
+
+Skips API calls when the requested state already matches the current state. If your zone is already at 22°C and you (or an automation) sets it to 22°C again, the call is silently skipped.
+
+| Setting | Value |
+|---------|-------|
+| Behavior | Always active |
+| Covers | Temperature, HVAC mode, fan mode, swing mode, preset mode |
+
+**Checked states:** temperature, HVAC mode, fan mode, swing mode, and preset mode. Each is compared against the coordinator's cached state — no extra API call needed for the check.
+
+#### 3. Device Sync Queue
+
+Device-level operations (child lock, early start) are queued and executed one at a time with a configurable delay between each. This prevents race conditions when you toggle multiple device settings in quick succession.
+
+| Setting | Value |
+|---------|-------|
+| Default delay | 1 second |
+| Range | 0.5–5 seconds |
+| Max queue depth | 20 operations |
+
+**Where to configure:** Settings → Tado CE → Configure → Global Settings → Polling & API
+
+**Why it matters:** Without queuing, toggling child lock and early start simultaneously can cause the Tado API to return stale data or reject one of the calls. The queue ensures each operation completes before the next starts.
+
+#### 4. Write Coalescing
+
+When multiple state changes happen in quick succession (e.g. changing temperature, mode, and fan within a few seconds), each change would normally trigger its own coordinator refresh. Write Coalescing batches these into a single refresh after a 2-second window.
+
+| Setting | Value |
+|---------|-------|
+| Window | 2 seconds (fixed) |
+| Behavior | Always active |
+
+Each new write resets the 2-second timer. The refresh only fires once the timer expires with no new writes. This means 3 rapid changes = 1 refresh instead of 3.
+
+#### 5. Resume Guard
+
+Skips the `resume_schedule` API call if the zone is already following its schedule (no active overlay). Uses the coordinator's cached overlay state — no extra API call needed.
+
+| Setting | Value |
+|---------|-------|
+| Behavior | Always active |
+
+Useful when automations call `resume_schedule` as a safety measure — if the zone is already on schedule, the call is free.
+
+### Schedule Preview
+
+Heating and AC climate entities now include a `scheduled_target_temperature` attribute showing the current schedule target. This lets you see what temperature the zone would be at without an overlay, useful for dashboard cards and automations.
+
+| Attribute | Description |
+|-----------|-------------|
+| `scheduled_target_temperature` | Target temperature from the active schedule block (°C), or `None` if heating is OFF in the current block |
+
+**Example automation — alert when overlay differs significantly from schedule:**
+
+```yaml
+automation:
+  - alias: "Alert: Large Schedule Override"
+    trigger:
+      - platform: template
+        value_template: >
+          {% set sched = state_attr('climate.living_room', 'scheduled_target_temperature') %}
+          {% set current = state_attr('climate.living_room', 'temperature') %}
+          {{ sched is not none and current is not none and (current - sched) | abs > 3 }}
+    action:
+      - service: notify.mobile_app
+        data:
+          message: >
+            Living room is set to {{ state_attr('climate.living_room', 'temperature') }}°C
+            but the schedule says {{ state_attr('climate.living_room', 'scheduled_target_temperature') }}°C
+```
+
+### Configuration Summary
+
+All settings are under **Settings → Tado CE → Configure → Global Settings → Polling & API**:
+
+| Setting | Default | Range | Notes |
+|---------|---------|-------|-------|
+| Smart Actions debounce window | 3s | 0–10s | Set to 0 to disable |
+| Action Guard | Always on | — | No configuration needed |
+| Device Sync delay | 1s | 0.5–5s | Lower = faster but riskier, higher = safer |
+| Write Coalescing | Always on | — | 2s fixed window, not configurable |
+| Resume Guard | Always on | — | No configuration needed |
 
 ---
 
@@ -1586,4 +1714,4 @@ Look for `Bridge API full response` in logs to verify the API is returning data.
 
 ---
 
-**Last Updated:** v3.3.0 (2026-03-21)
+**Last Updated:** v3.4.0 (2026-03-23)

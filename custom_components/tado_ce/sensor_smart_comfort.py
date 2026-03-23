@@ -581,16 +581,13 @@ class TadoPreheatAdvisorSensor(TadoZoneSensor):
             cycle_heating_rate = None
             cycle_confidence = None
 
-            # Get UFH buffer from config_manager (only for selected zones)
+            # Get UFH buffer from per-zone config
             ufh_buffer = 0
-            config_manager = self.coordinator.config_manager
-            if config_manager:
-                ufh_buffer_global = config_manager.get_ufh_buffer_minutes()
-                ufh_zones = config_manager.get_ufh_zones()
-                # Apply buffer only if: buffer > 0 AND (no zones selected OR this zone is selected)
-                if ufh_buffer_global > 0:
-                    if not ufh_zones or self._zone_id in ufh_zones:
-                        ufh_buffer = ufh_buffer_global
+            zone_config_mgr = self.coordinator.zone_config_manager
+            if zone_config_mgr:
+                heating_type = zone_config_mgr.get_zone_value(self._zone_id, "heating_type", "radiator")
+                if heating_type == "ufh":
+                    ufh_buffer = zone_config_mgr.get_zone_value(self._zone_id, "ufh_buffer_minutes", 30)
 
             if heating_cycle_coordinator:
                 zone_data_cycle = heating_cycle_coordinator.get_zone_data(self._zone_id)
@@ -748,13 +745,11 @@ class TadoPreheatAdvisorSensor(TadoZoneSensor):
 
         # Calculate preheat duration (inertia + UFH buffer)
         ufh_buffer = 0
-        config_manager = self.coordinator.config_manager
-        if config_manager:
-            ufh_buffer_global = config_manager.get_ufh_buffer_minutes()
-            ufh_zones = config_manager.get_ufh_zones()
-            if ufh_buffer_global > 0:
-                if not ufh_zones or self._zone_id in ufh_zones:
-                    ufh_buffer = ufh_buffer_global
+        zone_config_mgr = self.coordinator.zone_config_manager
+        if zone_config_mgr:
+            heating_type = zone_config_mgr.get_zone_value(self._zone_id, "heating_type", "radiator")
+            if heating_type == "ufh":
+                ufh_buffer = zone_config_mgr.get_zone_value(self._zone_id, "ufh_buffer_minutes", 30)
 
         total_buffer = min(inertia_minutes + ufh_buffer, 240)
         preheat_start = crossover_dt - timedelta(minutes=total_buffer)

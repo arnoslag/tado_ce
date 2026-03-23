@@ -54,6 +54,20 @@ Toggle in Settings → Devices & Services → Tado CE → Configure:
 
 Not polling calls — only happen when you take an action.
 
+### Write Optimization (v3.4.0+)
+
+Action-triggered calls (Code 5) are automatically optimized to reduce unnecessary API usage:
+
+| Optimization | What It Does | Default |
+|-------------|--------------|---------|
+| Smart Actions Debounce | Waits for slider to stop moving before sending the final value | 3s window |
+| Action Guard | Skips the call if requested state matches current state | Always on |
+| Device Sync Queue | Queues device operations (child lock, early start) sequentially | 1s delay |
+| Write Coalescing | Batches multiple rapid writes into a single coordinator refresh | 2s window |
+| Resume Guard | Skips `resume_schedule` if zone has no active overlay | Always on |
+
+These optimizations are transparent — they don't change what you see in the UI, only how efficiently calls reach the Tado API. See [FEATURES_GUIDE.md](FEATURES_GUIDE.md#-api-write-optimization) for full details.
+
 ### Bridge API Calls (v3.2.0+)
 
 Bridge API calls are separate from the cloud API — they use a different endpoint (`my.tado.com/api/v2/homeByBridge/{serial}/`) and don't count toward your daily API quota. Bridge data is fetched during each coordinator update cycle alongside cloud data, but errors are isolated and never affect cloud polling.
@@ -194,7 +208,7 @@ Tado CE stores data in `/config/.storage/tado_ce/`. All per-home files include `
 | `ac_capabilities_{home_id}.json` | Cached AC zone capabilities |
 | `schedules_{home_id}.json` | Cached heating schedules |
 | `api_call_history_{home_id}.json` | Historical API calls for tracking |
-| `thermal_analytics_cache_{home_id}.json` | Thermal analytics data (heating cycles, rates) |
+| `heating_cycle_history_{home_id}.json` | Heating cycle detection history |
 | `zone_config_{home_id}.json` | Per-zone configuration settings |
 | `insight_history_{home_id}.json` | Insight appearance/disappearance tracking |
 | `state_restore_{home_id}.json` | Captured zone states for restore_previous_state service |
@@ -207,8 +221,8 @@ Tado CE stores data in `/config/.storage/tado_ce/`. All per-home files include `
 | `zones.json` | Migrated to `zones_{home_id}.json` |
 | `zones_info.json` | Migrated to `zones_info_{home_id}.json` |
 | `ratelimit.json` | Migrated to `ratelimit_{home_id}.json` |
-| `smart_comfort_cache_{home_id}.json` | Merged into `thermal_analytics_cache_{home_id}.json` |
-| `heating_cycle_history_{home_id}.json` | Merged into `thermal_analytics_cache_{home_id}.json` |
+| `smart_comfort_cache_{home_id}.json` | Smart comfort temperature history per zone |
+| `heating_cycle_history_{home_id}.json` | Still active — used by heating cycle coordinator |
 
 Legacy files without `{home_id}` suffix are auto-migrated on first v3.0.0 startup.
 
@@ -247,4 +261,4 @@ These files persist across restarts and upgrades.
 
 ---
 
-**Last Updated:** v3.3.0 (2026-03-21)
+**Last Updated:** v3.4.0 (2026-03-23)

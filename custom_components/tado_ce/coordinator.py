@@ -20,7 +20,13 @@ from homeassistant.helpers.update_coordinator import (
     UpdateFailed,
 )
 
-from .const import DOMAIN, OVERLAY_MODE_DEFAULT, TIMER_DURATION_DEFAULT, get_data_file
+from .const import (
+    DEVICE_SYNC_QUEUE_MAX_DEPTH,
+    DOMAIN,
+    OVERLAY_MODE_DEFAULT,
+    TIMER_DURATION_DEFAULT,
+    get_data_file,
+)
 from .exceptions import TadoAuthError, TadoBridgeApiError, TadoSyncError
 from .insight_history import InsightHistoryTracker
 from .polling import get_polling_interval, should_pause_polling
@@ -30,6 +36,7 @@ from .weather_compensation import (
     calculate_auto_slope,
     evaluate,
 )
+from .write_optimizer import ActionDebouncer, DeviceSyncQueue, RefreshCoalescer, ResumeGuard
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -157,10 +164,40 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Weather compensation mutable runtime state (persists across polls)
         self._wc_state = WeatherCompensationState()
 
+        # Write optimization components
+        self._action_debouncer = ActionDebouncer(
+            default_window=float(config_manager.get_smart_actions_debounce_seconds()),
+        )
+        self._device_sync_queue = DeviceSyncQueue(
+            delay=config_manager.get_device_sync_delay_seconds(),
+            max_depth=DEVICE_SYNC_QUEUE_MAX_DEPTH,
+        )
+        debounce_window = config_manager.get_smart_actions_debounce_seconds()
+        self._refresh_coalescer = RefreshCoalescer(
+            coordinator=self,
+            window=2.0,
+            skip_when_fresh=(debounce_window > 0),
+        )
+
     @property
     def outdoor_temp_history(self) -> list[float]:
         """Return outdoor temp history (read-only access for sensors)."""
         return self._outdoor_temp_history
+
+    @property
+    def action_debouncer(self) -> ActionDebouncer:
+        """Return the action debouncer instance."""
+        return self._action_debouncer
+
+    @property
+    def device_sync_queue(self) -> DeviceSyncQueue:
+        """Return the device sync queue instance."""
+        return self._device_sync_queue
+
+    @property
+    def refresh_coalescer(self) -> RefreshCoalescer:
+        """Return the refresh coalescer instance."""
+        return self._refresh_coalescer
 
     def publish_entity_data(self, zone_id: str, key: str, data: dict[str, Any]) -> None:
         """Publish computed entity data for cross-component access.
@@ -652,17 +689,20 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 _LOGGER.debug("Cleaned up %d expired entity freshness entries", len(expired))
 
     async def async_set_zone_overlay(self, zone_id: str, setting: dict[str, Any], termination: dict[str, Any]) -> bool:
-        """Set zone overlay then trigger immediate refresh."""
+        """Set zone overlay then trigger coalesced refresh."""
         result = await self.api_client.set_zone_overlay(zone_id, setting, termination)
         if result:
-            await self.async_request_refresh()
+            self._refresh_coalescer.schedule_refresh()
         return result
 
     async def async_reset_zone_overlay(self, zone_id: str) -> bool:
-        """Delete zone overlay (return to schedule) then refresh."""
+        """Delete zone overlay (return to schedule) then coalesced refresh."""
+        if ResumeGuard.should_skip_resume(self, zone_id):
+            _LOGGER.debug("Resume Guard: zone %s already following schedule, skip", zone_id)
+            return True
         result = await self.api_client.delete_zone_overlay(zone_id)
         if result:
-            await self.async_request_refresh()
+            self._refresh_coalescer.schedule_refresh()
         return result
 
     async def async_set_presence(self, state: str) -> bool:

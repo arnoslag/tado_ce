@@ -23,6 +23,10 @@ Target: Q3 2026
 
 ## Future Consideration
 
+- **Exponential Heating Curve** ([#187](https://github.com/hiall-fyi/tado_ce/issues/187) - @driagi)
+
+Non-linear (exponential) heating curve option for weather compensation, using a building thermal sensitivity coefficient (`k` factor). Better models real-world heat loss in well-insulated vs poorly-insulated buildings compared to the current linear approach. Would sit alongside the existing linear presets as an "Expert" option under Custom. Deferred to next heating season for real-world validation.
+
 - **Air Comfort System** ([#64](https://github.com/hiall-fyi/tado_ce/issues/64))
 
 Per-zone indoor air quality monitoring inspired by the Tado app's Air Comfort feature. Two components:

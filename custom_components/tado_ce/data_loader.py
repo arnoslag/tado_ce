@@ -348,12 +348,22 @@ class DataLoader:
             True if saved successfully, False otherwise.
         """
         try:
+            import shutil
+            import tempfile
+
             file_path = self._get_file_path("outdoor_temp_history")
             file_path.parent.mkdir(parents=True, exist_ok=True)
             trimmed = readings[-MAX_OUTDOOR_TEMP_READINGS:]
             data = {"readings": trimmed}
-            with file_path.open("w") as f:
-                json.dump(data, f)
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                dir=file_path.parent,
+                delete=False,
+                suffix=".tmp",
+            ) as tmp:
+                json.dump(data, tmp)
+                temp_path = tmp.name
+            shutil.move(temp_path, file_path)
             self._cache["outdoor_temp_history"] = data
             return True
         except Exception:

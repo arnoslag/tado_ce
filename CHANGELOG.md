@@ -2,6 +2,27 @@
 
 All notable changes to Tado CE will be documented in this file.
 
+## [3.4.0] - 2026-03-23
+
+### Features
+- **API Write Optimization** — All enabled by default. Three new settings under **Settings → Tado CE → Configure → Global Settings → Polling & API** to reduce unnecessary API calls:
+  - **Smart Actions Debounce** — When you drag a temperature slider, only the final value is sent to the API instead of every intermediate position. Configurable window (0–10 seconds, default 3). Set to 0 to disable.
+  - **Action Guard** — Skips API calls when the requested state already matches the current state (e.g. setting 22°C when it's already 22°C). Always active.
+  - **Device Sync Queue** — Device-level operations (child lock, early start) are now queued and executed sequentially with a configurable delay (0.5–5 seconds, default 1), preventing race conditions from rapid toggling. Always active.
+  - **Write Coalescing** — Multiple rapid state changes trigger a single coordinated refresh instead of one per change. Always active.
+  - **Resume Guard** — Resuming a zone's schedule is skipped if the zone is already following its schedule. Always active.
+- **Schedule Preview** — Heating and AC climate entities now show a `scheduled_target_temperature` attribute with the current schedule target, so you can see what temperature the zone would be at without an overlay.
+
+### Improvements
+- **UFH Buffer Now Per-Zone** — Underfloor heating buffer is now configured per zone (via Zone Configuration) instead of a global setting. Zones with `heating_type: ufh` automatically get the buffer applied.
+- **Atomic Writes for Zone Config & Outdoor Temp** — Zone configuration and outdoor temperature history files now use the same crash-safe tempfile-then-rename pattern as other data files.
+- **Dropped v2.x Migration Code** — All migration code for upgrading from v2.x has been removed. The minimum supported upgrade path is now v3.0.0+. Users on v2.x should upgrade to v3.x first.
+- **Translation Sync** — Added missing `adaptive_preheat_mode` selector translations across all 7 languages.
+- **Codebase Cleanup** — Removed unused `thermal_storage.py` (511 lines) and `zone_config.py` stub. Removed hardcoded default zone names from constants.
+
+### Bug Fixes
+- **Fixed Hassfest Validation Failure** — Window detection mode selector options (`Active`, `Passive`, `Auto`) used Title Case keys which Hassfest requires to be lowercase. Now uses `active`, `passive`, `auto` across `strings.json` and all translation files.
+
 ## [3.3.1] - 2026-03-21
 
 ### Improvements

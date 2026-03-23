@@ -95,9 +95,6 @@ class AdaptivePreheatManager:
             _LOGGER.warning("Adaptive Preheat: No zones found")
             return
 
-        # Get configured zones (empty = all heating zones)
-        configured_zones = self._config_manager.get_adaptive_preheat_zones()
-
         # Build zone info mapping
         for zone in zones_info:
             if zone.get("type") != "HEATING":
@@ -112,8 +109,7 @@ class AdaptivePreheatManager:
                 preheat_mode = zone_cfg.get("adaptive_preheat", "off")
                 if preheat_mode not in ("active", "passive"):
                     continue
-            elif configured_zones and zone_id not in configured_zones:
-                # Legacy fallback: use global configured_zones list
+            else:
                 continue
 
             # Build entity IDs

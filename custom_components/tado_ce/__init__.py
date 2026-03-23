@@ -30,9 +30,6 @@ from .coordinator import TadoDataUpdateCoordinator
 from .data_loader import DataLoader
 from .exceptions import TadoAuthError
 from .migration import (
-    _migrate_to_per_zone_config,
-)
-from .migration import (
     async_migrate_entry as async_migrate_entry,
 )
 from .services import _async_register_services
@@ -114,8 +111,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     zone_config_manager = ZoneConfigManager(hass, home_id or "default")
     await zone_config_manager.async_load()
     _LOGGER.info("Zone config manager initialized with %d zones", len(zone_config_manager.zones))
-
-    await _migrate_to_per_zone_config(hass, entry, zone_config_manager, data_loader=data_loader)
 
     overlay_mode = await hass.async_add_executor_job(data_loader.load_overlay_mode)
     _LOGGER.debug("Tado CE: Overlay mode loaded: %s", overlay_mode)
@@ -232,11 +227,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         register_bridge_devices(hass, entry.entry_id, zones_info)
 
-    # Runtime fallback — detect old-format unique_ids
-    if home_id:
-        from .migration import detect_and_migrate_old_unique_ids
 
-        detect_and_migrate_old_unique_ids(hass, entry, str(home_id))
 
     # Store coordinator as runtime_data (HA official pattern)
     entry.runtime_data = coordinator
@@ -347,6 +338,13 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             _LOGGER.debug("Cancelled pending debounce task")
         coordinator.refresh_handler = None  # type: ignore[assignment]
         _LOGGER.debug("Cleaned up coordinator RefreshHandler")
+
+    # Clean up write optimization components
+    if coordinator:
+        coordinator.action_debouncer.cancel_all()
+        coordinator.refresh_coalescer.cancel()
+        await coordinator.device_sync_queue.shutdown()
+        _LOGGER.debug("Cleaned up write optimization components")
 
     # Save insight history before shutdown
     if coordinator and hasattr(coordinator, "insight_history"):

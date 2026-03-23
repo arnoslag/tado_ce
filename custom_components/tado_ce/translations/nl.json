@@ -1262,9 +1262,31 @@
     },
     "window_predicted_mode": {
       "options": {
-        "Active": "Actief (afhankelijk van HVAC)",
-        "Passive": "Passief (HVAC-onafhankelijk)",
-        "Auto": "Automatisch (aanbevolen)"
+        "active": "Actief (afhankelijk van HVAC)",
+        "passive": "Passief (onafhankelijk van HVAC)",
+        "auto": "Auto (aanbevolen)"
+      }
+    },
+    "adaptive_preheat_mode": {
+      "options": {
+        "off": "Uit",
+        "active": "Actief",
+        "passive": "Passief"
+      }
+    },
+    "wc_heating_system_preset": {
+      "options": {
+        "radiators_standard": "Radiatoren (Standaard)",
+        "radiators_low_temp": "Radiatoren (Lage temperatuur)",
+        "underfloor": "Vloerverwarming",
+        "custom": "Aangepast"
+      }
+    },
+    "wc_smoothing_method": {
+      "options": {
+        "none": "Geen (Real-time)",
+        "ema": "EMA (Exponentieel Bewegend Gemiddelde)",
+        "rolling_average": "Voortschrijdend gemiddelde"
       }
     }
   },
@@ -1408,7 +1430,7 @@
       },
       "global_settings": {
         "title": "Wereldwijde instellingen",
-        "description": "Pas uw door de gemeenschap aangestuurde slimme klimaatervaring aan met geavanceerde functies gebouwd door gebruikers zoals u.",
+        "description": "Pas je community-gedreven slimme klimaatervaring aan met geavanceerde functies die zijn gebouwd door gebruikers zoals jij.",
         "sections": {
           "tado_ce_exclusive": {
             "name": "Tado CE Exclusief",
@@ -1486,7 +1508,9 @@
               "custom_night_interval": "Aangepast nachtinterval (minuten)",
               "refresh_debounce_seconds": "Debounce vernieuwen (seconden)",
               "api_history_retention_days": "API geschiedenis retentie (dagen)",
-              "quota_reserve_enabled": "Bescherming quotareserve"
+              "quota_reserve_enabled": "Bescherming quotareserve",
+              "smart_actions_debounce_seconds": "Smart Actions debounce-venster",
+              "device_sync_delay_seconds": "Apparaat Synchronisatievertraging tussen bewerkingen"
             },
             "data_description": {
               "day_start_hour": "Uur waarop de dagperiode begint (0-23, standaard: 7)",
@@ -1495,15 +1519,17 @@
               "custom_night_interval": "Overschrijf slimme polling voor 's nachts (1-1440 min, leeg voor auto)",
               "refresh_debounce_seconds": "Vertraging voor verversen na statuswijzigingen (1-60s)",
               "api_history_retention_days": "Dagen om API oproepgeschiedenis te bewaren (0 = voor altijd)",
-              "quota_reserve_enabled": "Pauzeer polling als quota laag is. Alleen uitschakelen als je de risico's begrijpt."
+              "quota_reserve_enabled": "Pauzeer polling als quota laag is. Alleen uitschakelen als je de risico's begrijpt.",
+              "smart_actions_debounce_seconds": "Seconden die moeten worden gewacht voordat de eindwaarde wordt verzonden wanneer de temperatuur snel wordt aangepast. Stel in op 0 om uit te schakelen.",
+              "device_sync_delay_seconds": "Vertraging tussen opeenvolgende apparaatbewerkingen (kinderslot, temperatuurcompensatie)."
             }
           },
           "flow_temperature_control": {
             "name": "Stromingstemperatuurregeling",
-            "description": "Maak verbinding met je Tado Internet Bridge en configureer automatische aanpassing van de aanvoertemperatuur",
+            "description": "Maak verbinding met je Tado Internet Bridge (v3+ met HomeKit-ondersteuning) en configureer automatische aanpassing van de aanvoertemperatuur",
             "data": {
               "bridge_serial": "Serienummer brug",
-              "bridge_auth_key": "Brug Auth Sleutel",
+              "bridge_auth_key": "Brug Auth Code",
               "wc_enabled": "Weercompensatie inschakelen",
               "wc_heating_system_preset": "Type verwarmingssysteem",
               "wc_slope": "Helling verwarmingscurve",
@@ -1520,8 +1546,8 @@
               "bridge_enabled": "Internetbrug inschakelen"
             },
             "data_description": {
-              "bridge_serial": "Serienummer dat op de onderkant van uw Internet Bridge staat (bijv. IB123456789)",
-              "bridge_auth_key": "Auth key van de bridge sticker of Tado app (vertrouwelijk bewaren)",
+              "bridge_serial": "Serienummer dat op de onderkant van uw Internet Bridge v3+ staat (begint met IB, bijvoorbeeld IB0123456789)",
+              "bridge_auth_key": "4-cijferige authcode van de brugsticker (vertrouwelijk houden)",
               "wc_slope": "Hoger = steilere curve = meer verandering van de flowtemperatuur per graad verandering van de buitentemperatuur (0,3-3,0)",
               "wc_design_outdoor_temp": "Verwachte koudste buitentemperatuur voor jouw regio (-30 tot 10°C)",
               "wc_max_flow_temp": "Aanvoertemperatuur bij ontworpen buitentemperatuur (25-80°C)",
@@ -1530,10 +1556,14 @@
               "wc_smoothing_method": "Hoe buitentemperatuurmetingen worden afgevlakt voor gebruik in de verwarmingscurve",
               "wc_smoothing_window": "Duur van middeling buitentemperatuur (15-1440 min)",
               "wc_room_compensation_factor": "Debietaanpassing per graad binnenafwijking van instelpunt (1,0-5,0)",
-              "wc_step_size": "De aanvoertemperatuur wordt afgerond op deze stapgrootte - groter = minder API-oproepen, minder oscillatie (0,5-2,0°C)",
+              "wc_step_size": "De aanvoertemperatuur wordt afgerond op deze stapgrootte - groter = minder API-oproepen, minder schommeling (0,5-2,0°C)",
               "wc_hysteresis": "Minimale verandering ten opzichte van de laatst verzonden waarde voordat een nieuwe API-oproep wordt gedaan (0,5-3,0°C)",
-              "bridge_enabled": "Inschakelen om verbinding te maken met uw Tado Internet Bridge. Uitschakelen verwijdert de bridge gegevens en alle bridge entiteiten"
+              "bridge_enabled": "Inschakelen om verbinding te maken met je Tado Internet Bridge. Vereist v3+ bridge (HomeKit-compatibel). Uitschakelen verwijdert bridgegegevens en alle bridge-entiteiten."
             }
+          },
+          "api_write": {
+            "data": {},
+            "data_description": {}
           }
         }
       },
@@ -1553,12 +1583,12 @@
             "data": {
               "heating_type": "Type warmte-emitter",
               "ufh_buffer_minutes": "UFH-buffer (minuten)",
-              "adaptive_preheat": "Adaptieve voorverwarming"
+              "adaptive_preheat": "Adaptieve voorverwarmingsmodus"
             },
             "data_description": {
               "heating_type": "Radiator of vloerverwarming",
               "ufh_buffer_minutes": "Extra minuten voor opwarmen UFH (0-60)",
-              "adaptive_preheat": "Automatisch starten van verwarming vóór schema"
+              "adaptive_preheat": "Uit: uitgeschakeld. Actief: auto-start verwarming en vastleggen status voor herstel. Passief: auto-start alleen wanneer er geen overlay actief is."
             }
           },
           "comfort_section": {
@@ -1566,13 +1596,13 @@
             "data": {
               "smart_comfort_mode": "Slimme Comfortmodus",
               "window_type": "Raamtype",
-              "window_predicted_mode": "Vensterdetectiemodus",
+              "window_predicted_mode": "Venster detectiemodus",
               "window_predicted_sensitivity": "Gevoeligheid vensterdetectie"
             },
             "data_description": {
               "smart_comfort_mode": "Richttemperatuur aanpassen op basis van buitencondities",
               "window_type": "Venstertype voor schimmelrisicoberekening",
-              "window_predicted_mode": "Actief: detecteert alleen wanneer de verwarming/airconditioning in werking is. Passief: detecteert ongeacht de status van de verwarming/airconditioning. Auto: gebruikt de modus Actief wanneer de verwarming/airconditioning aan staat, en de modus Passief wanneer deze uit staat.",
+              "window_predicted_mode": "Actief: detecteert alleen wanneer HVAC actief is. Passief: detecteert ongeacht de HVAC-status. Auto: gebruikt Actief wanneer HVAC aan staat, Passief wanneer uit.",
               "window_predicted_sensitivity": "Gevoeligheid voor detectie van voorspelde geopende vensters"
             }
           },
@@ -1587,7 +1617,7 @@
             "data_description": {
               "use_external_temp": "Uitschakelen om de ingebouwde temperatuursensor van Tado te gebruiken",
               "external_temp_sensor": "Selecteer een temperatuursensor om de meting van Tado te overschrijven",
-              "use_external_humidity": "Zet uit om de ingebouwde vochtigheidssensor van Tado te gebruiken",
+              "use_external_humidity": "Uitschakelen om de ingebouwde vochtigheidssensor van Tado te gebruiken",
               "external_humidity_sensor": "Selecteer een vochtigheidssensor om de uitlezing van Tado te overschrijven"
             }
           },
@@ -1634,7 +1664,7 @@
     "error": {
       "interval_out_of_range": "Polling-interval moet tussen 1 en 1440 minuten liggen",
       "invalid_number": "Voer een geldig nummer in",
-      "bridge_auth_failed": "Ongeldige bridge-serienummer of auth-sleutel - controleer en probeer opnieuw",
+      "bridge_auth_failed": "Ongeldige bridge-serienummer of auth-code - controleer en probeer het opnieuw",
       "wc_min_exceeds_max": "De minimale aanvoertemperatuur kan niet hoger zijn dan de maximale aanvoertemperatuur",
       "bridge_serial_invalid": "Alleen v3+ Internet Bridges (serieel beginnend met IB) ondersteunen de lokale API. Uw serie suggereert een v2 bridge (GW prefix) die geen lokale API heeft. Weercompensatie kan nog steeds worden gebruikt zonder een bridge via cloudgegevens."
     }

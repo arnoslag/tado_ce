@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, fields
 from datetime import datetime
-from typing import Any, get_type_hints
+from typing import Any, Self, get_type_hints
 
 
 class _SerializableMixin:
@@ -19,7 +19,7 @@ class _SerializableMixin:
         return d
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> SmartComfortReading:
+    def from_dict(cls, data: dict[str, Any]) -> Self:
         """Deserialize from dictionary."""
         hints = get_type_hints(cls)
         kwargs = {}
@@ -34,7 +34,7 @@ class _SerializableMixin:
                     v = v.replace(tzinfo=UTC)
             if v is not None:
                 kwargs[f.name] = v
-        return cls(**kwargs)  # type: ignore[return-value]
+        return cls(**kwargs)
 
 
 @dataclass

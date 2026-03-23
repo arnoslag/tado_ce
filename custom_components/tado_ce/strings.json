@@ -1269,9 +1269,9 @@
     },
     "window_predicted_mode": {
       "options": {
-        "Active": "Active (HVAC-dependent)",
-        "Passive": "Passive (HVAC-independent)",
-        "Auto": "Auto (recommended)"
+        "active": "Active (HVAC-dependent)",
+        "passive": "Passive (HVAC-independent)",
+        "auto": "Auto (recommended)"
       }
     },
     "wc_heating_system_preset": {
@@ -1508,7 +1508,9 @@
               "custom_night_interval": "Custom Night Interval (minutes)",
               "refresh_debounce_seconds": "Refresh Debounce (seconds)",
               "api_history_retention_days": "API History Retention (days)",
-              "quota_reserve_enabled": "Quota Reserve Protection"
+              "quota_reserve_enabled": "Quota Reserve Protection",
+              "smart_actions_debounce_seconds": "Smart Actions debounce window",
+              "device_sync_delay_seconds": "Device Sync delay between operations"
             },
             "data_description": {
               "day_start_hour": "Hour when day period starts (0-23, default: 7)",
@@ -1517,7 +1519,9 @@
               "custom_night_interval": "Override smart polling for nighttime (1-1440 min, empty for auto)",
               "refresh_debounce_seconds": "Delay before refreshing after state changes (1-60s)",
               "api_history_retention_days": "Days to keep API call history (0 = forever)",
-              "quota_reserve_enabled": "Pause polling when quota is low. Disable only if you understand the risks."
+              "quota_reserve_enabled": "Pause polling when quota is low. Disable only if you understand the risks.",
+              "smart_actions_debounce_seconds": "Seconds to wait before sending the final value when rapidly adjusting temperature. Set to 0 to disable.",
+              "device_sync_delay_seconds": "Delay between sequential device operations (child lock, temperature offset)."
             }
           },
           "flow_temperature_control": {

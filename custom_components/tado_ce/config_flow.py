@@ -699,6 +699,8 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                     "night_start_hour",
                     "refresh_debounce_seconds",
                     "api_history_retention_days",
+                    "smart_actions_debounce_seconds",
+                    "device_sync_delay_seconds",
                 ]
                 for key in polling_keys:
                     if key in section:
@@ -1230,6 +1232,31 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                                         unit_of_measurement="d",
                                     ),
                                 ),
+                                # --- Write Optimization ---
+                                vol.Optional(
+                                    "smart_actions_debounce_seconds",
+                                    default=opt("smart_actions_debounce_seconds", 3),
+                                ): NumberSelector(
+                                    NumberSelectorConfig(
+                                        min=0,
+                                        max=10,
+                                        step=1,
+                                        mode=NumberSelectorMode.BOX,
+                                        unit_of_measurement="s",
+                                    ),
+                                ),
+                                vol.Optional(
+                                    "device_sync_delay_seconds",
+                                    default=opt("device_sync_delay_seconds", 1.0),
+                                ): NumberSelector(
+                                    NumberSelectorConfig(
+                                        min=0.5,
+                                        max=5.0,
+                                        step=0.5,
+                                        mode=NumberSelectorMode.BOX,
+                                        unit_of_measurement="s",
+                                    ),
+                                ),
                             },
                         ),
                         {"collapsed": True},
@@ -1307,7 +1334,7 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                 all_values["smart_comfort_mode"] = raw_mode.lower() if raw_mode != "None" else "none"
                 raw_wt = s.get("window_type", "double_pane")
                 all_values["window_type"] = raw_wt
-                raw_det_mode = s.get("window_predicted_mode", "Auto")
+                raw_det_mode = s.get("window_predicted_mode", "auto")
                 all_values["window_predicted_mode"] = WINDOW_DETECTION_MODE_MAP.get(
                     raw_det_mode, WINDOW_DETECTION_MODE_DEFAULT,
                 )
@@ -1375,7 +1402,7 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
             config.get("window_predicted_sensitivity", WINDOW_SENSITIVITY_DEFAULT), "Medium",
         )
         cur_detection_mode = WINDOW_DETECTION_MODE_REVERSE_MAP.get(
-            config.get("window_predicted_mode", WINDOW_DETECTION_MODE_DEFAULT), "Auto",
+            config.get("window_predicted_mode", WINDOW_DETECTION_MODE_DEFAULT), "auto",
         )
         cur_temp_sensor = config.get("external_temp_sensor", "")
         cur_humidity_sensor = config.get("external_humidity_sensor", "")

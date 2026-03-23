@@ -76,9 +76,19 @@ class ZoneConfigManager:
 
         def _save() -> None:
             try:
+                import shutil
+                import tempfile
+
                 self._config_file.parent.mkdir(parents=True, exist_ok=True)
-                with self._config_file.open("w") as f:
-                    json.dump({"version": 1, "zones": self._config}, f, indent=2)
+                with tempfile.NamedTemporaryFile(
+                    mode="w",
+                    dir=self._config_file.parent,
+                    delete=False,
+                    suffix=".tmp",
+                ) as tmp:
+                    json.dump({"version": 1, "zones": self._config}, tmp, indent=2)
+                    temp_path = tmp.name
+                shutil.move(temp_path, self._config_file)
             except OSError:
                 _LOGGER.exception("Failed to save zone config")
 

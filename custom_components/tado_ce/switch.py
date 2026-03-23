@@ -19,6 +19,7 @@ from .action_helpers import (
 from .device_manager import get_hub_device_info, get_zone_device_info
 from .entity_registry import ENTITY_REGISTRY, get_entity_category
 from .helpers import async_trigger_immediate_refresh
+from .write_optimizer import DeviceOperation
 
 if TYPE_CHECKING:
     from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
@@ -199,6 +200,7 @@ class TadoEarlyStartSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switc
 
         Added optimistic tracking and proper rollback (parity with climate entities).
         Added bootstrap reserve check - blocks action when quota critically low.
+        Routed through DeviceSyncQueue for sequential device operations.
         """
         await _check_bootstrap_reserve(self.hass, f"Early Start {self._zone_name}", entry_id=self._entry_id)
 
@@ -209,11 +211,21 @@ class TadoEarlyStartSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switc
         self._optimistic_set_at = time.monotonic()
         self.async_write_ha_state()
 
-        success = await self._async_set_early_start(True)
-        if success:
+        async def _execute() -> bool:
+            return await self._async_set_early_start(True)
+
+        enqueued = await self.coordinator.device_sync_queue.enqueue(
+            DeviceOperation(
+                device_serial=self._zone_id,
+                operation_name="early_start_on",
+                callback=_execute,
+                entity_id=self.entity_id,
+            ),
+        )
+        if enqueued:
             await async_trigger_immediate_refresh(self.hass, self.entity_id, "early_start_on")
         else:
-            _LOGGER.warning("ROLLBACK: %s Early Start ON failed", self._zone_name)
+            _LOGGER.warning("Device Sync queue full, rejecting early start ON for %s", self._zone_name)
             self._attr_is_on = old_is_on
             self._optimistic_set_at = None
             self.async_write_ha_state()
@@ -223,6 +235,7 @@ class TadoEarlyStartSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switc
 
         Added optimistic tracking and proper rollback (parity with climate entities).
         Added bootstrap reserve check - blocks action when quota critically low.
+        Routed through DeviceSyncQueue for sequential device operations.
         """
         await _check_bootstrap_reserve(self.hass, f"Early Start {self._zone_name}", entry_id=self._entry_id)
 
@@ -232,11 +245,21 @@ class TadoEarlyStartSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switc
         self._optimistic_set_at = time.monotonic()
         self.async_write_ha_state()
 
-        success = await self._async_set_early_start(False)
-        if success:
+        async def _execute() -> bool:
+            return await self._async_set_early_start(False)
+
+        enqueued = await self.coordinator.device_sync_queue.enqueue(
+            DeviceOperation(
+                device_serial=self._zone_id,
+                operation_name="early_start_off",
+                callback=_execute,
+                entity_id=self.entity_id,
+            ),
+        )
+        if enqueued:
             await async_trigger_immediate_refresh(self.hass, self.entity_id, "early_start_off")
         else:
-            _LOGGER.warning("ROLLBACK: %s Early Start OFF failed", self._zone_name)
+            _LOGGER.warning("Device Sync queue full, rejecting early start OFF for %s", self._zone_name)
             self._attr_is_on = old_is_on
             self._optimistic_set_at = None
             self.async_write_ha_state()
@@ -368,6 +391,7 @@ class TadoChildLockSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switch
 
         Added optimistic tracking and proper rollback (parity with climate entities).
         Added bootstrap reserve check - blocks action when quota critically low.
+        Routed through DeviceSyncQueue for sequential device operations.
         """
         await _check_bootstrap_reserve(self.hass, f"Child Lock {self._zone_name}", entry_id=self._entry_id)
 
@@ -378,11 +402,21 @@ class TadoChildLockSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switch
         self._optimistic_set_at = time.monotonic()
         self.async_write_ha_state()
 
-        success = await self._async_set_child_lock(True)
-        if success:
+        async def _execute() -> bool:
+            return await self._async_set_child_lock(True)
+
+        enqueued = await self.coordinator.device_sync_queue.enqueue(
+            DeviceOperation(
+                device_serial=self._serial,
+                operation_name="child_lock_on",
+                callback=_execute,
+                entity_id=self.entity_id,
+            ),
+        )
+        if enqueued:
             await async_trigger_immediate_refresh(self.hass, self.entity_id, "child_lock_on")
         else:
-            _LOGGER.warning("ROLLBACK: %s Child Lock (%s) ON failed", self._zone_name, self._serial)
+            _LOGGER.warning("Device Sync queue full, rejecting child lock ON for %s", self._zone_name)
             self._attr_is_on = old_is_on
             self._optimistic_set_at = None
             self.async_write_ha_state()
@@ -392,6 +426,7 @@ class TadoChildLockSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switch
 
         Added optimistic tracking and proper rollback (parity with climate entities).
         Added bootstrap reserve check - blocks action when quota critically low.
+        Routed through DeviceSyncQueue for sequential device operations.
         """
         await _check_bootstrap_reserve(self.hass, f"Child Lock {self._zone_name}", entry_id=self._entry_id)
 
@@ -401,11 +436,21 @@ class TadoChildLockSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switch
         self._optimistic_set_at = time.monotonic()
         self.async_write_ha_state()
 
-        success = await self._async_set_child_lock(False)
-        if success:
+        async def _execute() -> bool:
+            return await self._async_set_child_lock(False)
+
+        enqueued = await self.coordinator.device_sync_queue.enqueue(
+            DeviceOperation(
+                device_serial=self._serial,
+                operation_name="child_lock_off",
+                callback=_execute,
+                entity_id=self.entity_id,
+            ),
+        )
+        if enqueued:
             await async_trigger_immediate_refresh(self.hass, self.entity_id, "child_lock_off")
         else:
-            _LOGGER.warning("ROLLBACK: %s Child Lock (%s) OFF failed", self._zone_name, self._serial)
+            _LOGGER.warning("Device Sync queue full, rejecting child lock OFF for %s", self._zone_name)
             self._attr_is_on = old_is_on
             self._optimistic_set_at = None
             self.async_write_ha_state()

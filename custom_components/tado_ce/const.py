@@ -100,20 +100,6 @@ API_ENDPOINT_DEVICES = f"{TADO_API_BASE}/devices"  # + /{serial}
 AUTH_ENDPOINT_DEVICE = f"{TADO_AUTH_URL}/device_authorize"
 AUTH_ENDPOINT_TOKEN = f"{TADO_AUTH_URL}/token"
 
-# Default zone names (fallback)
-DEFAULT_ZONE_NAMES = {
-    "0": "Hot Water",
-    "1": "Dining",
-    "4": "Guest",
-    "5": "Study",
-    "6": "Dressing",
-    "9": "Lounge",
-    "11": "Hallway",
-    "13": "Bathroom",
-    "16": "Ensuite",
-    "18": "Master",
-}
-
 # =============================================================================
 # Unit Conversion Constants
 # =============================================================================
@@ -362,11 +348,11 @@ WINDOW_SENSITIVITY_REVERSE_MAP = {v: k for k, v in WINDOW_SENSITIVITY_MAP.items(
 WINDOW_SENSITIVITY_DEFAULT = "medium"
 
 # Window detection mode options (for per-zone select)
-WINDOW_DETECTION_MODE_OPTIONS = ["Active", "Passive", "Auto"]
+WINDOW_DETECTION_MODE_OPTIONS = ["active", "passive", "auto"]
 WINDOW_DETECTION_MODE_MAP = {
-    "Active": "active",
-    "Passive": "passive",
-    "Auto": "auto",
+    "active": "active",
+    "passive": "passive",
+    "auto": "auto",
 }
 WINDOW_DETECTION_MODE_REVERSE_MAP = {v: k for k, v in WINDOW_DETECTION_MODE_MAP.items()}
 WINDOW_DETECTION_MODE_DEFAULT = "auto"
@@ -379,6 +365,21 @@ EXTERNAL_SENSOR_NONE_OPTION = "none"
 TEMP_OFFSET_MIN = -3.0
 TEMP_OFFSET_MAX = 3.0
 TEMP_OFFSET_STEP = 0.5
+
+# =============================================================================
+# API Write Optimization Constants
+# =============================================================================
+
+# Smart Actions — zone-level debounce
+SMART_ACTIONS_DEBOUNCE_DEFAULT = 3  # seconds
+SMART_ACTIONS_DEBOUNCE_MIN = 0  # 0 = disabled
+SMART_ACTIONS_DEBOUNCE_MAX = 10  # seconds
+
+# Device Sync — sequential device operations
+DEVICE_SYNC_DELAY_DEFAULT = 1.0  # seconds
+DEVICE_SYNC_DELAY_MIN = 0.5  # seconds
+DEVICE_SYNC_DELAY_MAX = 5.0  # seconds
+DEVICE_SYNC_QUEUE_MAX_DEPTH = 20
 
 # Full sync interval — now only on restart/reload (kept for reference)
 # FULL_SYNC_INTERVAL_HOURS = 6  # Removed in v3.1.0 — Smarter Full Sync

@@ -55,7 +55,7 @@ class HeatingCycle:
             target_temp=data["target_temp"],
             first_rise_time=datetime.fromisoformat(data["first_rise_time"]) if data["first_rise_time"] else None,
             first_rise_temp=data["first_rise_temp"],
-            temperature_readings=[TemperatureReading.from_dict(r) for r in data["temperature_readings"]],  # type: ignore[misc]
+            temperature_readings=[TemperatureReading.from_dict(r) for r in data["temperature_readings"]],
             completed=data["completed"],
             interrupted=data["interrupted"],
             interrupt_reason=data["interrupt_reason"],

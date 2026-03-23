@@ -572,34 +572,6 @@ class ConfigurationManager:
 
         return window_type  # type: ignore[no-any-return]
 
-    def get_ufh_buffer_minutes(self) -> int:
-        """Get UFH (Underfloor Heating) buffer minutes.
-
-        Extra buffer time for UFH zones due to slow thermal response.
-
-        Returns:
-            Buffer minutes (0-120, default 0 = disabled)
-        """
-        minutes = self._get_option("ufh_buffer_minutes", 0)
-        if isinstance(minutes, float):
-            minutes = int(minutes)
-        if isinstance(minutes, int) and 0 <= minutes <= 120:
-            return minutes
-        return 0
-
-    def get_ufh_zones(self) -> list[str]:
-        """Get list of zone IDs configured as UFH zones.
-
-        Zones that should use UFH buffer for preheat calculations.
-
-        Returns:
-            List of zone ID strings, empty list if none configured
-        """
-        zones = self._get_option("ufh_zones", [])
-        if isinstance(zones, list):
-            return [str(z) for z in zones]
-        return []
-
     def get_adaptive_preheat_enabled(self) -> bool:
         """Check if Adaptive Preheat is enabled.
 
@@ -610,20 +582,6 @@ class ConfigurationManager:
             True if Adaptive Preheat is enabled, False otherwise
         """
         return self._get_option("adaptive_preheat_enabled", False)  # type: ignore[no-any-return]
-
-    def get_adaptive_preheat_zones(self) -> list[str]:
-        """Get list of zone IDs enabled for Adaptive Preheat.
-
-        Zones that should use Adaptive Preheat automation.
-        Empty list means all heating zones are enabled.
-
-        Returns:
-            List of zone ID strings, empty list = all zones
-        """
-        zones = self._get_option("adaptive_preheat_zones", [])
-        if isinstance(zones, list):
-            return [str(z) for z in zones]
-        return []
 
     def get_heating_cycle_min_cycles(self) -> int:
         """Get minimum cycles required for thermal analytics.
@@ -902,6 +860,57 @@ class ConfigurationManager:
             return float(hyst)
         return 1.0
 
+    # ------------------------------------------------------------------
+    # API Write Optimization
+    # ------------------------------------------------------------------
+
+    def get_smart_actions_debounce_seconds(self) -> int:
+        """Get Smart Actions debounce window in seconds.
+
+        Returns:
+            Debounce window (0–10, default 3). 0 = disabled.
+        """
+        from .const import (
+            SMART_ACTIONS_DEBOUNCE_DEFAULT,
+            SMART_ACTIONS_DEBOUNCE_MAX,
+            SMART_ACTIONS_DEBOUNCE_MIN,
+        )
+
+        value = self._get_option(
+            "smart_actions_debounce_seconds", SMART_ACTIONS_DEBOUNCE_DEFAULT,
+        )
+        if isinstance(value, float):
+            value = int(value)
+        if isinstance(value, int) and SMART_ACTIONS_DEBOUNCE_MIN <= value <= SMART_ACTIONS_DEBOUNCE_MAX:
+            return value
+        return SMART_ACTIONS_DEBOUNCE_DEFAULT
+
+    def get_action_guard_enabled(self) -> bool:
+        """Check if Action Guard (redundant call suppression) is enabled.
+
+        Action Guard is always on — it transparently skips API calls
+        when the requested state already matches the current state.
+        """
+        return True
+
+    def get_device_sync_delay_seconds(self) -> float:
+        """Get Device Sync delay between sequential device operations.
+
+        Returns:
+            Delay in seconds (0.5–5.0, default 1.0).
+        """
+        from .const import (
+            DEVICE_SYNC_DELAY_DEFAULT,
+            DEVICE_SYNC_DELAY_MAX,
+            DEVICE_SYNC_DELAY_MIN,
+        )
+
+        value = self._get_option(
+            "device_sync_delay_seconds", DEVICE_SYNC_DELAY_DEFAULT,
+        )
+        if isinstance(value, (int, float)) and DEVICE_SYNC_DELAY_MIN <= value <= DEVICE_SYNC_DELAY_MAX:
+            return float(value)
+        return DEVICE_SYNC_DELAY_DEFAULT
 
     def sync_all_to_config_json(self) -> None:
         """Sync all configuration values to config.json for tado_api.py to read.

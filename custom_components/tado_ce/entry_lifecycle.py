@@ -37,8 +37,6 @@ async def async_create_entry_components(
     from .api_call_tracker import APICallTracker
     from .api_client import TadoApiClient
     from .const import DATA_DIR
-    from .migration import cleanup_duplicate_devices
-
     # Create per-entry API call tracker
     retention_days = config_manager.get_api_history_retention_days()
     api_tracker = APICallTracker(
@@ -68,10 +66,6 @@ async def async_create_entry_components(
     from .device_manager import load_version
 
     await hass.async_add_executor_job(load_version)
-
-    # Cleanup duplicate hub/zone devices (migration safety net)
-    if home_id:
-        cleanup_duplicate_devices(hass, home_id)
 
     return {
         "api_tracker": api_tracker,

@@ -1262,9 +1262,31 @@
     },
     "window_predicted_mode": {
       "options": {
-        "Active": "Aktiv (klimatisierungsabhängig)",
-        "Passive": "Passiv (HVAC-unabhängig)",
-        "Auto": "Auto (empfohlen)"
+        "active": "Aktiv (HLK-abhängig)",
+        "passive": "Passiv (HLK-unabhängig)",
+        "auto": "Auto (empfohlen)"
+      }
+    },
+    "adaptive_preheat_mode": {
+      "options": {
+        "off": "Aus",
+        "active": "Aktiv",
+        "passive": "Passiv"
+      }
+    },
+    "wc_heating_system_preset": {
+      "options": {
+        "radiators_standard": "Heizkörper (Standard)",
+        "radiators_low_temp": "Heizkörper (Niedertemperatur)",
+        "underfloor": "Fußbodenheizung",
+        "custom": "Benutzerdefiniert"
+      }
+    },
+    "wc_smoothing_method": {
+      "options": {
+        "none": "Keine (Echtzeit)",
+        "ema": "EMA (Exponentieller gleitender Durchschnitt)",
+        "rolling_average": "Gleitender Durchschnitt"
       }
     }
   },
@@ -1408,7 +1430,7 @@
       },
       "global_settings": {
         "title": "Globale Einstellungen",
-        "description": "Passen Sie Ihr community-getriebenes Smart-Climate-Erlebnis mit erweiterten Funktionen an, die von Benutzern wie Ihnen entwickelt wurden.",
+        "description": "Passen Sie Ihr gemeinschaftsgesteuertes, intelligentes Klimaerlebnis mit fortschrittlichen Funktionen an, die von Nutzern wie Ihnen entwickelt wurden.",
         "sections": {
           "tado_ce_exclusive": {
             "name": "Tado CE Exklusiv",
@@ -1455,7 +1477,7 @@
             "data": {
               "use_outdoor_temp_entity": "Entität Außentemperatur verwenden",
               "outdoor_temp_entity": "Außentemperatur Entität",
-              "hot_water_timer_duration": "Warmwasser-Timer (Minuten)",
+              "hot_water_timer_duration": "Heißwasser-Timer (Minuten)",
               "smart_comfort_mode": "Intelligenter Komfort-Modus",
               "use_feels_like": "Verwenden Sie die gefühlte Temperatur",
               "mold_risk_window_type": "Fenster Typ",
@@ -1484,9 +1506,11 @@
               "night_start_hour": "Nacht Startzeit",
               "custom_day_interval": "Benutzerdefiniertes Tagesintervall (Minuten)",
               "custom_night_interval": "Benutzerdefiniertes Nachtintervall (Minuten)",
-              "refresh_debounce_seconds": "Entprellung aktualisieren (Sekunden)",
+              "refresh_debounce_seconds": "Entprellung auffrischen (Sekunden)",
               "api_history_retention_days": "Aufbewahrung der API-Historie (Tage)",
-              "quota_reserve_enabled": "Schutz der Quotenreserve"
+              "quota_reserve_enabled": "Schutz der Quotenreserve",
+              "smart_actions_debounce_seconds": "Smart Actions Entprellungsfenster",
+              "device_sync_delay_seconds": "Device Sync-Verzögerung zwischen Operationen"
             },
             "data_description": {
               "day_start_hour": "Stunde, in der der Tageszeitraum beginnt (0-23, Standard: 7)",
@@ -1495,15 +1519,17 @@
               "custom_night_interval": "Aufhebung der intelligenten Abfrage für die Nacht (1-1440 min, leer für Auto)",
               "refresh_debounce_seconds": "Verzögerung vor der Auffrischung nach Zustandsänderungen (1-60s)",
               "api_history_retention_days": "Tage, die der API-Aufrufverlauf aufbewahrt werden soll (0 = für immer)",
-              "quota_reserve_enabled": "Pausieren Sie die Abfrage, wenn die Quote niedrig ist. Deaktivieren Sie diese Option nur, wenn Sie die Risiken verstehen."
+              "quota_reserve_enabled": "Pausieren Sie die Abfrage, wenn die Quote niedrig ist. Deaktivieren Sie diese Option nur, wenn Sie die Risiken verstehen.",
+              "smart_actions_debounce_seconds": "Sekunden, die gewartet werden, bevor der endgültige Wert bei einer schnellen Temperatureinstellung gesendet wird. Zum Deaktivieren auf 0 setzen.",
+              "device_sync_delay_seconds": "Verzögerung zwischen aufeinanderfolgenden Geräteoperationen (Kindersicherung, Temperaturausgleich)."
             }
           },
           "flow_temperature_control": {
             "name": "Vorlauftemperaturregelung",
-            "description": "Verbinden Sie sich mit Ihrer Tado Internet Bridge und konfigurieren Sie die automatische Anpassung der Vorlauftemperatur",
+            "description": "Verbinden Sie sich mit Ihrer Tado Internet Bridge (v3+ mit HomeKit-Unterstützung) und konfigurieren Sie die automatische Anpassung der Vorlauftemperatur",
             "data": {
               "bridge_serial": "Seriennummer der Brücke",
-              "bridge_auth_key": "Bridge-Authentifizierungsschlüssel",
+              "bridge_auth_key": "Bridge Auth Code",
               "wc_enabled": "Aktivieren der Wetterkompensation",
               "wc_heating_system_preset": "Heizsystem Typ",
               "wc_slope": "Steigung der Heizkurve",
@@ -1520,8 +1546,8 @@
               "bridge_enabled": "Internet-Brücke einschalten"
             },
             "data_description": {
-              "bridge_serial": "Seriennummer auf der Unterseite Ihrer Internet Bridge (z. B. IB123456789)",
-              "bridge_auth_key": "Authentifizierungsschlüssel vom Brückenaufkleber oder der Tado-App (vertraulich behandeln)",
+              "bridge_serial": "Seriennummer auf der Unterseite Ihrer Internet Bridge v3+ (beginnt mit IB, z. B. IB0123456789)",
+              "bridge_auth_key": "4-stelliger Authentifizierungscode vom Brückenaufkleber (vertraulich behandeln)",
               "wc_slope": "Höher = steilere Kurve = mehr Vorlauftemperaturänderung pro Grad Außenänderung (0,3-3,0)",
               "wc_design_outdoor_temp": "Kälteste erwartete Außentemperatur für Ihre Region (-30 bis 10°C)",
               "wc_max_flow_temp": "Vorlauftemperatur bei Bemessungsaußentemperatur (25-80°C)",
@@ -1532,8 +1558,12 @@
               "wc_room_compensation_factor": "Durchflussanpassung pro Grad Innenraumabweichung vom Sollwert (1,0-5,0)",
               "wc_step_size": "Die Vorlauftemperatur wird auf diese Schrittgröße gerundet - größer = weniger API-Aufrufe, weniger Schwankungen (0,5-2,0°C)",
               "wc_hysteresis": "Mindeständerung gegenüber dem zuletzt gesendeten Wert, bevor ein neuer API-Aufruf erfolgt (0,5-3,0°C)",
-              "bridge_enabled": "Aktivieren Sie diese Option, um sich mit Ihrer Tado Internet Bridge zu verbinden. Bei Deaktivierung werden die Bridge-Anmeldeinformationen und alle Bridge-Entitäten entfernt."
+              "bridge_enabled": "Aktivieren Sie die Verbindung zu Ihrer Tado Internet Bridge. Erfordert v3+ Bridge (HomeKit-kompatibel). Bei Deaktivierung werden die Bridge-Anmeldeinformationen und alle Bridge-Entitäten entfernt"
             }
+          },
+          "api_write": {
+            "data": {},
+            "data_description": {}
           }
         }
       },
@@ -1553,12 +1583,12 @@
             "data": {
               "heating_type": "Typ des Wärmestrahlers",
               "ufh_buffer_minutes": "UFH-Puffer (Minuten)",
-              "adaptive_preheat": "Adaptives Heizen"
+              "adaptive_preheat": "Adaptiver Vorwärmmodus"
             },
             "data_description": {
               "heating_type": "Heizkörper oder Fußbodenheizung",
               "ufh_buffer_minutes": "Zusätzliche Minuten für das Aufwärmen des UFH (0-60)",
-              "adaptive_preheat": "Automatischer Start der Heizung vor dem Zeitplan"
+              "adaptive_preheat": "Aus: deaktiviert. Aktiv: automatischer Start der Heizung und Erfassung des Zustands für die Wiederherstellung. Passiv: automatischer Start nur, wenn kein Overlay aktiv ist."
             }
           },
           "comfort_section": {
@@ -1566,13 +1596,13 @@
             "data": {
               "smart_comfort_mode": "Intelligenter Komfort-Modus",
               "window_type": "Fenster Typ",
-              "window_predicted_mode": "Fenstererkennungsmodus",
+              "window_predicted_mode": "Modus der Fenstererkennung",
               "window_predicted_sensitivity": "Empfindlichkeit der Fenstererkennung"
             },
             "data_description": {
               "smart_comfort_mode": "Anpassung der Zieltemperatur an die Außenbedingungen",
               "window_type": "Fenstertyp für die Berechnung des Schimmelpilzrisikos",
-              "window_predicted_mode": "Aktiv: Erkennt nur, wenn die Klimaanlage läuft. Passiv: Erkennt unabhängig vom Status der Klimaanlage. Auto: Verwendet Aktiv, wenn die Klimaanlage eingeschaltet ist, und Passiv, wenn sie ausgeschaltet ist.",
+              "window_predicted_mode": "Aktiv: Erfasst nur, wenn die HLK läuft. Passiv: erkennt unabhängig vom HLK-Zustand. Auto: verwendet Aktiv, wenn die HLK eingeschaltet ist, Passiv, wenn sie ausgeschaltet ist.",
               "window_predicted_sensitivity": "Empfindlichkeit für die Erkennung der voraussichtlichen Fensteröffnung"
             }
           },
@@ -1634,7 +1664,7 @@
     "error": {
       "interval_out_of_range": "Das Abfrageintervall muss zwischen 1 und 1440 Minuten liegen.",
       "invalid_number": "Bitte geben Sie eine gültige Nummer ein",
-      "bridge_auth_failed": "Ungültige Bridge-Seriennummer oder ungültiger Authentifizierungsschlüssel - bitte prüfen und erneut versuchen",
+      "bridge_auth_failed": "Ungültige Bridge-Seriennummer oder ungültiger Authentifizierungscode - bitte prüfen und erneut versuchen",
       "wc_min_exceeds_max": "Die minimale Vorlauftemperatur kann die maximale Vorlauftemperatur nicht überschreiten.",
       "bridge_serial_invalid": "Nur v3+ Internet Bridges (Seriennummern, die mit IB beginnen) unterstützen die lokale API. Ihre Seriennummer deutet auf eine v2-Brücke (GW-Präfix) hin, die nicht über eine lokale API verfügt. Die Wetterkompensation kann auch ohne Brücke über Cloud-Daten genutzt werden."
     }

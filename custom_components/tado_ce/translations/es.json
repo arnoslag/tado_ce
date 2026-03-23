@@ -1262,9 +1262,31 @@
     },
     "window_predicted_mode": {
       "options": {
-        "Active": "Activo (dependiente del sistema de climatización)",
-        "Passive": "Pasivo (independiente del sistema de climatización)",
-        "Auto": "Automático (recomendado)"
+        "active": "Activo (dependiente de HVAC)",
+        "passive": "Pasivo (independiente de la calefacción, ventilación y aire acondicionado)",
+        "auto": "Auto (recomendado)"
+      }
+    },
+    "adaptive_preheat_mode": {
+      "options": {
+        "off": "Fuera de",
+        "active": "Activo",
+        "passive": "Pasivo"
+      }
+    },
+    "wc_heating_system_preset": {
+      "options": {
+        "radiators_standard": "Radiadores (estándar)",
+        "radiators_low_temp": "Radiadores (baja temperatura)",
+        "underfloor": "Calefacción por suelo radiante",
+        "custom": "A medida"
+      }
+    },
+    "wc_smoothing_method": {
+      "options": {
+        "none": "Ninguno (en tiempo real)",
+        "ema": "EMA (Media móvil exponencial)",
+        "rolling_average": "Media móvil"
       }
     }
   },
@@ -1408,7 +1430,7 @@
       },
       "global_settings": {
         "title": "Configuración global",
-        "description": "Personaliza tu experiencia de clima inteligente impulsada por la comunidad con funciones avanzadas creadas por usuarios como tú.",
+        "description": "Personaliza tu experiencia climática inteligente impulsada por la comunidad con funciones avanzadas creadas por usuarios como tú.",
         "sections": {
           "tado_ce_exclusive": {
             "name": "Tado CE Exclusivo",
@@ -1486,7 +1508,9 @@
               "custom_night_interval": "Intervalo nocturno personalizado (minutos)",
               "refresh_debounce_seconds": "Refresh Debounce (segundos)",
               "api_history_retention_days": "Retención del historial API (días)",
-              "quota_reserve_enabled": "Protección de la reserva de cuotas"
+              "quota_reserve_enabled": "Protección de la reserva de cuotas",
+              "smart_actions_debounce_seconds": "Ventana de eliminación de rebotes de Smart Actions",
+              "device_sync_delay_seconds": "Dispositivo Retardo de sincronización entre operaciones"
             },
             "data_description": {
               "day_start_hour": "Hora de inicio del periodo diurno (0-23, por defecto: 7)",
@@ -1495,15 +1519,17 @@
               "custom_night_interval": "Anulación del sondeo inteligente nocturno (1-1440 min, vacío para automático)",
               "refresh_debounce_seconds": "Retraso antes de refrescar después de cambios de estado (1-60s)",
               "api_history_retention_days": "Días para conservar el historial de llamadas a la API (0 = para siempre)",
-              "quota_reserve_enabled": "Pausa el sondeo cuando la cuota es baja. Desactívelo sólo si conoce los riesgos."
+              "quota_reserve_enabled": "Pausa el sondeo cuando la cuota es baja. Desactívelo sólo si conoce los riesgos.",
+              "smart_actions_debounce_seconds": "Segundos de espera antes de enviar el valor final al ajustar rápidamente la temperatura. Ajuste a 0 para desactivar.",
+              "device_sync_delay_seconds": "Retraso entre operaciones secuenciales del dispositivo (bloqueo infantil, compensación de temperatura)."
             }
           },
           "flow_temperature_control": {
             "name": "Control de la temperatura del caudal",
-            "description": "Conéctese a su puente de Internet Tado y configure el ajuste automático de la temperatura de impulsión",
+            "description": "Conéctate a tu Tado Internet Bridge (v3+ compatible con HomeKit) y configura el ajuste automático de la temperatura de impulsión",
             "data": {
               "bridge_serial": "Número de serie del puente",
-              "bridge_auth_key": "Clave de autenticación de puente",
+              "bridge_auth_key": "Bridge Auth Code",
               "wc_enabled": "Activar la compensación meteorológica",
               "wc_heating_system_preset": "Tipo de sistema de calefacción",
               "wc_slope": "Pendiente de la curva de calefacción",
@@ -1520,8 +1546,8 @@
               "bridge_enabled": "Activar el puente de Internet"
             },
             "data_description": {
-              "bridge_serial": "Número de serie impreso en la parte inferior del Puente de Internet (por ejemplo, IB123456789)",
-              "bridge_auth_key": "Auth key de la pegatina puente o de la aplicación Tado (mantener confidencial)",
+              "bridge_serial": "Número de serie impreso en la parte inferior de su Puente de Internet v3+ (empieza por IB, por ejemplo IB0123456789)",
+              "bridge_auth_key": "Código de autenticación de 4 dígitos de la pegatina del puente (confidencial)",
               "wc_slope": "Más alto = curva más pronunciada = más cambio de temperatura de caudal por grado de cambio en exteriores (0,3-3,0)",
               "wc_design_outdoor_temp": "Temperatura exterior más fría prevista para su región (de -30 a 10 °C)",
               "wc_max_flow_temp": "Temperatura del caudal a la temperatura exterior de diseño (25-80°C)",
@@ -1532,8 +1558,12 @@
               "wc_room_compensation_factor": "Ajuste del caudal por grado de desviación interior respecto a la consigna (1,0-5,0)",
               "wc_step_size": "La temperatura de flujo se redondea a este tamaño de paso - mayor = menos llamadas a la API, menos oscilación (0,5-2,0°C)",
               "wc_hysteresis": "Cambio mínimo del último valor enviado antes de realizar una nueva llamada a la API (0,5-3,0°C)",
-              "bridge_enabled": "Habilitar para conectarse a su Puente de Internet Tado. Deshabilitar eliminará las credenciales de puente y todas las entidades de puente"
+              "bridge_enabled": "Habilita la conexión a tu puente de Internet Tado. Requiere puente v3+ (compatible con HomeKit). Deshabilitar eliminará las credenciales de puente y todas las entidades de puente."
             }
+          },
+          "api_write": {
+            "data": {},
+            "data_description": {}
           }
         }
       },
@@ -1553,12 +1583,12 @@
             "data": {
               "heating_type": "Tipo de emisor de calor",
               "ufh_buffer_minutes": "Tampón UFH (minutos)",
-              "adaptive_preheat": "Precalentamiento adaptativo"
+              "adaptive_preheat": "Modo de precalentamiento adaptativo"
             },
             "data_description": {
               "heating_type": "Calefacción por radiadores o suelo radiante",
               "ufh_buffer_minutes": "Minutos adicionales para el calentamiento de la UFH (0-60)",
-              "adaptive_preheat": "Autoencendido de la calefacción antes de lo previsto"
+              "adaptive_preheat": "Apagado: desactivado. Activo: autoinicio de la calefacción y captura del estado para su restauración. Pasivo: autoarranque solo cuando no hay ninguna superposición activa."
             }
           },
           "comfort_section": {
@@ -1572,7 +1602,7 @@
             "data_description": {
               "smart_comfort_mode": "Ajuste la temperatura objetivo en función de las condiciones exteriores",
               "window_type": "Tipo de ventana para el cálculo del riesgo de moho",
-              "window_predicted_mode": "Activo: detecta solo cuando el sistema de climatización está en funcionamiento. Pasivo: detecta independientemente del estado del sistema de climatización. Automático: utiliza el modo Activo cuando el sistema de climatización está encendido y el modo Pasivo cuando está apagado.",
+              "window_predicted_mode": "Activa: detecta sólo cuando la climatización está en marcha. Pasivo: detecta independientemente del estado del HVAC. Auto: utiliza Activo cuando el HVAC está encendido, Pasivo cuando está apagado.",
               "window_predicted_sensitivity": "Sensibilidad para la detección de ventanas abiertas"
             }
           },
@@ -1634,7 +1664,7 @@
     "error": {
       "interval_out_of_range": "El intervalo de sondeo debe estar comprendido entre 1 y 1440 minutos",
       "invalid_number": "Introduzca un número válido",
-      "bridge_auth_failed": "Serie del puente o clave de autenticación no válidas - por favor, compruébelo e inténtelo de nuevo.",
+      "bridge_auth_failed": "Código de serie o de autenticación del puente no válido - compruébelo e inténtelo de nuevo",
       "wc_min_exceeds_max": "La temperatura mínima del caudal no puede superar la temperatura máxima del caudal",
       "bridge_serial_invalid": "Sólo los puentes de Internet v3+ (serie que empieza por IB) admiten la API local. Su serie sugiere un puente v2 (prefijo GW) que no tiene API local. La Compensación Meteorológica puede seguir utilizándose sin puente a través de los datos en la nube."
     }

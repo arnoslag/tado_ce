@@ -55,6 +55,7 @@ from .optimistic_helpers import (
     resolve_optimistic_vs_api,
     set_optimistic_state,
 )
+from .write_optimizer import ActionGuard, get_current_schedule_target
 
 if TYPE_CHECKING:
     from .coordinator import TadoDataUpdateCoordinator
@@ -529,7 +530,7 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
         """Return extra state attributes."""
-        return {
+        attrs: dict[str, Any] = {
             "overlay_type": _format_overlay_type(self._overlay_type),
             "ac_power_percentage": self._ac_power_percentage,
             "zone_id": self._zone_id,
@@ -539,6 +540,14 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
             "external_temp_sensor": self._external_temp_sensor,
             "external_humidity_sensor": self._external_humidity_sensor,
         }
+        # Schedule Preview — show current schedule target temperature
+        scheduled_temp = get_current_schedule_target(
+            self._zone_id,
+            data_loader=self.coordinator.data_loader,
+        )
+        if scheduled_temp is not None:
+            attrs["scheduled_target_temperature"] = scheduled_temp
+        return attrs
 
     @callback
     def _handle_coordinator_update(self) -> None:
@@ -750,6 +759,7 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
         Service call now awaits API completion (with timeout) for proper HA Frontend state sync.
 
         Added bootstrap reserve check - blocks action when quota critically low.
+        Added Action Guard + Smart Actions debounce for write optimization.
         """
         temperature = kwargs.get(ATTR_TEMPERATURE)
         hvac_mode = kwargs.get(ATTR_HVAC_MODE)
@@ -771,6 +781,18 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
             return
 
         if temperature is None:
+            return
+
+        # Action Guard — skip if temp + mode already match current state
+        # Skip guard when AC is OFF (smart mode selection will change mode)
+        if self._attr_hvac_mode != HVACMode.OFF and ActionGuard.should_skip_temperature(
+            temperature, self._attr_target_temperature,
+            hvac_mode or self._attr_hvac_mode, self._attr_hvac_mode,
+        ):
+            _LOGGER.debug(
+                "Action Guard: skip AC %s set_temperature (already %s°C)",
+                self._zone_name, temperature,
+            )
             return
 
         await _check_bootstrap_reserve(self.hass, f"AC {self._zone_name}", entry_id=self._entry_id)
@@ -822,26 +844,55 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
         )
         self.async_write_ha_state()
 
-        # Await API call with timeout (fixes #44)
-        api_success = False
-        try:
-            async with asyncio.timeout(10):
-                api_success = await self._async_set_ac_overlay(temperature=temperature, mode=tado_mode)
-        except TimeoutError:
-            _LOGGER.warning("AC TIMEOUT: %s temperature change timed out", self._zone_name)
-        except Exception as e:
-            _LOGGER.warning("AC ERROR: %s temperature change failed (%s)", self._zone_name, e)
+        # Smart Actions debounce — wrap API call in closure
+        debounce_window = self.coordinator.config_manager.get_smart_actions_debounce_seconds()
+        if debounce_window > 0:
+            async def _execute_api_call() -> None:
+                """Execute the debounced API call."""
+                api_success = False
+                try:
+                    async with asyncio.timeout(10):
+                        api_success = await self._async_set_ac_overlay(temperature=temperature, mode=tado_mode)
+                except TimeoutError:
+                    _LOGGER.warning("AC TIMEOUT: %s temperature change timed out", self._zone_name)
+                except Exception as e:
+                    _LOGGER.warning("AC ERROR: %s temperature change failed (%s)", self._zone_name, e)
 
-        if api_success:
-            _LOGGER.info("AC Set %s to %s°C", self._zone_name, temperature)
-            await async_trigger_immediate_refresh(self.hass, self.entity_id, "temperature_change")
+                if api_success:
+                    _LOGGER.info("AC Set %s to %s°C", self._zone_name, temperature)
+                    await async_trigger_immediate_refresh(self.hass, self.entity_id, "temperature_change")
+                else:
+                    _LOGGER.warning("AC ROLLBACK: %s temperature change failed", self._zone_name)
+                    self._attr_target_temperature = old_temp
+                    self._attr_hvac_mode = old_mode
+                    self._attr_hvac_action = old_action
+                    self._clear_optimistic_state()
+                    self.async_write_ha_state()
+
+            await self.coordinator.action_debouncer.debounce(
+                self._zone_id, _execute_api_call, window=float(debounce_window),
+            )
         else:
-            _LOGGER.warning("AC ROLLBACK: %s temperature change failed", self._zone_name)
-            self._attr_target_temperature = old_temp
-            self._attr_hvac_mode = old_mode
-            self._attr_hvac_action = old_action
-            self._clear_optimistic_state()
-            self.async_write_ha_state()
+            # No debounce — execute immediately (existing behavior)
+            api_success = False
+            try:
+                async with asyncio.timeout(10):
+                    api_success = await self._async_set_ac_overlay(temperature=temperature, mode=tado_mode)
+            except TimeoutError:
+                _LOGGER.warning("AC TIMEOUT: %s temperature change timed out", self._zone_name)
+            except Exception as e:
+                _LOGGER.warning("AC ERROR: %s temperature change failed (%s)", self._zone_name, e)
+
+            if api_success:
+                _LOGGER.info("AC Set %s to %s°C", self._zone_name, temperature)
+                await async_trigger_immediate_refresh(self.hass, self.entity_id, "temperature_change")
+            else:
+                _LOGGER.warning("AC ROLLBACK: %s temperature change failed", self._zone_name)
+                self._attr_target_temperature = old_temp
+                self._attr_hvac_mode = old_mode
+                self._attr_hvac_action = old_action
+                self._clear_optimistic_state()
+                self.async_write_ha_state()
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set new HVAC mode.
@@ -850,7 +901,16 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
         Service call now awaits API completion (with timeout) for proper HA Frontend state sync.
 
         Added bootstrap reserve check - blocks action when quota critically low.
+        Added Action Guard for write optimization.
         """
+        # Action Guard — skip if mode already matches current state
+        if ActionGuard.should_skip_hvac_mode(hvac_mode, self._attr_hvac_mode):
+            _LOGGER.debug(
+                "Action Guard: skip AC %s set_hvac_mode (already %s)",
+                self._zone_name, hvac_mode,
+            )
+            return
+
         await _check_bootstrap_reserve(self.hass, f"AC {self._zone_name}", entry_id=self._entry_id)
 
         client = self.coordinator.api_client
@@ -956,7 +1016,16 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
         Service call now awaits API completion (with timeout) for proper HA Frontend state sync.
 
         Added bootstrap reserve check - blocks action when quota critically low.
+        Added Action Guard for write optimization.
         """
+        # Action Guard — skip if fan mode already matches current state
+        if ActionGuard.should_skip_fan_mode(fan_mode, self._attr_fan_mode):
+            _LOGGER.debug(
+                "Action Guard: skip AC %s set_fan_mode (already %s)",
+                self._zone_name, fan_mode,
+            )
+            return
+
         await _check_bootstrap_reserve(self.hass, f"AC {self._zone_name}", entry_id=self._entry_id)
 
         # Capture current state before overlay (state restoration)
@@ -1020,7 +1089,16 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
         Service call now awaits API completion (with timeout) for proper HA Frontend state sync.
 
         Added bootstrap reserve check - blocks action when quota critically low.
+        Added Action Guard for write optimization.
         """
+        # Action Guard — skip if swing mode already matches current state
+        if ActionGuard.should_skip_swing_mode(swing_mode, self._attr_swing_mode):
+            _LOGGER.debug(
+                "Action Guard: skip AC %s set_swing_mode (already %s)",
+                self._zone_name, swing_mode,
+            )
+            return
+
         await _check_bootstrap_reserve(self.hass, f"AC {self._zone_name}", entry_id=self._entry_id)
 
         # Capture current state before overlay (state restoration)
