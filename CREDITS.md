@@ -21,6 +21,10 @@ Thank you to everyone who supported the project through [Buy Me a Coffee](https:
 
 Community contributors who helped shape each release through bug reports, feature requests, testing, and feedback.
 
+### v3.4.1
+
+- **[@Saughassy](https://github.com/Saughassy)** — Reported clean install crash with detailed debug logs that pinpointed the rate limit data handling issue ([#204](https://github.com/hiall-fyi/tado_ce/issues/204))
+
 ### v3.3.1
 
 - **[@driagi](https://github.com/driagi)** — Identified that fixed-slope heating curves hit the min flow floor prematurely, proposed the auto-slope formula that now powers all preset curves ([#187](https://github.com/hiall-fyi/tado_ce/issues/187))

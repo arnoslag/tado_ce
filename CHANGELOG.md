@@ -2,6 +2,13 @@
 
 All notable changes to Tado CE will be documented in this file.
 
+## [3.4.1] - 2026-03-26
+
+### Bug Fixes
+- **Fixed crash on clean install** ([#204](https://github.com/hiall-fyi/tado_ce/issues/204) - @Saughassy) — The integration failed to start with "unsupported operand type(s) for //: 'NoneType' and 'int'" when rate limit data had missing values. Now handles missing rate limit fields gracefully during first setup.
+
+---
+
 ## [3.4.0] - 2026-03-23
 
 ### Features

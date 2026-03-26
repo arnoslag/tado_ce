@@ -73,11 +73,15 @@ def _calculate_adaptive_interval(ratelimit_data: dict[str, Any], config_manager:
     """
     from homeassistant.util import dt as dt_util
 
-    remaining = ratelimit_data.get("remaining", 100)
+    remaining = ratelimit_data.get("remaining")
+    if remaining is None:
+        remaining = 100
     test_mode = ratelimit_data.get("test_mode", False)
 
     # Get reset time info
-    reset_seconds = ratelimit_data.get("reset_seconds", 86400)
+    reset_seconds = ratelimit_data.get("reset_seconds")
+    if reset_seconds is None:
+        reset_seconds = 86400
     last_reset_utc = ratelimit_data.get("last_reset_utc")
 
     # Only recalculate reset_seconds from last_reset_utc in LIVE mode
@@ -421,8 +425,12 @@ def should_pause_polling(ratelimit_data: dict[str, Any], config_manager: Configu
             _LOGGER.debug("Failed to check reset time: %s", e)
 
     # No need to recalculate - save_ratelimit() stores the correct values
-    remaining = ratelimit_data.get("remaining", 100)
-    daily_limit = ratelimit_data.get("limit", 100)
+    remaining = ratelimit_data.get("remaining")
+    if remaining is None:
+        remaining = 100
+    daily_limit = ratelimit_data.get("limit")
+    if daily_limit is None:
+        daily_limit = 100
 
     # Calculate reserve threshold: max of absolute minimum or percentage
     reserve_threshold = max(QUOTA_RESERVE_CALLS, int(daily_limit * QUOTA_RESERVE_PERCENT))
@@ -437,7 +445,9 @@ def should_pause_polling(ratelimit_data: dict[str, Any], config_manager: Configu
 
     # Check if we should pause
     if remaining <= reserve_threshold:
-        reset_seconds = ratelimit_data.get("reset_seconds", 0)
+        reset_seconds = ratelimit_data.get("reset_seconds")
+        if reset_seconds is None:
+            reset_seconds = 0
         hours = reset_seconds // 3600
         minutes = (reset_seconds % 3600) // 60
 
