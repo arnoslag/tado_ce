@@ -2,47 +2,54 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from dataclasses import dataclass
+from datetime import datetime
 import logging
 from typing import TYPE_CHECKING, Any
 
+from homeassistant.util import dt as dt_util
+
 from .calculations import classify_comfort_level, classify_mold_risk_level
-from .insights import (
-    Insight,
+from .helpers import parse_iso_datetime
+from .insights_api import (
+    calculate_api_quota_planning_insight,
+    calculate_api_usage_spike_insight,
+    calculate_calls_per_hour,
+)
+from .insights_cross_zone import (
     aggregate_cross_zone_condensation,
     aggregate_cross_zone_mold_risk,
     aggregate_cross_zone_window_predicted,
-    calculate_api_quota_planning_insight,
-    calculate_api_usage_spike_insight,
-    calculate_away_heating_active_insight,
-    calculate_battery_recommendation,
-    calculate_boiler_flow_anomaly_insight,
-    calculate_calls_per_hour,
-    calculate_comfort_recommendation,
-    calculate_connection_recommendation,
     calculate_cross_zone_efficiency_insight,
-    calculate_device_limitation_insight,
-    calculate_early_start_disabled_insight,
-    calculate_frequent_override_insight,
-    calculate_frost_risk_insight,
-    calculate_geofencing_device_offline_insight,
-    calculate_heating_anomaly_insight,
-    calculate_heating_off_cold_room_insight,
-    calculate_heating_season_advisory_insight,
-    calculate_home_all_off_insight,
     calculate_humidity_imbalance_insight,
+    calculate_temperature_imbalance_insight,
+)
+from .insights_device import (
+    calculate_battery_recommendation,
+    calculate_connection_recommendation,
+    calculate_geofencing_device_offline_insight,
+)
+from .insights_environment import (
+    calculate_comfort_recommendation,
     calculate_humidity_trend_insight,
     calculate_mold_risk_recommendation,
-    calculate_overlay_duration_insight,
+)
+from .insights_heating import (
+    calculate_boiler_flow_anomaly_insight,
+    calculate_heating_anomaly_insight,
+    calculate_heating_off_cold_room_insight,
     calculate_poor_thermal_efficiency_insight,
     calculate_preheat_timing_insight,
-    calculate_schedule_gap_insight,
-    calculate_solar_ac_load_insight,
-    calculate_solar_gain_insight,
-    calculate_temperature_imbalance_insight,
-    calculate_weather_impact_insight,
-    get_insight_priority,
 )
+from .insights_misc import (
+    calculate_away_heating_active_insight,
+    calculate_frost_risk_insight,
+    calculate_home_all_off_insight,
+    calculate_schedule_gap_insight,
+    calculate_weather_impact_insight,
+)
+from .insights_models import Insight
+from .insights_presenter import get_insight_priority
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -50,6 +57,54 @@ if TYPE_CHECKING:
     from .coordinator import TadoDataUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class InsightContext:
+    """Immutable config snapshot for gating insights per poll cycle.
+
+    Each boolean reflects whether the corresponding feature is enabled
+    in the user's config. Insight collectors check these flags before
+    producing insights, so disabled features never generate noise.
+    """
+
+    environment_enabled: bool
+    preheat_enabled: bool
+    thermal_enabled: bool
+    schedule_enabled: bool
+    weather_enabled: bool
+    presence_enabled: bool
+    geofencing_active: bool
+
+    @classmethod
+    def from_coordinator(cls, coordinator: TadoDataUpdateCoordinator) -> InsightContext:
+        """Build context from coordinator config and API state.
+
+        Args:
+            coordinator: The data update coordinator.
+
+        Returns:
+            Frozen InsightContext snapshot.
+        """
+        cfg = coordinator.config_manager
+
+        # Geofencing is active only when presence sync is on AND
+        # the API reports presenceLocked=False (i.e. auto/geofencing mode).
+        presence_enabled = cfg.get_home_state_sync_enabled()
+        home_state = (coordinator.data or {}).get("home_state") or {}
+        geofencing_active = presence_enabled and not home_state.get(
+            "presenceLocked", True,
+        )
+
+        return cls(
+            environment_enabled=cfg.get_environment_sensors_enabled(),
+            preheat_enabled=cfg.get_adaptive_preheat_enabled(),
+            thermal_enabled=cfg.get_thermal_analytics_enabled(),
+            schedule_enabled=cfg.get_schedule_calendar_enabled(),
+            weather_enabled=cfg.get_weather_enabled(),
+            presence_enabled=presence_enabled,
+            geofencing_active=geofencing_active,
+        )
 
 
 def collect_single_zone_insights(
@@ -62,6 +117,7 @@ def collect_single_zone_insights(
     anomaly_start_times: dict[str, datetime],
     humidity_histories: dict[str, list[Any]] | None = None,
     schedules: dict[str, Any] | None = None,
+    ctx: InsightContext | None = None,
 ) -> list[Any]:
     """Collect all insights for a single zone.
 
@@ -79,18 +135,22 @@ def collect_single_zone_insights(
         anomaly_start_times: Mutable dict tracking per-zone anomaly start.
         humidity_histories: Mutable dict for humidity trend (Home sensor only).
         schedules: Pre-loaded schedules dict (None = skip schedule gap).
+        ctx: Config context for gating insights. Built automatically if None.
 
     Returns:
         List of Insight objects for this zone.
     """
+    if ctx is None:
+        ctx = InsightContext.from_coordinator(coordinator)
+
     insights: list[Any] = []
 
     sensor_data = zone_data.get("sensorDataPoints") or {}
     humidity = (sensor_data.get("humidity") or {}).get("percentage")
     inside_temp = (sensor_data.get("insideTemperature") or {}).get("celsius")
 
-    # --- Mold risk ---
-    if humidity is not None and inside_temp is not None:
+    # --- Mold risk (environment) ---
+    if ctx.environment_enabled and humidity is not None and inside_temp is not None:
         risk = classify_mold_risk_level(inside_temp, humidity)
         if risk in ("Critical", "High", "Medium"):
             rec = calculate_mold_risk_recommendation(
@@ -108,10 +168,10 @@ def collect_single_zone_insights(
                 ),
             )
 
-    # --- Comfort (skip when heating OFF) ---
+    # --- Comfort (environment, skip when heating OFF) ---
     setting = zone_data.get("setting") or {}
     power = setting.get("power", "OFF")
-    if inside_temp is not None and power == "ON":
+    if ctx.environment_enabled and inside_temp is not None and power == "ON":
         comfort_state = classify_comfort_level(inside_temp)
         if comfort_state in ("Cold", "Cool", "Freezing"):
             rec = calculate_comfort_recommendation(
@@ -142,7 +202,7 @@ def collect_single_zone_insights(
                 ),
             )
 
-    # --- Coordinator-based insights (no hass.states.get) ---
+    # --- Coordinator-based insights (condensation, window, preheat, anomaly) ---
     _collect_ha_entity_insights(
         coordinator,
         zone_id,
@@ -151,28 +211,10 @@ def collect_single_zone_insights(
         inside_temp,
         anomaly_start_times,
         insights,
+        ctx,
     )
 
-    # --- Overlay duration ---
-    overlay_type = zone_data.get("overlayType")
-    next_schedule_change = zone_data.get("nextScheduleChange")
-    insight = calculate_overlay_duration_insight(
-        overlay_type=overlay_type,
-        next_schedule_change=next_schedule_change,
-        zone_name=zone_name,
-    )
-    if insight:
-        insights.append(insight)
-
-    # --- Frequent override ---
-    insight = calculate_frequent_override_insight(
-        overlay_type=overlay_type,
-        zone_name=zone_name,
-    )
-    if insight:
-        insights.append(insight)
-
-    # --- Heating off + cold room ---
+    # --- Heating off + cold room (always relevant — basic safety) ---
     insight = calculate_heating_off_cold_room_insight(
         power_state=setting.get("power"),
         current_temp=inside_temp,
@@ -182,18 +224,14 @@ def collect_single_zone_insights(
     if insight:
         insights.append(insight)
 
-    # --- Early start disabled ---
-    insight = _check_early_start(coordinator, zone_id, zone_name, zones_info)  # type: ignore[assignment]
-    if insight:
-        insights.append(insight)
+    # --- Poor thermal efficiency (thermal) ---
+    if ctx.thermal_enabled:
+        insight = _check_thermal_efficiency(coordinator, zone_id, zone_name)  # type: ignore[assignment]
+        if insight:
+            insights.append(insight)
 
-    # --- Poor thermal efficiency ---
-    insight = _check_thermal_efficiency(coordinator, zone_id, zone_name)  # type: ignore[assignment]
-    if insight:
-        insights.append(insight)
-
-    # --- Schedule gap (Home sensor passes schedules; Zone sensor skips) ---
-    if schedules and inside_temp is not None:
+    # --- Schedule gap (schedule) ---
+    if ctx.schedule_enabled and schedules and inside_temp is not None:
         insight = _check_schedule_gap(  # type: ignore[assignment]
             schedules,
             zone_id,
@@ -204,37 +242,23 @@ def collect_single_zone_insights(
         if insight:
             insights.append(insight)
 
-    # --- Boiler flow anomaly ---
-    activity = zone_data.get("activityDataPoints") or {}
-    flow_data = activity.get("boilerFlowTemperature") or {}
-    flow_temp = flow_data.get("celsius")
-    if flow_temp is not None:
-        hp_pct = (activity.get("heatingPower") or {}).get("percentage")
-        insight = calculate_boiler_flow_anomaly_insight(
-            flow_temp=flow_temp,
-            heating_power_pct=hp_pct,
-            zone_name=zone_name,
-        )
-        if insight:
-            insights.append(insight)
-
-    # --- Device limitation ---
-    if zones_info:
-        zone_info = next(
-            (z for z in zones_info if str(z.get("id")) == zone_id),
-            None,
-        )
-        if zone_info:
-            insight = calculate_device_limitation_insight(
-                has_humidity_sensor=humidity is not None,
-                has_temperature_sensor=inside_temp is not None,
+    # --- Boiler flow anomaly (thermal) ---
+    if ctx.thermal_enabled:
+        activity = zone_data.get("activityDataPoints") or {}
+        flow_data = activity.get("boilerFlowTemperature") or {}
+        flow_temp = flow_data.get("celsius")
+        if flow_temp is not None:
+            hp_pct = (activity.get("heatingPower") or {}).get("percentage")
+            insight = calculate_boiler_flow_anomaly_insight(
+                flow_temp=flow_temp,
+                heating_power_pct=hp_pct,
                 zone_name=zone_name,
             )
             if insight:
                 insights.append(insight)
 
-    # --- Humidity trend (Home sensor only — needs history tracking) ---
-    if humidity_histories is not None and humidity is not None:
+    # --- Humidity trend (environment, Home sensor only) ---
+    if ctx.environment_enabled and humidity_histories is not None and humidity is not None:
         if zone_name not in humidity_histories:
             humidity_histories[zone_name] = []
         humidity_histories[zone_name].append(humidity)
@@ -248,7 +272,7 @@ def collect_single_zone_insights(
         if insight:
             insights.append(insight)
 
-    # --- Battery and connection ---
+    # --- Battery and connection (always relevant — device health) ---
     if zones_info:
         _collect_single_zone_device_insights(zone_id, zone_name, zones_info, insights)
 
@@ -275,6 +299,7 @@ def collect_zone_insights(
     zone_insights: dict[str, list[Any]] = {}
 
     try:
+        ctx = InsightContext.from_coordinator(coordinator)
         coord_data = coordinator.data or {}
         zones_data = coord_data.get("zones")
         zones_info = coord_data.get("zones_info")
@@ -301,6 +326,7 @@ def collect_zone_insights(
                 anomaly_start_times=anomaly_start_times,
                 humidity_histories=humidity_histories,
                 schedules=schedules,
+                ctx=ctx,
             )
             if insights:
                 zone_insights[zone_name] = insights
@@ -319,6 +345,7 @@ def _collect_ha_entity_insights(
     inside_temp: float | None,
     anomaly_start_times: dict[str, datetime],
     insights: list[Any],
+    ctx: InsightContext,
 ) -> None:
     """Collect insights using coordinator data instead of hass.states.get().
 
@@ -327,130 +354,96 @@ def _collect_ha_entity_insights(
     zone_data (already in coordinator.data). Reads preheat time from
     HeatingCycleCoordinator.
     """
-    # Condensation risk — from coordinator.entity_data (published by TadoCondensationRiskSensor)
-    cond_data = coordinator.get_entity_data(zone_id, "condensation_risk")
-    if cond_data:
-        cond_state = cond_data.get("state", "None")
-        if cond_state not in ("None", "Low", "unavailable", "unknown"):
-            cond_rec = cond_data.get("recommendation", "")
-            if not cond_rec:
-                cond_rec = f"{zone_name}: Condensation risk detected"
+    # Condensation risk (environment)
+    if ctx.environment_enabled:
+        cond_data = coordinator.get_entity_data(zone_id, "condensation_risk")
+        if cond_data:
+            cond_state = cond_data.get("state", "None")
+            if cond_state not in ("None", "Low", "unavailable", "unknown"):
+                cond_rec = cond_data.get("recommendation", "")
+                if not cond_rec:
+                    cond_rec = f"{zone_name}: Condensation risk detected"
+                insights.append(
+                    Insight(
+                        priority=get_insight_priority("condensation", cond_state.lower()),
+                        recommendation=cond_rec,
+                        insight_type="condensation",
+                        zone_name=zone_name,
+                    ),
+                )
+
+    # Window predicted (environment)
+    if ctx.environment_enabled:
+        wp_data = coordinator.get_entity_data(zone_id, "window_predicted")
+        if wp_data and wp_data.get("state") == "on":
+            wp_rec = wp_data.get("recommendation", "")
+            if not wp_rec:
+                wp_rec = f"{zone_name}: Possible open window detected"
             insights.append(
                 Insight(
-                    priority=get_insight_priority("condensation", cond_state.lower()),
-                    recommendation=cond_rec,
-                    insight_type="condensation",
+                    priority=get_insight_priority("window_predicted", "high"),
+                    recommendation=wp_rec,
+                    insight_type="window_predicted",
                     zone_name=zone_name,
                 ),
             )
 
-    # Window predicted — from coordinator.entity_data (published by TadoWindowPredictedSensor)
-    wp_data = coordinator.get_entity_data(zone_id, "window_predicted")
-    if wp_data and wp_data.get("state") == "on":
-        wp_rec = wp_data.get("recommendation", "")
-        if not wp_rec:
-            wp_rec = f"{zone_name}: Possible open window detected"
-        insights.append(
-            Insight(
-                priority=get_insight_priority("window_predicted", "high"),
-                recommendation=wp_rec,
-                insight_type="window_predicted",
-                zone_name=zone_name,
-            ),
+    # Preheat timing (preheat)
+    if ctx.preheat_enabled:
+        hcc = coordinator.heating_cycle_coordinator
+        ph_min: float | None = None
+        if hcc:
+            zone_state = hcc.get_zone_state(zone_id)
+            if zone_state:
+                current_temp = zone_state.get("current_temp")
+                target_temp = zone_state.get("target_temp")
+                if current_temp is not None and target_temp is not None:
+                    ph_min = hcc.estimate_preheat_time(zone_id, current_temp, target_temp)
+
+        # Next schedule time — from coordinator.data["schedules"]
+        sc_val: str | None = None
+        schedules = (coordinator.data or {}).get("schedules") or {}
+        zone_schedule = schedules.get(zone_id) or schedules.get(str(zone_id))
+        if zone_schedule:
+            next_change = zone_data.get("nextScheduleChange") or {}
+            sc_val = next_change.get("start")
+
+        insight = calculate_preheat_timing_insight(
+            preheat_time_minutes=ph_min,
+            next_schedule_time=sc_val,
+            zone_name=zone_name,
         )
+        if insight:
+            insights.append(insight)
 
-    # Preheat timing — from HeatingCycleCoordinator (no hass.states.get needed)
-    hcc = coordinator.heating_cycle_coordinator
-    ph_min: float | None = None
-    if hcc:
-        zone_state = hcc.get_zone_state(zone_id)
-        if zone_state:
-            current_temp = zone_state.get("current_temp")
-            target_temp = zone_state.get("target_temp")
-            if current_temp is not None and target_temp is not None:
-                ph_min = hcc.estimate_preheat_time(zone_id, current_temp, target_temp)
-
-    # Next schedule time — from coordinator.data["schedules"]
-    sc_val: str | None = None
-    schedules = (coordinator.data or {}).get("schedules") or {}
-    zone_schedule = schedules.get(zone_id) or schedules.get(str(zone_id))
-    if zone_schedule:
-        next_change = zone_data.get("nextScheduleChange") or {}
-        sc_val = next_change.get("start")
-
-    insight = calculate_preheat_timing_insight(
-        preheat_time_minutes=ph_min,
-        next_schedule_time=sc_val,
-        zone_name=zone_name,
-    )
-    if insight:
-        insights.append(insight)
-
-    # Heating anomaly — from zone_data directly (already in coordinator.data)
-    activity = zone_data.get("activityDataPoints") or {}
-    heating_power = activity.get("heatingPower") or {}
-    power_pct = heating_power.get("percentage")
-    if power_pct is not None:
-        try:
-            power_pct = float(power_pct)
-            setting = zone_data.get("setting") or {}
-            target = (setting.get("temperature") or {}).get("celsius")
-            if inside_temp is not None and target is not None:
-                temp_delta = abs(inside_temp - target)
-                if power_pct >= 80 and temp_delta < 0.5:
-                    if zone_name not in anomaly_start_times:
-                        anomaly_start_times[zone_name] = datetime.now(UTC)
-                    elapsed = (datetime.now(UTC) - anomaly_start_times[zone_name]).total_seconds() / 60
-                    ha_insight = calculate_heating_anomaly_insight(
-                        heating_power_pct=power_pct,
-                        temp_delta=temp_delta,
-                        duration_minutes=int(elapsed),
-                        zone_name=zone_name,
-                    )
-                    if ha_insight:
-                        insights.append(ha_insight)
-                else:
-                    anomaly_start_times.pop(zone_name, None)
-        except (ValueError, TypeError):
-            pass
-
-
-def _check_early_start(
-    coordinator: TadoDataUpdateCoordinator,
-    zone_id: str,
-    zone_name: str,
-    zones_info: list[Any] | None,
-) -> bool:
-    """Check early start disabled + long preheat insight.
-
-    Reads earlyStart from zones_info (API data) and preheat time from
-    HeatingCycleCoordinator — no hass.states.get() needed.
-    """
-    early_start_on = True
-    if zones_info:
-        zone_info = next(
-            (z for z in zones_info if str(z.get("id")) == zone_id),
-            None,
-        )
-        if zone_info:
-            es_data = zone_info.get("earlyStart") or {}
-            early_start_on = es_data.get("enabled", True)
-
-    ph_min: float | None = None
-    hcc = coordinator.heating_cycle_coordinator
-    if hcc:
-        zone_state = hcc.get_zone_state(zone_id)
-        if zone_state:
-            current_temp = zone_state.get("current_temp")
-            target_temp = zone_state.get("target_temp")
-            if current_temp is not None and target_temp is not None:
-                ph_min = hcc.estimate_preheat_time(zone_id, current_temp, target_temp)
-
-    return calculate_early_start_disabled_insight(  # type: ignore[return-value]
-        early_start_enabled=early_start_on,
-        preheat_time_minutes=ph_min,
-        zone_name=zone_name,
-    )
+    # Heating anomaly (thermal)
+    if ctx.thermal_enabled:
+        activity = zone_data.get("activityDataPoints") or {}
+        heating_power = activity.get("heatingPower") or {}
+        power_pct = heating_power.get("percentage")
+        if power_pct is not None:
+            try:
+                power_pct = float(power_pct)
+                setting = zone_data.get("setting") or {}
+                target = (setting.get("temperature") or {}).get("celsius")
+                if inside_temp is not None and target is not None:
+                    temp_delta = abs(inside_temp - target)
+                    if power_pct >= 80 and temp_delta < 0.5:
+                        if zone_name not in anomaly_start_times:
+                            anomaly_start_times[zone_name] = dt_util.utcnow()
+                        elapsed = (dt_util.utcnow() - anomaly_start_times[zone_name]).total_seconds() / 60
+                        ha_insight = calculate_heating_anomaly_insight(
+                            heating_power_pct=power_pct,
+                            temp_delta=temp_delta,
+                            duration_minutes=int(elapsed),
+                            zone_name=zone_name,
+                        )
+                        if ha_insight:
+                            insights.append(ha_insight)
+                    else:
+                        anomaly_start_times.pop(zone_name, None)
+            except (ValueError, TypeError):
+                pass
 
 
 def _check_thermal_efficiency(
@@ -585,6 +578,7 @@ def get_cross_zone_insights(
     hass: HomeAssistant,
     coordinator: TadoDataUpdateCoordinator,
     zone_insights: dict[str, list[Any]],
+    ctx: InsightContext | None = None,
 ) -> list[Any]:
     """Get cross-zone aggregation insights.
 
@@ -596,10 +590,14 @@ def get_cross_zone_insights(
         hass: Home Assistant instance.
         coordinator: TadoDataUpdateCoordinator instance.
         zone_insights: Already collected per-zone insights.
+        ctx: Config context for gating insights. Built automatically if None.
 
     Returns:
         List of cross-zone Insight objects.
     """
+    if ctx is None:
+        ctx = InsightContext.from_coordinator(coordinator)
+
     cross_insights: list[Any] = []
 
     try:
@@ -612,8 +610,8 @@ def get_cross_zone_insights(
             for z in zones_info:
                 zone_name_map[str(z.get("id"))] = z.get("name", f"Zone {z.get('id')}")
 
-        # Cross-zone mold risk
-        if zones_data:
+        # Cross-zone mold risk (environment)
+        if ctx.environment_enabled and zones_data:
             zone_states = zones_data.get("zoneStates") or {}
             zone_mold_risks: dict[str, str] = {}
             for zone_id, zone_data in zone_states.items():
@@ -628,21 +626,22 @@ def get_cross_zone_insights(
             if mold_insight:
                 cross_insights.append(mold_insight)
 
-        # Cross-zone window predicted — from coordinator.entity_data
-        zone_window_states: dict[str, bool] = {}
-        if zones_info:
-            for z in zones_info:
-                z_name = z.get("name", f"Zone {z.get('id')}")
-                z_id = str(z.get("id"))
-                wp_data = coordinator.get_entity_data(z_id, "window_predicted")
-                if wp_data:
-                    zone_window_states[z_name] = wp_data.get("state") == "on"
-        window_insight = aggregate_cross_zone_window_predicted(zone_window_states)
-        if window_insight:
-            cross_insights.append(window_insight)
+        # Cross-zone window predicted (environment)
+        if ctx.environment_enabled:
+            zone_window_states: dict[str, bool] = {}
+            if zones_info:
+                for z in zones_info:
+                    z_name = z.get("name", f"Zone {z.get('id')}")
+                    z_id = str(z.get("id"))
+                    wp_data = coordinator.get_entity_data(z_id, "window_predicted")
+                    if wp_data:
+                        zone_window_states[z_name] = wp_data.get("state") == "on"
+            window_insight = aggregate_cross_zone_window_predicted(zone_window_states)
+            if window_insight:
+                cross_insights.append(window_insight)
 
-        # Cross-zone condensation — from coordinator.entity_data
-        if zones_info:
+        # Cross-zone condensation (environment)
+        if ctx.environment_enabled and zones_info:
             zone_cond_states: dict[str, str] = {}
             for z in zones_info:
                 z_name = z.get("name", f"Zone {z.get('id')}")
@@ -656,23 +655,24 @@ def get_cross_zone_insights(
             if cond_insight:
                 cross_insights.append(cond_insight)
 
-        # Cross-zone efficiency comparison — from HeatingCycleCoordinator
-        hcc = coordinator.heating_cycle_coordinator
-        if hcc and zones_info:
-            zone_heating_rates: dict[str, float] = {}
-            for z in zones_info:
-                z_name = z.get("name", f"Zone {z.get('id')}")
-                z_id = str(z.get("id"))
-                zone_hcc_data = hcc.get_zone_data(z_id)
-                if zone_hcc_data:
-                    hr_val = zone_hcc_data.get("heating_rate")
-                    if hr_val is not None:
-                        zone_heating_rates[z_name] = hr_val
-            eff_insight = calculate_cross_zone_efficiency_insight(zone_heating_rates)
-            if eff_insight:
-                cross_insights.append(eff_insight)
+        # Cross-zone efficiency comparison (thermal)
+        if ctx.thermal_enabled:
+            hcc = coordinator.heating_cycle_coordinator
+            if hcc and zones_info:
+                zone_heating_rates: dict[str, float] = {}
+                for z in zones_info:
+                    z_name = z.get("name", f"Zone {z.get('id')}")
+                    z_id = str(z.get("id"))
+                    zone_hcc_data = hcc.get_zone_data(z_id)
+                    if zone_hcc_data:
+                        hr_val = zone_hcc_data.get("heating_rate")
+                        if hr_val is not None:
+                            zone_heating_rates[z_name] = hr_val
+                eff_insight = calculate_cross_zone_efficiency_insight(zone_heating_rates)
+                if eff_insight:
+                    cross_insights.append(eff_insight)
 
-        # Temperature imbalance
+        # Temperature imbalance (always relevant — basic comfort)
         if zones_data:
             zone_states = zones_data.get("zoneStates") or {}
             zone_temps: dict[str, float] = {}
@@ -688,8 +688,8 @@ def get_cross_zone_insights(
             if temp_insight:
                 cross_insights.append(temp_insight)
 
-        # Humidity imbalance
-        if zones_data:
+        # Humidity imbalance (environment)
+        if ctx.environment_enabled and zones_data:
             zone_hums: dict[str, float] = {}
             for zid, zd in zone_states.items():
                 z_name = zone_name_map.get(zid, f"Zone {zid}")
@@ -710,22 +710,27 @@ def get_cross_zone_insights(
 def get_hub_insights(
     hass: HomeAssistant,
     coordinator: TadoDataUpdateCoordinator,
+    ctx: InsightContext | None = None,
 ) -> list[Any]:
     """Get hub-level insights (API quota, weather, presence).
 
     Args:
         hass: Home Assistant instance.
         coordinator: TadoDataUpdateCoordinator instance.
+        ctx: Config context for gating insights. Built automatically if None.
 
     Returns:
         List of hub-level Insight objects.
     """
+    if ctx is None:
+        ctx = InsightContext.from_coordinator(coordinator)
+
     hub_insights: list[Any] = []
 
     try:
         coord_data = coordinator.data or {}
 
-        # --- API quota planning ---
+        # --- API quota planning (always relevant) ---
         ratelimit = coord_data.get("ratelimit")
         if ratelimit:
             remaining = ratelimit.get("remaining")
@@ -752,129 +757,57 @@ def get_hub_insights(
                 if insight:
                     hub_insights.append(insight)
 
-        # --- Weather impact ---
-        weather = coord_data.get("weather")
-        if weather:
-            outdoor_temp = (weather.get("outsideTemperature") or {}).get("celsius")
-            if outdoor_temp is not None:
-                # History is now owned and persisted by the coordinator
-                outdoor_temp_history = coordinator.outdoor_temp_history
+        # --- Weather impact + frost risk (weather) ---
+        if ctx.weather_enabled:
+            weather = coord_data.get("weather")
+            if weather:
+                outdoor_temp = (weather.get("outsideTemperature") or {}).get("celsius")
+                if outdoor_temp is not None:
+                    outdoor_temp_history = coordinator.outdoor_temp_history
 
-                avg_7d = None
-                if len(outdoor_temp_history) >= 48:
-                    avg_7d = sum(outdoor_temp_history) / len(outdoor_temp_history)
-                insight = calculate_weather_impact_insight(
-                    current_outdoor_temp=outdoor_temp,
-                    avg_outdoor_temp_7d=avg_7d,
-                )
-                if insight:
-                    hub_insights.append(insight)
-
-                # Frost risk
-                frost_insight = calculate_frost_risk_insight(outdoor_temp=outdoor_temp)
-                if frost_insight:
-                    hub_insights.append(frost_insight)
-
-                # Heating season advisory
-                if len(outdoor_temp_history) >= 96:
-                    mid = len(outdoor_temp_history) // 2
-                    prev_avg = sum(outdoor_temp_history[:mid]) / mid
-                    curr_avg = sum(outdoor_temp_history[mid:]) / (len(outdoor_temp_history) - mid)
-                    season_insight = calculate_heating_season_advisory_insight(
-                        current_avg_7d=curr_avg,
-                        previous_avg_7d=prev_avg,
+                    avg_7d = None
+                    if len(outdoor_temp_history) >= 48:
+                        avg_7d = sum(outdoor_temp_history) / len(outdoor_temp_history)
+                    insight = calculate_weather_impact_insight(
+                        current_outdoor_temp=outdoor_temp,
+                        avg_outdoor_temp_7d=avg_7d,
                     )
-                    if season_insight:
-                        hub_insights.append(season_insight)
+                    if insight:
+                        hub_insights.append(insight)
 
-                # Solar gain / Solar AC load
-                _collect_solar_insights(
-                    hass,
-                    coordinator,
-                    weather,
-                    outdoor_temp,
-                    hub_insights,
-                )
+                    frost_insight = calculate_frost_risk_insight(outdoor_temp=outdoor_temp)
+                    if frost_insight:
+                        hub_insights.append(frost_insight)
 
-        # --- Away + heating active / Home + all off ---
-        _collect_presence_insights(hass, coordinator, hub_insights)
+        # --- Away + heating active / Home + all off (presence) ---
+        if ctx.presence_enabled:
+            _collect_presence_insights(hass, coordinator, hub_insights)
 
-        # --- Geofencing device offline ---
-        mobile_devices = coord_data.get("mobile_devices")
-        if mobile_devices:
-            device_list = [
-                {
-                    "name": md.get("name", "Unknown"),
-                    "location_enabled": (md.get("settings") or {}).get(
-                        "geoTrackingEnabled",
-                        True,
-                    ),
-                }
-                for md in mobile_devices
-            ]
-            geo_insight = calculate_geofencing_device_offline_insight(devices=device_list)
-            if geo_insight:
-                hub_insights.append(geo_insight)
+        # --- Geofencing device offline (geofencing active) ---
+        if ctx.geofencing_active:
+            mobile_devices = coord_data.get("mobile_devices")
+            if mobile_devices:
+                device_list = [
+                    {
+                        "name": md.get("name", "Unknown"),
+                        "location_enabled": (md.get("settings") or {}).get(
+                            "geoTrackingEnabled",
+                            True,
+                        ),
+                    }
+                    for md in mobile_devices
+                ]
+                geo_insight = calculate_geofencing_device_offline_insight(devices=device_list)
+                if geo_insight:
+                    hub_insights.append(geo_insight)
 
-        # --- API usage spike ---
+        # --- API usage spike (always relevant) ---
         _collect_api_spike_insight(coord_data, hub_insights)
 
     except Exception as e:
         _LOGGER.debug("Failed to collect hub insights: %s", e)
 
     return hub_insights
-
-
-def _collect_solar_insights(
-    hass: HomeAssistant,
-    coordinator: TadoDataUpdateCoordinator,
-    weather: dict[str, Any],
-    outdoor_temp: float,
-    hub_insights: list[Any],
-) -> None:
-    """Collect solar gain and solar AC load insights."""
-    solar_pct = (weather.get("solarIntensity") or {}).get("percentage")
-    if solar_pct is None:
-        return
-
-    coord_data = coordinator.data or {}
-    zones_data = coord_data.get("zones")
-    zones_info = coord_data.get("zones_info")
-    if not zones_data or not zones_info:
-        return
-
-    zone_states = zones_data.get("zoneStates") or {}
-    zone_name_map: dict[str, str] = {}
-    for z in zones_info:
-        zone_name_map[str(z.get("id"))] = z.get("name", f"Zone {z.get('id')}")
-
-    heating_active = []
-    ac_active = []
-    for zid, zd in zone_states.items():
-        s = zd.get("setting") or {}
-        if s.get("power") != "ON":
-            continue
-        z_name = zone_name_map.get(zid, f"Zone {zid}")
-        hp = (zd.get("activityDataPoints") or {}).get("heatingPower") or {}
-        pct = hp.get("percentage", 0)
-        if s.get("type") == "HEATING" and pct > 0:
-            heating_active.append({"zone_name": z_name, "power_pct": pct})
-        elif s.get("type") == "AIR_CONDITIONING":
-            ac_active.append({"zone_name": z_name})
-
-    sg_insight = calculate_solar_gain_insight(
-        solar_intensity_pct=solar_pct,
-        heating_zones_active=heating_active or None,
-    )
-    if sg_insight:
-        hub_insights.append(sg_insight)
-
-    sac_insight = calculate_solar_ac_load_insight(
-        solar_intensity_pct=solar_pct,
-        ac_zones_active=ac_active or None,
-    )
-    if sac_insight:
-        hub_insights.append(sac_insight)
 
 
 def _collect_presence_insights(
@@ -957,7 +890,7 @@ def _collect_api_spike_insight(coord_data: dict[str, Any], hub_insights: list[An
     all_calls = [call for calls in history_raw.values() for call in calls]
     cph = calculate_calls_per_hour(all_calls) if all_calls else None
 
-    now = datetime.now(UTC)
+    now = dt_util.utcnow()
     today_key = now.strftime("%Y-%m-%d")
     today_calls = history_raw.get(today_key, [])
     current_hour_calls = 0
@@ -965,7 +898,7 @@ def _collect_api_spike_insight(coord_data: dict[str, Any], hub_insights: list[An
         ts = call.get("timestamp") or call.get("time", "")
         if ts:
             try:
-                call_time = datetime.fromisoformat(ts)
+                call_time = parse_iso_datetime(ts)
                 if call_time.hour == now.hour:
                     current_hour_calls += 1
             except (ValueError, TypeError):

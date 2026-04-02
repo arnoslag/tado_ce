@@ -74,6 +74,7 @@ async def async_init_smart_comfort(
         hass=hass,
         home_id=home_id or "",
         history_days=history_days,
+        data_loader=data_loader,
     )
     smart_comfort_manager.enable()
 
@@ -91,7 +92,7 @@ async def async_init_smart_comfort(
 
     # 3-Tier Loading Strategy
     # Tier 1: Load from cache file (fastest, 2h detailed data)
-    cache_readings = await hass.async_add_executor_job(smart_comfort_manager.load_from_file)
+    cache_readings = await smart_comfort_manager.async_load()
 
     # Get zones_info for entity ID mapping
     zones_info = await hass.async_add_executor_job(data_loader.load_zones_info_file)

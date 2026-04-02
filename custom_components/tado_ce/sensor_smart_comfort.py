@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.sensor import SensorStateClass
 from homeassistant.core import callback
+from homeassistant.util import dt as dt_util
 
 from .calculations import (
     calculate_ashrae_comfort_temp,
@@ -20,10 +21,7 @@ from .format_helpers import (
 from .format_helpers import (
     format_confidence as _format_confidence,
 )
-from .format_helpers import (
-    format_zone_type as _format_zone_type,
-)
-from .insights import (
+from .insights_presenter import (
     calculate_historical_deviation_recommendation,
 )
 from .sensor_helpers import get_outdoor_temperature as _get_outdoor_temp
@@ -78,7 +76,7 @@ class TadoScheduleDeviationSensor(TadoZoneSensor):
             "historical_average": self._historical_avg,
             "sample_count": self._sample_count,
             "summary": self._summary,
-            "zone_type": _format_zone_type(self._zone_type),
+            **self._base_zone_attributes,
             "recommendation": self._recommendation,
         }
 
@@ -192,7 +190,7 @@ class TadoNextScheduleTimeSensor(TadoZoneSensor):
             "is_heating_on": self._is_heating_on,
             "is_tomorrow": self._is_tomorrow,
             "minutes_until": self._minutes_until,
-            "zone_type": _format_zone_type(self._zone_type),
+            **self._base_zone_attributes,
         }
 
     @callback
@@ -218,8 +216,6 @@ class TadoNextScheduleTimeSensor(TadoZoneSensor):
                 self._is_tomorrow = False
                 self._minutes_until = None
                 return
-
-            from homeassistant.util import dt as dt_util
 
             now = dt_util.now()
             self._is_tomorrow = next_block.start_time.date() > now.date()
@@ -282,7 +278,7 @@ class TadoNextScheduleTempSensor(TadoZoneSensor):
             "is_heating_on": self._is_heating_on,
             "current_temperature": self._current_temp,
             "temperature_difference": self._temp_diff,
-            "zone_type": _format_zone_type(self._zone_type),
+            **self._base_zone_attributes,
         }
         # Add unit only when showing temperature
         if self._is_heating_on and isinstance(self._attr_native_value, (int, float)):
@@ -407,7 +403,7 @@ class TadoPreheatAdvisorSensor(TadoZoneSensor):
             "cooling_rate": self._cooling_rate,
             "predicted_crossover_time": self._predicted_crossover_time,
             "is_cooling_prediction": self._is_cooling_prediction,
-            "zone_type": _format_zone_type(self._zone_type),
+            **self._base_zone_attributes,
         }
 
     @property
@@ -443,8 +439,6 @@ class TadoPreheatAdvisorSensor(TadoZoneSensor):
         """
         try:
             from datetime import timedelta
-
-            from homeassistant.util import dt as dt_util
 
             from .smart_comfort import get_next_schedule_change
 
@@ -878,7 +872,7 @@ class TadoSmartComfortTargetSensor(TadoZoneSensor):
             "humidity": self._humidity,
             "comfort_model": _format_comfort_model(self._comfort_model),
             "deviation_from_comfort": self._deviation,
-            "zone_type": _format_zone_type(self._zone_type),
+            **self._base_zone_attributes,
         }
 
     @property
@@ -969,8 +963,6 @@ class TadoSmartComfortTargetSensor(TadoZoneSensor):
         latitude = 51.5  # Default to London
         if self.hass and hasattr(self.hass.config, "latitude"):
             latitude = self.hass.config.latitude or 51.5
-
-        from homeassistant.util import dt as dt_util
 
         month = dt_util.now().month
 

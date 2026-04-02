@@ -13,7 +13,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .device_manager import get_zone_device_info
 from .entity_registry import ENTITY_REGISTRY, get_entity_category
-from .insights import calculate_confidence_recommendation
+from .insights_heating import calculate_confidence_recommendation
 
 if TYPE_CHECKING:
     from .heating_coordinator import HeatingCycleCoordinator

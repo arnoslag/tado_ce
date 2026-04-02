@@ -9,7 +9,7 @@ import logging
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .heating_models import HeatingCycle, TemperatureReading
+    from .heating_models import HeatingCycle, HeatingCycleReading
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -134,7 +134,7 @@ class ThermalAnalyzer:
         if duration_hours < 0.1:  # Less than 6 minutes
             return None
 
-        # Acceleration = (final_rate - initial_rate) / duration
+        # Acceleration = (final_rate - initial_rate) / duration  # noqa: ERA001
         # Convert rates from °C/min to °C/h for consistency
         initial_rate_h = initial_rate * 60
         final_rate_h = final_rate * 60
@@ -145,7 +145,7 @@ class ThermalAnalyzer:
 
     def _calculate_rate_from_readings(
         self,
-        readings: list[TemperatureReading],
+        readings: list[HeatingCycleReading],
     ) -> float | None:
         """Calculate heating rate from a list of readings.
 
@@ -300,7 +300,7 @@ class ThermalAnalyzer:
     def _calculate_approach_factor_rate_ratio(
         self,
         cycle: HeatingCycle,
-        readings: list[TemperatureReading],
+        readings: list[HeatingCycleReading],
         temp_delta: float,
     ) -> float | None:
         """Calculate approach factor using first-half vs second-half rate ratio.
@@ -354,7 +354,7 @@ class ThermalAnalyzer:
         if rate_second is None:
             rate_second = 0.0
 
-        # Factor = rate_second / rate_first
+        # Factor = rate_second / rate_first  # noqa: ERA001
         factor = rate_second / rate_first
 
         # Clamp to reasonable range
@@ -371,7 +371,7 @@ class ThermalAnalyzer:
 
     def _calculate_average_rate(
         self,
-        readings: list[TemperatureReading],
+        readings: list[HeatingCycleReading],
     ) -> float | None:
         """Calculate average heating rate over a set of readings.
 
@@ -398,7 +398,7 @@ class ThermalAnalyzer:
     def _calculate_approach_factor_exponential(
         self,
         cycle: HeatingCycle,
-        readings: list[TemperatureReading],
+        readings: list[HeatingCycleReading],
         temp_delta: float,
     ) -> float | None:
         """Calculate approach factor using exponential curve fitting.
@@ -437,7 +437,7 @@ class ThermalAnalyzer:
         # Estimate time constant using linearization
         # For T(t) = T_target - A * exp(-t/τ), we can linearize:
         # ln(T_target - T) = ln(A) - t/τ
-        # Slope = -1/τ
+        # Slope = -1/τ  # noqa: ERA001
 
         target = cycle.target_temp
 
@@ -493,7 +493,7 @@ class ThermalAnalyzer:
 
             expected_tau = cycle_duration / 3
 
-            # Factor = expected_tau / actual_tau
+            # Factor = expected_tau / actual_tau  # noqa: ERA001
             # If actual tau < expected, heating is faster = higher factor
             # If actual tau > expected, heating is slower = lower factor
             if tau <= 0:
@@ -520,7 +520,7 @@ class ThermalAnalyzer:
     def _calculate_approach_factor_point_based(
         self,
         cycle: HeatingCycle,
-        readings: list[TemperatureReading],
+        readings: list[HeatingCycleReading],
         temp_delta: float,
     ) -> float | None:
         """Calculate approach factor using point-based sampling (legacy fallback).
@@ -576,7 +576,7 @@ class ThermalAnalyzer:
             )
             return None
 
-        # Factor = rate_90 / rate_50
+        # Factor = rate_90 / rate_50  # noqa: ERA001
         factor = rate_90 / rate_50
 
         # Clamp to reasonable range
@@ -593,101 +593,9 @@ class ThermalAnalyzer:
 
     def _get_readings_near_temp(
         self,
-        readings: list[TemperatureReading],
+        readings: list[HeatingCycleReading],
         target_temp: float,
         tolerance: float = 0.3,
-    ) -> list[TemperatureReading]:
+    ) -> list[HeatingCycleReading]:
         """Get readings near a target temperature."""
         return [r for r in readings if abs(r.temp - target_temp) <= tolerance]
-
-    def estimate_overshoot(
-        self,
-        current_temp: float,
-        target_temp: float,
-        heating_rate: float,
-        approach_factor: float,
-    ) -> float:
-        """Estimate temperature overshoot based on approach dynamics.
-
-        Args:
-            current_temp: Current temperature
-            target_temp: Target temperature
-            heating_rate: Current heating rate in °C/h
-            approach_factor: Approach factor (0-100%)
-
-        Returns:
-            Estimated overshoot in °C
-        """
-        if heating_rate <= 0 or current_temp >= target_temp:
-            return 0.0
-
-        # Convert approach factor from percentage
-        factor = approach_factor / 100.0
-
-        # Higher factor = more overshoot
-        # Base overshoot estimate: rate * thermal_lag_time
-        # Thermal lag is typically 5-15 minutes for residential heating
-        thermal_lag_hours = 0.15  # ~9 minutes
-
-        base_overshoot = heating_rate * thermal_lag_hours
-
-        # Adjust by approach factor
-        # Factor 1.0 = full overshoot
-        # Factor 0.5 = half overshoot
-        adjusted_overshoot = base_overshoot * factor
-
-        # Clamp to reasonable range
-        return round(max(0.0, min(2.0, adjusted_overshoot)), 1)
-
-    def get_improved_preheat_estimate(
-        self,
-        current_temp: float,
-        target_temp: float,
-        avg_heating_rate: float,
-        inertia_time: float,
-        acceleration: float | None = None,
-        approach_factor: float | None = None,
-    ) -> float | None:
-        """Get improved preheat time estimate using second-order analysis.
-
-        Args:
-            current_temp: Current temperature
-            target_temp: Target temperature
-            avg_heating_rate: Average heating rate in °C/h
-            inertia_time: Thermal inertia time in minutes
-            acceleration: Heating acceleration in °C/h² (optional)
-            approach_factor: Approach factor in % (optional)
-
-        Returns:
-            Estimated preheat time in minutes, or None if cannot calculate
-        """
-        if avg_heating_rate <= 0 or target_temp <= current_temp:
-            return 0.0
-
-        temp_delta = target_temp - current_temp
-
-        # Base estimate: inertia + (delta / rate)
-        # Convert rate from °C/h to °C/min
-        rate_per_min = avg_heating_rate / 60
-        heating_time = temp_delta / rate_per_min
-        base_estimate = inertia_time + heating_time
-
-        # Adjust for acceleration (if available)
-        # Higher acceleration = faster warmup = less time needed
-        if acceleration is not None and acceleration != 0:
-            # Acceleration adjustment factor
-            # Positive acceleration reduces time, negative increases it
-            accel_adjustment = 1.0 - (acceleration / 100)  # Normalize
-            accel_adjustment = max(0.8, min(1.2, accel_adjustment))
-            base_estimate *= accel_adjustment
-
-        # Adjust for approach factor (if available)
-        # Lower approach factor = more deceleration = need to start earlier
-        if approach_factor is not None:
-            # Factor 100% = no adjustment
-            # Factor 50% = add 10% more time
-            factor_adjustment = 1.0 + (100 - approach_factor) / 500
-            factor_adjustment = max(1.0, min(1.2, factor_adjustment))
-            base_estimate *= factor_adjustment
-
-        return round(base_estimate, 1)

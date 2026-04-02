@@ -1,90 +1,148 @@
-"""Tado CE heating cycle storage — per-home persistence."""
+"""Tado CE heating cycle storage — per-home persistence via HA Store."""
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
-import json
+from datetime import timedelta
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers.storage import Store
+from homeassistant.util import dt as dt_util
+
 from .heating_models import HeatingCycle
+from .helpers import parse_iso_datetime
+from .storage import load_json_sync
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
 _LOGGER = logging.getLogger(__name__)
 
+STORE_VERSION = 1
+SAVE_DELAY = 15
+
 
 class HeatingCycleStorage:
-    """Persist heating cycles to disk with multi-home support and atomic writes."""
+    """Persist heating cycles to HA Store with debounced writes and migration."""
 
     def __init__(self, hass: HomeAssistant, home_id: str) -> None:
         """Initialize storage with home ID."""
         self._hass = hass
         self._home_id = home_id
-        self._storage_path = Path(
+        self._store: Store[dict[str, Any]] = Store(
+            hass,
+            STORE_VERSION,
+            f"tado_ce/heating_cycles_{home_id}",
+        )
+        # Old file path for migration
+        self._old_storage_path = Path(
             hass.config.path(
                 f".storage/tado_ce/heating_cycle_history_{home_id}.json",
             ),
         )
-        self._data: dict[str, Any] = {"version": "1.0", "zones": {}}
+        self._data: dict[str, Any] = {"zones": {}}
 
     async def async_load(self) -> None:
-        """Load cycle data from disk with migration support."""
+        """Load cycle data from Store with migration from old JSON file."""
         try:
-            # Try new path first (with home_id)
-            path_exists = await self._hass.async_add_executor_job(
-                self._storage_path.exists,
-            )
-            if path_exists:
-                content = await self._hass.async_add_executor_job(
-                    self._storage_path.read_text,
-                )
-                loaded_data = json.loads(content)
-                self._data = self._migrate_data_format(loaded_data)
+            stored = await self._store.async_load()
+            if stored is not None:
+                self._data = self._migrate_data_format(stored)
                 _LOGGER.debug(
                     "Loaded heating cycle history for home %s: %d zones",
                     self._home_id,
                     len(self._data.get("zones", {})),
                 )
-            else:
-                _LOGGER.debug("No existing heating cycle history found")
+                # Clean up old JSON file if it still exists
+                await self._cleanup_old_json()
+                return
 
-        except json.JSONDecodeError:
-            _LOGGER.exception("Corrupted heating cycle storage file")
-            # Rename corrupted file
-            corrupted_path = self._storage_path.with_suffix(".corrupted")
-            try:
-                await self._hass.async_add_executor_job(
-                    self._storage_path.rename,
-                    corrupted_path,
-                )
-                _LOGGER.info("Renamed corrupted file to %s", corrupted_path)
-            except FileNotFoundError:
-                pass
-            self._data = {"version": "1.0", "zones": {}}
+            # No Store data — try migrating from old JSON file
+            migrated = await self._migrate_from_json()
+            if migrated is not None:
+                self._data = self._migrate_data_format(migrated)
+                return
+
+            _LOGGER.debug("No existing heating cycle history found")
+
+        except HomeAssistantError:
+            _LOGGER.exception("Corrupted heating cycle storage")
+            self._data = {"zones": {}}
         except OSError:
             _LOGGER.exception("Failed to load heating cycle storage")
-            self._data = {"version": "1.0", "zones": {}}
+            self._data = {"zones": {}}
+
+    async def _migrate_from_json(self) -> dict[str, Any] | None:
+        """Migrate old JSON file to Store.
+
+        Reads the old file, saves to Store, and renames old file to .json.migrated.
+        """
+        exists = await self._hass.async_add_executor_job(
+            self._old_storage_path.exists,
+        )
+        if not exists:
+            return None
+
+        old_data = await self._hass.async_add_executor_job(
+            load_json_sync, self._old_storage_path,
+        )
+        if old_data is None:
+            return None
+
+        # Remove "version" key — Store manages version externally
+        if isinstance(old_data, dict):
+            old_data.pop("version", None)
+
+        await self._store.async_save(old_data)
+
+        migrated_path = self._old_storage_path.with_suffix(".json.migrated")
+        await self._hass.async_add_executor_job(
+            self._old_storage_path.rename, migrated_path,
+        )
+        _LOGGER.info(
+            "Migrated heating cycle history → Store (old file renamed to %s)",
+            migrated_path,
+        )
+        return old_data  # type: ignore[return-value]
+
+    async def _cleanup_old_json(self) -> None:
+        """Rename old JSON file to .json.migrated if it still exists."""
+        exists = await self._hass.async_add_executor_job(
+            self._old_storage_path.exists,
+        )
+        if exists:
+            migrated_path = self._old_storage_path.with_suffix(".json.migrated")
+            await self._hass.async_add_executor_job(
+                self._old_storage_path.rename, migrated_path,
+            )
+            _LOGGER.info(
+                "Cleaned up old heating cycle file (renamed to %s)",
+                migrated_path,
+            )
 
     def _migrate_data_format(self, loaded_data: dict[str, Any]) -> dict[str, Any]:
         """Migrate old data format to new format.
 
         Old format: {"zone_id": [cycles], ...}
-        New format: {"version": "1.0", "zones": {"zone_id": {"cycles": [...]}, ...}}
+        New format: {"zones": {"zone_id": {"cycles": [...]}, ...}}
         """
         # Check if already new format
-        if "version" in loaded_data and "zones" in loaded_data:
+        if "zones" in loaded_data:
+            # Strip "version" if present (legacy Store data)
+            loaded_data.pop("version", None)
             return loaded_data
 
         # Migrate old format
         _LOGGER.info("Migrating heating cycle data from old format")
-        new_data = {"version": "1.0", "zones": {}}
+        new_data: dict[str, Any] = {"zones": {}}
 
         for zone_id, cycles in loaded_data.items():
+            if zone_id == "version":
+                continue
             if isinstance(cycles, list):
-                new_data["zones"][zone_id] = {"cycles": cycles}  # type: ignore[index]
+                new_data["zones"][zone_id] = {"cycles": cycles}
                 _LOGGER.debug(
                     "Migrated zone %s with %d cycles",
                     zone_id,
@@ -92,6 +150,10 @@ class HeatingCycleStorage:
                 )
 
         return new_data
+
+    def _schedule_save(self) -> None:
+        """Schedule a debounced save to Store."""
+        self._store.async_delay_save(lambda: self._data, SAVE_DELAY)
 
     async def save_cycle(self, zone_id: str, cycle: HeatingCycle) -> None:
         """Save completed cycle for a zone."""
@@ -112,8 +174,8 @@ class HeatingCycleStorage:
         # Cleanup old cycles (keep 2x rolling window)
         await self._cleanup_old_cycles(zone_id)
 
-        # Save to disk (atomic write)
-        await self._save_to_disk()
+        # Schedule debounced save
+        self._schedule_save()
 
     async def get_cycles(
         self,
@@ -124,7 +186,7 @@ class HeatingCycleStorage:
         if zone_id not in self._data["zones"]:
             return []
 
-        cutoff = datetime.now(UTC) - timedelta(days=window_days)
+        cutoff = dt_util.utcnow() - timedelta(days=window_days)
         cycles = []
 
         for cycle_dict in self._data["zones"][zone_id]["cycles"]:
@@ -156,13 +218,13 @@ class HeatingCycleStorage:
 
     async def _cleanup_old_cycles(self, zone_id: str) -> None:
         """Remove cycles older than 2x rolling window."""
-        cutoff = datetime.now(UTC) - timedelta(days=14)  # 2x default window
+        cutoff = dt_util.utcnow() - timedelta(days=14)  # 2x default window
 
         cycles = self._data["zones"][zone_id]["cycles"]
         original_count = len(cycles)
 
         self._data["zones"][zone_id]["cycles"] = [
-            c for c in cycles if datetime.fromisoformat(c["start_time"]) >= cutoff
+            c for c in cycles if parse_iso_datetime(c["start_time"]) >= cutoff
         ]
 
         removed_count = original_count - len(self._data["zones"][zone_id]["cycles"])
@@ -172,28 +234,3 @@ class HeatingCycleStorage:
                 removed_count,
                 zone_id,
             )
-
-    async def _save_to_disk(self) -> None:
-        """Save cycle data to disk with atomic write."""
-        try:
-            await self._hass.async_add_executor_job(
-                lambda: self._storage_path.parent.mkdir(parents=True, exist_ok=True),
-            )
-
-            # Write to temp file
-            temp_path = self._storage_path.with_suffix(".tmp")
-            content = json.dumps(self._data, indent=2)
-            await self._hass.async_add_executor_job(
-                temp_path.write_text,
-                content,
-            )
-
-            # Atomic move
-            await self._hass.async_add_executor_job(
-                temp_path.replace,
-                self._storage_path,
-            )
-
-            _LOGGER.debug("Saved heating cycle history to %s", self._storage_path)
-        except OSError:
-            _LOGGER.exception("Failed to save heating cycle history")

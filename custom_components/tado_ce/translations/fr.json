@@ -2,7 +2,7 @@
   "entity": {
     "binary_sensor": {
       "home": {
-        "name": "Accueil",
+        "name": "Géofencing",
         "state_attributes": {
           "tado_mode": {
             "name": "Mode Tado"
@@ -1288,11 +1288,22 @@
         "ema": "EMA (Moyenne mobile exponentielle)",
         "rolling_average": "Moyenne mobile"
       }
+    },
+    "reset_scope": {
+      "options": {
+        "everything": "Tout réinitialiser",
+        "smart_comfort": "Confort intelligent",
+        "thermal_analytics": "Analyse thermique",
+        "weather_compensation": "Compensation météorologique",
+        "bridge": "Pont Internet",
+        "mobile_tracking": "Suivi des appareils mobiles",
+        "polling_api": "Interrogation et API"
+      }
     }
   },
   "exceptions": {
     "entity_not_found": {
-      "message": "L'entité {entity_id} n'a pas été trouvée dans le registre des entités."
+      "message": "L'entité {entité_id} n'a pas été trouvée dans le registre des entités"
     },
     "entity_not_tado_ce": {
       "message": "L'entité {entity_id} n'est pas une entité Tado CE (platform={platform})"
@@ -1301,7 +1312,7 @@
       "message": "L'entité {entity_id} n'a pas d'association d'entrée de configuration"
     },
     "entry_not_loaded": {
-      "message": "Pas d'entrée Tado CE chargée pour {entity_id} (config_entry_id={config_entry_id})"
+      "message": "Aucune entrée Tado CE chargée pour {entity_id} (config_entry_id={config_entry_id})"
     },
     "device_entry_not_loaded": {
       "message": "Dispositif {device_serial} trouvé mais son entrée de configuration n'est pas chargée"
@@ -1313,19 +1324,19 @@
       "message": "Aucune entrée Tado CE n'est chargée"
     },
     "multiple_entries": {
-      "message": "Plusieurs foyers Tado configurés ({home_ids}). Veuillez utiliser un service qui cible une entité spécifique afin d'acheminer l'appel vers le domicile correct."
+      "message": "Plusieurs foyers Tado configurés ({home_ids}). Veuillez utiliser un service qui cible une entité spécifique afin d'acheminer l'appel vers le bon foyer."
     },
     "api_quota_critically_low": {
       "message": "Le quota de l'API est critiquement bas - action bloquée pour préserver la réserve d'amorçage. Veuillez attendre la réinitialisation de l'API."
     },
     "water_heater_not_found": {
-      "message": "L'entité du chauffe-eau n'a pas été trouvée : {entity_id}"
+      "message": "L'entité chauffe-eau n'a pas été trouvée : {entity_id}"
     },
     "timer_set_failed": {
-      "message": "Échec du réglage de la minuterie {duration}min pour {zone_name} : {error}"
+      "message": "Échec de la mise en place de la minuterie {durée}min pour {nom_de_zone} : {erreur}"
     },
     "bridge_auth_failed": {
-      "message": "Clé de série ou d'authentification du pont invalide"
+      "message": "Code de série ou d'authentification du pont non valide"
     }
   },
   "issues": {
@@ -1345,7 +1356,7 @@
         "description": "Choisissez comment vous authentifier auprès de Tado.",
         "menu_options": {
           "device_auth": "Autorisation de l'appareil (recommandé)",
-          "manual_token": "Token manuel (avancé)"
+          "manual_token": "Jeton manuel (avancé)"
         }
       },
       "device_auth": {
@@ -1353,7 +1364,7 @@
         "description": "Cliquez sur Soumettre pour lancer la procédure d'autorisation."
       },
       "manual_token": {
-        "title": "Token manuel",
+        "title": "Jeton manuel",
         "description": "Si l'autorisation de l'appareil ne fonctionne pas (par exemple, problèmes de serveur Tado), vous pouvez coller un jeton de rafraîchissement manuellement. Ouvrez {tado_web_app} dans votre navigateur, connectez-vous, ouvrez Developer Tools (F12) → Application → Local Storage → {tado_web_app_url} → tado_token, et copiez la valeur refresh_token.",
         "data": {
           "refresh_token": "Jeton de rafraîchissement"
@@ -1422,149 +1433,12 @@
     "step": {
       "init": {
         "title": "Options Tado CE",
-        "description": "Choisissez les éléments à configurer.",
+        "description": "Personnalisez votre expérience Tado - construit par la communauté, pour la communauté.",
         "menu_options": {
-          "global_settings": "Paramètres globaux",
-          "zone_config": "Configuration des zones"
-        }
-      },
-      "global_settings": {
-        "title": "Paramètres globaux",
-        "description": "Personnalisez votre expérience en matière de climat intelligent piloté par la communauté grâce à des fonctionnalités avancées développées par des utilisateurs comme vous.",
-        "sections": {
-          "tado_ce_exclusive": {
-            "name": "Tado CE Exclusive",
-            "description": "Fonctionnalités propres à l'intégration Tado CE",
-            "data": {
-              "smart_comfort_enabled": "Analyse intelligente du confort",
-              "thermal_analytics_enabled": "Analyse thermique",
-              "thermal_analytics_zones": "Zones d'analyse thermique",
-              "adaptive_preheat_enabled": "Préchauffage adaptatif",
-              "schedule_calendar_enabled": "Calendrier",
-              "zone_configuration_enabled": "Configuration des zones",
-              "test_mode_enabled": "Mode test (limite de 100 appels API)"
-            },
-            "data_description": {
-              "smart_comfort_enabled": "Déviation de l'horaire, horaire suivant, conseiller de préchauffage, capteurs d'objectifs de confort",
-              "thermal_analytics_enabled": "Inertie thermique, taux de chauffage, capteurs d'efficacité",
-              "thermal_analytics_zones": "Sélectionner les zones pour afficher l'analyse thermique (désélectionner pour masquer, vide = toutes)",
-              "adaptive_preheat_enabled": "Démarrage automatique du chauffage à l'heure de préchauffage recommandée (nécessite Smart Comfort)",
-              "schedule_calendar_enabled": "Affichage des programmes de chauffage sous forme d'entités calendaires (lecture seule)",
-              "zone_configuration_enabled": "Réglages par zone : type d'émetteur de chaleur, mode de superposition, limites de température",
-              "test_mode_enabled": "Simuler une limite de 100 appels API pour tester la protection des quotas"
-            }
-          },
-          "tado_data": {
-            "name": "Tado Data",
-            "description": "Données supplémentaires provenant de l'API Tado (appels API supplémentaires)",
-            "data": {
-              "weather_enabled": "Capteurs météorologiques",
-              "home_state_sync_enabled": "Synchronisation des états Home/Away",
-              "mobile_devices_enabled": "Suivi des appareils mobiles",
-              "mobile_devices_frequent_sync": "Sync Mobile Fréquemment",
-              "offset_enabled": "Décalage de température"
-            },
-            "data_description": {
-              "weather_enabled": "Température extérieure et intensité solaire (+1 appel API par synchronisation)",
-              "home_state_sync_enabled": "Synchronisation de l'état de repos/absence pour le commutateur du mode absence (+1 appel API par synchronisation)",
-              "mobile_devices_enabled": "Suivi des appareils mobiles pour le geofencing (+1 appel API par synchronisation complète)",
-              "mobile_devices_frequent_sync": "Synchronisation des appareils mobiles à chaque sondage au lieu d'une simple synchronisation complète",
-              "offset_enabled": "Ajout de l'attribut offset_celsius aux entités climatiques (+1 appel API par appareil)"
-            }
-          },
-          "smart_comfort": {
-            "name": "Confort intelligent",
-            "data": {
-              "use_outdoor_temp_entity": "Utiliser l'entité température extérieure",
-              "outdoor_temp_entity": "Entité température extérieure",
-              "hot_water_timer_duration": "Minuterie eau chaude (minutes)",
-              "smart_comfort_mode": "Mode confort intelligent",
-              "use_feels_like": "Utiliser la température ressentie",
-              "mold_risk_window_type": "Type de fenêtre",
-              "smart_comfort_history_days": "Historique des températures (jours)",
-              "heating_cycle_history_days": "Historique de l'analyse thermique (jours)",
-              "heating_cycle_min_cycles": "Cycles minimaux pour l'analyse",
-              "heating_cycle_inertia_threshold": "Seuil de détection de l'inertie"
-            },
-            "data_description": {
-              "use_outdoor_temp_entity": "Désactiver les fonctions de température extérieure",
-              "outdoor_temp_entity": "Capteur de température pour la compensation des conditions météorologiques (par exemple, weather.home)",
-              "hot_water_timer_duration": "Durée par défaut de la mise en route de l'eau chaude (5-1440 min)",
-              "smart_comfort_mode": "Ajuste la température cible en fonction des conditions extérieures",
-              "use_feels_like": "Utiliser la température apparente au lieu de la température réelle",
-              "mold_risk_window_type": "Type de fenêtre pour le calcul de la température de surface du risque de moisissure",
-              "smart_comfort_history_days": "Nombre de jours de l'historique des températures pour le calcul du taux (1-30)",
-              "heating_cycle_history_days": "Jours de l'historique du cycle de chauffage à conserver (1-30)",
-              "heating_cycle_min_cycles": "Nombre minimum de cycles terminés avant l'affichage de l'analyse (1-10)",
-              "heating_cycle_inertia_threshold": "Seuil de changement de température pour détecter la fin de l'inertie (0,05-0,5°C)"
-            }
-          },
-          "polling_api": {
-            "name": "Interrogation et API",
-            "data": {
-              "day_start_hour": "Jour Début Heure",
-              "night_start_hour": "Heure de début de nuit",
-              "custom_day_interval": "Intervalle de jour personnalisé (minutes)",
-              "custom_night_interval": "Intervalle de nuit personnalisé (minutes)",
-              "refresh_debounce_seconds": "Refresh Debounce (secondes)",
-              "api_history_retention_days": "Conservation de l'historique de l'API (jours)",
-              "quota_reserve_enabled": "Protection de la réserve de quotas",
-              "smart_actions_debounce_seconds": "Fenêtre de rebond des actions intelligentes",
-              "device_sync_delay_seconds": "Délai de synchronisation entre les opérations"
-            },
-            "data_description": {
-              "day_start_hour": "Heure de début de la période journalière (0-23, par défaut : 7)",
-              "night_start_hour": "Heure de début de la période nocturne (0-23, par défaut : 23)",
-              "custom_day_interval": "Remise en cause de l'interrogation intelligente pour la journée (1-1440 min, vide pour auto)",
-              "custom_night_interval": "Remise en cause de l'interrogation intelligente pour la nuit (1-1440 min, vide pour auto)",
-              "refresh_debounce_seconds": "Délai avant rafraîchissement après changement d'état (1-60s)",
-              "api_history_retention_days": "Jours de conservation de l'historique des appels API (0 = pour toujours)",
-              "quota_reserve_enabled": "Interrompre l'interrogation lorsque le quota est faible. Ne le désactivez que si vous comprenez les risques.",
-              "smart_actions_debounce_seconds": "Secondes à attendre avant d'envoyer la valeur finale lors d'un réglage rapide de la température. Régler à 0 pour désactiver.",
-              "device_sync_delay_seconds": "Délai entre les opérations séquentielles du dispositif (sécurité enfant, décalage de température)."
-            }
-          },
-          "flow_temperature_control": {
-            "name": "Contrôle de la température du flux",
-            "description": "Connectez-vous à votre pont Internet Tado (v3+ avec prise en charge HomeKit) et configurez l'ajustement automatique de la température de départ.",
-            "data": {
-              "bridge_serial": "Numéro de série du pont",
-              "bridge_auth_key": "Code d'authentification du pont",
-              "wc_enabled": "Activer la compensation météorologique",
-              "wc_heating_system_preset": "Type de système de chauffage",
-              "wc_slope": "Pente de la courbe de chauffe",
-              "wc_design_outdoor_temp": "Température extérieure de référence",
-              "wc_max_flow_temp": "Température maximale d'écoulement",
-              "wc_min_flow_temp": "Température minimale d'écoulement",
-              "wc_shutoff_temp": "Température d'arrêt du chauffage",
-              "wc_smoothing_method": "Méthode de lissage de la température",
-              "wc_smoothing_window": "Fenêtre de lissage (minutes)",
-              "wc_room_compensation_enabled": "Activer la compensation de la pièce",
-              "wc_room_compensation_factor": "Facteur de compensation de la pièce",
-              "wc_step_size": "Température d'écoulement Taille de l'échelon",
-              "wc_hysteresis": "Modifier l'hystérésis",
-              "bridge_enabled": "Activer le pont Internet"
-            },
-            "data_description": {
-              "bridge_serial": "Numéro de série imprimé sur le dessous de votre Internet Bridge v3+ (commence par IB, par exemple IB0123456789)",
-              "bridge_auth_key": "Code d'authentification à 4 chiffres figurant sur l'autocollant du pont (à garder confidentiel)",
-              "wc_slope": "Plus élevée = courbe plus raide = plus de changement de température du débit par degré de changement extérieur (0,3-3,0)",
-              "wc_design_outdoor_temp": "Température extérieure la plus froide prévue pour votre région (-30 à 10°C)",
-              "wc_max_flow_temp": "Température de départ à la température extérieure de calcul (25-80°C)",
-              "wc_min_flow_temp": "Température minimale de départ, également utilisée pour l'arrêt (25-60°C)",
-              "wc_shutoff_temp": "Température extérieure au-dessus de laquelle le chauffage est réduit au minimum (5-30°C)",
-              "wc_smoothing_method": "Comment les relevés de température extérieure sont lissés avant d'être utilisés dans la courbe de chauffage ?",
-              "wc_smoothing_window": "Durée du calcul de la moyenne de la température extérieure (15-1440 min)",
-              "wc_room_compensation_factor": "Ajustement du débit par degré d'écart intérieur par rapport au point de consigne (1,0-5,0)",
-              "wc_step_size": "La température de départ est arrondie à cette taille de pas - plus grande = moins d'appels API, moins d'oscillation (0,5-2,0°C).",
-              "wc_hysteresis": "Variation minimale par rapport à la dernière valeur envoyée avant qu'un nouvel appel API ne soit effectué (0,5-3,0°C)",
-              "bridge_enabled": "Permet de se connecter à votre pont internet Tado. Requiert un pont v3+ (compatible avec HomeKit). La désactivation supprimera les informations d'identification du pont et toutes les entités du pont."
-            }
-          },
-          "api_write": {
-            "data": {},
-            "data_description": {}
-          }
+          "zone_config": "Configuration des zones",
+          "general_settings": "Paramètres généraux",
+          "advanced_settings": "Paramètres avancés",
+          "reset_to_defaults": "Réinitialisation aux valeurs par défaut"
         }
       },
       "zone_config": {
@@ -1575,7 +1449,7 @@
         }
       },
       "zone_sensor_config": {
-        "title": "Configuration de la zone - {zone_name}",
+        "title": "Configuration de la zone - {nom_de_la_zone}",
         "description": "Configurer les paramètres par zone. Les sections peuvent être développées pour révéler plus d'options.",
         "sections": {
           "heating_section": {
@@ -1656,6 +1530,215 @@
           "external_temp_sensor": "Remplacer la lecture de la température intégrée de Tado par une sonde externe",
           "external_humidity_sensor": "Remplacer la mesure d'humidité intégrée de Tado par un capteur externe"
         }
+      },
+      "general_settings": {
+        "description": "Permet d'activer ou de désactiver des fonctions. Tous les paramètres utilisent les valeurs par défaut recommandées. Utilisez les paramètres avancés pour affiner les réglages.",
+        "sections": {
+          "smart_features": {
+            "name": "Caractéristiques intelligentes",
+            "data": {
+              "smart_comfort_enabled": "Confort intelligent",
+              "thermal_analytics_enabled": "Analyse thermique",
+              "adaptive_preheat_enabled": "Préchauffage adaptatif",
+              "schedule_calendar_enabled": "Calendrier"
+            },
+            "data_description": {
+              "smart_comfort_enabled": "Capteurs de confort, de risque de moisissure, de condensation et de point de rosée pour chaque zone",
+              "thermal_analytics_enabled": "Suivez la vitesse à laquelle vos pièces se réchauffent et les performances de votre système au fil du temps.",
+              "adaptive_preheat_enabled": "Démarrage automatique du chauffage à l'avance pour que la pièce soit chaude au moment où l'horaire se met en place.",
+              "schedule_calendar_enabled": "Les programmes de chauffage de Tado sont affichés dans HA sous forme d'entrées de calendrier."
+            }
+          },
+          "connections": {
+            "name": "Connexions",
+            "data": {
+              "bridge_enabled": "Pont Internet",
+              "wc_enabled": "Compensation météorologique",
+              "homekit_enabled": "Contrôle local (HomeKit)"
+            },
+            "data_description": {
+              "bridge_enabled": "Connexion à votre pont Internet Tado pour les relevés de température de départ de la chaudière",
+              "wc_enabled": "Ajuster automatiquement la température de départ de votre chaudière en fonction des conditions météorologiques extérieures",
+              "homekit_enabled": "Contrôler le chauffage localement via HomeKit - fonctionne même lorsque le cloud de Tado est en panne."
+            }
+          },
+          "data_sources": {
+            "name": "Sources de données",
+            "data": {
+              "weather_enabled": "Données météorologiques",
+              "home_state_sync_enabled": "Synchronisation de l'État de résidence",
+              "mobile_devices_enabled": "Suivi des appareils mobiles",
+              "offset_enabled": "Décalages de température"
+            },
+            "data_description": {
+              "weather_enabled": "Température extérieure et intensité solaire de Tado (+1 appel API par sondage)",
+              "home_state_sync_enabled": "Synchroniser la présence globale de votre maison (Home/Away) à chaque sondage (+1 appel API par sondage)",
+              "mobile_devices_enabled": "Suivi de l'emplacement de chaque téléphone pour une présence par appareil. Mises à jour au redémarrage de l'HA uniquement - activer la synchronisation fréquente dans les paramètres avancés pour des mises à jour continues (+1 appel à l'API par sondage lorsque la fréquence est élevée).",
+              "offset_enabled": "Afficher le décalage d'étalonnage de la température sur les entités climatiques (+1 appel API par appareil au redémarrage)"
+            }
+          },
+          "per_zone": {
+            "name": "Par zone",
+            "data": {
+              "zone_configuration_enabled": "Configuration par zone"
+            },
+            "data_description": {
+              "zone_configuration_enabled": "Personnalisation des capteurs, des superpositions et du chauffage par zone"
+            }
+          }
+        },
+        "title": "Paramètres généraux"
+      },
+      "advanced_settings": {
+        "description": "Ajustez les fonctions activées. Pour activer ou désactiver des fonctionnalités, accédez aux Paramètres généraux.",
+        "title": "Paramètres avancés",
+        "sections": {
+          "smart_comfort": {
+            "name": "Confort intelligent",
+            "data": {
+              "use_outdoor_temp_entity": "Utiliser l'entité température extérieure",
+              "outdoor_temp_entity": "Entité température extérieure",
+              "hot_water_timer_duration": "Minuterie eau chaude (minutes)",
+              "smart_comfort_mode": "Mode confort intelligent",
+              "use_feels_like": "Utiliser la température ressentie",
+              "mold_risk_window_type": "Type de fenêtre",
+              "smart_comfort_history_days": "Historique des températures (jours)",
+              "heating_cycle_history_days": "Historique de l'analyse thermique (jours)",
+              "heating_cycle_min_cycles": "Cycles minimaux pour l'analyse",
+              "heating_cycle_inertia_threshold": "Seuil de détection de l'inertie"
+            },
+            "data_description": {
+              "use_outdoor_temp_entity": "Désactiver les fonctions qui ont besoin de la température extérieure (évaluation du confort, risque de moisissure)",
+              "outdoor_temp_entity": "Capteur fournissant la température extérieure (par exemple, weather.home ou un capteur local)",
+              "hot_water_timer_duration": "Durée pendant laquelle l'eau chaude reste allumée lorsque vous l'allumez manuellement (5-1440 min)",
+              "smart_comfort_mode": "L'agressivité avec laquelle il faut ajuster la température cible en fonction des conditions extérieures",
+              "use_feels_like": "Tenir compte du refroidissement éolien et de l'humidité au lieu de la température brute",
+              "mold_risk_window_type": "Votre type de fenêtre - affecte la façon dont la température de la surface est estimée pour le risque de moisissure.",
+              "smart_comfort_history_days": "Nombre de jours de données de température à utiliser pour l'estimation des taux de chauffage (1-30)",
+              "heating_cycle_history_days": "Nombre de jours de données sur le cycle de chauffage à conserver (1-30)",
+              "heating_cycle_min_cycles": "Attendre ce nombre de cycles de chauffage terminés avant d'afficher les analyses (1-10).",
+              "heating_cycle_inertia_threshold": "Les variations de température inférieures à cette valeur sont considérées comme \"réglées\" après l'arrêt du chauffage (0,05-0,5°C)."
+            }
+          },
+          "thermal_analytics": {
+            "name": "Analyse thermique",
+            "data": {
+              "thermal_analytics_zones": "Zones d'analyse thermique",
+              "heating_cycle_history_days": "Historique du cycle de chauffage (jours)",
+              "heating_cycle_min_cycles": "Cycles de chauffage minimum",
+              "heating_cycle_inertia_threshold": "Seuil d'inertie (°C)"
+            },
+            "data_description": {
+              "thermal_analytics_zones": "Choisir les zones qui affichent les capteurs d'analyse thermique (laisser vide pour toutes les zones)",
+              "heating_cycle_history_days": "Nombre de jours de données sur le cycle de chauffage à conserver (1-30)",
+              "heating_cycle_min_cycles": "Attendre ce nombre de cycles terminés avant d'afficher les résultats (1-10)",
+              "heating_cycle_inertia_threshold": "Les variations de température inférieures à cette valeur sont considérées comme \"réglées\" après l'arrêt du chauffage (0,05-0,5°C)."
+            }
+          },
+          "flow_temperature_control": {
+            "name": "Compensation météorologique",
+            "data": {
+              "bridge_enabled": "Activer le pont Internet",
+              "bridge_serial": "Numéro de série du pont",
+              "bridge_auth_key": "Code d'authentification du pont",
+              "wc_enabled": "Activer la compensation météorologique",
+              "wc_heating_system_preset": "Type de système de chauffage",
+              "wc_slope": "Pente de la courbe de chauffe",
+              "wc_design_outdoor_temp": "Température extérieure de référence",
+              "wc_max_flow_temp": "Température maximale d'écoulement",
+              "wc_min_flow_temp": "Température minimale d'écoulement",
+              "wc_shutoff_temp": "Température d'arrêt du chauffage",
+              "wc_smoothing_method": "Méthode de lissage de la température",
+              "wc_smoothing_window": "Fenêtre de lissage (minutes)",
+              "wc_room_compensation_enabled": "Activer la compensation de la pièce",
+              "wc_room_compensation_factor": "Facteur de compensation de la pièce",
+              "wc_step_size": "Température d'écoulement Taille de l'échelon",
+              "wc_hysteresis": "Modifier l'hystérésis"
+            },
+            "data_description": {
+              "bridge_enabled": "Connectez-vous à votre pont Internet Tado pour obtenir des données en temps réel sur la chaudière. Nécessite un pont v3+. La désactivation supprime les informations d'identification et les capteurs du pont.",
+              "bridge_serial": "Imprimé au bas de votre bridge (commence par IB, par exemple IB0123456789)",
+              "bridge_auth_key": "Code à 4 chiffres figurant sur l'autocollant apposé sur votre pont (à garder confidentiel)",
+              "wc_slope": "Augmentation de la température de départ à mesure que le temps se refroidit à l'extérieur. Plus élevé = chauffage plus agressif (0,3-3,0)",
+              "wc_design_outdoor_temp": "La température la plus froide à laquelle vous vous attendez dans votre région (-30 à 10°C)",
+              "wc_max_flow_temp": "Température de départ la plus élevée que votre chaudière devrait atteindre à la température extérieure la plus froide (25-80°C).",
+              "wc_min_flow_temp": "Température de départ la plus basse - également utilisée lorsque le chauffage s'arrête (25-60°C)",
+              "wc_shutoff_temp": "Arrêt du chauffage lorsque la température extérieure dépasse ce seuil (5-30°C)",
+              "wc_smoothing_method": "Comment la moyenne des relevés de température extérieure est calculée pour éviter les changements soudains ?",
+              "wc_smoothing_window": "Durée de la moyenne de la température extérieure (15-1440 min)",
+              "wc_room_compensation_factor": "De combien ajuster la température de départ lorsqu'une pièce est plus froide ou plus chaude que sa cible (1.0-5.0)",
+              "wc_step_size": "Arrondir la température de départ à cette taille de pas - des pas plus grands signifient moins de réglages de la chaudière (0,5-2,0°C).",
+              "wc_hysteresis": "N'envoyer une nouvelle température de départ que si elle diffère de la précédente d'au moins cette valeur (0,5-3,0 °C)."
+            }
+          },
+          "mobile_tracking": {
+            "name": "Suivi des appareils mobiles",
+            "data": {
+              "mobile_devices_frequent_sync": "Synchronisation fréquente"
+            },
+            "data_description": {
+              "mobile_devices_frequent_sync": "Mettre à jour l'emplacement des appareils à chaque cycle d'interrogation. Sans cela, les emplacements ne sont actualisés que lorsque l'HA redémarre (+1 appel à l'API par interrogation)."
+            }
+          },
+          "polling_api": {
+            "name": "Interrogation et API",
+            "data": {
+              "day_start_hour": "Jour Début Heure",
+              "night_start_hour": "Heure de début de nuit",
+              "custom_day_interval": "Intervalle de jour personnalisé (minutes)",
+              "custom_night_interval": "Intervalle de nuit personnalisé (minutes)",
+              "refresh_debounce_seconds": "Délai de rafraîchissement (secondes)",
+              "api_history_retention_days": "Conservation de l'historique de l'API (jours)",
+              "quota_reserve_enabled": "Protection de la réserve de quotas",
+              "smart_actions_debounce_seconds": "Délai du curseur de température",
+              "device_sync_delay_seconds": "Délai de synchronisation des appareils"
+            },
+            "data_description": {
+              "day_start_hour": "Lorsque l'interrogation de jour commence (0-23, par défaut : 7)",
+              "night_start_hour": "Quand les sondages nocturnes commencent - les sondages sont moins fréquents la nuit (0-23, valeur par défaut : 23)",
+              "custom_day_interval": "Remplacer l'interrogation automatique de jour par un intervalle fixe (1-1440 min, laisser vide pour automatique)",
+              "custom_night_interval": "Remplacer l'interrogation nocturne automatique par un intervalle fixe (1-1440 min, laisser vide pour automatique)",
+              "refresh_debounce_seconds": "Attendre ce temps après un changement avant de récupérer de nouvelles données de Tado (1-60s)",
+              "api_history_retention_days": "Nombre de jours de l'historique des appels API à conserver pour le graphique d'utilisation (0 = pour toujours)",
+              "quota_reserve_enabled": "Interrompt automatiquement l'interrogation lorsque votre quota d'API est faible. Ne le désactivez que si vous savez ce que vous faites.",
+              "smart_actions_debounce_seconds": "Lorsque vous déplacez le curseur de température, attendez ce temps avant d'envoyer la valeur finale (0 = envoi immédiat).",
+              "device_sync_delay_seconds": "Pause entre les opérations séquentielles de l'appareil, telles que le verrouillage de l'enfant ou les changements d'offset"
+            }
+          }
+        }
+      },
+      "bridge_setup": {
+        "description": "Saisissez vos informations d'identification pour le pont Internet Tado. Vous trouverez le numéro de série et le code d'authentification au dos de votre pont.",
+        "title": "Configuration du pont Internet",
+        "data": {
+          "bridge_serial": "Numéro de série",
+          "bridge_auth_key": "Code d'authentification"
+        },
+        "data_description": {
+          "bridge_serial": "Commence par IB (e.g. IB0123456789)",
+          "bridge_auth_key": "Code à 8 chiffres au dos du pont"
+        }
+      },
+      "wc_bridge_prompt": {
+        "description": "La compensation météorologique fonctionne mieux avec le pont Internet pour les données de température de départ en temps réel.",
+        "title": "Compensation météorologique",
+        "data": {
+          "also_enable_bridge": "Activez également le pont Internet"
+        },
+        "data_description": {
+          "also_enable_bridge": "Configurer les informations d'identification du pont à l'étape suivante"
+        }
+      },
+      "reset_to_defaults": {
+        "description": "Choisissez ce qui doit être réinitialisé. La réinitialisation par catégorie ne réinitialise que les paramètres de réglage - la fonction reste activée.",
+        "title": "Réinitialisation aux valeurs par défaut",
+        "data": {
+          "reset_scope": "Réinitialiser le champ d'application"
+        }
+      },
+      "reset_confirm": {
+        "description": "Vous en êtes sûr ? Cela ne peut pas être annulé.",
+        "title": "Confirmer la réinitialisation"
       }
     },
     "abort": {

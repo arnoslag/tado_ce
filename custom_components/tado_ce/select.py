@@ -3,19 +3,13 @@
 from __future__ import annotations
 
 import logging
-import time
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.select import SelectEntity
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .action_helpers import (
-    check_bootstrap_reserve as _check_bootstrap_reserve,
-)
-from .action_helpers import (
-    is_within_optimistic_window as _is_within_optimistic_window,
-)
+from .ratelimit import async_check_bootstrap_reserve_or_raise as _check_bootstrap_reserve_or_raise
 from .const import (
     OVERLAY_MODE_DEFAULT,
     OVERLAY_MODE_DEFAULT_DISPLAY,
@@ -28,7 +22,12 @@ from .const import (
 from .device_manager import get_hub_device_info
 from .entity_registry import ENTITY_REGISTRY, get_entity_category
 from .helpers import async_trigger_immediate_refresh
-from .optimistic_helpers import clear_optimistic_state
+from .optimistic_helpers import (
+    OptimisticUpdateResult,
+    clear_optimistic_state,
+    resolve_optimistic_update,
+    set_optimistic_fields,
+)
 
 if TYPE_CHECKING:
     from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
@@ -110,17 +109,6 @@ class TadoPresenceModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sel
         self._optimistic_sequence: int | None = None
         self._expected_mode: str | None = None
 
-    def _is_within_optimistic_window(self) -> bool:
-        """Check if we're within the optimistic update window."""
-        return _is_within_optimistic_window(self.hass, self._optimistic_set_at, entry_id=self._entry_id)
-
-    def _clear_optimistic_state(self) -> None:
-        """Clear all optimistic state tracking.
-
-        Delegates to shared optimistic.clear_optimistic_state().
-        """
-        clear_optimistic_state(self)
-
     @property
     def icon(self) -> str | None:
         """Return icon based on current mode."""
@@ -154,17 +142,8 @@ class TadoPresenceModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sel
     def update(self) -> None:
         """Update state from home_state.json.
 
-        3-layer defense - preserve optimistic state if within window
-        or if API hasn't confirmed expected state yet.
+        Uses shared resolve_optimistic_update() for 3-layer defense.
         """
-        # Layer 1: Skip if within optimistic window
-        if self._is_within_optimistic_window():
-            _LOGGER.debug("Presence Mode: Preserving optimistic state (within window)")
-            return
-
-        if self._optimistic_set_at is not None:
-            self._optimistic_set_at = None
-
         try:
             coord_data = self.coordinator.data or {}
             home_state = coord_data.get("home_state")
@@ -174,39 +153,33 @@ class TadoPresenceModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sel
             api_presence = home_state.get("presence", "HOME")
             api_locked = home_state.get("presenceLocked", False)
 
-            # Layer 3: Check if API confirmed expected state
-            if self._optimistic_sequence is not None and self._expected_mode is not None:
-                # Determine what mode API is showing
-                if not api_locked:
-                    api_mode = "auto"
-                elif api_presence == "HOME":
-                    api_mode = "home"
-                else:
-                    api_mode = "away"
+            # Determine what mode API is showing
+            if not api_locked:
+                api_mode = "auto"
+            elif api_presence == "HOME":
+                api_mode = "home"
+            else:
+                api_mode = "away"
 
-                if api_mode == self._expected_mode:
-                    # API confirmed - clear optimistic state
-                    self._clear_optimistic_state()
-                else:
-                    # Preserve optimistic state - API hasn't caught up yet
-                    _LOGGER.debug(
-                        "Presence Mode: Preserving optimistic state (expected=%s, api=%s)",
-                        self._expected_mode,
-                        api_mode,
-                    )
-                    return
+            # Resolve optimistic state using shared helper
+            result = resolve_optimistic_update(
+                self,
+                api_values={"mode": api_mode},
+                entry_id=self._entry_id,
+            )
+
+            if result == OptimisticUpdateResult.PRESERVE_OPTIMISTIC:
+                _LOGGER.debug(
+                    "Presence Mode: Preserving optimistic state (expected=%s, api=%s)",
+                    self._expected_mode,
+                    api_mode,
+                )
+                return
 
             # Update from API
             self._presence = api_presence
             self._presence_locked = api_locked
-
-            # Determine mode from API state
-            if not api_locked:
-                self._attr_current_option = "auto"
-            elif api_presence == "HOME":
-                self._attr_current_option = "home"
-            else:
-                self._attr_current_option = "away"
+            self._attr_current_option = api_mode
 
         except (AttributeError, TypeError, KeyError) as e:
             _LOGGER.warning("Failed to update presence mode: %s", e)
@@ -218,19 +191,14 @@ class TadoPresenceModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sel
         Bootstrap Reserve check
         Full 3-layer optimistic update
         """
-        await _check_bootstrap_reserve(self.hass, "Presence Mode", entry_id=self._entry_id)
+        await _check_bootstrap_reserve_or_raise(self.hass, "Presence Mode", coordinator=self.coordinator)
 
         old_mode = self._attr_current_option
         old_presence = self._presence
         old_locked = self._presence_locked
 
-        # Layer 1 & 2: Optimistic update BEFORE API call
+        # Optimistic update BEFORE API call
         self._attr_current_option = option
-        self._optimistic_set_at = time.monotonic()
-        self._optimistic_sequence = self.coordinator.get_next_sequence()
-
-        # Layer 3: Set expected state
-        self._expected_mode = option
 
         # Update internal state optimistically
         if option == "auto":
@@ -238,6 +206,12 @@ class TadoPresenceModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sel
         else:
             self._presence_locked = True
             self._presence = option.upper()
+
+        # Set optimistic fields using shared helper
+        await set_optimistic_fields(
+            self, self.coordinator,
+            expected={"mode": option},
+        )
 
         self.async_write_ha_state()
 
@@ -260,7 +234,7 @@ class TadoPresenceModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sel
             self._attr_current_option = old_mode
             self._presence = old_presence
             self._presence_locked = old_locked
-            self._clear_optimistic_state()
+            clear_optimistic_state(self)
             self.async_write_ha_state()
 
 
@@ -345,7 +319,7 @@ class TadoOverlayModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sele
 
         # Save to storage (non-blocking)
         api_mode = OVERLAY_MODE_MAP.get(option, OVERLAY_MODE_DEFAULT)
-        success = await self.hass.async_add_executor_job(self.coordinator.data_loader.save_overlay_mode, api_mode)
+        success = self.coordinator.data_loader.save_overlay_mode(api_mode)
 
         if success:
             # Update coordinator cache
@@ -421,7 +395,7 @@ class TadoTimerDurationSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Se
 
         # Save to storage (non-blocking)
         duration = int(option)
-        success = await self.hass.async_add_executor_job(self.coordinator.data_loader.save_timer_duration, duration)
+        success = self.coordinator.data_loader.save_timer_duration(duration)
 
         if success:
             # Update coordinator cache

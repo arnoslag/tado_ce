@@ -17,14 +17,61 @@ _LOGGER = logging.getLogger(__name__)
 _duplicate_cleanup_done: set[str] = set()
 
 
+async def async_migrate_config_json(
+    hass: HomeAssistant,
+    config_entry: ConfigEntry,
+) -> None:
+    """One-time migration: config_{home_id}.json → config_entry.options.
+
+    Reads any existing per-home config JSON file, merges values into
+    config_entry.options (existing options take precedence), then deletes
+    the JSON file.  Skips silently if no JSON file exists.
+    """
+    from .const import get_data_file
+    from .storage import async_load_json
+
+    home_id = config_entry.data.get("home_id")
+    config_path = get_data_file("config", home_id)
+
+    path_exists = await hass.async_add_executor_job(config_path.exists)
+    if not path_exists:
+        return
+
+    json_data = await async_load_json(hass, config_path)
+    if json_data is None or not isinstance(json_data, dict):
+        _LOGGER.warning("Config JSON migration: invalid data in %s, skipping", config_path)
+        return
+
+    # Remove non-config keys that should not be in options
+    json_data.pop("refresh_token", None)
+    json_data.pop("home_id", None)
+
+    # Merge: existing options take precedence over json values
+    merged: dict[str, Any] = {**json_data, **dict(config_entry.options)}
+
+    hass.config_entries.async_update_entry(config_entry, options=merged)
+    _LOGGER.info(
+        "Config JSON migration: merged %d keys from %s into config_entry.options",
+        len(json_data),
+        config_path,
+    )
+
+    # Delete the json file
+    await hass.async_add_executor_job(config_path.unlink, True)
+    _LOGGER.info("Config JSON migration: deleted %s", config_path)
+
+
 async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
     """Migrate old entry to current version.
 
     v4.0.0 dropped all v2.x → v3.x migration code.
     Minimum supported upgrade path is now v3.0.0+ (config entry version 11).
     Users on v2.x must upgrade to v3.x first, then to v4.0.0.
+
+    v11 → v12: Migrate config_{home_id}.json to config_entry.options,
+    remove dual-write mechanism.
     """
-    target_version = 11
+    target_version = 12
     initial_version = config_entry.version
 
     if initial_version is None:
@@ -36,7 +83,7 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) ->
         hass.config_entries.async_update_entry(config_entry, version=target_version)
         return True
 
-    if initial_version < target_version:
+    if initial_version < 11:
         _LOGGER.error(
             "Config entry version %s is too old. "
             "Minimum supported version is 11 (v3.0.0). "
@@ -45,9 +92,15 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) ->
         )
         return False
 
+    if initial_version == 11:
+        _LOGGER.info("Migrating config entry from v11 to v12")
+        await async_migrate_config_json(hass, config_entry)
+        hass.config_entries.async_update_entry(config_entry, version=12)
+        _LOGGER.info("Migration v11 → v12 complete")
+
     _LOGGER.debug(
-        "Config entry already at version %s, no migration needed",
-        initial_version,
+        "Config entry at version %s, no further migration needed",
+        config_entry.version,
     )
     return True
 
@@ -61,8 +114,6 @@ async def async_handle_test_mode_transition(
     When Test Mode is disabled, triggers an API call to refresh rate limit
     data with real values instead of relying on backup.
     """
-    import json
-
     from .const import get_data_file
 
     home_id = entry.data.get("home_id")
@@ -71,9 +122,11 @@ async def async_handle_test_mode_transition(
     prev_test_mode = False
     path_exists = await hass.async_add_executor_job(ratelimit_path.exists)
     if path_exists:
-        content = await hass.async_add_executor_job(ratelimit_path.read_text)
-        ratelimit_data = json.loads(content)
-        prev_test_mode = ratelimit_data.get("test_mode", False)
+        from .storage import async_load_json
+
+        ratelimit_data = await async_load_json(hass, ratelimit_path)
+        if ratelimit_data is not None and isinstance(ratelimit_data, dict):
+            prev_test_mode = ratelimit_data.get("test_mode", False)
 
     new_test_mode = entry.options.get("test_mode_enabled", False)
     _LOGGER.debug("Test Mode transition check: prev=%s, new=%s", prev_test_mode, new_test_mode)

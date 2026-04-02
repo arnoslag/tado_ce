@@ -40,7 +40,7 @@ async def async_create_entry_components(
     # Create per-entry API call tracker
     retention_days = config_manager.get_api_history_retention_days()
     api_tracker = APICallTracker(
-        DATA_DIR, retention_days=retention_days, home_id=home_id, config_manager=config_manager,
+        hass, DATA_DIR, retention_days=retention_days, home_id=home_id, config_manager=config_manager,
     )
     await api_tracker.async_init()
     _LOGGER.debug("Tado CE: Per-entry API call tracker created")
@@ -58,9 +58,6 @@ async def async_create_entry_components(
         config_entry=entry,
     )
     _LOGGER.debug("Tado CE: Per-entry API client created")
-
-    # Sync configuration to config.json for tado_api.py
-    await config_manager.async_sync_all_to_config_json()
 
     # Load version early to avoid race conditions in device_manager
     from .device_manager import load_version
@@ -112,9 +109,16 @@ async def async_cleanup_entry_components(
     # Save data before cleanup
     scm = _attr("smart_comfort_manager")
     if scm is not None:
-        await hass.async_add_executor_job(scm.save_to_file)
+        scm.save_to_file()
         coordinator.smart_comfort_manager = None
         _LOGGER.debug("Cleaned up per-entry SmartComfortManager")
+
+    # Save bridge health state before cleanup
+    bht = _attr("bridge_health_tracker")
+    dl = _attr("data_loader")
+    if bht is not None and dl is not None:
+        dl.save_bridge_health(bht.to_dict())
+        _LOGGER.debug("Saved bridge health state on cleanup")
 
     apm = _attr("adaptive_preheat_manager")
     if apm is not None:

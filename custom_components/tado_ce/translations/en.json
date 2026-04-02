@@ -2,7 +2,7 @@
   "entity": {
     "binary_sensor": {
       "home": {
-        "name": "Home",
+        "name": "Geofencing",
         "state_attributes": {
           "tado_mode": {
             "name": "Tado mode"
@@ -1288,6 +1288,17 @@
         "active": "Active",
         "passive": "Passive"
       }
+    },
+    "reset_scope": {
+      "options": {
+        "everything": "Reset Everything",
+        "smart_comfort": "Smart Comfort",
+        "thermal_analytics": "Thermal Analytics",
+        "weather_compensation": "Weather Compensation",
+        "bridge": "Internet Bridge",
+        "mobile_tracking": "Mobile Device Tracking",
+        "polling_api": "Polling & API"
+      }
     }
   },
   "exceptions": {
@@ -1325,7 +1336,7 @@
       "message": "Failed to set {duration}min timer for {zone_name}: {error}"
     },
     "bridge_auth_failed": {
-      "message": "Invalid bridge serial or auth key"
+      "message": "Invalid bridge serial or auth code"
     }
   },
   "issues": {
@@ -1422,149 +1433,12 @@
     "step": {
       "init": {
         "title": "Tado CE Options",
-        "description": "Choose what to configure.",
+        "description": "Tailor your Tado experience — built by the community, for the community.",
         "menu_options": {
-          "global_settings": "Global Settings",
-          "zone_config": "Zone Configuration"
-        }
-      },
-      "global_settings": {
-        "title": "Global Settings",
-        "description": "Customize your community-driven smart climate experience with advanced features built by users like you.",
-        "sections": {
-          "tado_ce_exclusive": {
-            "name": "Tado CE Exclusive",
-            "description": "Features unique to Tado CE integration",
-            "data": {
-              "smart_comfort_enabled": "Smart Comfort Analytics",
-              "thermal_analytics_enabled": "Thermal Analytics",
-              "thermal_analytics_zones": "Thermal Analytics Zones",
-              "adaptive_preheat_enabled": "Adaptive Preheat",
-              "schedule_calendar_enabled": "Schedule Calendar",
-              "zone_configuration_enabled": "Zone Configuration",
-              "test_mode_enabled": "Test Mode (100 API call limit)"
-            },
-            "data_description": {
-              "smart_comfort_enabled": "Schedule deviation, next schedule, preheat advisor, comfort target sensors",
-              "thermal_analytics_enabled": "Thermal inertia, heating rate, efficiency sensors",
-              "thermal_analytics_zones": "Select zones to show thermal analytics (deselect to hide, empty = all)",
-              "adaptive_preheat_enabled": "Auto-start heating at recommended preheat time (requires Smart Comfort)",
-              "schedule_calendar_enabled": "Display heating schedules as calendar entities (read-only)",
-              "zone_configuration_enabled": "Per-zone settings: heat emitter type, overlay mode, temp limits",
-              "test_mode_enabled": "Simulate 100 API call limit for testing quota protection"
-            }
-          },
-          "tado_data": {
-            "name": "Tado Data",
-            "description": "Extra data from Tado API (additional API calls)",
-            "data": {
-              "weather_enabled": "Weather Sensors",
-              "home_state_sync_enabled": "Home/Away State Sync",
-              "mobile_devices_enabled": "Mobile Device Tracking",
-              "mobile_devices_frequent_sync": "Sync Mobile Frequently",
-              "offset_enabled": "Temperature Offset"
-            },
-            "data_description": {
-              "weather_enabled": "Outside temperature and solar intensity (+1 API call per sync)",
-              "home_state_sync_enabled": "Sync home/away state for Away Mode switch (+1 API call per sync)",
-              "mobile_devices_enabled": "Track mobile devices for geofencing (+1 API call per full sync)",
-              "mobile_devices_frequent_sync": "Sync mobile devices on every poll instead of only full sync",
-              "offset_enabled": "Add offset_celsius attribute to climate entities (+1 API call per device)"
-            }
-          },
-          "smart_comfort": {
-            "name": "Smart Comfort",
-            "data": {
-              "use_outdoor_temp_entity": "Use Outdoor Temperature Entity",
-              "outdoor_temp_entity": "Outdoor Temperature Entity",
-              "hot_water_timer_duration": "Hot Water Timer (minutes)",
-              "smart_comfort_mode": "Smart Comfort Mode",
-              "use_feels_like": "Use Feels-Like Temperature",
-              "mold_risk_window_type": "Window Type",
-              "smart_comfort_history_days": "Temperature History (days)",
-              "heating_cycle_history_days": "Thermal Analytics History (days)",
-              "heating_cycle_min_cycles": "Minimum Cycles for Analysis",
-              "heating_cycle_inertia_threshold": "Inertia Detection Threshold"
-            },
-            "data_description": {
-              "use_outdoor_temp_entity": "Turn off to disable outdoor temperature features",
-              "outdoor_temp_entity": "Temperature sensor for weather compensation (e.g., weather.home)",
-              "hot_water_timer_duration": "Default duration when turning on hot water (5-1440 min)",
-              "smart_comfort_mode": "Adjusts target temp based on outdoor conditions",
-              "use_feels_like": "Use feels-like (apparent) temperature instead of actual",
-              "mold_risk_window_type": "Window type for mold risk surface temperature calculation",
-              "smart_comfort_history_days": "Days of temperature history for rate calculation (1-30)",
-              "heating_cycle_history_days": "Days of heating cycle history to keep (1-30)",
-              "heating_cycle_min_cycles": "Minimum completed cycles before showing analytics (1-10)",
-              "heating_cycle_inertia_threshold": "Temperature change threshold to detect inertia end (0.05-0.5°C)"
-            }
-          },
-          "polling_api": {
-            "name": "Polling & API",
-            "data": {
-              "day_start_hour": "Day Start Hour",
-              "night_start_hour": "Night Start Hour",
-              "custom_day_interval": "Custom Day Interval (minutes)",
-              "custom_night_interval": "Custom Night Interval (minutes)",
-              "refresh_debounce_seconds": "Refresh Debounce (seconds)",
-              "api_history_retention_days": "API History Retention (days)",
-              "quota_reserve_enabled": "Quota Reserve Protection",
-              "smart_actions_debounce_seconds": "Smart Actions debounce window",
-              "device_sync_delay_seconds": "Device Sync delay between operations"
-            },
-            "data_description": {
-              "day_start_hour": "Hour when day period starts (0-23, default: 7)",
-              "night_start_hour": "Hour when night period starts (0-23, default: 23)",
-              "custom_day_interval": "Override smart polling for daytime (1-1440 min, empty for auto)",
-              "custom_night_interval": "Override smart polling for nighttime (1-1440 min, empty for auto)",
-              "refresh_debounce_seconds": "Delay before refreshing after state changes (1-60s)",
-              "api_history_retention_days": "Days to keep API call history (0 = forever)",
-              "quota_reserve_enabled": "Pause polling when quota is low. Disable only if you understand the risks.",
-              "smart_actions_debounce_seconds": "Seconds to wait before sending the final value when rapidly adjusting temperature. Set to 0 to disable.",
-              "device_sync_delay_seconds": "Delay between sequential device operations (child lock, temperature offset)."
-            }
-          },
-          "flow_temperature_control": {
-            "name": "Flow Temperature Control",
-            "description": "Connect to your Tado Internet Bridge (v3+ with HomeKit support) and configure automatic flow temperature adjustment",
-            "data": {
-              "bridge_enabled": "Enable Internet Bridge",
-              "bridge_serial": "Bridge Serial Number",
-              "bridge_auth_key": "Bridge Auth Code",
-              "wc_enabled": "Enable Weather Compensation",
-              "wc_heating_system_preset": "Heating System Type",
-              "wc_slope": "Heating Curve Slope",
-              "wc_design_outdoor_temp": "Design Outdoor Temperature",
-              "wc_max_flow_temp": "Maximum Flow Temperature",
-              "wc_min_flow_temp": "Minimum Flow Temperature",
-              "wc_shutoff_temp": "Heating Shutoff Temperature",
-              "wc_smoothing_method": "Temperature Smoothing Method",
-              "wc_smoothing_window": "Smoothing Window (minutes)",
-              "wc_room_compensation_enabled": "Enable Room Compensation",
-              "wc_room_compensation_factor": "Room Compensation Factor",
-              "wc_step_size": "Flow Temperature Step Size",
-              "wc_hysteresis": "Change Hysteresis"
-            },
-            "data_description": {
-              "bridge_enabled": "Enable to connect to your Tado Internet Bridge. Requires v3+ bridge (HomeKit-compatible). Disabling will remove bridge credentials and all bridge entities",
-              "bridge_serial": "Serial number printed on the bottom of your Internet Bridge v3+ (starts with IB, e.g. IB0123456789)",
-              "bridge_auth_key": "4-digit auth code from the bridge sticker (keep confidential)",
-              "wc_slope": "Higher = steeper curve = more flow temp change per degree outdoor change (0.3–3.0)",
-              "wc_design_outdoor_temp": "Coldest expected outdoor temperature for your region (-30 to 10°C)",
-              "wc_max_flow_temp": "Flow temperature at design outdoor temperature (25–80°C)",
-              "wc_min_flow_temp": "Minimum flow temperature, also used at shutoff (25–60°C)",
-              "wc_shutoff_temp": "Outdoor temperature above which heating is reduced to minimum (5–30°C)",
-              "wc_smoothing_method": "How outdoor temperature readings are smoothed before use in the heating curve",
-              "wc_smoothing_window": "Duration of outdoor temperature averaging (15–1440 min)",
-              "wc_room_compensation_factor": "Flow adjustment per degree indoor deviation from setpoint (1.0–5.0)",
-              "wc_step_size": "Flow temperature is rounded to this step size — larger = fewer API calls, less oscillation (0.5–2.0°C)",
-              "wc_hysteresis": "Minimum change from last sent value before a new API call is made (0.5–3.0°C)"
-            }
-          },
-          "api_write": {
-            "data": {},
-            "data_description": {}
-          }
+          "zone_config": "Zone Configuration",
+          "general_settings": "General Settings",
+          "advanced_settings": "Advanced Settings",
+          "reset_to_defaults": "Reset to Defaults"
         }
       },
       "zone_config": {
@@ -1656,6 +1530,215 @@
           "external_temp_sensor": "Override Tado's built-in temperature reading with an external sensor",
           "external_humidity_sensor": "Override Tado's built-in humidity reading with an external sensor"
         }
+      },
+      "general_settings": {
+        "description": "Toggle features on or off. All settings use recommended defaults. Use Advanced Settings to fine-tune.",
+        "sections": {
+          "smart_features": {
+            "name": "Smart Features",
+            "data": {
+              "smart_comfort_enabled": "Smart Comfort",
+              "thermal_analytics_enabled": "Thermal Analytics",
+              "adaptive_preheat_enabled": "Adaptive Preheat",
+              "schedule_calendar_enabled": "Schedule Calendar"
+            },
+            "data_description": {
+              "smart_comfort_enabled": "Comfort scoring, mold risk, condensation, and dew point sensors for each zone",
+              "thermal_analytics_enabled": "Track how fast your rooms heat up and how your system performs over time",
+              "adaptive_preheat_enabled": "Automatically start heating early so your room is warm when the schedule kicks in",
+              "schedule_calendar_enabled": "See your Tado heating schedules as calendar entries in HA"
+            }
+          },
+          "connections": {
+            "name": "Connections",
+            "data": {
+              "bridge_enabled": "Internet Bridge",
+              "wc_enabled": "Weather Compensation",
+              "homekit_enabled": "Local Control (HomeKit)"
+            },
+            "data_description": {
+              "bridge_enabled": "Connect to your Tado Internet Bridge for boiler flow temperature readings",
+              "wc_enabled": "Automatically adjust your boiler's flow temperature based on outdoor weather",
+              "homekit_enabled": "Control heating locally via HomeKit — works even when Tado's cloud is down"
+            }
+          },
+          "data_sources": {
+            "name": "Data Sources",
+            "data": {
+              "weather_enabled": "Weather Data",
+              "home_state_sync_enabled": "Home State Sync",
+              "mobile_devices_enabled": "Mobile Device Tracking",
+              "offset_enabled": "Temperature Offsets"
+            },
+            "data_description": {
+              "weather_enabled": "Outside temperature and solar intensity from Tado (+1 API call per poll)",
+              "home_state_sync_enabled": "Sync your home's overall presence (Home/Away) every poll (+1 API call per poll)",
+              "mobile_devices_enabled": "Track each phone's location for per-device presence. Updates on HA restart only — enable Frequent Sync in Advanced Settings for continuous updates (+1 API call per poll when frequent)",
+              "offset_enabled": "Show temperature calibration offset on climate entities (+1 API call per device on restart)"
+            }
+          },
+          "per_zone": {
+            "name": "Per-Zone",
+            "data": {
+              "zone_configuration_enabled": "Per-Zone Configuration"
+            },
+            "data_description": {
+              "zone_configuration_enabled": "Customise sensors, overlays, and heating per zone"
+            }
+          }
+        },
+        "title": "General Settings"
+      },
+      "advanced_settings": {
+        "description": "Fine-tune your enabled features. To enable or disable features, go to General Settings.",
+        "title": "Advanced Settings",
+        "sections": {
+          "smart_comfort": {
+            "name": "Smart Comfort",
+            "data": {
+              "use_outdoor_temp_entity": "Use Outdoor Temperature Entity",
+              "outdoor_temp_entity": "Outdoor Temperature Entity",
+              "hot_water_timer_duration": "Hot Water Timer (minutes)",
+              "smart_comfort_mode": "Smart Comfort Mode",
+              "use_feels_like": "Use Feels-Like Temperature",
+              "mold_risk_window_type": "Window Type",
+              "smart_comfort_history_days": "Temperature History (days)",
+              "heating_cycle_history_days": "Thermal Analytics History (days)",
+              "heating_cycle_min_cycles": "Minimum Cycles for Analysis",
+              "heating_cycle_inertia_threshold": "Inertia Detection Threshold"
+            },
+            "data_description": {
+              "use_outdoor_temp_entity": "Turn off to disable features that need outdoor temperature (comfort scoring, mold risk)",
+              "outdoor_temp_entity": "Sensor providing outdoor temperature (e.g., weather.home or a local sensor)",
+              "hot_water_timer_duration": "How long hot water stays on when you turn it on manually (5–1440 min)",
+              "smart_comfort_mode": "How aggressively to adjust target temperature based on outdoor conditions",
+              "use_feels_like": "Factor in wind chill and humidity instead of raw temperature",
+              "mold_risk_window_type": "Your window type — affects how surface temperature is estimated for mold risk",
+              "smart_comfort_history_days": "How many days of temperature data to use for heating rate estimates (1–30)",
+              "heating_cycle_history_days": "How many days of heating cycle data to keep (1–30)",
+              "heating_cycle_min_cycles": "Wait for this many completed heating cycles before showing analytics (1–10)",
+              "heating_cycle_inertia_threshold": "Temperature change below this is considered 'settled' after heating stops (0.05–0.5°C)"
+            }
+          },
+          "thermal_analytics": {
+            "name": "Thermal Analytics",
+            "data": {
+              "thermal_analytics_zones": "Thermal Analytics Zones",
+              "heating_cycle_history_days": "Heating Cycle History (days)",
+              "heating_cycle_min_cycles": "Minimum Heating Cycles",
+              "heating_cycle_inertia_threshold": "Inertia Threshold (°C)"
+            },
+            "data_description": {
+              "thermal_analytics_zones": "Choose which zones show thermal analytics sensors (leave empty for all zones)",
+              "heating_cycle_history_days": "How many days of heating cycle data to keep (1–30)",
+              "heating_cycle_min_cycles": "Wait for this many completed cycles before showing results (1–10)",
+              "heating_cycle_inertia_threshold": "Temperature change below this is considered 'settled' after heating stops (0.05–0.5°C)"
+            }
+          },
+          "flow_temperature_control": {
+            "name": "Weather Compensation",
+            "data": {
+              "bridge_enabled": "Enable Internet Bridge",
+              "bridge_serial": "Bridge Serial Number",
+              "bridge_auth_key": "Bridge Auth Code",
+              "wc_enabled": "Enable Weather Compensation",
+              "wc_heating_system_preset": "Heating System Type",
+              "wc_slope": "Heating Curve Slope",
+              "wc_design_outdoor_temp": "Design Outdoor Temperature",
+              "wc_max_flow_temp": "Maximum Flow Temperature",
+              "wc_min_flow_temp": "Minimum Flow Temperature",
+              "wc_shutoff_temp": "Heating Shutoff Temperature",
+              "wc_smoothing_method": "Temperature Smoothing Method",
+              "wc_smoothing_window": "Smoothing Window (minutes)",
+              "wc_room_compensation_enabled": "Enable Room Compensation",
+              "wc_room_compensation_factor": "Room Compensation Factor",
+              "wc_step_size": "Flow Temperature Step Size",
+              "wc_hysteresis": "Change Hysteresis"
+            },
+            "data_description": {
+              "bridge_enabled": "Connect to your Tado Internet Bridge for real-time boiler data. Requires a v3+ bridge. Disabling removes bridge credentials and sensors",
+              "bridge_serial": "Printed on the bottom of your bridge (starts with IB, e.g. IB0123456789)",
+              "bridge_auth_key": "4-digit code from the sticker on your bridge (keep confidential)",
+              "wc_slope": "How steeply flow temperature rises as it gets colder outside. Higher = more aggressive heating (0.3–3.0)",
+              "wc_design_outdoor_temp": "The coldest temperature you expect in your area (-30 to 10°C)",
+              "wc_max_flow_temp": "Highest flow temperature your boiler should reach at the coldest outdoor temp (25–80°C)",
+              "wc_min_flow_temp": "Lowest flow temperature — also used when heating shuts off (25–60°C)",
+              "wc_shutoff_temp": "Stop heating when outdoor temperature rises above this (5–30°C)",
+              "wc_smoothing_method": "How outdoor temperature readings are averaged to avoid sudden changes",
+              "wc_smoothing_window": "How long to average outdoor temperature over (15–1440 min)",
+              "wc_room_compensation_factor": "How much to adjust flow temperature when a room is colder or warmer than its target (1.0–5.0)",
+              "wc_step_size": "Round flow temperature to this step size — larger steps mean fewer boiler adjustments (0.5–2.0°C)",
+              "wc_hysteresis": "Only send a new flow temperature when it differs from the last one by at least this much (0.5–3.0°C)"
+            }
+          },
+          "mobile_tracking": {
+            "name": "Mobile Device Tracking",
+            "data": {
+              "mobile_devices_frequent_sync": "Frequent Sync"
+            },
+            "data_description": {
+              "mobile_devices_frequent_sync": "Update device locations every poll cycle. Without this, locations only refresh when HA restarts (+1 API call per poll)"
+            }
+          },
+          "polling_api": {
+            "name": "Polling & API",
+            "data": {
+              "day_start_hour": "Day Start Hour",
+              "night_start_hour": "Night Start Hour",
+              "custom_day_interval": "Custom Day Interval (minutes)",
+              "custom_night_interval": "Custom Night Interval (minutes)",
+              "refresh_debounce_seconds": "Refresh Delay (seconds)",
+              "api_history_retention_days": "API History Retention (days)",
+              "quota_reserve_enabled": "Quota Reserve Protection",
+              "smart_actions_debounce_seconds": "Temperature Slider Delay",
+              "device_sync_delay_seconds": "Device Sync Delay"
+            },
+            "data_description": {
+              "day_start_hour": "When daytime polling starts (0–23, default: 7)",
+              "night_start_hour": "When nighttime polling starts — polls less often at night (0–23, default: 23)",
+              "custom_day_interval": "Override automatic daytime polling with a fixed interval (1–1440 min, leave empty for auto)",
+              "custom_night_interval": "Override automatic nighttime polling with a fixed interval (1–1440 min, leave empty for auto)",
+              "refresh_debounce_seconds": "Wait this long after a change before fetching fresh data from Tado (1–60s)",
+              "api_history_retention_days": "How many days of API call history to keep for the usage chart (0 = forever)",
+              "quota_reserve_enabled": "Automatically pause polling when your API quota is running low. Only disable if you know what you're doing.",
+              "smart_actions_debounce_seconds": "When dragging the temperature slider, wait this long before sending the final value (0 = send immediately)",
+              "device_sync_delay_seconds": "Pause between sequential device operations like child lock or offset changes"
+            }
+          }
+        }
+      },
+      "bridge_setup": {
+        "description": "Enter your Tado Internet Bridge credentials. You can find the serial number and auth code on the back of your bridge.",
+        "title": "Internet Bridge Setup",
+        "data": {
+          "bridge_serial": "Serial Number",
+          "bridge_auth_key": "Auth Code"
+        },
+        "data_description": {
+          "bridge_serial": "Starts with IB (e.g. IB0123456789)",
+          "bridge_auth_key": "8-digit code on the back of the bridge"
+        }
+      },
+      "wc_bridge_prompt": {
+        "description": "Weather Compensation works best with the Internet Bridge for real-time flow temperature data.",
+        "title": "Weather Compensation",
+        "data": {
+          "also_enable_bridge": "Also enable Internet Bridge"
+        },
+        "data_description": {
+          "also_enable_bridge": "Set up bridge credentials in the next step"
+        }
+      },
+      "reset_to_defaults": {
+        "description": "Choose what to reset. Per-category reset only resets tuning parameters — the feature stays enabled.",
+        "title": "Reset to Defaults",
+        "data": {
+          "reset_scope": "Reset Scope"
+        }
+      },
+      "reset_confirm": {
+        "description": "Are you sure? This cannot be undone.",
+        "title": "Confirm Reset"
       }
     },
     "abort": {

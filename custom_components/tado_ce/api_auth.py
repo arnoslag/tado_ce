@@ -9,14 +9,16 @@ from __future__ import annotations
 import asyncio  # noqa: TC003 — used in Protocol class body annotation
 from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
-import json
 import logging
 from typing import TYPE_CHECKING, Any, Protocol
 
 import aiohttp
 
+from homeassistant.exceptions import HomeAssistantError
+
 from .const import CLIENT_ID, CONFIG_FILE, TADO_AUTH_URL
 from .exceptions import TadoAuthError
+from .storage import async_load_json, async_save_json
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -27,6 +29,9 @@ if TYPE_CHECKING:
     from .data_loader import DataLoader
 
 _LOGGER = logging.getLogger(__name__)
+
+# HTTP timeout for OAuth token refresh (15s — auth endpoint should be fast)
+_TOKEN_REFRESH_TIMEOUT = aiohttp.ClientTimeout(total=15)
 
 
 class _AuthHost(Protocol):
@@ -87,17 +92,16 @@ class TadoAuthMixin:
             else:
                 config_path = CONFIG_FILE
 
-            if not await self._hass.async_add_executor_job(config_path.exists):  # type: ignore[union-attr]
+            loaded = await async_load_json(self._hass, config_path)  # type: ignore[arg-type]
+
+            if loaded is None:
                 result: dict[str, Any] = {"home_id": self._home_id, "refresh_token": None}
                 # Use injected refresh_token if available
                 if self._injected_refresh_token:
                     result["refresh_token"] = self._injected_refresh_token
                 return result
 
-            content: str = await self._hass.async_add_executor_job(  # type: ignore[union-attr]
-                config_path.read_text,
-            )
-            config: dict[str, Any] = json.loads(content)
+            config: dict[str, Any] = loaded  # type: ignore[assignment]
             # Cache home_id when loading config
             if config.get("home_id"):
                 self._home_id = config["home_id"]
@@ -105,7 +109,7 @@ class TadoAuthMixin:
             if self._injected_refresh_token:
                 config["refresh_token"] = self._injected_refresh_token
             return config
-        except (OSError, json.JSONDecodeError, KeyError):
+        except (OSError, HomeAssistantError, KeyError):
             _LOGGER.exception("Failed to load config")
             result = {"home_id": self._home_id, "refresh_token": None}
             if self._injected_refresh_token:
@@ -127,27 +131,12 @@ class TadoAuthMixin:
             else:
                 config_path = CONFIG_FILE
 
-            await self._hass.async_add_executor_job(  # type: ignore[union-attr]
-                lambda: config_path.parent.mkdir(parents=True, exist_ok=True),
-            )
-
-            temp_path = config_path.with_suffix(".tmp")
-            content = json.dumps(config, indent=2)
-            await self._hass.async_add_executor_job(  # type: ignore[union-attr]
-                temp_path.write_text,
-                content,
-            )
-
-            # Atomic move
-            await self._hass.async_add_executor_job(  # type: ignore[union-attr]
-                temp_path.replace,
-                config_path,
-            )
+            await async_save_json(self._hass, config_path, config)  # type: ignore[arg-type]
 
             # Write-through: update DataLoader cache
             if self._data_loader is not None:
                 self._data_loader.update_cache("config", config)
-        except OSError:
+        except (OSError, HomeAssistantError):
             _LOGGER.exception("Failed to save config")
 
     # --- Token Management ---
@@ -190,6 +179,7 @@ class TadoAuthMixin:
                     "grant_type": "refresh_token",
                     "refresh_token": refresh_token,
                 },
+                timeout=_TOKEN_REFRESH_TIMEOUT,
             ) as resp:
                 if resp.status != HTTPStatus.OK:
                     error_text = await resp.text()

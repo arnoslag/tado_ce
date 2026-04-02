@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, datetime
+from datetime import datetime
 import logging
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from homeassistant.util import dt as dt_util
 
 from .heating_analyzer import HeatingCycleAnalyzer
 from .heating_detector import HeatingCycleDetector
@@ -116,7 +117,7 @@ class HeatingCycleCoordinator(DataUpdateCoordinator):
             timestamp: Time of the update
         """
         if timestamp is None:
-            timestamp = datetime.now(UTC)
+            timestamp = dt_util.utcnow()
 
         _LOGGER.debug(
             "Zone %s: Zone update received - target=%.1f°C, current=%.1f°C",
@@ -178,7 +179,7 @@ class HeatingCycleCoordinator(DataUpdateCoordinator):
             timestamp: Time of the change
         """
         if timestamp is None:
-            timestamp = datetime.now(UTC)
+            timestamp = dt_util.utcnow()
 
         _LOGGER.debug(
             "Zone %s: Setpoint change received: %.1f°C (current=%.1f°C)",
@@ -206,7 +207,7 @@ class HeatingCycleCoordinator(DataUpdateCoordinator):
     ) -> None:
         """Handle temperature update event (legacy method, prefer on_zone_update)."""
         if timestamp is None:
-            timestamp = datetime.now(UTC)
+            timestamp = dt_util.utcnow()
 
         _LOGGER.debug(
             "Zone %s: Temperature update received: %.2f°C",

@@ -4,17 +4,17 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.button import ButtonEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .action_helpers import check_bootstrap_reserve as _check_bootstrap_reserve
+from .ratelimit import async_check_bootstrap_reserve_or_raise as _check_bootstrap_reserve_or_raise
 from .const import DOMAIN
 from .coordinator import TadoDataUpdateCoordinator
 from .device_manager import get_hub_device_info, get_zone_device_info
 from .entity_registry import ENTITY_REGISTRY, get_entity_category
-from .helpers import async_trigger_immediate_refresh
+from .helpers import async_trigger_immediate_refresh, build_timer_termination
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -103,7 +103,7 @@ class TadoResumeAllSchedulesButton(CoordinatorEntity[TadoDataUpdateCoordinator],
         """Initialize the TadoResumeAllSchedulesButton."""
         super().__init__(coordinator)
         _meta = ENTITY_REGISTRY["button_resume_all"]
-        # Convenience alias — used by action_helpers that still accept entry_id
+        # Convenience alias for entry identification
         self._entry_id = coordinator.config_entry.entry_id
 
         self._attr_translation_key = _meta.translation_key
@@ -117,7 +117,7 @@ class TadoResumeAllSchedulesButton(CoordinatorEntity[TadoDataUpdateCoordinator],
         Added bootstrap reserve check - blocks action when quota critically low.
         DRY refactor - uses shared async_trigger_immediate_refresh().
         """
-        await _check_bootstrap_reserve(self.hass, "Immediate Refresh", entry_id=self._entry_id)
+        await _check_bootstrap_reserve_or_raise(self.hass, "Immediate Refresh", coordinator=self.coordinator)
 
         _LOGGER.info("Resume All Schedules button pressed")
 
@@ -257,10 +257,9 @@ class TadoWaterHeaterTimerButton(CoordinatorEntity[TadoDataUpdateCoordinator], B
         _LOGGER.info("Timer button pressed - %s for %s minutes", self._zone_name, self._duration)
 
         # Capture state before timer overlay (state restoration)
-        if self.coordinator._sr_manager:
-            await self.coordinator._sr_manager.capture(
-                self._zone_id, "water_heater", source="set_timer",
-            )
+        await self.coordinator.async_capture_state(
+            self._zone_id, "water_heater", "set_timer",
+        )
 
         # Find water heater entity by unique_id (more reliable than constructing from name)
         # This handles cases where HA adds suffix like _2 due to entity_id conflicts
@@ -352,9 +351,8 @@ class TadoRefreshScheduleButton(CoordinatorEntity[TadoDataUpdateCoordinator], Bu
 
     async def async_press(self) -> None:
         """Handle button press - refresh schedule for this zone."""
-        import json
-
-        from .const import DATA_DIR, get_data_file
+        from .const import get_data_file
+        from .storage import load_json_sync, save_json_sync
 
         _LOGGER.info("Refresh Schedule button pressed for %s (zone %s)", self._zone_name, self._zone_id)
 
@@ -373,16 +371,14 @@ class TadoRefreshScheduleButton(CoordinatorEntity[TadoDataUpdateCoordinator], Bu
             schedules_file = get_data_file("schedules", home_id)
 
             # Load existing schedules
-            def _load_schedules() -> None:
-                if schedules_file.exists():
-                    with schedules_file.open() as f:
-                        return json.load(f)  # type: ignore[no-any-return]
-                return {}  # type: ignore[return-value]
+            def _load_schedules() -> dict[str, Any]:
+                data = load_json_sync(schedules_file)
+                return data if isinstance(data, dict) else {}
 
-            schedules = await self.hass.async_add_executor_job(_load_schedules)  # type: ignore[func-returns-value]
+            schedules = await self.hass.async_add_executor_job(_load_schedules)
 
             # Update this zone's schedule
-            schedules[self._zone_id] = {  # type: ignore[index]
+            schedules[self._zone_id] = {
                 "name": self._zone_name,
                 "type": schedule_data.get("type", "ONE_DAY"),
                 # Tado API may return null for existing keys; 'or {}' handles None correctly
@@ -391,20 +387,7 @@ class TadoRefreshScheduleButton(CoordinatorEntity[TadoDataUpdateCoordinator], Bu
 
             # Save back to file using atomic write
             def _save_schedules() -> None:
-                import shutil
-                import tempfile
-
-                DATA_DIR.mkdir(parents=True, exist_ok=True)
-                # Atomic write: write to temp file then move
-                with tempfile.NamedTemporaryFile(
-                    mode="w",
-                    dir=DATA_DIR,
-                    delete=False,
-                    suffix=".tmp",
-                ) as tmp:
-                    json.dump(schedules, tmp, indent=2)
-                    temp_path = tmp.name
-                shutil.move(temp_path, schedules_file)
+                save_json_sync(schedules_file, schedules)
 
             await self.hass.async_add_executor_job(_save_schedules)
 
@@ -460,15 +443,14 @@ class TadoBoostButton(CoordinatorEntity[TadoDataUpdateCoordinator], ButtonEntity
         Added bootstrap reserve check - blocks action when quota critically low.
         DRY refactor - uses shared async_trigger_immediate_refresh().
         """
-        await _check_bootstrap_reserve(self.hass, f"Boost {self._zone_name}", entry_id=self._entry_id)
+        await _check_bootstrap_reserve_or_raise(self.hass, f"Boost {self._zone_name}", coordinator=self.coordinator)
 
         _LOGGER.info("Boost button pressed for %s", self._zone_name)
 
         # Capture state before boost overlay (state restoration)
-        if self.coordinator._sr_manager:
-            await self.coordinator._sr_manager.capture(
-                self._zone_id, "climate_heating", source="boost",
-            )
+        await self.coordinator.async_capture_state(
+            self._zone_id, "climate_heating", "boost",
+        )
 
         client = self.coordinator.api_client
 
@@ -477,10 +459,7 @@ class TadoBoostButton(CoordinatorEntity[TadoDataUpdateCoordinator], ButtonEntity
             "power": "ON",
             "temperature": {"celsius": BOOST_TEMPERATURE},
         }
-        termination = {
-            "type": "TIMER",
-            "durationInSeconds": BOOST_DURATION_MINUTES * 60,
-        }
+        termination = build_timer_termination(duration_minutes=BOOST_DURATION_MINUTES)
 
         api_success = False
         try:
@@ -569,15 +548,14 @@ class TadoSmartBoostButton(CoordinatorEntity[TadoDataUpdateCoordinator], ButtonE
         Added bootstrap reserve check - blocks action when quota critically low.
         DRY refactor - uses shared async_trigger_immediate_refresh().
         """
-        await _check_bootstrap_reserve(self.hass, f"Smart Boost {self._zone_name}", entry_id=self._entry_id)
+        await _check_bootstrap_reserve_or_raise(self.hass, f"Smart Boost {self._zone_name}", coordinator=self.coordinator)
 
         _LOGGER.info("Smart Boost button pressed for %s", self._zone_name)
 
         # Capture state before smart boost overlay (state restoration)
-        if self.coordinator._sr_manager:
-            await self.coordinator._sr_manager.capture(
-                self._zone_id, "climate_heating", source="smart_boost",
-            )
+        await self.coordinator.async_capture_state(
+            self._zone_id, "climate_heating", "smart_boost",
+        )
 
         coord_data = self.coordinator.data or {}
         zones_data = coord_data.get("zones") or {}
@@ -634,10 +612,7 @@ class TadoSmartBoostButton(CoordinatorEntity[TadoDataUpdateCoordinator], ButtonE
             "power": "ON",
             "temperature": {"celsius": target_temp},
         }
-        termination = {
-            "type": "TIMER",
-            "durationInSeconds": duration_minutes * 60,
-        }
+        termination = build_timer_termination(duration_minutes=duration_minutes)
 
         api_success = False
         try:

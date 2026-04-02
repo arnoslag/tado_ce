@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-import json
 import logging
 from typing import TYPE_CHECKING, Any
 
+from homeassistant.util import dt as dt_util
+
 from .const import DOMAIN, QUOTA_BOOTSTRAP_CALLS, get_data_file
+from .helpers import parse_iso_datetime
+from .storage import async_load_json, async_save_json
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -17,6 +20,32 @@ if TYPE_CHECKING:
     from .data_loader import DataLoader
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def calculate_seconds_until_reset(last_reset_utc: str | None) -> int | None:
+    """Calculate seconds until next API reset from last reset UTC timestamp.
+
+    Parses the ISO 8601 timestamp, adds 24 hours, and loops forward
+    until the next reset is in the future.
+
+    Args:
+        last_reset_utc: ISO 8601 UTC timestamp of last reset, or None.
+
+    Returns:
+        Seconds until next reset (positive int), or None if input is None/invalid.
+    """
+    if not last_reset_utc:
+        return None
+    try:
+        last_reset = parse_iso_datetime(last_reset_utc)
+        next_reset = last_reset + timedelta(hours=24)
+        now_utc = dt_util.utcnow()
+        while next_reset <= now_utc:
+            next_reset += timedelta(hours=24)
+        result = int((next_reset - now_utc).total_seconds())
+        return result if result > 0 else None
+    except (ValueError, TypeError):
+        return None
 
 
 def should_block_manual_action(
@@ -51,15 +80,22 @@ def should_block_manual_action(
     last_reset_utc = ratelimit_data.get("last_reset_utc")
     if last_reset_utc:
         try:
-            last_reset = datetime.fromisoformat(last_reset_utc)
+            last_reset = parse_iso_datetime(last_reset_utc)
             next_reset = last_reset + timedelta(hours=24)
-            now_utc = datetime.now(UTC)
+            now_utc = dt_util.utcnow()
 
             # If next reset time has passed, allow actions to detect actual reset
             if now_utc >= next_reset:
                 return False, ""
         except Exception as e:
             _LOGGER.debug("Failed to check reset time: %s", e)
+    else:
+        # No reset time known (fresh install / stale data) — allow actions
+        # so the first API call can bootstrap rate limit data.
+        _LOGGER.debug(
+            "Tado CE: No reset time known, allowing manual actions to bootstrap rate limit data",
+        )
+        return False, ""
 
     # No need to recalculate - save_ratelimit() stores the correct values
     remaining = ratelimit_data.get("remaining", 100)
@@ -74,15 +110,25 @@ def should_block_manual_action(
 
     # Check if we've hit the bootstrap reserve (hard limit)
     if remaining <= QUOTA_BOOTSTRAP_CALLS:
-        reset_seconds = ratelimit_data.get("reset_seconds", 0)
-        hours = reset_seconds // 3600
-        minutes = (reset_seconds % 3600) // 60
+        _rs = ratelimit_data.get("reset_seconds")
+        reset_seconds = _rs if _rs is not None else 0
+
+        # If reset_seconds is 0/None, try to calculate from last_reset_utc
+        if not reset_seconds and last_reset_utc:
+            reset_seconds = calculate_seconds_until_reset(last_reset_utc) or 0
+
+        if reset_seconds > 0:
+            hours = reset_seconds // 3600
+            minutes = (reset_seconds % 3600) // 60
+            reset_info = f"reset in {hours}h {minutes}m"
+        else:
+            reset_info = "reset time unknown — will auto-recover after first successful API response"
 
         reason = (
             f"API limit reached ({remaining} calls remaining). "
             f"All actions blocked to preserve auto-recovery capability. "
             f"Use the Tado app for emergency changes. "
-            f"Integration will auto-recover at reset in {hours}h {minutes}m."
+            f"Integration will auto-recover at {reset_info}."
         )
         return True, reason
 
@@ -177,24 +223,6 @@ async def async_check_bootstrap_reserve_or_raise(
         )
 
 
-async def async_dismiss_api_limit_notification(hass: HomeAssistant) -> None:
-    """Dismiss the API limit notification when quota is restored.
-
-    Called when API reset is detected.
-
-    Args:
-        hass: Home Assistant instance
-    """
-    try:
-        await hass.services.async_call(
-            "persistent_notification",
-            "dismiss",
-            {
-                "notification_id": "tado_ce_api_limit",
-            },
-        )
-    except Exception:
-        _LOGGER.debug("Could not dismiss API limit notification (may not exist)")
 
 
 async def async_detect_reset_from_history(hass: HomeAssistant, home_id: str | None = None) -> datetime | None:
@@ -214,7 +242,6 @@ async def async_detect_reset_from_history(hass: HomeAssistant, home_id: str | No
         from homeassistant.components.recorder import get_instance  # type: ignore[attr-defined]
         from homeassistant.components.recorder.history import get_significant_states
         from homeassistant.helpers import entity_registry as er
-        from homeassistant.util import dt as dt_util
 
         # Query last 36 hours of history (to catch reset even if it was yesterday)
         end_time = dt_util.utcnow()
@@ -342,12 +369,12 @@ async def async_update_ratelimit_reset_time(
 
         if data is None:
             ratelimit_path = get_data_file("ratelimit", home_id)
-            path_exists = await hass.async_add_executor_job(ratelimit_path.exists)
-            if not path_exists:
+            loaded = await async_load_json(hass, ratelimit_path)
+            if loaded is None:
                 return
-
-            content = await hass.async_add_executor_job(ratelimit_path.read_text)
-            data = json.loads(content)
+            if not isinstance(loaded, dict):
+                return
+            data = loaded
 
         # Only update if detected time is different from stored time
         current_reset = data.get("last_reset_utc")
@@ -357,7 +384,7 @@ async def async_update_ratelimit_reset_time(
             data["last_reset_utc"] = new_reset
 
             # Recalculate reset_seconds, reset_at, reset_human
-            now_utc = datetime.now(UTC)
+            now_utc = dt_util.utcnow()
             next_reset = detected_reset + timedelta(hours=24)
 
             # If next_reset is in the past, add another 24h
@@ -375,11 +402,7 @@ async def async_update_ratelimit_reset_time(
 
             # Write back with atomic write
             ratelimit_path = get_data_file("ratelimit", home_id)
-            temp_path = ratelimit_path.with_suffix(".tmp")
-            content = json.dumps(data, indent=2)
-            await hass.async_add_executor_job(temp_path.write_text, content)
-
-            await hass.async_add_executor_job(temp_path.replace, ratelimit_path)
+            await async_save_json(hass, ratelimit_path, data)
 
             # Write-through: update DataLoader cache
             if data_loader is not None:

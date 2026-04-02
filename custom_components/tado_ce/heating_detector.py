@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 import logging
 
-from .heating_models import HeatingCycle, HeatingCycleConfig, TemperatureReading
+from homeassistant.util import dt as dt_util
+
+from .heating_models import HeatingCycle, HeatingCycleConfig, HeatingCycleReading
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -68,7 +70,7 @@ class HeatingCycleDetector:
                     target_temp=new_target,
                     first_rise_time=None,
                     first_rise_temp=None,
-                    temperature_readings=[TemperatureReading(time=timestamp, temp=current_temp)],
+                    temperature_readings=[HeatingCycleReading(time=timestamp, temp=current_temp)],
                     completed=False,
                     interrupted=False,
                     interrupt_reason=None,
@@ -136,11 +138,11 @@ class HeatingCycleDetector:
         # Add temperature reading (with limit to prevent memory leak)
         if len(self._active_cycle.temperature_readings) < 100:
             self._active_cycle.temperature_readings.append(
-                TemperatureReading(time=timestamp, temp=temp),
+                HeatingCycleReading(time=timestamp, temp=temp),
             )
         else:
             # Update last reading in-place when at limit
-            self._active_cycle.temperature_readings[-1] = TemperatureReading(
+            self._active_cycle.temperature_readings[-1] = HeatingCycleReading(
                 time=timestamp,
                 temp=temp,
             )
@@ -173,7 +175,7 @@ class HeatingCycleDetector:
         current_temp = self._active_cycle.temperature_readings[-1].temp
         if current_temp >= self._active_cycle.target_temp:
             # Target reached
-            self._active_cycle.end_time = datetime.now(UTC)
+            self._active_cycle.end_time = dt_util.utcnow()
 
             # Validate: Only mark as completed if there was actual heating
             # (start_temp < target_temp and meaningful temperature rise)
@@ -215,11 +217,11 @@ class HeatingCycleDetector:
         if not self._active_cycle:
             return False
 
-        age = datetime.now(UTC) - self._active_cycle.start_time
+        age = dt_util.utcnow() - self._active_cycle.start_time
         if age > MAX_CYCLE_DURATION:
             self._active_cycle.interrupted = True
             self._active_cycle.interrupt_reason = "timeout"
-            self._active_cycle.end_time = datetime.now(UTC)
+            self._active_cycle.end_time = dt_util.utcnow()
 
             _LOGGER.warning(
                 "Zone %s: Cycle timed out after %.1f hours",

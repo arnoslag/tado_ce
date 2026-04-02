@@ -30,14 +30,14 @@ MOLD_RISK_HIGH: float = 5.0  # °C — margin < 5 → High
 MOLD_RISK_MEDIUM: float = 7.0  # °C — margin < 7 → Medium
 
 # ============ Condensation Risk Thresholds — HEATING ============
-# margin = surface_temp - indoor_dew_point, uses <= comparisons
+# margin = surface_temp - indoor_dew_point, uses <= comparisons  # noqa: ERA001
 CONDENSATION_HEATING_CRITICAL: float = 1.0  # °C
 CONDENSATION_HEATING_HIGH: float = 3.0  # °C
 CONDENSATION_HEATING_MEDIUM: float = 5.0  # °C
 CONDENSATION_HEATING_LOW: float = 7.0  # °C
 
 # ============ Condensation Risk Thresholds — AC ============
-# margin = window_outer_surface_temp - outdoor_dew_point, uses < comparisons
+# margin = window_outer_surface_temp - outdoor_dew_point, uses < comparisons  # noqa: ERA001
 CONDENSATION_AC_CRITICAL: float = 2.0  # °C
 CONDENSATION_AC_HIGH: float = 4.0  # °C
 CONDENSATION_AC_MEDIUM: float = 6.0  # °C
@@ -75,6 +75,10 @@ COOLING_RATE_STABLE: float = -0.1  # °C/min — abs(rate) below this → room i
 # ============ Heat Index Constants (NOAA/NWS) ============
 HEAT_INDEX_ACTIVATION_TEMP: float = 26.7  # °C — below this, Heat Index = air temp
 
+# Internal constants for the Steadman→Rothfusz transition blend.
+_TRANSITION_THRESHOLD_F: float = 80.0  # °F — NOAA switch point
+_BLEND_WIDTH_F: float = 2.0  # °F — linear-blend window above threshold
+
 HEAT_RISK_THRESHOLDS: tuple[tuple[float, str], ...] = (
     (51.0, "Extreme Danger"),
     (39.0, "Danger"),
@@ -110,8 +114,11 @@ def calculate_heat_index(temperature: float, humidity: float) -> float:
     # Step 1: Steadman simple formula
     hi_simple = 0.5 * (t_f + 61.0 + (t_f - 68.0) * 1.2 + rh * 0.094)
 
-    if (hi_simple + t_f) / 2.0 < 80.0:
-        return (hi_simple - 32.0) * 5.0 / 9.0
+    hi_simple_c = (hi_simple - 32.0) * 5.0 / 9.0
+
+    avg = (hi_simple + t_f) / 2.0
+    if avg < _TRANSITION_THRESHOLD_F:
+        return hi_simple_c
 
     # Step 2: Full Rothfusz regression
     hi = (
@@ -134,7 +141,18 @@ def calculate_heat_index(temperature: float, humidity: float) -> float:
     elif rh > 85.0 and 80.0 < t_f < 87.0:
         hi += ((rh - 85.0) / 10.0) * ((87.0 - t_f) / 5.0)
 
-    return (hi - 32.0) * 5.0 / 9.0
+    rothfusz_c = (hi - 32.0) * 5.0 / 9.0
+
+    # Step 4: Smooth the Steadman→Rothfusz transition.
+    # At the exact boundary (avg ≈ 80 °F) the two formulas can disagree,
+    # creating a discontinuity that violates humidity-monotonicity.
+    # Linear-blend over a 2 °F window eliminates the jump while
+    # converging to pure Rothfusz above the window.
+    if avg < _TRANSITION_THRESHOLD_F + _BLEND_WIDTH_F:
+        alpha = (avg - _TRANSITION_THRESHOLD_F) / _BLEND_WIDTH_F
+        return hi_simple_c * (1.0 - alpha) + rothfusz_c * alpha
+
+    return rothfusz_c
 
 
 # ============ Heat Risk Level Classification ============
@@ -161,8 +179,8 @@ def classify_heat_risk_level(heat_index: float) -> str:
 def calculate_dew_point(temperature: float, humidity: float) -> float:
     """Calculate dew point using Magnus-Tetens formula (Alduchov & Eskridge 1996).
 
-    Formula: Td = (b × α) / (a - α)
-    where α = (a × T) / (b + T) + ln(RH/100)
+    Formula: Td = (b * alpha) / (a - alpha)
+    where alpha = (a * T) / (b + T) + ln(RH/100)
 
     Args:
         temperature: Air temperature in °C.
@@ -187,7 +205,7 @@ def calculate_surface_temperature(
 ) -> float:
     """Calculate window surface temperature using heat transfer physics.
 
-    Formula: T_surface = T_indoor - (T_indoor - T_outdoor) × U / (U + h)
+    Formula: T_surface = T_indoor - (T_indoor - T_outdoor) * U / (U + h)
 
     Args:
         indoor_temp: Indoor temperature in °C.
@@ -342,7 +360,7 @@ def classify_comfort_level(inside_temp: float) -> str:
 def calculate_ashrae_comfort_temp(outdoor_temp: float) -> float:
     """Calculate neutral comfort temperature using ASHRAE 55 Adaptive Comfort Model.
 
-    Formula: Comfort_temp = 0.31 × outdoor_temp + 17.8°C
+    Formula: Comfort_temp = 0.31 * outdoor_temp + 17.8°C
 
     Args:
         outdoor_temp: Outdoor temperature in °C.

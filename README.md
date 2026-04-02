@@ -3,10 +3,10 @@
 <div align="center">
 
 <!-- Platform Badges -->
-![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2026.3.3-blue?style=for-the-badge&logo=home-assistant) ![Python](https://img.shields.io/badge/Python-3.13%2B-blue?style=for-the-badge&logo=python&logoColor=white) ![Tado](https://img.shields.io/badge/Tado-V2%2FV3%2FV3%2B-orange?style=for-the-badge) ![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg?style=for-the-badge)
+![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2026.4.0-blue?style=for-the-badge&logo=home-assistant) ![Python](https://img.shields.io/badge/Python-3.13%2B-blue?style=for-the-badge&logo=python&logoColor=white) ![Tado](https://img.shields.io/badge/Tado-V2%2FV3%2FV3%2B-orange?style=for-the-badge) ![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg?style=for-the-badge)
 
 <!-- Status Badges -->
-![Version](https://img.shields.io/badge/Version-3.4.1-purple?style=for-the-badge) ![License](https://img.shields.io/badge/License-AGPL--3.0-blue?style=for-the-badge) ![Maintained](https://img.shields.io/badge/Maintained-Yes-green.svg?style=for-the-badge) ![Coverage](https://img.shields.io/badge/Coverage-98%25-brightgreen?style=for-the-badge)
+![Version](https://img.shields.io/badge/Version-3.5.0-purple?style=for-the-badge) ![License](https://img.shields.io/badge/License-AGPL--3.0-blue?style=for-the-badge) ![Maintained](https://img.shields.io/badge/Maintained-Yes-green.svg?style=for-the-badge) ![Coverage](https://img.shields.io/badge/Coverage-98%25-brightgreen?style=for-the-badge)
 
 <!-- Community Badges -->
 ![GitHub stars](https://img.shields.io/github/stars/hiall-fyi/tado_ce?style=for-the-badge&logo=github) ![GitHub forks](https://img.shields.io/github/forks/hiall-fyi/tado_ce?style=for-the-badge&logo=github) ![GitHub issues](https://img.shields.io/github/issues/hiall-fyi/tado_ce?style=for-the-badge&logo=github) ![GitHub Release Date](https://img.shields.io/github/release-date/hiall-fyi/tado_ce?style=for-the-badge&logo=github)
@@ -114,12 +114,12 @@ See [FEATURES_GUIDE.md](FEATURES_GUIDE.md) for detailed documentation, configura
 
 Access via **Settings > Devices & Services > Tado CE > gear icon**.
 
-Tado CE offers extensive configuration options for:
+Settings are organised into four sections:
 
-- **Features** - Enable/disable optional sensors and analytics (Weather, Mobile Tracking, Smart Comfort, Schedule Calendar)
-- **Polling Schedule** - Customize day/night polling intervals and refresh delays
-- **Smart Comfort** - Configure outdoor temperature source, comfort mode, and history retention
-- **Experimental** - Hot water timer duration, test mode for API limit simulation
+- **General Settings** — Feature toggles (Weather, Mobile Tracking, Smart Comfort, Schedule Calendar, Zone Features, Bridge, Weather Compensation)
+- **Advanced Settings** — Tuning parameters for enabled features only (polling intervals, debounce windows, comfort modes, heating curves)
+- **Zone Configuration** — Per-zone overlay mode, temperature limits, heating type, external sensors, window detection, preheat mode
+- **Reset to Defaults** — Reset settings per feature or everything at once, without losing your Tado account or bridge pairing
 
 See [FEATURES_GUIDE.md](FEATURES_GUIDE.md) for detailed configuration guides and usage scenarios based on your setup (low quota, high quota, mixed zones, OpenTherm boiler, etc.).
 

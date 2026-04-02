@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-import json
 import logging
 from typing import TYPE_CHECKING, Any
+
+from homeassistant.util import dt as dt_util
 
 from .const import (
     WEATHER_COMPENSATION_PRESETS,
@@ -46,16 +47,7 @@ CACHE_SAVE_INTERVAL_MINUTES = 15  # Save cache every 15 minutes
 
 # WEATHER_COMPENSATION_PRESETS imported from const.py
 
-# Day type mapping for schedule parsing
-DAY_TYPE_MAP = {
-    0: "MONDAY",
-    1: "TUESDAY",
-    2: "WEDNESDAY",
-    3: "THURSDAY",
-    4: "FRIDAY",
-    5: "SATURDAY",
-    6: "SUNDAY",
-}
+from .schedule_helpers import _get_day_blocks
 
 
 @dataclass
@@ -75,31 +67,6 @@ class NextScheduleBlock:
             "is_heating_on": self.is_heating_on,
             "block_end_time": self.block_end_time.isoformat(),
         }
-
-
-def _get_day_blocks(blocks: dict[str, Any], schedule_type: str, weekday: int) -> list[Any]:
-    """Get schedule blocks for a specific weekday.
-
-    Args:
-        blocks: Schedule blocks dict from schedule data
-        schedule_type: ONE_DAY, THREE_DAY, or SEVEN_DAY
-        weekday: 0=Monday, 6=Sunday
-
-    Returns:
-        List of blocks for that day
-    """
-    # Tado API may return null for existing keys; 'or []' handles None correctly
-    if schedule_type == "ONE_DAY":
-        return blocks.get("MONDAY_TO_SUNDAY") or []
-    if schedule_type == "THREE_DAY":
-        if weekday < 5:
-            return blocks.get("MONDAY_TO_FRIDAY") or []
-        if weekday == 5:
-            return blocks.get("SATURDAY") or []
-        return blocks.get("SUNDAY") or []
-    # SEVEN_DAY
-    day_name = DAY_TYPE_MAP.get(weekday, "MONDAY")
-    return blocks.get(day_name) or []
 
 
 def get_next_schedule_change(
@@ -132,8 +99,6 @@ def get_next_schedule_change(
 
     if current_time is None:
         try:
-            from homeassistant.util import dt as dt_util
-
             current_time = dt_util.now()
         except ImportError:
             current_time = datetime.now(UTC)
@@ -202,8 +167,6 @@ def get_next_schedule_change(
     return None
 
 
-# Backward compat alias — existing code may import TemperatureReading from here
-TemperatureReading = SmartComfortReading
 
 
 @dataclass
@@ -252,7 +215,7 @@ class ZoneHistory:
         """Initialize the Zone History."""
         self.zone_id = zone_id
         self.zone_name = zone_name
-        self.readings: list[TemperatureReading] = []
+        self.readings: list[SmartComfortReading] = []
         self._history_days = history_days
         self._last_heating_rate: float | None = None
         self._last_cooling_rate: float | None = None
@@ -281,7 +244,7 @@ class ZoneHistory:
         zone = cls(data["zone_id"], data["zone_name"], history_days)
 
         # Load and deduplicate readings
-        raw_readings = [TemperatureReading.from_dict(r) for r in data.get("readings", [])]
+        raw_readings = [SmartComfortReading.from_dict(r) for r in data.get("readings", [])]
 
         raw_readings.sort(key=lambda r: r.timestamp)
 
@@ -308,7 +271,7 @@ class ZoneHistory:
         self._history_days = days
         self._prune_old_readings()
 
-    def add_reading(self, reading: TemperatureReading) -> None:
+    def add_reading(self, reading: SmartComfortReading) -> None:
         """Add a temperature reading and prune old data.
 
         Deduplication: Only adds if temperature or is_heating changed,
@@ -333,7 +296,7 @@ class ZoneHistory:
 
     def _prune_old_readings(self) -> None:
         """Remove readings older than configured history_days."""
-        cutoff = datetime.now(UTC) - timedelta(days=self._history_days)
+        cutoff = dt_util.utcnow() - timedelta(days=self._history_days)
         self.readings = [r for r in self.readings if r.timestamp > cutoff]
 
     def get_heating_rate(self) -> float | None:
@@ -357,7 +320,7 @@ class ZoneHistory:
 
         if rate is not None and rate > 0.01:
             self._last_heating_rate = rate
-            self._rate_updated_at = datetime.now(UTC)
+            self._rate_updated_at = dt_util.utcnow()
             return rate
 
         # Strategy 2: No heating readings - use ALL readings to find rising segments
@@ -367,7 +330,7 @@ class ZoneHistory:
             rate = self._calculate_heating_rate_segments(self.readings)
             if rate is not None and rate > 0.01:
                 self._last_heating_rate = rate
-                self._rate_updated_at = datetime.now(UTC)
+                self._rate_updated_at = dt_util.utcnow()
                 return rate
 
         # Strategy 3: Fallback to baseline if no valid rate from segments
@@ -401,7 +364,7 @@ class ZoneHistory:
 
         return rate
 
-    def _calculate_heating_rate_segments(self, readings: list[TemperatureReading]) -> float | None:
+    def _calculate_heating_rate_segments(self, readings: list[SmartComfortReading]) -> float | None:
         """Calculate heating rate by finding segments of temperature rise.
 
         Instead of using all readings, this method:
@@ -464,7 +427,7 @@ class ZoneHistory:
         avg_rate = sum(segment_rates) / len(segment_rates)
         return round(avg_rate, 2)
 
-    def _calculate_rate(self, readings: list[TemperatureReading]) -> float | None:
+    def _calculate_rate(self, readings: list[SmartComfortReading]) -> float | None:
         """Calculate temperature rate using linear regression.
 
         Args:
@@ -483,7 +446,7 @@ class ZoneHistory:
 
         # Simple linear regression: y = mx + b
         # x = time in hours from first reading
-        # y = temperature
+        # y = temperature  # noqa: ERA001
         n = len(readings)
         base_time = readings[0].timestamp
 
@@ -542,36 +505,13 @@ class ZoneHistory:
         if rate is None or abs(rate) < 0.01:
             return None
 
-        # Time = distance / speed
+        # Time = distance / speed  # noqa: ERA001
         hours = abs(diff) / abs(rate)
         minutes = int(hours * 60)
 
         # Cap at reasonable maximum (8 hours)
         return min(minutes, 480)
 
-    def predict_temperature(self, minutes_ahead: int, is_heating: bool) -> float | None:
-        """Predict temperature at a future time.
-
-        Args:
-            minutes_ahead: Minutes into the future
-            is_heating: Whether HVAC will be active
-
-        Returns:
-            Predicted temperature, or None if cannot predict
-        """
-        if not self.readings:
-            return None
-
-        current_temp = self.readings[-1].temperature
-        rate = self.get_heating_rate() if is_heating else self.get_cooling_rate()
-
-        if rate is None:
-            return None
-
-        hours = minutes_ahead / 60
-        predicted = current_temp + (rate * hours)
-
-        return round(predicted, 1)
 
     def get_historical_comparison(
         self,
@@ -594,10 +534,8 @@ class ZoneHistory:
             return None
 
         try:
-            from homeassistant.util import dt as dt_util
-
             now = dt_util.now()
-        except ImportError:
+        except Exception:
             now = datetime.now(UTC)
         current_time_minutes = now.hour * 60 + now.minute
 
@@ -666,7 +604,7 @@ class ZoneHistory:
         # No preheating needed if already at or above target
         if current_temp >= target_temp:
             return PreheatAdvice(
-                recommended_start_time=datetime.now(UTC),
+                recommended_start_time=dt_util.utcnow(),
                 target_time=target_time,
                 target_temp=target_temp,
                 current_temp=current_temp,
@@ -725,6 +663,7 @@ class SmartComfortManager:
 
     def __init__(
         self, hass: HomeAssistant | None = None, home_id: str = "", history_days: int = DEFAULT_HISTORY_DAYS,
+        data_loader: DataLoader | None = None,
     ) -> None:
         """Initialize the Smart Comfort Manager."""
         self._zones: dict[str, ZoneHistory] = {}
@@ -732,6 +671,7 @@ class SmartComfortManager:
         self._hass = hass
         self._home_id = home_id
         self._history_days = history_days
+        self._data_loader = data_loader
         self._last_save_time: datetime | None = None
         # Weather compensation settings
         self._outdoor_temp_entity: str = ""
@@ -754,50 +694,36 @@ class SmartComfortManager:
         return DATA_DIR / "smart_comfort_cache.json"
 
     def save_to_file(self) -> bool:
-        """Save zone data to file for persistence.
-
-        Performs blocking file I/O — call via ``hass.async_add_executor_job()``.
+        """Save zone data via DataLoader Store (debounced).
 
         Returns:
-            True if save was successful
+            True if save was scheduled successfully.
         """
         if not self._zones:
             return True
 
         try:
-            from .const import DATA_DIR
-
-            DATA_DIR.mkdir(parents=True, exist_ok=True)
-
-            cache_file = self._get_cache_file()
             data = {
-                "saved_at": datetime.now(UTC).isoformat(),
+                "saved_at": dt_util.utcnow().isoformat(),
                 "history_days": self._history_days,
                 "zones": {zone_id: zone.to_dict() for zone_id, zone in self._zones.items()},
             }
 
-            # Atomic write using temp file
-            import shutil
-            import tempfile
+            if self._data_loader:
+                self._data_loader.save_auxiliary("smart_comfort_cache", data)
+            else:
+                from .storage import save_json_sync
 
-            with tempfile.NamedTemporaryFile(
-                mode="w",
-                dir=DATA_DIR,
-                delete=False,
-                suffix=".tmp",
-            ) as tmp:
-                json.dump(data, tmp, indent=2)
-                temp_path = tmp.name
+                cache_file = self._get_cache_file()
+                save_json_sync(cache_file, data)
 
-            shutil.move(temp_path, cache_file)
-            self._last_save_time = datetime.now(UTC)
+            self._last_save_time = dt_util.utcnow()
 
             total_readings = sum(len(z.readings) for z in self._zones.values())
             _LOGGER.debug(
-                "Smart Comfort: Saved %s zones, %s readings to %s",
+                "Smart Comfort: Saved %s zones, %s readings",
                 len(self._zones),
                 total_readings,
-                cache_file.name,
             )
             return True
 
@@ -805,23 +731,24 @@ class SmartComfortManager:
             _LOGGER.warning("Smart Comfort: Failed to save cache: %s", e)
             return False
 
-    def load_from_file(self) -> int:
-        """Load zone data from file.
-
-        Performs blocking file I/O — call via ``hass.async_add_executor_job()``.
+    async def async_load(self) -> int:
+        """Load zone data from DataLoader Store.
 
         Returns:
-            Number of readings loaded
+            Number of readings loaded.
         """
-        cache_file = self._get_cache_file()
-
-        if not cache_file.exists():
-            _LOGGER.debug("Smart Comfort: No cache file found at %s", cache_file)
+        if not self._data_loader:
             return 0
 
         try:
-            with cache_file.open() as f:
-                data = json.load(f)
+            data = await self._data_loader.async_load_auxiliary("smart_comfort_cache")
+            if data is None:
+                _LOGGER.debug("Smart Comfort: No cache found")
+                return 0
+
+            if not isinstance(data, dict):
+                _LOGGER.warning("Smart Comfort: Invalid cache format")
+                return 0
 
             zones_data = data.get("zones") or {}
             total_readings = 0
@@ -844,12 +771,10 @@ class SmartComfortManager:
             )
             return total_readings
 
-        except json.JSONDecodeError as e:
-            _LOGGER.warning("Smart Comfort: Invalid cache file: %s", e)
-            return 0
         except Exception as e:
             _LOGGER.warning("Smart Comfort: Failed to load cache: %s", e)
             return 0
+
 
     def maybe_save(self) -> None:
         """Save to file if enough time has passed since last save."""
@@ -857,7 +782,7 @@ class SmartComfortManager:
             self.save_to_file()
             return
 
-        elapsed = datetime.now(UTC) - self._last_save_time
+        elapsed = dt_util.utcnow() - self._last_save_time
         if elapsed.total_seconds() >= CACHE_SAVE_INTERVAL_MINUTES * 60:
             self.save_to_file()
 
@@ -928,8 +853,8 @@ class SmartComfortManager:
             return
 
         zone = self.get_zone(zone_id, zone_name)
-        reading = TemperatureReading(
-            timestamp=datetime.now(UTC),
+        reading = SmartComfortReading(
+            timestamp=dt_util.utcnow(),
             temperature=temperature,
             is_heating=is_heating,
             target_temperature=target_temperature,
@@ -959,17 +884,7 @@ class SmartComfortManager:
             return None
         return self._zones[zone_id].get_cooling_rate()
 
-    def get_baseline_heating_rate(self, zone_id: str) -> float | None:
-        """Get baseline heating rate for a zone (from long-term statistics)."""
-        if zone_id not in self._zones:
-            return None
-        return self._zones[zone_id]._baseline_heating_rate
 
-    def get_baseline_cooling_rate(self, zone_id: str) -> float | None:
-        """Get baseline cooling rate for a zone (from long-term statistics)."""
-        if zone_id not in self._zones:
-            return None
-        return self._zones[zone_id]._baseline_cooling_rate
 
     def get_time_to_target(
         self,
@@ -1032,24 +947,6 @@ class SmartComfortManager:
             current_temp,
         )
 
-    def get_stats(self) -> dict[str, Any]:
-        """Get statistics about tracked zones."""
-        return {
-            "enabled": self._enabled,
-            "zones_tracked": len(self._zones),
-            "weather_compensation": self._weather_compensation,
-            "outdoor_temp_entity": self._outdoor_temp_entity,
-            "use_feels_like": self._use_feels_like,
-            "zones": {
-                zone_id: {
-                    "name": zone.zone_name,
-                    "readings": len(zone.readings),
-                    "heating_rate": zone.get_heating_rate(),
-                    "cooling_rate": zone.get_cooling_rate(),
-                }
-                for zone_id, zone in self._zones.items()
-            },
-        }
 
     def get_compensated_rate(self, base_rate: float, for_heating: bool = True) -> float:
         """Apply weather compensation to a heating/cooling rate.
@@ -1110,64 +1007,6 @@ class SmartComfortManager:
 
         return round(compensated, 2)
 
-    def get_compensated_time_to_target(
-        self,
-        zone_id: str,
-        current_temp: float,
-        target_temp: float,
-        zone_type: str = "HEATING",
-    ) -> int | None:
-        """Get weather-compensated time to reach target in minutes.
-
-        Args:
-            zone_id: Zone identifier
-            current_temp: Current temperature
-            target_temp: Target temperature
-            zone_type: "HEATING" or "AIR_CONDITIONING"
-
-        Returns:
-            Estimated minutes to reach target with weather compensation
-        """
-        if zone_id not in self._zones:
-            return None
-
-        zone = self._zones[zone_id]
-        diff = target_temp - current_temp
-
-        if abs(diff) < 0.1:
-            return 0  # Already at target
-
-        # For HEATING zones: only calculate if we need to heat up (current < target)
-        # For AC zones: only calculate if we need to cool down (current > target)
-        if zone_type == "HEATING":
-            if diff <= 0:
-                # Current >= target, no heating needed
-                return 0
-            base_rate = zone.get_heating_rate()
-            for_heating = True
-        else:  # AIR_CONDITIONING
-            if diff >= 0:
-                # Current <= target, no cooling needed
-                return 0
-            base_rate = zone.get_cooling_rate()
-            for_heating = False
-
-        if base_rate is None or abs(base_rate) < 0.01:
-            return None
-
-        # Apply weather compensation
-        compensated_rate = self.get_compensated_rate(base_rate, for_heating)
-
-        if abs(compensated_rate) < 0.01:
-            return None
-
-        # Time = distance / speed
-        hours = abs(diff) / abs(compensated_rate)
-        minutes = int(hours * 60)
-
-        # Cap at reasonable maximum (8 hours)
-        return min(minutes, 480)
-
 
 async def async_load_history_from_recorder(
     hass: HomeAssistant,
@@ -1196,7 +1035,6 @@ async def async_load_history_from_recorder(
     try:
         from homeassistant.components.recorder import get_instance  # type: ignore[attr-defined]
         from homeassistant.components.recorder.history import get_significant_states
-        from homeassistant.util import dt as dt_util
 
         end_time = dt_util.utcnow()
         start_time = end_time - timedelta(hours=RECORDER_HISTORY_HOURS)
@@ -1267,7 +1105,7 @@ async def async_load_history_from_recorder(
                         timestamp = timestamp.replace(tzinfo=dt_util.UTC)
 
                     # Store as UTC aware datetime for consistency with live readings
-                    reading = TemperatureReading(
+                    reading = SmartComfortReading(
                         timestamp=timestamp,
                         temperature=float(current_temp),
                         is_heating=is_heating,
@@ -1336,7 +1174,6 @@ async def async_load_baseline_from_statistics(
     try:
         from homeassistant.components.recorder import get_instance  # type: ignore[attr-defined]
         from homeassistant.components.recorder.statistics import statistics_during_period
-        from homeassistant.util import dt as dt_util
 
         # Get last 7 days of hourly statistics
         end_time = dt_util.utcnow()

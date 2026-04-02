@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import time
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.water_heater import (
@@ -16,17 +15,17 @@ from homeassistant.const import STATE_OFF, UnitOfTemperature
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .action_helpers import (
-    check_bootstrap_reserve as _check_bootstrap_reserve,
-)
-from .action_helpers import (
-    is_within_optimistic_window as _is_within_optimistic_window,
-)
+from .ratelimit import async_check_bootstrap_reserve_or_raise as _check_bootstrap_reserve_or_raise
 from .device_manager import get_zone_device_info
 from .entity_registry import ENTITY_REGISTRY
 from .format_helpers import format_overlay_type as _format_overlay_type
-from .helpers import async_trigger_immediate_refresh
-from .optimistic_helpers import clear_optimistic_state
+from .helpers import async_trigger_immediate_refresh, build_timer_termination
+from .optimistic_helpers import (
+    OptimisticUpdateResult,
+    clear_optimistic_state,
+    resolve_optimistic_update,
+    set_optimistic_fields,
+)
 
 if TYPE_CHECKING:
     from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
@@ -121,14 +120,6 @@ class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeate
         self._expected_operation: str | None = None
         self._expected_temperature: float | None = None
 
-    def _clear_optimistic_state(self) -> None:
-        """Clear all optimistic state tracking."""
-        clear_optimistic_state(self)
-
-    def _is_within_optimistic_window(self) -> bool:
-        """Check if we're within the optimistic update window."""
-        return _is_within_optimistic_window(self.hass, self._optimistic_set_at, entry_id=self._entry_id)
-
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
         """Return extra state attributes."""
@@ -205,43 +196,14 @@ class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeate
             else:
                 api_operation = STATE_AUTO
 
-            # Layer 3 - Explicit state confirmation
-            should_preserve_optimistic = False
+            # Resolve optimistic state using shared helper
+            result = resolve_optimistic_update(
+                self,
+                api_values={"operation": api_operation, "temperature": api_target_temp},
+                entry_id=self._entry_id,
+            )
 
-            if self._optimistic_sequence is not None:
-                # We have optimistic state - check if API confirms it
-                operation_confirmed = self._expected_operation is None or api_operation == self._expected_operation
-                temp_confirmed = self._expected_temperature is None or api_target_temp == self._expected_temperature
-
-                if operation_confirmed and temp_confirmed:
-                    # API confirmed our expected state - clear optimistic tracking
-                    _LOGGER.debug(
-                        "Hot water %s: API confirmed optimistic state (operation=%s, temp=%s), clearing",
-                        self._zone_name,
-                        api_operation,
-                        api_target_temp,
-                    )
-                    self._clear_optimistic_state()
-                else:
-                    # API hasn't caught up yet - preserve optimistic state
-                    should_preserve_optimistic = True
-                    _LOGGER.debug(
-                        "Hot water %s: Preserving optimistic state "
-                        "(expected operation=%s, temp=%s; API shows operation=%s, temp=%s)",
-                        self._zone_name,
-                        self._expected_operation,
-                        self._expected_temperature,
-                        api_operation,
-                        api_target_temp,
-                    )
-
-            # Also check time-based window as safety net (should rarely trigger)
-            # Sequence-based checking (Layer 3 above) is the primary mechanism
-            if not should_preserve_optimistic and self._is_within_optimistic_window():
-                should_preserve_optimistic = True
-                _LOGGER.debug("Hot water %s: Preserving optimistic state (within time window)", self._zone_name)
-
-            if should_preserve_optimistic:
+            if result == OptimisticUpdateResult.PRESERVE_OPTIMISTIC:
                 # Keep optimistic state until API confirms
                 if self._expected_operation is not None:
                     self._attr_current_operation = self._expected_operation
@@ -258,9 +220,6 @@ class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeate
                 self._attr_current_operation = api_operation
                 self._overlay_type = api_overlay_type
                 self._attr_target_temperature = api_target_temp
-                # Clear any stale optimistic tracking
-                if self._optimistic_set_at is not None:
-                    self._clear_optimistic_state()
 
             self._attr_available = True
 
@@ -276,12 +235,12 @@ class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeate
 
     async def async_set_operation_mode(self, operation_mode: str) -> None:
         """Set new operation mode with retry logic (async)."""
-        await _check_bootstrap_reserve(self.hass, f"hot water {self._zone_name}", entry_id=self._entry_id)
+        await _check_bootstrap_reserve_or_raise(self.hass, f"hot water {self._zone_name}", coordinator=self.coordinator)
 
         # Capture state before overlay (non-AUTO only — AUTO is a restoration point)
-        if operation_mode != STATE_AUTO and self.coordinator._sr_manager:
-            await self.coordinator._sr_manager.capture(
-                self._zone_id, self._entity_type, source="manual_override",
+        if operation_mode != STATE_AUTO:
+            await self.coordinator.async_capture_state(
+                self._zone_id, self._entity_type, "manual_override",
             )
 
         previous_mode = self._attr_current_operation
@@ -295,16 +254,12 @@ class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeate
             self._overlay_type = "TIMER"  # type: ignore[assignment]
         elif operation_mode == STATE_OFF:
             self._overlay_type = "MANUAL"  # type: ignore[assignment]
-        self._optimistic_set_at = time.monotonic()
 
-        # Layer 2 - Sequence number tracking
-        self._optimistic_sequence = self.coordinator.get_next_sequence()
-
-        # Layer 3 - Expected state confirmation
-        self._expected_operation = operation_mode
-
-        # Layer 1 - Mark entity as fresh to prevent stale data overwrites
-        await self.coordinator.mark_entity_fresh(self.entity_id)
+        # Set optimistic fields using shared helper
+        await set_optimistic_fields(
+            self, self.coordinator,
+            expected={"operation": operation_mode},
+        )
 
         _LOGGER.debug(
             "Hot water %s: Set optimistic state: operation=%s, seq=%s",
@@ -360,7 +315,7 @@ class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeate
             # Rollback to previous state and clear all optimistic tracking
             self._attr_current_operation = previous_mode
             self._overlay_type = previous_overlay
-            self._clear_optimistic_state()
+            clear_optimistic_state(self)
             self.async_write_ha_state()
 
     def set_operation_mode(self, operation_mode: str) -> None:
@@ -383,28 +338,6 @@ class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeate
         # Default to 60 minutes
         return 60
 
-    async def _async_turn_on(self) -> bool:
-        """Turn on hot water (async)."""
-        if not self._home_id:
-            _LOGGER.error("No home_id configured")
-            return False
-
-        # Capture state before overlay
-        if self.coordinator._sr_manager:
-            await self.coordinator._sr_manager.capture(
-                self._zone_id, self._entity_type, source="manual_override",
-            )
-
-        client = self.coordinator.api_client
-
-        setting = {"type": "HOT_WATER", "power": "ON"}
-        termination = {"type": "MANUAL"}
-
-        success = await client.set_zone_overlay(self._zone_id, setting, termination)
-        if success:
-            _LOGGER.info("Turned on %s", self._zone_name)
-            self._attr_current_operation = STATE_HEAT
-        return success
 
     async def _async_turn_off(self) -> bool:
         """Turn off hot water (async)."""
@@ -413,10 +346,9 @@ class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeate
             return False
 
         # Capture state before overlay
-        if self.coordinator._sr_manager:
-            await self.coordinator._sr_manager.capture(
-                self._zone_id, self._entity_type, source="manual_override",
-            )
+        await self.coordinator.async_capture_state(
+            self._zone_id, self._entity_type, "manual_override",
+        )
 
         client = self.coordinator.api_client
 
@@ -436,10 +368,9 @@ class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeate
             return False
 
         # Capture state before timer overlay
-        if self.coordinator._sr_manager:
-            await self.coordinator._sr_manager.capture(
-                self._zone_id, self._entity_type, source="set_timer",
-            )
+        await self.coordinator.async_capture_state(
+            self._zone_id, self._entity_type, "set_timer",
+        )
 
         client = self.coordinator.api_client
 
@@ -450,7 +381,7 @@ class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeate
         if temperature is not None:
             setting["temperature"] = {"celsius": temperature}  # type: ignore[assignment]
 
-        termination = {"type": "TIMER", "durationInSeconds": duration_minutes * 60}
+        termination = build_timer_termination(duration_minutes=duration_minutes)
 
         success = await client.set_zone_overlay(self._zone_id, setting, termination)
         if success:
@@ -461,7 +392,7 @@ class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeate
 
     async def async_set_timer(self, duration_minutes: int, temperature: float | None = None) -> bool:
         """Public async method to set timer (for service calls)."""
-        await _check_bootstrap_reserve(self.hass, f"hot water {self._zone_name}", entry_id=self._entry_id)
+        await _check_bootstrap_reserve_or_raise(self.hass, f"hot water {self._zone_name}", coordinator=self.coordinator)
 
         success = await self._async_set_timer(duration_minutes, temperature)
         if success:
@@ -483,13 +414,12 @@ class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeate
             _LOGGER.error("No home_id configured")
             return
 
-        await _check_bootstrap_reserve(self.hass, f"hot water {self._zone_name}", entry_id=self._entry_id)
+        await _check_bootstrap_reserve_or_raise(self.hass, f"hot water {self._zone_name}", coordinator=self.coordinator)
 
         # Capture state before temperature overlay
-        if self.coordinator._sr_manager:
-            await self.coordinator._sr_manager.capture(
-                self._zone_id, self._entity_type, source="manual_override",
-            )
+        await self.coordinator.async_capture_state(
+            self._zone_id, self._entity_type, "manual_override",
+        )
 
         old_temp = self._attr_target_temperature
         old_operation = self._attr_current_operation
@@ -498,17 +428,12 @@ class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeate
         self._attr_target_temperature = temperature
         self._attr_current_operation = STATE_HEAT
         self._overlay_type = "MANUAL"  # type: ignore[assignment]
-        self._optimistic_set_at = time.monotonic()
 
-        # Layer 2 - Sequence number tracking
-        self._optimistic_sequence = self.coordinator.get_next_sequence()
-
-        # Layer 3 - Expected state confirmation
-        self._expected_operation = STATE_HEAT
-        self._expected_temperature = temperature
-
-        # Layer 1 - Mark entity as fresh to prevent stale data overwrites
-        await self.coordinator.mark_entity_fresh(self.entity_id)
+        # Set optimistic fields using shared helper
+        await set_optimistic_fields(
+            self, self.coordinator,
+            expected={"operation": STATE_HEAT, "temperature": temperature},
+        )
 
         _LOGGER.debug(
             "Hot water %s: Set optimistic state: temp=%s, seq=%s",
@@ -546,5 +471,5 @@ class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeate
             self._attr_target_temperature = old_temp
             self._attr_current_operation = old_operation
             self._overlay_type = old_overlay
-            self._clear_optimistic_state()
+            clear_optimistic_state(self)
             self.async_write_ha_state()

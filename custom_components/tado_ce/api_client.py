@@ -7,9 +7,8 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import suppress
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from http import HTTPStatus
-import json
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -26,8 +25,13 @@ from .api_call_tracker import (
     CALL_TYPE_ZONE_STATES,
     CALL_TYPE_ZONES,
 )
+from homeassistant.exceptions import HomeAssistantError
+from homeassistant.util import dt as dt_util
+
 from .const import API_ENDPOINT_DEVICES, TADO_API_BASE
 from .exceptions import TadoAuthError, TadoSyncError
+from .helpers import parse_iso_datetime
+from .storage import async_load_json, async_save_json
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -40,6 +44,9 @@ if TYPE_CHECKING:
     from .data_loader import DataLoader
 
 _LOGGER = logging.getLogger(__name__)
+
+# HTTP timeout for Tado Cloud API calls (30s covers slow responses; normal < 5s)
+_API_CALL_TIMEOUT = aiohttp.ClientTimeout(total=30)
 
 
 def _detect_call_type(endpoint: str) -> int | None:
@@ -192,15 +199,10 @@ class TadoApiClient(TadoAuthMixin):
         try:
             await self._ensure_home_id()
             ratelimit_path = self._get_data_file("ratelimit")
-            path_exists = await self._hass.async_add_executor_job(  # type: ignore[union-attr]
-                ratelimit_path.exists,
-            )
-            if path_exists:
-                content = await self._hass.async_add_executor_job(  # type: ignore[union-attr]
-                    ratelimit_path.read_text,
-                )
-                return json.loads(content)  # type: ignore[no-any-return]
-        except (FileNotFoundError, json.JSONDecodeError, OSError) as e:
+            data = await async_load_json(self._hass, ratelimit_path)  # type: ignore[arg-type]
+            if data is not None and isinstance(data, dict):
+                return data
+        except Exception as e:
             _LOGGER.debug("Could not load ratelimit file: %s", e)
         return {}
 
@@ -220,7 +222,7 @@ class TadoApiClient(TadoAuthMixin):
         Args:
             status: Status string ("ok", "rate_limited", "error")
         """
-        now_utc = datetime.now(UTC)
+        now_utc = dt_util.utcnow()
 
         # Load previous rate limit data to detect reset (native async)
         prev_data = await self._load_ratelimit()
@@ -278,11 +280,9 @@ class TadoApiClient(TadoAuthMixin):
             cycle_expired = False
             if not fresh_enable and prev_test_mode_start:
                 try:
-                    start_time = datetime.fromisoformat(
+                    start_time = parse_iso_datetime(
                         prev_test_mode_start,
                     )
-                    if start_time.tzinfo is None:
-                        start_time = start_time.replace(tzinfo=UTC)
                     cycle_end = start_time + timedelta(hours=24)
                     if now_utc >= cycle_end:
                         cycle_expired = True
@@ -326,11 +326,9 @@ class TadoApiClient(TadoAuthMixin):
 
             # Calculate simulated reset time from test_mode_start_time
             try:
-                start_time = datetime.fromisoformat(
+                start_time = parse_iso_datetime(
                     test_mode_start_time,
                 )
-                if start_time.tzinfo is None:
-                    start_time = start_time.replace(tzinfo=UTC)
                 test_mode_reset_at = start_time + timedelta(hours=24)
                 test_mode_reset_seconds = int((test_mode_reset_at - now_utc).total_seconds())
                 test_mode_reset_seconds = max(0, test_mode_reset_seconds)
@@ -392,7 +390,7 @@ class TadoApiClient(TadoAuthMixin):
         # Strategy 2: Calculate from last known reset time (rolling 24h window)
         if calculated_reset_seconds is None and last_reset_utc:
             try:
-                last_reset = datetime.fromisoformat(last_reset_utc)
+                last_reset = parse_iso_datetime(last_reset_utc)
                 next_reset = last_reset + timedelta(hours=24)
 
                 # If next_reset is in the past, add 24h until it's in the future
@@ -446,9 +444,7 @@ class TadoApiClient(TadoAuthMixin):
 
                     for call in all_calls:
                         ts = call["timestamp"]
-                        call_time = datetime.fromisoformat(ts)
-                        if call_time.tzinfo is None:
-                            call_time = call_time.replace(tzinfo=UTC)
+                        call_time = parse_iso_datetime(ts)
 
                         date_key = call_time.strftime("%Y-%m-%d")
                         if date_key not in first_calls_by_day or call_time < first_calls_by_day[date_key]:
@@ -582,29 +578,14 @@ class TadoApiClient(TadoAuthMixin):
                 _LOGGER.debug("Test Mode: Rate limit saved (simulated): %s/%s", used, limit)
             else:
                 _LOGGER.debug("Rate limit saved: %s/%s (%s%%)", used, limit, percentage_used)
-        except OSError as e:
+        except (OSError, HomeAssistantError) as e:
             _LOGGER.debug("Failed to save rate limit: %s", e)
 
     async def _save_ratelimit(self, data: dict[str, Any]) -> None:
         """Save rate limit using executor I/O with atomic write."""
         ratelimit_path = self._get_data_file("ratelimit")
 
-        await self._hass.async_add_executor_job(  # type: ignore[union-attr]
-            lambda: ratelimit_path.parent.mkdir(parents=True, exist_ok=True),
-        )
-
-        temp_path = ratelimit_path.with_suffix(".tmp")
-        content = json.dumps(data, indent=2)
-        await self._hass.async_add_executor_job(  # type: ignore[union-attr]
-            temp_path.write_text,
-            content,
-        )
-
-        # Atomic move
-        await self._hass.async_add_executor_job(  # type: ignore[union-attr]
-            temp_path.replace,
-            ratelimit_path,
-        )
+        await async_save_json(self._hass, ratelimit_path, data)  # type: ignore[arg-type]
 
         # Write-through: update DataLoader cache (same pattern as _save_json_file)
         if self._data_loader is not None:
@@ -616,6 +597,7 @@ class TadoApiClient(TadoAuthMixin):
         method: str = "GET",
         data: dict[str, Any] | None = None,
         parse_ratelimit: bool = True,
+        _retried: bool = False,
     ) -> dict[str, Any] | None:
         """Make authenticated API call.
 
@@ -624,6 +606,7 @@ class TadoApiClient(TadoAuthMixin):
             method: HTTP method
             data: Request body data
             parse_ratelimit: Whether to parse rate limit headers
+            _retried: Internal flag — True if this is a 401 retry (prevents infinite loop)
 
         Returns:
             Response data, or None if failed
@@ -648,7 +631,7 @@ class TadoApiClient(TadoAuthMixin):
 
         try:
             if method == "GET":
-                async with self._session.get(url, headers=headers) as resp:
+                async with self._session.get(url, headers=headers, timeout=_API_CALL_TIMEOUT) as resp:
                     if parse_ratelimit:
                         self._parse_ratelimit_headers(dict(resp.headers))
 
@@ -656,10 +639,16 @@ class TadoApiClient(TadoAuthMixin):
                         await tracker.async_record_call(call_type, resp.status)
 
                     if resp.status == HTTPStatus.UNAUTHORIZED:
-                        _LOGGER.warning("Token expired, invalidating cache")
+                        if _retried:
+                            _LOGGER.warning("Token still invalid after refresh — giving up")
+                            return None
+                        _LOGGER.debug("Token expired mid-call, refreshing and retrying: %s", endpoint)
                         self._access_token = None
                         self._token_expiry = None
-                        return None
+                        return await self.api_call(
+                            endpoint, method, data,
+                            parse_ratelimit=False, _retried=True,
+                        )
 
                     if resp.status == HTTPStatus.TOO_MANY_REQUESTS:
                         _LOGGER.error("Rate limit exceeded")
@@ -678,12 +667,19 @@ class TadoApiClient(TadoAuthMixin):
                     url,
                     headers=headers,
                     json=json_data,
+                    timeout=_API_CALL_TIMEOUT,
                 ) as resp:
                     if parse_ratelimit:
                         self._parse_ratelimit_headers(dict(resp.headers))
 
                     if tracker and call_type:
                         await tracker.async_record_call(call_type, resp.status)
+
+                    if resp.status == HTTPStatus.UNAUTHORIZED:
+                        _LOGGER.warning("Token expired on %s %s — not retrying (non-idempotent)", method, endpoint)
+                        self._access_token = None
+                        self._token_expiry = None
+                        return None
 
                     if resp.status in (HTTPStatus.OK, HTTPStatus.CREATED, HTTPStatus.NO_CONTENT):
                         if resp.content_length and resp.content_length > 0:
@@ -694,18 +690,28 @@ class TadoApiClient(TadoAuthMixin):
                     return None
 
             elif method == "DELETE":
-                async with self._session.delete(url, headers=headers) as resp:
+                async with self._session.delete(url, headers=headers, timeout=_API_CALL_TIMEOUT) as resp:
                     if parse_ratelimit:
                         self._parse_ratelimit_headers(dict(resp.headers))
 
                     if tracker and call_type:
                         await tracker.async_record_call(call_type, resp.status)
+
+                    if resp.status == HTTPStatus.UNAUTHORIZED:
+                        _LOGGER.warning("Token expired on DELETE %s — not retrying (non-idempotent)", endpoint)
+                        self._access_token = None
+                        self._token_expiry = None
+                        return None
+
                     if resp.status in (HTTPStatus.OK, HTTPStatus.NO_CONTENT):
                         return {}
 
                     _LOGGER.error("API call failed: %s", resp.status)
                     return None
 
+        except TimeoutError:
+            _LOGGER.warning("API call timed out after %ss: %s %s", _API_CALL_TIMEOUT.total, method, endpoint)
+            return None
         except aiohttp.ClientError:
             _LOGGER.exception("Network error")
             return None
@@ -1031,13 +1037,6 @@ class TadoApiClient(TadoAuthMixin):
             _LOGGER.exception("Error deleting presence lock")
             return False
 
-    def get_rate_limit(self) -> dict[str, Any]:
-        """Get current rate limit info."""
-        return self._rate_limit.copy()
-
-    # =========================================================================
-    # Sync Functions - Replace subprocess-based tado_api.py sync
-    # =========================================================================
 
     async def async_sync(
         self,
@@ -1161,22 +1160,7 @@ class TadoApiClient(TadoAuthMixin):
             file_path: Path to save to.
             data: Data to serialize as JSON.
         """
-        await self._hass.async_add_executor_job(  # type: ignore[union-attr]
-            lambda: file_path.parent.mkdir(parents=True, exist_ok=True),
-        )
-
-        temp_path = file_path.with_suffix(".tmp")
-        content = json.dumps(data, indent=2)
-        await self._hass.async_add_executor_job(  # type: ignore[union-attr]
-            temp_path.write_text,
-            content,
-        )
-
-        # Atomic move
-        await self._hass.async_add_executor_job(  # type: ignore[union-attr]
-            temp_path.replace,
-            file_path,
-        )
+        await async_save_json(self._hass, file_path, data)  # type: ignore[arg-type]
 
         # Write-through: update DataLoader cache
         if self._data_loader is not None:
@@ -1185,10 +1169,7 @@ class TadoApiClient(TadoAuthMixin):
 
     async def _load_json_file(self, file_path: Path) -> dict[str, Any] | list[Any]:
         """Load JSON file using executor I/O."""
-        content = await self._hass.async_add_executor_job(  # type: ignore[union-attr]
-            file_path.read_text,
-        )
-        return json.loads(content)  # type: ignore[no-any-return]
+        return await async_load_json(self._hass, file_path)  # type: ignore[arg-type, return-value]
 
     async def _sync_offsets(self, zones_info: list[Any]) -> None:
         """Sync temperature offsets for all devices.
@@ -1292,11 +1273,9 @@ class TadoApiClient(TadoAuthMixin):
         if not date:
             # Use Home Assistant's timezone for local date
             try:
-                from homeassistant.util import dt as dt_util
-
                 date = dt_util.now().strftime("%Y-%m-%d")
-            except ImportError:
-                date = datetime.now(UTC).strftime("%Y-%m-%d")
+            except Exception:
+                date = dt_util.utcnow().strftime("%Y-%m-%d")
 
         url = f"{TADO_API_BASE}/homes/{home_id}/meterReadings"
         headers = {

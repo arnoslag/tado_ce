@@ -1267,66 +1267,37 @@ When geofencing is disabled, "Auto" just removes the lock — it doesn't change 
 
 ## 🏠 Per-Zone Configuration
 
-**Available:** v2.1.0+ | **Requirement:** None | **Opt-in via Zone Features Toggle**
+**Available:** v3.1.0+ | **Requirement:** None | **Options Flow Configuration**
 
-Customize settings for each individual zone instead of using global defaults.
+Customize settings for each individual zone via **Settings → Tado CE → Configure → Zone Configuration**.
 
-### Configuration Entities
+> **v3.1.0 change:** All per-zone settings moved from individual HA entities to the centralised Options Flow menu. No config entities are created — settings live in the Options Flow.
 
-**Heating Zones:**
+### Available Settings
 
-| Entity | Friendly Name | Type | Description |
-|--------|--------------|------|-------------|
-| `select.{zone}_heating_type` | Heat Emitter | Select | Radiator or Underfloor Heating |
-| `number.{zone}_ufh_buffer` | UFH Buffer | Number | Extra preheat buffer for UFH (0–60 min) |
-
-**All Climate Zones:**
-
-| Entity | Friendly Name | Type | Description |
-|--------|--------------|------|-------------|
-| `switch.{zone}_adaptive_preheat` | Adaptive Preheat | Switch | Enable adaptive preheat |
-| `select.{zone}_smart_comfort_mode` | Smart Comfort | Select | Weather compensation level |
-| `select.{zone}_window_type` | Window Type | Select | Window insulation for mold risk |
-| `select.{zone}_overlay_mode` | Overlay Mode | Select | How temperature changes behave |
-| `select.{zone}_overlay_timer_duration` | Overlay Timer | Select | Timer duration |
-| `number.{zone}_min_temp` | Min Temp | Number | Minimum temperature (5–25°C) |
-| `number.{zone}_max_temp` | Max Temp | Number | Maximum temperature (15–30°C) |
-| `number.{zone}_temp_offset` | Temp Offset | Number | Temperature calibration (-3.0 to +3.0°C) |
-| `number.{zone}_surface_temp_offset` | Surface Offset | Number | Surface temp calibration |
+| Setting | Description | Applies To |
+|---------|-------------|------------|
+| Overlay Mode | How temperature changes behave (Tado Default, Next Time Block, Timer, Manual) | All zones |
+| Overlay Timer | Timer duration when overlay mode is Timer | All zones |
+| Min Temperature | Minimum allowed temperature (5–25°C) | All zones |
+| Max Temperature | Maximum allowed temperature (15–30°C) | All zones |
+| Heating Type | Radiator or Underfloor Heating | Heating zones |
+| UFH Buffer | Extra preheat buffer for underfloor heating (0–60 min) | UFH zones |
+| Adaptive Preheat Mode | Off, Active, or Passive | Heating zones |
+| Window Type | Window insulation type for mold risk calculation | All zones |
+| Window Detection Mode | Active, Passive, or Auto | All zones |
+| Window Predicted Sensitivity | Low, Medium, or High | All zones |
+| External Temperature Sensor | Use any HA sensor instead of Tado's built-in | All zones |
+| External Humidity Sensor | Use any HA sensor instead of Tado's built-in | All zones |
 
 ### Zone Overlay Mode Options
 
 | Option | Behavior |
 |--------|----------|
-| Tado Mode | Inherit from global setting (default) |
+| Tado Default | Inherit from global setting (default) |
 | Next Time Block | Revert at next schedule change |
 | Timer | Revert after timer duration |
 | Manual | Stay until manually changed |
-
-### Use Cases
-
-```yaml
-# Living room: Manual control (stays until changed)
-select.living_room_overlay_mode: Manual
-
-# Bedroom: Timer (reverts after 30 min)
-select.bedroom_overlay_mode: Timer
-
-# Mark bathroom as UFH with 15 min buffer
-select.bathroom_heating_type: Underfloor Heating
-number.bathroom_ufh_buffer: 15
-
-# Child's room: Limit max temp
-number.childs_room_max_temp: 22
-```
-
-### Migration from Global Settings
-
-When upgrading to v2.1.0:
-- `ufh_zones` → per-zone `heating_type = UFH`
-- `ufh_buffer_minutes` → per-zone `ufh_buffer`
-- `adaptive_preheat_zones` → per-zone `adaptive_preheat = ON`
-- Global `overlay_mode` remains as default; zones inherit unless overridden
 
 ---
 
@@ -1345,12 +1316,11 @@ Control which entity types are created, reducing clutter for users who don't nee
 | Boost Buttons | Boost, Smart Boost buttons | OFF | ON |
 | Environment Sensors | Mold risk, comfort level, condensation risk | OFF | ON |
 | Thermal Analytics | Thermal inertia, heating rate, preheat time | OFF | ON |
-| Zone Configuration | Per-zone config entities | OFF | ON |
 
 **New installs:** All toggles OFF for minimal setup. Enable what you need.
 **Upgrades:** All toggles ON to preserve existing entities and automations.
 
-Configure: Settings → Devices & Services → Tado CE → Configure → "Zone Features" section.
+Configure: **Settings → Tado CE → Configure → General Settings → Zone Features** section.
 
 ---
 

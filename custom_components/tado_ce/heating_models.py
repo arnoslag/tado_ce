@@ -1,4 +1,4 @@
-"""Tado CE heating cycle data models — HeatingCycle, TemperatureReading, config."""
+"""Tado CE heating cycle data models — HeatingCycle, HeatingCycleReading, config."""
 
 from __future__ import annotations
 
@@ -6,10 +6,12 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
+from .helpers import parse_iso_datetime
 from .models import HeatingCycleReading
 
-# Backward compat alias — existing code may import TemperatureReading from here
-TemperatureReading = HeatingCycleReading
+__all__ = ["HeatingCycleReading"]
+
+
 
 
 @dataclass
@@ -23,7 +25,7 @@ class HeatingCycle:
     target_temp: float
     first_rise_time: datetime | None  # UTC, when temp first increased by threshold
     first_rise_temp: float | None
-    temperature_readings: list[TemperatureReading]  # Limited to 100 readings max
+    temperature_readings: list[HeatingCycleReading]  # Limited to 100 readings max
     completed: bool
     interrupted: bool
     interrupt_reason: str | None
@@ -49,13 +51,13 @@ class HeatingCycle:
         """Deserialize from dictionary."""
         return cls(
             zone_id=data["zone_id"],
-            start_time=datetime.fromisoformat(data["start_time"]),
-            end_time=datetime.fromisoformat(data["end_time"]) if data["end_time"] else None,
+            start_time=parse_iso_datetime(data["start_time"]),
+            end_time=parse_iso_datetime(data["end_time"]) if data["end_time"] else None,
             start_temp=data["start_temp"],
             target_temp=data["target_temp"],
-            first_rise_time=datetime.fromisoformat(data["first_rise_time"]) if data["first_rise_time"] else None,
+            first_rise_time=parse_iso_datetime(data["first_rise_time"]) if data["first_rise_time"] else None,
             first_rise_temp=data["first_rise_temp"],
-            temperature_readings=[TemperatureReading.from_dict(r) for r in data["temperature_readings"]],
+            temperature_readings=[HeatingCycleReading.from_dict(r) for r in data["temperature_readings"]],
             completed=data["completed"],
             interrupted=data["interrupted"],
             interrupt_reason=data["interrupt_reason"],

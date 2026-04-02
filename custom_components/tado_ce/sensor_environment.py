@@ -11,6 +11,7 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.const import UnitOfTemperature
 from homeassistant.core import callback
+from homeassistant.util import dt as dt_util
 
 from .calculations import (
     HEAT_INDEX_ACTIVATION_TEMP,
@@ -36,12 +37,9 @@ from .format_helpers import (
     format_window_type as _format_window_type,
 )
 from .format_helpers import (
-    format_zone_type as _format_zone_type,
-)
-from .format_helpers import (
     strip_zone_prefix as _strip_zone_prefix,
 )
-from .insights import (
+from .insights_environment import (
     calculate_comfort_recommendation,
     calculate_condensation_recommendation,
     calculate_heating_condensation_recommendation,
@@ -164,7 +162,7 @@ class TadoMoldRiskSensor(TadoZoneSensor):
             "outdoor_temperature": self._outdoor_temp,
             "surface_temperature": round(self._surface_temp, 1) if self._surface_temp is not None else None,
             "surface_temp_offset": self._surface_temp_offset,  # Calibration offset
-            "zone_type": _format_zone_type(self._zone_type),
+            **self._base_zone_attributes,
             "recommendation": _strip_zone_prefix(self._recommendation, self._zone_name),
         }
 
@@ -294,7 +292,7 @@ class TadoMoldRiskPercentageSensor(TadoZoneSensor):
             "humidity": self._humidity,
             "dew_point": round(self._dew_point, 1) if self._dew_point is not None else None,
             "temperature_source": self._temperature_source,
-            "zone_type": _format_zone_type(self._zone_type),
+            **self._base_zone_attributes,
         }
 
     @callback
@@ -417,7 +415,7 @@ class TadoCondensationRiskSensor(TadoZoneSensor):
                 "margin": self._margin,
                 "window_type": _format_window_type(self._window_type),
                 "u_value": self._u_value,
-                "zone_type": _format_zone_type(self._zone_type),
+                **self._base_zone_attributes,
                 "recommendation": _strip_zone_prefix(self._recommendation, self._zone_name),
             }
         return {
@@ -431,7 +429,7 @@ class TadoCondensationRiskSensor(TadoZoneSensor):
             "margin": self._margin,
             "window_type": _format_window_type(self._window_type),
             "u_value": self._u_value,
-            "zone_type": _format_zone_type(self._zone_type),
+            **self._base_zone_attributes,
             "recommendation": _strip_zone_prefix(self._recommendation, self._zone_name),
         }
 
@@ -561,7 +559,7 @@ class TadoCondensationRiskSensor(TadoZoneSensor):
             if offset:
                 self._surface_temperature = self._surface_temperature + float(offset)
 
-        # Margin = surface_temp - indoor_dew_point
+        # Margin = surface_temp - indoor_dew_point  # noqa: ERA001
         # Positive = safe, Negative = condensation occurring
         margin_exact = self._surface_temperature - self._indoor_dew_point
         self._margin = round(margin_exact, 1)  # Rounded for display only
@@ -731,7 +729,7 @@ class TadoSurfaceTemperatureSensor(TadoZoneSensor):
             "u_value": self._u_value,
             "offset_applied": self._offset_applied,
             "calculation_method": self._calculation_method,
-            "zone_type": _format_zone_type(self._zone_type),
+            **self._base_zone_attributes,
         }
 
     @callback
@@ -880,7 +878,7 @@ class TadoDewPointSensor(TadoZoneSensor):
             "room_temperature": self._room_temp,
             "humidity": self._humidity,
             "calculation_method": "Magnus-Tetens",
-            "zone_type": _format_zone_type(self._zone_type),
+            **self._base_zone_attributes,
         }
 
     @callback
@@ -928,7 +926,7 @@ class TadoComfortLevelSensor(TadoZoneSensor):
 
     Comfort Calculation:
     1. If outdoor temp available: Use adaptive comfort model
-       - Comfort temp = 0.31 × outdoor_temp + 17.8°C
+       - Comfort temp = 0.31 * outdoor_temp + 17.8°C
        - Acceptable range = ±3°C (90% acceptability)
     2. If no outdoor temp: Use latitude-based seasonal thresholds
        - Adjusts for hemisphere and climate zone
@@ -973,7 +971,7 @@ class TadoComfortLevelSensor(TadoZoneSensor):
             "dew_point": round(self._dew_point, 1) if self._dew_point is not None else None,
             "heat_index": round(self._heat_index, 1) if self._heat_index is not None else None,
             "heat_risk_level": self._heat_risk_level,
-            "zone_type": _format_zone_type(self._zone_type),
+            **self._base_zone_attributes,
             "recommendation": _strip_zone_prefix(self._recommendation, self._zone_name),
         }
 
@@ -1094,7 +1092,7 @@ class TadoComfortLevelSensor(TadoZoneSensor):
     def _calculate_adaptive_comfort(self) -> str:
         """Calculate comfort using ASHRAE 55 Adaptive Comfort model.
 
-        Formula: Comfort temp = 0.31 × outdoor_temp + 17.8°C
+        Formula: Comfort temp = 0.31 * outdoor_temp + 17.8°C
         Acceptable range: ±3°C for 90% acceptability
 
         Returns:
@@ -1135,8 +1133,6 @@ class TadoComfortLevelSensor(TadoZoneSensor):
         latitude = 51.5  # Default to London if not available
         if self.hass:
             latitude = self.hass.config.latitude or 51.5
-
-        from homeassistant.util import dt as dt_util
 
         month = dt_util.now().month
 

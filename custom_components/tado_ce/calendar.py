@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
-import json
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -13,8 +12,9 @@ from homeassistant.helpers.entity import DeviceInfo  # type: ignore[attr-defined
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
-from .const import DATA_DIR, DOMAIN, MANUFACTURER, get_data_file
+from .const import DOMAIN, MANUFACTURER, get_data_file
 from .entity_registry import ENTITY_REGISTRY
+from .storage import load_json_sync, save_json_sync
 
 if TYPE_CHECKING:
     from homeassistant.core import Event
@@ -130,23 +130,10 @@ async def async_setup_entry(
 
 async def _async_save_schedules(hass: HomeAssistant, schedules: dict[str, Any], home_id: str | None = None) -> None:
     """Save schedules to file using atomic write."""
-    import shutil
-    import tempfile
-
     schedules_file = get_data_file("schedules", home_id)
 
     def _save() -> None:
-        DATA_DIR.mkdir(parents=True, exist_ok=True)
-        # Atomic write: write to temp file then move
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            dir=DATA_DIR,
-            delete=False,
-            suffix=".tmp",
-        ) as tmp:
-            json.dump(schedules, tmp, indent=2)
-            temp_path = tmp.name
-        shutil.move(temp_path, schedules_file)
+        save_json_sync(schedules_file, schedules)
 
     await hass.async_add_executor_job(_save)
 
@@ -220,10 +207,8 @@ class TadoZoneScheduleCalendar(CoordinatorEntity["TadoDataUpdateCoordinator"], C
         def _load() -> None:
             home_id = self.coordinator.home_id
             schedules_file = get_data_file("schedules", home_id)
-            if schedules_file.exists():
-                with schedules_file.open() as f:
-                    return json.load(f)  # type: ignore[no-any-return]
-            return {}  # type: ignore[return-value]
+            data = load_json_sync(schedules_file)
+            return data if data is not None else {}  # type: ignore[return-value]
 
         try:
             schedules = await self.hass.async_add_executor_job(_load)  # type: ignore[func-returns-value]

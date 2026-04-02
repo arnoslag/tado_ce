@@ -32,10 +32,7 @@ PER_HOME_FILES = [
     "offsets",
     "ac_capabilities",
     "schedules",
-    "outdoor_temp_history",
-    "insight_history",
     "home_details",
-    "state_restore",
 ]
 
 
@@ -64,7 +61,6 @@ def get_data_file(base_name: str, home_id: str | None = None) -> Path:
 CONFIG_FILE = DATA_DIR / "config.json"
 ZONES_FILE = DATA_DIR / "zones.json"
 ZONES_INFO_FILE = DATA_DIR / "zones_info.json"
-RATELIMIT_FILE = DATA_DIR / "ratelimit.json"
 
 # Service names
 SERVICE_SET_CLIMATE_TIMER = "set_climate_timer"
@@ -381,5 +377,3 @@ DEVICE_SYNC_DELAY_MIN = 0.5  # seconds
 DEVICE_SYNC_DELAY_MAX = 5.0  # seconds
 DEVICE_SYNC_QUEUE_MAX_DEPTH = 20
 
-# Full sync interval — now only on restart/reload (kept for reference)
-# FULL_SYNC_INTERVAL_HOURS = 6  # Removed in v3.1.0 — Smarter Full Sync

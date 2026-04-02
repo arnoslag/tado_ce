@@ -103,19 +103,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if isinstance(old_coordinator, TadoDataUpdateCoordinator):
         _LOGGER.warning("Tado CE: Entry %s already setup, cancelling old coordinator", entry.entry_id)
 
-    data_loader = DataLoader(home_id or "default")
+    data_loader = DataLoader(home_id or "default", hass=hass)
 
     # Cold start: bulk-load all data files into cache (single executor job)
     await hass.async_add_executor_job(data_loader.load_all_to_cache)
 
-    zone_config_manager = ZoneConfigManager(hass, home_id or "default")
+    zone_config_manager = ZoneConfigManager(hass, home_id or "default", data_loader)
     await zone_config_manager.async_load()
     _LOGGER.info("Zone config manager initialized with %d zones", len(zone_config_manager.zones))
 
-    overlay_mode = await hass.async_add_executor_job(data_loader.load_overlay_mode)
+    overlay_mode = await data_loader.async_load_overlay_mode()
     _LOGGER.debug("Tado CE: Overlay mode loaded: %s", overlay_mode)
 
-    timer_duration = await hass.async_add_executor_job(data_loader.load_timer_duration)
+    timer_duration = await data_loader.async_load_timer_duration()
     _LOGGER.debug("Tado CE: Timer duration loaded: %d minutes", timer_duration)
 
     # Create per-entry infrastructure (API tracker, client, timers, etc.)
@@ -331,11 +331,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Clean up coordinator's RefreshHandler debounce task
     if coordinator and hasattr(coordinator, "refresh_handler") and coordinator.refresh_handler:
-        rh = coordinator.refresh_handler
-        if rh._debounce_task is not None:
-            rh._debounce_task.cancel()  # type: ignore[attr-defined]
-            rh._debounce_task = None
-            _LOGGER.debug("Cancelled pending debounce task")
+        coordinator.refresh_handler.cancel()
         coordinator.refresh_handler = None  # type: ignore[assignment]
         _LOGGER.debug("Cleaned up coordinator RefreshHandler")
 
@@ -351,8 +347,12 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await coordinator.insight_history.async_save()
 
     # Persist captured state before shutdown
-    if coordinator and coordinator._sr_manager is not None:
-        await coordinator._sr_manager.async_shutdown()
+    if coordinator:
+        await coordinator.async_shutdown_state_restore()
+
+    # Persist weather compensation state before shutdown
+    if coordinator:
+        coordinator.save_wc_state_if_loaded()
 
     # Per-entry cleanup (API client, timers, managers) — via coordinator
     from .entry_lifecycle import async_cleanup_entry_components

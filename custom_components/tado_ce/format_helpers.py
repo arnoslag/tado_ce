@@ -108,13 +108,6 @@ BATTERY_STATE_DISPLAY_MAP: dict[str, str] = {
     "CRITICAL": "Critical",
 }
 
-HEAT_RISK_DISPLAY_MAP: dict[str, str] = {
-    "None": "✅ None",
-    "Caution": "🟡 Caution",
-    "Extreme Caution": "🟠 Extreme Caution",
-    "Danger": "🔴 Danger",
-    "Extreme Danger": "🔴 Extreme Danger",
-}
 
 CONNECTION_STATE_DISPLAY_MAP: dict[bool, str] = {True: "Online", False: "Offline"}
 CONNECTION_STATE_ATTR_MAP: dict[bool, str] = {True: "online", False: "offline"}
@@ -192,9 +185,6 @@ def format_data_source(source: str) -> str:
     return _lookup(DATA_SOURCE_DISPLAY_MAP, source)
 
 
-def format_weather_state(state: str) -> str:
-    """Convert internal weather state to user-friendly display value."""
-    return _lookup(WEATHER_STATE_MAP, state)
 
 
 def format_battery_state(state: str) -> str:
@@ -226,15 +216,10 @@ def strip_zone_prefix(text: str, zone_name: str) -> str:
     return text
 
 
-def format_power_state(power: str) -> str:
-    """Convert zone power setting to display value. Falsy -> 'Unknown'."""
-    return power or "Unknown"
-
-
 def format_health_score(score: int) -> str:
-    """Format health score (0–100) with emoji and label for readability.
+    """Format health score (0-100) with emoji and label for readability.
 
-    Bands: 90–100 Excellent, 70–89 Good, 50–69 Fair, 25–49 Poor, 0–24 Critical.
+    Bands: 90-100 Excellent, 70-89 Good, 50-69 Fair, 25-49 Poor, 0-24 Critical.
     """
     if score >= 90:
         return f"🟢 {score} — Excellent"
@@ -252,18 +237,6 @@ def format_bridge_wiring_state(state: str) -> str:
     return _lookup(BRIDGE_WIRING_STATE_MAP, state)
 
 
-def format_heat_risk_level(level: str | None) -> str:
-    """Format heat risk level with emoji prefix.
-
-    Args:
-        level: NOAA risk level string, or None.
-
-    Returns:
-        Emoji-prefixed display string, or "Unknown" for None/unrecognised.
-    """
-    if level is None:
-        return "Unknown"
-    return HEAT_RISK_DISPLAY_MAP.get(level, "Unknown")
 
 
 def format_boolean_connected(value: bool | None) -> str:
@@ -304,22 +277,42 @@ def _format_duration_human(hours: float) -> str:
     return f"{remaining_hours}h"
 
 
-def format_persistent_insights_grouped(raw: list[dict[str, Any]]) -> list[str]:
+def format_persistent_insights_grouped(
+    raw: list[dict[str, Any]],
+    escalated_priorities: dict[tuple[str, str | None], int] | None = None,
+) -> list[str]:
     """Group persistent insights by priority+type, merge zones, return sorted lines.
 
     Input: list of dicts from InsightHistoryTracker.get_persistent_insights()
     Output: list of formatted strings like "🔴 High: Battery — Guest (1d 4h)"
     Zones with same insight type + priority are merged into one line.
+
+    When *escalated_priorities* is provided, the escalated priority is used
+    instead of the base_priority stored in history.  Keys are
+    ``(formatted_insight_type, zone_name)`` → ``InsightPriority.value`` int.
     """
     if not raw:
         return []
 
+    priority_names: dict[int, str] = {0: "none", 1: "low", 2: "medium", 3: "high", 4: "critical"}
+
     groups: dict[tuple[str, str], list[tuple[str | None, float]]] = {}
     for item in raw:
-        priority_str = str(item.get("base_priority", "Low")).lower()
+        base_priority_str = str(item.get("base_priority", "Low")).lower()
         insight_type = str(item.get("insight_type", "Unknown"))
-        zone_name = item.get("zone_name")
+        zone_name: str | None = item.get("zone_name")
         duration = float(item.get("duration_hours", 0))
+
+        # Use escalated priority when available
+        if escalated_priorities:
+            escalated_val = escalated_priorities.get((insight_type, zone_name))
+            if escalated_val is not None:
+                priority_str = priority_names.get(escalated_val, base_priority_str)
+            else:
+                priority_str = base_priority_str
+        else:
+            priority_str = base_priority_str
+
         key = (priority_str, insight_type)
         if key not in groups:
             groups[key] = []
@@ -344,3 +337,26 @@ def format_persistent_insights_grouped(raw: list[dict[str, Any]]) -> list[str]:
 
     return lines
 
+
+
+def build_zone_insight_attributes(
+    insights: list[Any],  # noqa: ANN401 — accepts list[Insight] without importing Insight
+    zone_name: str,
+) -> dict[str, Any]:  # noqa: ANN401 — HA attribute dict
+    """Build extra_state_attributes for a zone insight sensor.
+
+    Conditional (non-empty only): insight_types, recommendations.
+    Removed: top_priority (redundant — no context which insight is top),
+    top_recommendation (redundant with recommendations list).
+    """
+    if not insights:
+        return {}
+
+    attrs: dict[str, Any] = {}
+    types_list = [format_insight_type(i.insight_type) for i in insights]
+    recs_list = [strip_zone_prefix(i.recommendation, zone_name) for i in insights]
+    if types_list:
+        attrs["insight_types"] = types_list
+    if recs_list:
+        attrs["recommendations"] = recs_list
+    return attrs

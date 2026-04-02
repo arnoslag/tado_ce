@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
-from datetime import UTC
 import logging
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.core import callback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.util import dt as dt_util
+
+from .helpers import parse_iso_datetime
 
 from .device_manager import get_device_name_suffix, get_zone_device_info
 from .entity_registry import ENTITY_REGISTRY, get_entity_category
@@ -24,7 +26,7 @@ from .format_helpers import (
 from .format_helpers import (
     strip_zone_prefix as _strip_zone_prefix,
 )
-from .insights import (
+from .insights_device import (
     calculate_battery_recommendation,
     calculate_connection_recommendation,
 )
@@ -229,12 +231,10 @@ class TadoDeviceConnectionSensor(CoordinatorEntity["TadoDataUpdateCoordinator"],
                             offline_minutes = None
                             if self._connection_timestamp and self._attr_native_value == "Offline":
                                 try:
-                                    from datetime import datetime
-
-                                    last_seen_dt = datetime.fromisoformat(
+                                    last_seen_dt = parse_iso_datetime(
                                         self._connection_timestamp,
                                     )
-                                    now_utc = datetime.now(UTC)
+                                    now_utc = dt_util.utcnow()
                                     offline_minutes = int((now_utc - last_seen_dt).total_seconds() / 60)
                                 except (ValueError, TypeError) as err:
                                     _LOGGER.debug(

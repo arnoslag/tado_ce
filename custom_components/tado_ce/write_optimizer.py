@@ -1,13 +1,12 @@
-"""Tado CE API write optimization — debounce, guard, queue, coalesce, schedule preview."""
+"""Tado CE API write optimization — debounce, guard, queue, coalesce."""
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
 from dataclasses import dataclass
-from datetime import UTC, datetime
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -15,7 +14,6 @@ if TYPE_CHECKING:
     from homeassistant.components.climate import HVACMode  # type: ignore[attr-defined]
 
     from .coordinator import TadoDataUpdateCoordinator
-    from .data_loader import DataLoader
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -348,83 +346,3 @@ class ResumeGuard:
         zone_data = zone_states.get(zone_id) or {}
         overlay_type = zone_data.get("overlayType")
         return overlay_type is None
-
-
-def _resolve_current_time(current_time: datetime | None) -> datetime:
-    """Resolve current time, falling back to UTC if HA is unavailable."""
-    if current_time is not None:
-        return current_time
-    try:
-        from homeassistant.util import dt as dt_util  # noqa: PLC0415
-
-        return dt_util.now()
-    except ImportError:
-        return datetime.now(UTC)
-
-
-def _find_current_block(
-    day_blocks: list[Any],
-    current_time_str: str,
-) -> dict[str, Any] | None:
-    """Find the schedule block covering the given time.
-
-    Blocks are assumed sorted by start time. The current block is the last
-    one whose start <= *current_time_str*.
-    """
-    current_block: dict[str, Any] | None = None
-    for block in day_blocks:
-        block_start: str = block.get("start", "00:00")
-        if block_start <= current_time_str:
-            current_block = block
-        else:
-            break
-    return current_block
-
-
-def _extract_block_celsius(block: dict[str, Any]) -> float | None:
-    """Extract the target celsius from a schedule block, or None if OFF/missing."""
-    setting: dict[str, Any] = block.get("setting") or {}
-    if setting.get("power", "OFF") != "ON":
-        return None
-    temp_data: dict[str, Any] | None = setting.get("temperature")
-    if not temp_data:
-        return None
-    return temp_data.get("celsius")
-
-
-def get_current_schedule_target(
-    zone_id: str,
-    data_loader: DataLoader | None = None,
-    current_time: datetime | None = None,
-) -> float | None:
-    """Get the scheduled target temperature for the current time block.
-
-    Returns the target temperature from the active schedule block that
-    covers the current time, or None if no schedule data is available
-    or heating is OFF in the current block.
-
-    Reuses ``_get_day_blocks`` from ``smart_comfort`` to avoid duplicating
-    schedule-type resolution logic.
-    """
-    from .smart_comfort import _get_day_blocks  # noqa: PLC0415 — avoid circular import
-
-    if data_loader is None:
-        return None
-
-    schedule = data_loader.get_zone_schedule(zone_id)
-    if not schedule:
-        return None
-
-    now = _resolve_current_time(current_time)
-    blocks_dict: dict[str, Any] = schedule.get("blocks") or {}
-    schedule_type: str = schedule.get("type", "ONE_DAY")
-    day_blocks = _get_day_blocks(blocks_dict, schedule_type, now.weekday())
-
-    if not day_blocks:
-        return None
-
-    current_block = _find_current_block(day_blocks, now.strftime("%H:%M"))
-    if current_block is None:
-        return None
-
-    return _extract_block_celsius(current_block)

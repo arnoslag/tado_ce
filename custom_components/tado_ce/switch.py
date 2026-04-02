@@ -10,15 +10,11 @@ from homeassistant.components.switch import SwitchEntity
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .action_helpers import (
-    check_bootstrap_reserve as _check_bootstrap_reserve,
-)
-from .action_helpers import (
-    is_within_optimistic_window as _is_within_optimistic_window,
-)
+from .ratelimit import async_check_bootstrap_reserve_or_raise as _check_bootstrap_reserve_or_raise
 from .device_manager import get_hub_device_info, get_zone_device_info
 from .entity_registry import ENTITY_REGISTRY, get_entity_category
 from .helpers import async_trigger_immediate_refresh
+from .optimistic_helpers import OptimisticUpdateResult, clear_optimistic_state, resolve_optimistic_update
 from .write_optimizer import DeviceOperation
 
 if TYPE_CHECKING:
@@ -150,10 +146,6 @@ class TadoEarlyStartSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switc
         # Optimistic update tracking (parity with climate entities)
         self._optimistic_set_at: float | None = None
 
-    def _is_within_optimistic_window(self) -> bool:
-        """Check if we're within the optimistic update window."""
-        return _is_within_optimistic_window(self.hass, self._optimistic_set_at, entry_id=self._entry_id)
-
     @property
     def icon(self) -> str | None:
         """Return icon based on state."""
@@ -181,17 +173,17 @@ class TadoEarlyStartSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switc
     def update(self) -> None:
         """Update early start state from API.
 
-        Added optimistic window protection (parity with climate entities).
+        Uses shared resolve_optimistic_update() for time-window protection.
         Early start state is not in the cached files, so we keep the last known state.
-        It will be updated when user toggles it.
         """
-        # Preserve optimistic state if within window
-        if self._is_within_optimistic_window():
+        result = resolve_optimistic_update(
+            self,
+            api_values={},
+            entry_id=self._entry_id,
+        )
+        if result == OptimisticUpdateResult.PRESERVE_OPTIMISTIC:
             _LOGGER.debug("%s Early Start: Preserving optimistic state (within window)", self._zone_name)
             return
-
-        if self._optimistic_set_at is not None:
-            self._optimistic_set_at = None
 
         # Early start state is not in the cached files, so we keep the last known state
 
@@ -202,7 +194,7 @@ class TadoEarlyStartSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switc
         Added bootstrap reserve check - blocks action when quota critically low.
         Routed through DeviceSyncQueue for sequential device operations.
         """
-        await _check_bootstrap_reserve(self.hass, f"Early Start {self._zone_name}", entry_id=self._entry_id)
+        await _check_bootstrap_reserve_or_raise(self.hass, f"Early Start {self._zone_name}", coordinator=self.coordinator)
 
         old_is_on = self._attr_is_on
 
@@ -227,7 +219,7 @@ class TadoEarlyStartSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switc
         else:
             _LOGGER.warning("Device Sync queue full, rejecting early start ON for %s", self._zone_name)
             self._attr_is_on = old_is_on
-            self._optimistic_set_at = None
+            clear_optimistic_state(self)
             self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs: Any) -> None:  # noqa: ANN401 — HA entity interface
@@ -237,7 +229,7 @@ class TadoEarlyStartSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switc
         Added bootstrap reserve check - blocks action when quota critically low.
         Routed through DeviceSyncQueue for sequential device operations.
         """
-        await _check_bootstrap_reserve(self.hass, f"Early Start {self._zone_name}", entry_id=self._entry_id)
+        await _check_bootstrap_reserve_or_raise(self.hass, f"Early Start {self._zone_name}", coordinator=self.coordinator)
 
         old_is_on = self._attr_is_on
 
@@ -261,7 +253,7 @@ class TadoEarlyStartSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switc
         else:
             _LOGGER.warning("Device Sync queue full, rejecting early start OFF for %s", self._zone_name)
             self._attr_is_on = old_is_on
-            self._optimistic_set_at = None
+            clear_optimistic_state(self)
             self.async_write_ha_state()
 
     async def _async_set_early_start(self, enabled: bool) -> bool:
@@ -325,10 +317,6 @@ class TadoChildLockSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switch
         # Optimistic update tracking (parity with climate entities)
         self._optimistic_set_at: float | None = None
 
-    def _is_within_optimistic_window(self) -> bool:
-        """Check if we're within the optimistic update window."""
-        return _is_within_optimistic_window(self.hass, self._optimistic_set_at, entry_id=self._entry_id)
-
     @property
     def icon(self) -> str | None:
         """Return icon based on state."""
@@ -356,19 +344,20 @@ class TadoChildLockSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switch
     def update(self) -> None:
         """Update child lock state from JSON file.
 
-        Added optimistic window protection (parity with climate entities).
+        Uses shared resolve_optimistic_update() for time-window protection.
         """
-        # Preserve optimistic state if within window
-        if self._is_within_optimistic_window():
+        result = resolve_optimistic_update(
+            self,
+            api_values={},
+            entry_id=self._entry_id,
+        )
+        if result == OptimisticUpdateResult.PRESERVE_OPTIMISTIC:
             _LOGGER.debug(
                 "%s Child Lock (%s): Preserving optimistic state (within window)",
                 self._zone_name,
                 self._serial,
             )
             return
-
-        if self._optimistic_set_at is not None:
-            self._optimistic_set_at = None
 
         try:
             zones_info = (self.coordinator.data or {}).get("zones_info")
@@ -393,7 +382,7 @@ class TadoChildLockSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switch
         Added bootstrap reserve check - blocks action when quota critically low.
         Routed through DeviceSyncQueue for sequential device operations.
         """
-        await _check_bootstrap_reserve(self.hass, f"Child Lock {self._zone_name}", entry_id=self._entry_id)
+        await _check_bootstrap_reserve_or_raise(self.hass, f"Child Lock {self._zone_name}", coordinator=self.coordinator)
 
         old_is_on = self._attr_is_on
 
@@ -418,7 +407,7 @@ class TadoChildLockSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switch
         else:
             _LOGGER.warning("Device Sync queue full, rejecting child lock ON for %s", self._zone_name)
             self._attr_is_on = old_is_on
-            self._optimistic_set_at = None
+            clear_optimistic_state(self)
             self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs: Any) -> None:  # noqa: ANN401 — HA entity interface
@@ -428,7 +417,7 @@ class TadoChildLockSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switch
         Added bootstrap reserve check - blocks action when quota critically low.
         Routed through DeviceSyncQueue for sequential device operations.
         """
-        await _check_bootstrap_reserve(self.hass, f"Child Lock {self._zone_name}", entry_id=self._entry_id)
+        await _check_bootstrap_reserve_or_raise(self.hass, f"Child Lock {self._zone_name}", coordinator=self.coordinator)
 
         old_is_on = self._attr_is_on
 
@@ -452,7 +441,7 @@ class TadoChildLockSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switch
         else:
             _LOGGER.warning("Device Sync queue full, rejecting child lock OFF for %s", self._zone_name)
             self._attr_is_on = old_is_on
-            self._optimistic_set_at = None
+            clear_optimistic_state(self)
             self.async_write_ha_state()
 
     async def _async_set_child_lock(self, enabled: bool) -> bool:

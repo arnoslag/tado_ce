@@ -120,17 +120,3 @@ def format_display_value(value: object, value_type: str, path: str) -> str:
         return _screaming_to_title(str_val)
 
     return str_val
-
-
-def generate_entity_name(path: str) -> str:
-    """Convert dot-notation path to human-readable name.
-
-    e.g. "boiler.outputTemperature.celsius" -> "Boiler Output Temperature Celsius"
-    Handles camelCase splitting and title-casing each segment.
-
-    Note: This is a convenience re-export; the canonical implementation
-    lives in bridge_discovery.py.
-    """
-    from .bridge_discovery import generate_entity_name as _canonical
-
-    return _canonical(path)

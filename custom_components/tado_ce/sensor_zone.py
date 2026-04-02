@@ -16,9 +16,6 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .device_manager import get_hub_device_info, get_zone_device_info
 from .entity_registry import ENTITY_REGISTRY, get_entity_category
-from .format_helpers import (
-    format_power_state as _format_power_state,
-)
 
 if TYPE_CHECKING:
     from .coordinator import TadoDataUpdateCoordinator
@@ -72,6 +69,13 @@ class TadoZoneSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], SensorEntit
     @callback
     def _update_from_zone_data(self, zone_data: dict[str, Any]) -> None:
         pass
+
+    @property
+    def _base_zone_attributes(self) -> dict[str, str]:
+        """Base extra_state_attributes shared by all zone sensors."""
+        from .format_helpers import format_zone_type
+
+        return {"zone_type": format_zone_type(self._zone_type)}
 
 
 class TadoTemperatureSensor(TadoZoneSensor):
@@ -381,4 +385,4 @@ class TadoHotWaterPowerSensor(TadoZoneSensor):
     def _update_from_zone_data(self, zone_data: dict[str, Any]) -> None:
         setting = zone_data.get("setting") or {}
         power = setting.get("power")
-        self._attr_native_value = _format_power_state(power) if power else "Unknown"
+        self._attr_native_value = power or "Unknown"

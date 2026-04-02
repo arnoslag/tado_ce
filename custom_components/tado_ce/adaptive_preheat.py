@@ -6,12 +6,12 @@ Replaces Tado's cloud-based Early Start with local, user-controlled automation.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 import logging
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers.event import async_track_state_change_event
+from homeassistant.util import dt as dt_util
 
 if TYPE_CHECKING:
     from .api_client import TadoApiClient
@@ -293,9 +293,9 @@ class AdaptivePreheatManager:
         _LOGGER.info("Adaptive Preheat: Triggering %s to %s°C (until next schedule block)", zone_name, target_temp)
 
         # Active mode: capture state before setting overlay (state restoration)
-        if preheat_mode == "active" and self._coordinator and self._coordinator._sr_manager:
-            await self._coordinator._sr_manager.capture(
-                zone_id, "climate_heating", source="preheat",
+        if preheat_mode == "active" and self._coordinator:
+            await self._coordinator.async_capture_state(
+                zone_id, "climate_heating", "preheat",
             )
 
         try:
@@ -317,7 +317,7 @@ class AdaptivePreheatManager:
             if success:
                 self._active_overlays[zone_id] = {
                     "target_temp": target_temp,
-                    "triggered_at": datetime.now(UTC),
+                    "triggered_at": dt_util.utcnow(),
                     "termination": "TADO_MODE",
                 }
                 _LOGGER.info("Adaptive Preheat: %s overlay set successfully", zone_name)

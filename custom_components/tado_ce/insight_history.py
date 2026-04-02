@@ -2,38 +2,24 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
-import json
+from datetime import datetime, timedelta
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-try:
-    from .format_helpers import format_insight_type as _fmt_insight_type
-    from .format_helpers import format_priority as _fmt_priority
-    from .helpers import parse_iso_datetime
-except ImportError:
+from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers.storage import Store
+from homeassistant.util import dt as dt_util
 
-    def parse_iso_datetime(iso_str: str) -> datetime:
-        """Parse ISO datetime string, ensuring UTC timezone (fallback)."""
-        dt = datetime.fromisoformat(iso_str)
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=UTC)
-        return dt
-
-    def _fmt_insight_type(insight_type: str) -> str:
-        """Format insight type (fallback)."""
-        return insight_type.replace("_", " ").title()
-
-    def _fmt_priority(priority: str) -> str:
-        """Format priority (fallback)."""
-        return priority.title() if priority else "None"
-
+from .format_helpers import format_insight_type as _fmt_insight_type
+from .format_helpers import format_priority as _fmt_priority
+from .helpers import parse_iso_datetime
+from .storage import load_json_sync
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
-    from .insights import Insight
+    from .insights_models import Insight
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -59,7 +45,13 @@ class InsightHistoryTracker:
         """Initialize tracker."""
         self._hass = hass
         self._home_id = home_id
-        self._storage_path = Path(
+        self._store: Store[dict[str, Any]] = Store(
+            hass,
+            1,
+            f"tado_ce/insight_history_{home_id}",
+        )
+        # Old file path for migration
+        self._old_storage_path = Path(
             hass.config.path(
                 f".storage/tado_ce/insight_history_{home_id}.json",
             ),
@@ -68,51 +60,91 @@ class InsightHistoryTracker:
         self._dirty = False
 
     @property
+    def needs_save(self) -> bool:
+        """Return True if there are unsaved changes."""
+        return self._dirty
+
+    @property
     def entries(self) -> dict[str, dict[str, Any]]:
         """Return current entries (read-only access for testing)."""
         return self._entries
 
     async def async_load(self) -> int:
-        """Load history from disk.
+        """Load history from Store with migration from old JSON file.
 
         Returns:
             Number of entries loaded.
         """
-        path_exists = await self._hass.async_add_executor_job(
-            self._storage_path.exists,
-        )
-        if not path_exists:
-            _LOGGER.debug("No insight history file found, starting fresh")
-            return 0
-
         try:
-            raw = await self._hass.async_add_executor_job(
-                self._storage_path.read_text,
-            )
-            data = json.loads(raw)
-            self._entries = data.get("entries", {})
+            data = await self._store.async_load()
+
+            # Try migrating from old JSON file if Store is empty
+            if data is None:
+                data = await self._migrate_from_json()
+            else:
+                # Clean up old JSON file if it still exists
+                await self._cleanup_old_json()
+
+            if data is None:
+                _LOGGER.debug("No insight history file found, starting fresh")
+                return 0
+            self._entries = data.get("entries", {})  # type: ignore[union-attr]
             _LOGGER.debug(
                 "Loaded insight history: %d entries",
                 len(self._entries),
             )
             return len(self._entries)
-        except (json.JSONDecodeError, KeyError, TypeError) as e:
-            _LOGGER.warning(
-                "Corrupt insight history file, starting fresh: %s",
-                e,
-            )
-            self._entries = {}
-            return 0
-        except Exception as e:
+        except (OSError, HomeAssistantError) as exc:
             _LOGGER.warning(
                 "Failed to load insight history, starting fresh: %s",
-                e,
+                exc,
             )
             self._entries = {}
             return 0
 
+    async def _migrate_from_json(self) -> dict[str, Any] | None:
+        """Migrate old JSON file to Store."""
+        exists = await self._hass.async_add_executor_job(
+            self._old_storage_path.exists,
+        )
+        if not exists:
+            return None
+
+        old_data = await self._hass.async_add_executor_job(
+            load_json_sync, self._old_storage_path,
+        )
+        if old_data is None or not isinstance(old_data, dict):
+            return None
+
+        await self._store.async_save(old_data)
+
+        migrated_path = self._old_storage_path.with_suffix(".json.migrated")
+        await self._hass.async_add_executor_job(
+            self._old_storage_path.rename, migrated_path,
+        )
+        _LOGGER.info(
+            "Migrated insight history → Store (old file renamed to %s)",
+            migrated_path,
+        )
+        return old_data
+
+    async def _cleanup_old_json(self) -> None:
+        """Rename old JSON file to .json.migrated if it still exists."""
+        exists = await self._hass.async_add_executor_job(
+            self._old_storage_path.exists,
+        )
+        if exists:
+            migrated_path = self._old_storage_path.with_suffix(".json.migrated")
+            await self._hass.async_add_executor_job(
+                self._old_storage_path.rename, migrated_path,
+            )
+            _LOGGER.info(
+                "Cleaned up old insight history file (renamed to %s)",
+                migrated_path,
+            )
+
     async def async_save(self) -> bool:
-        """Save history to disk with atomic write. Only writes if dirty.
+        """Save history to Store. Only writes if dirty.
 
         Returns:
             True if saved successfully (or not dirty), False on error.
@@ -121,27 +153,12 @@ class InsightHistoryTracker:
             return True
 
         try:
-            await self._hass.async_add_executor_job(
-                lambda: self._storage_path.parent.mkdir(parents=True, exist_ok=True),
-            )
-
             data = {
                 "version": STORAGE_VERSION,
-                "saved_at": datetime.now(UTC).isoformat(),
+                "saved_at": dt_util.utcnow().isoformat(),
                 "entries": self._entries,
             }
-
-            temp_path = self._storage_path.with_suffix(".tmp")
-            content = json.dumps(data, indent=2)
-            await self._hass.async_add_executor_job(
-                temp_path.write_text,
-                content,
-            )
-
-            await self._hass.async_add_executor_job(
-                temp_path.replace,
-                self._storage_path,
-            )
+            await self._store.async_save(data)
 
             self._dirty = False
             _LOGGER.debug(
@@ -149,7 +166,7 @@ class InsightHistoryTracker:
                 len(self._entries),
             )
             return True
-        except Exception:
+        except (OSError, HomeAssistantError):
             _LOGGER.exception("Failed to save insight history")
             return False
 
@@ -286,7 +303,7 @@ class InsightHistoryTracker:
         Returns:
             Number of entries removed.
         """
-        cutoff = datetime.now(UTC) - timedelta(days=max_age_days)
+        cutoff = dt_util.utcnow() - timedelta(days=max_age_days)
         keys_to_remove = []
 
         for key, entry in self._entries.items():

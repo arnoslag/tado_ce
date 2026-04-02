@@ -76,9 +76,9 @@ async def async_get_config_entry_diagnostics(
     redacted_coord["last_update_success"] = coordinator.last_update_success
 
     # State restore captured states (privacy-safe: no temperature values)
-    sr_manager = getattr(coordinator, "_sr_manager", None)
-    if sr_manager is not None:
-        redacted_coord["state_restore_captured"] = sr_manager.get_diagnostics_summary()
+    sr_diagnostics = coordinator.get_state_restore_diagnostics()
+    if sr_diagnostics:
+        redacted_coord["state_restore_captured"] = sr_diagnostics
 
     return {
         "entry": {

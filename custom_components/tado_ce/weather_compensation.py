@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 # ---------------------------------------------------------------------------
-# Presets: (slope, max_flow, min_flow)
+# Presets: (slope, max_flow, min_flow)  # noqa: ERA001
 # ---------------------------------------------------------------------------
 
 HEATING_PRESETS: dict[str, tuple[float, float, float]] = {
@@ -69,6 +69,39 @@ class WeatherCompensationState:
     rolling_buffer: list[float] = field(default_factory=list)
     rolling_buffer_max_size: int = 0
 
+    def to_dict(self) -> dict[str, object]:
+        """Serialize persistable fields to a JSON-compatible dict."""
+        return {
+            "ema_outdoor_temp": self.ema_outdoor_temp,
+            "last_raw_outdoor_temp": self.last_raw_outdoor_temp,
+            "last_sent_flow_temp": self.last_sent_flow_temp,
+            "rolling_buffer": list(self.rolling_buffer),
+            "rolling_buffer_max_size": self.rolling_buffer_max_size,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, object]) -> WeatherCompensationState:
+        """Restore state from a persisted dict.
+
+        Fields that depend on ``time.monotonic()`` (adjustment time,
+        reading time) are intentionally NOT restored because monotonic
+        timestamps are meaningless across restarts.
+        """
+        state = cls()
+        if isinstance(data.get("ema_outdoor_temp"), (int, float)):
+            state.ema_outdoor_temp = float(data["ema_outdoor_temp"])  # type: ignore[arg-type]
+        if isinstance(data.get("last_raw_outdoor_temp"), (int, float)):
+            state.last_raw_outdoor_temp = float(data["last_raw_outdoor_temp"])  # type: ignore[arg-type]
+        if isinstance(data.get("last_sent_flow_temp"), (int, float)):
+            state.last_sent_flow_temp = float(data["last_sent_flow_temp"])  # type: ignore[arg-type]
+        buf = data.get("rolling_buffer")
+        if isinstance(buf, list):
+            state.rolling_buffer = [float(v) for v in buf if isinstance(v, (int, float))]
+        raw_buf_size = data.get("rolling_buffer_max_size")
+        if isinstance(raw_buf_size, int):
+            state.rolling_buffer_max_size = raw_buf_size
+        return state
+
 
 @dataclass
 class WeatherCompensationResult:
@@ -118,7 +151,7 @@ def calculate_base_flow_temp(
 ) -> float:
     """Calculate base flow temperature from the linear heating curve.
 
-    Formula: max_flow - slope × (outdoor_temp - design_outdoor_temp)
+    Formula: max_flow - slope * (outdoor_temp - design_outdoor_temp)
 
     Satisfies CP-1 (monotonicity) and CP-5 (design point).
     """
@@ -135,7 +168,7 @@ def calculate_room_offset(
     """Calculate room compensation offset.
 
     Positive when rooms are cold (boost), negative when warm (reduce).
-    Satisfies CP-10 (symmetry): factor × (target - indoor).
+    Satisfies CP-10 (symmetry): factor * (target - indoor).
     """
     return compensation_factor * (target_temp - indoor_temp)
 
@@ -348,3 +381,178 @@ def evaluate(
     state.last_sent_flow_temp = target
     state.last_adjustment_time = now_mono
     return base
+
+
+# ---------------------------------------------------------------------------
+# Coordinator-level orchestration (extracted from coordinator.py)
+# ---------------------------------------------------------------------------
+
+
+async def async_run_wc_cycle(
+    *,
+    config_manager: object,
+    bridge_api_client: object,
+    wc_state: WeatherCompensationState,
+    hass: object,
+    weather_data: dict | None,
+    zone_data: dict | None,
+    update_interval: object | None,
+    bridge_data: dict | None = None,
+) -> dict | None:
+    """Run one weather compensation evaluation cycle.
+
+    Resolve outdoor/indoor temps, call the pure engine, and send the
+    target flow temperature to the Bridge API when needed.
+
+    Returns a dict suitable for ``coordinator.data["weather_compensation"]``
+    or *None* when the feature is disabled / unavailable.
+
+    This function was extracted from ``coordinator.py`` to keep the
+    coordinator thin and the WC domain logic co-located.
+    """
+    import logging
+    import time
+
+    _LOGGER = logging.getLogger(__name__)
+
+    try:
+        cm = config_manager  # type: ignore[assignment]
+
+        # --- Build config from options ---
+        preset = cm.get_wc_heating_system_preset()
+        max_flow = cm.get_wc_max_flow_temp()
+        min_flow = cm.get_wc_min_flow_temp()
+        shutoff = cm.get_wc_shutoff_temp()
+        design = cm.get_wc_design_outdoor_temp()
+
+        if preset == "custom":
+            slope = cm.get_wc_slope()
+        else:
+            slope = calculate_auto_slope(max_flow, min_flow, shutoff, design)
+
+        config = WeatherCompensationConfig(
+            enabled=True,
+            heating_system_preset=preset,
+            slope=slope,
+            design_outdoor_temp=design,
+            max_flow_temp=max_flow,
+            min_flow_temp=min_flow,
+            shutoff_temp=shutoff,
+            smoothing_method=cm.get_wc_smoothing_method(),
+            smoothing_window_minutes=cm.get_wc_smoothing_window(),
+            room_compensation_enabled=cm.get_wc_room_compensation_enabled(),
+            room_compensation_factor=cm.get_wc_room_compensation_factor(),
+            step_size=cm.get_wc_step_size(),
+            hysteresis=cm.get_wc_hysteresis(),
+        )
+
+        # --- Resolve outdoor temperature ---
+        from .sensor_helpers import get_outdoor_temperature
+
+        outdoor_entity = cm.get_outdoor_temp_entity()
+        outdoor_temp: float | None = None
+        if outdoor_entity:
+            outdoor_temp = get_outdoor_temperature(
+                hass, outdoor_entity, cm.get_use_feels_like(),  # type: ignore[arg-type]
+            )
+        if outdoor_temp is None and weather_data:
+            outside = weather_data.get("outsideTemperature")
+            if isinstance(outside, dict):
+                raw = outside.get("celsius")
+                if raw is not None:
+                    outdoor_temp = float(raw)
+
+        # --- Resolve indoor temp + target (room compensation) ---
+        indoor_temp: float | None = None
+        target_temp: float | None = None
+        if config.room_compensation_enabled and zone_data:
+            zone_states = zone_data.get("zoneStates") or {}
+            temps: list[float] = []
+            targets: list[float] = []
+            for zdata in zone_states.values():
+                activity = zdata.get("activityDataPoints") or {}
+                hp = activity.get("heatingPower")
+                if hp is None:
+                    continue
+                hp_val = hp.get("percentage") if isinstance(hp, dict) else hp
+                if hp_val is None:
+                    continue
+                try:
+                    if float(hp_val) <= 0:
+                        continue
+                except (TypeError, ValueError):
+                    continue
+                sensor_pts = zdata.get("sensorDataPoints") or {}
+                inside = (sensor_pts.get("insideTemperature") or {}).get("celsius")
+                setting = (zdata.get("setting") or {}).get("temperature") or {}
+                tgt = setting.get("celsius")
+                if inside is not None:
+                    temps.append(float(inside))
+                if tgt is not None:
+                    targets.append(float(tgt))
+            if temps:
+                indoor_temp = sum(temps) / len(temps)
+            if targets:
+                target_temp = sum(targets) / len(targets)
+
+        # --- Current flow temp from bridge ---
+        current_flow: float | None = None
+        if bridge_data:
+            raw_flow = bridge_data.get("boilerMaxOutputTemperatureInCelsius")
+            if raw_flow is not None:
+                current_flow = float(raw_flow)  # type: ignore[arg-type]
+
+        # --- Poll interval (minutes) ---
+        poll_min = 5.0
+        if update_interval is not None:
+            poll_min = update_interval.total_seconds() / 60.0  # type: ignore[union-attr]
+
+        # --- Evaluate ---
+        result = evaluate(
+            config,
+            wc_state,
+            outdoor_temp,
+            indoor_temp,
+            target_temp,
+            current_flow,
+            time.monotonic(),
+            poll_min,
+        )
+
+        # --- Send to Bridge API if needed ---
+        if result.should_send and result.target_flow_temp is not None:
+            try:
+                await bridge_api_client.async_set_max_output_temperature(  # type: ignore[union-attr]
+                    result.target_flow_temp,
+                )
+                _LOGGER.info(
+                    "Weather compensation: set flow temp to %.1f°C "
+                    "(outdoor=%.1f°C, preset=%s)",
+                    result.target_flow_temp,
+                    result.smoothed_outdoor_temp or 0.0,
+                    result.heating_system_preset,
+                )
+            except Exception:
+                _LOGGER.warning(
+                    "Weather compensation: Bridge API call failed — will retry next cycle",
+                )
+                wc_state.last_sent_flow_temp = None
+                wc_state.last_adjustment_time = 0.0
+
+        return {
+            "target_flow_temp": result.target_flow_temp,
+            "status": result.status,
+            "smoothed_outdoor_temp": result.smoothed_outdoor_temp,
+            "raw_outdoor_temp": result.raw_outdoor_temp,
+            "smoothing_method": result.smoothing_method,
+            "smoothing_window": result.smoothing_window,
+            "room_compensation_offset": result.room_compensation_offset,
+            "heating_system_preset": result.heating_system_preset,
+            "should_send": result.should_send,
+        }
+    except Exception:
+        _LOGGER.debug(
+            "Weather compensation evaluation failed — main update unaffected",
+            exc_info=True,
+        )
+        return None

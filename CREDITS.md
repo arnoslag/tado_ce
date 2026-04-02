@@ -12,7 +12,7 @@ Thank you to everyone who supported the project through [Buy Me a Coffee](https:
 |---|-----------|
 | ☕☕☕☕☕☕☕☕ | [@ChrisMarriott38](https://github.com/ChrisMarriott38) |
 | ☕☕☕☕☕ | Marcel v.H., [@rodneyha](https://github.com/rodneyha), [@UKICS](https://github.com/UKICS) |
-| ☕☕ | Arnaud L., [@hapklaar](https://github.com/hapklaar), [@jeverley](https://github.com/jeverley), Luke R., [@marcovn](https://github.com/marcovn) |
+| ☕☕ | Arnaud L., [@hapklaar](https://github.com/hapklaar), [@jeverley](https://github.com/jeverley), Luke R., [@marcovn](https://github.com/marcovn), [@Prodeguerriero](https://github.com/Prodeguerriero) |
 | ☕ | Alby T., [@MathiasB112](https://github.com/MathiasB112) |
 
 ---
@@ -20,6 +20,12 @@ Thank you to everyone who supported the project through [Buy Me a Coffee](https:
 ## Per-Version Credits
 
 Community contributors who helped shape each release through bug reports, feature requests, testing, and feedback.
+
+### v3.5.0
+
+- **[@Saughassy](https://github.com/Saughassy)** — Original clean install crash report that led to the deeper quota deadlock root cause fix ([#204](https://github.com/hiall-fyi/tado_ce/issues/204))
+- **[@mat01](https://github.com/mat01)** — Reported stale `offset_celsius` attribute after service call with detailed root cause analysis, enabling a quick fix ([#211](https://github.com/hiall-fyi/tado_ce/issues/211))
+- **[@Prodeguerriero](https://github.com/Prodeguerriero)** — Flagged confusing "full sync" / "quick sync" wording in settings descriptions and suggested renaming the Home binary sensor to "Geofencing" ([Discussion #131](https://github.com/hiall-fyi/tado_ce/discussions/131))
 
 ### v3.4.1
 

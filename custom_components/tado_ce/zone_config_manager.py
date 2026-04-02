@@ -3,16 +3,17 @@
 from __future__ import annotations
 
 from contextlib import suppress
-import json
 import logging
 from typing import TYPE_CHECKING, Any
 
-from .const import DATA_DIR, DEFAULT_ZONE_CONFIG, WINDOW_U_VALUES
+from .const import DEFAULT_ZONE_CONFIG, WINDOW_U_VALUES
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
     from homeassistant.core import HomeAssistant
+
+    from .data_loader import DataLoader
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -20,41 +21,33 @@ _LOGGER = logging.getLogger(__name__)
 class ZoneConfigManager:
     """Manage per-zone configuration.
 
-    Stores zone-specific settings in .storage/tado_ce/zone_config_{home_id}.json
+    Stores zone-specific settings via DataLoader Store infrastructure
     and provides listener pattern for config changes.
     """
 
-    def __init__(self, hass: HomeAssistant, home_id: str) -> None:
+    def __init__(self, hass: HomeAssistant, home_id: str, data_loader: DataLoader) -> None:
         """Initialize zone config manager.
 
         Args:
             hass: Home Assistant instance
             home_id: Tado home ID for multi-home support
+            data_loader: DataLoader instance for Store-backed persistence
         """
         self._hass = hass
         self._home_id = home_id
-        self._config_file = DATA_DIR / f"zone_config_{home_id}.json"
+        self._data_loader = data_loader
         self._config: dict[str, dict[str, Any]] = {}
         self._listeners: list[Callable[[str, str, Any], None]] = []
 
     async def async_load(self) -> None:
-        """Load zone configuration from storage.
+        """Load zone configuration from Store."""
+        raw = await self._data_loader.async_load_auxiliary("zone_config")
+        if raw and isinstance(raw, dict):
+            zones = raw.get("zones", {})
+            self._config = zones if isinstance(zones, dict) else {}
+        else:
+            self._config = {}
 
-        Uses executor_job to avoid blocking I/O.
-        """
-
-        def _load() -> dict[str, Any]:
-            if self._config_file.exists():
-                try:
-                    with self._config_file.open() as f:
-                        data = json.load(f)
-                        return data.get("zones", {})  # type: ignore[no-any-return]
-                except (OSError, json.JSONDecodeError):
-                    _LOGGER.exception("Failed to load zone config")
-                    return {}
-            return {}
-
-        self._config = await self._hass.async_add_executor_job(_load)
         # Cumulative migration: adaptive_preheat bool → str (persisted)
         migrated = False
         for zone_cfg in self._config.values():
@@ -68,31 +61,8 @@ class ZoneConfigManager:
         _LOGGER.debug("Loaded zone config for %s zones", len(self._config))
 
     async def async_save(self) -> None:
-        """Save zone configuration to storage.
-
-        Uses executor_job to avoid blocking I/O.
-        Creates parent directory if needed.
-        """
-
-        def _save() -> None:
-            try:
-                import shutil
-                import tempfile
-
-                self._config_file.parent.mkdir(parents=True, exist_ok=True)
-                with tempfile.NamedTemporaryFile(
-                    mode="w",
-                    dir=self._config_file.parent,
-                    delete=False,
-                    suffix=".tmp",
-                ) as tmp:
-                    json.dump({"version": 1, "zones": self._config}, tmp, indent=2)
-                    temp_path = tmp.name
-                shutil.move(temp_path, self._config_file)
-            except OSError:
-                _LOGGER.exception("Failed to save zone config")
-
-        await self._hass.async_add_executor_job(_save)
+        """Save zone configuration via Store (debounced)."""
+        self._data_loader.save_auxiliary("zone_config", {"version": 1, "zones": self._config})
         _LOGGER.debug("Saved zone config for %s zones", len(self._config))
 
     def get_zone_config(self, zone_id: str) -> dict[str, Any]:
@@ -117,7 +87,7 @@ class ZoneConfigManager:
         """Check if a zone has an explicit user-set override for a key.
 
         Returns True only if the user has explicitly saved a value
-        for this key in zone_config.json (not just the default).
+        for this key in zone config (not just the default).
         """
         zone_config = self._config.get(str(zone_id), {})
         return key in zone_config
@@ -196,9 +166,6 @@ class ZoneConfigManager:
     def get_surface_temp_offset(self, zone_id: str) -> float:
         """Get surface temperature offset for mold risk calibration.
 
-        Allows users to calibrate mold risk calculation based on
-        laser thermometer measurements of actual cold spots.
-
         Args:
             zone_id: Zone ID as string
 
@@ -207,18 +174,6 @@ class ZoneConfigManager:
         """
         return self.get_zone_value(zone_id, "surface_temp_offset", 0.0)  # type: ignore[no-any-return]
 
-    def get_effective_target_temp(self, zone_id: str, target_temp: float) -> float:
-        """Get effective target temperature with offset applied.
-
-        Args:
-            zone_id: Zone ID as string
-            target_temp: Original target temperature
-
-        Returns:
-            Target temperature with offset applied
-        """
-        offset = self.get_zone_value(zone_id, "temp_offset", 0.0)
-        return target_temp + offset  # type: ignore[no-any-return]
 
     @property
     def zones(self) -> dict[str, dict[str, Any]]:

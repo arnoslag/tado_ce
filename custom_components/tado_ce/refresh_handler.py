@@ -6,9 +6,11 @@ Per-entity rate limiting and debounce for user-initiated state changes.
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, datetime
+from datetime import datetime
 import logging
 from typing import TYPE_CHECKING, Any
+
+from homeassistant.util import dt as dt_util
 
 if TYPE_CHECKING:
     from .coordinator import TadoDataUpdateCoordinator
@@ -71,6 +73,12 @@ class RefreshHandler:
         except Exception as e:
             _LOGGER.debug("Could not get debounce config, using default: %s", e)
         return self._debounce_delay
+
+    def cancel(self) -> None:
+        """Cancel pending debounce task and clean up."""
+        if self._debounce_task is not None:
+            self._debounce_task.cancel()  # type: ignore[union-attr]
+            self._debounce_task = None
 
     async def _get_rate_limit_info(self) -> dict[str, Any]:
         """Get current rate limit information.
@@ -158,45 +166,6 @@ class RefreshHandler:
         domain = entity_id.split(".", maxsplit=1)[0]
         return domain in REFRESH_ENTITY_TYPES
 
-    def can_refresh_now(self, entity_id: str) -> bool:
-        """Check if refresh is allowed for this entity.
-
-        CRITICAL FIX: Per-entity rate limiting allows multiple entities
-        to refresh within the global interval, while still preventing
-        API spam from a single entity.
-
-        Args:
-            entity_id: Entity ID requesting refresh
-
-        Returns:
-            True if refresh is allowed now
-        """
-        now = datetime.now(UTC)
-
-        # Check global rate limit (prevents API spam)
-        if self._global_last_refresh:
-            global_elapsed = (now - self._global_last_refresh).total_seconds()
-            required_global = self._get_backoff_interval()
-            if global_elapsed < required_global:
-                _LOGGER.debug(
-                    "Global backoff active: %ss remaining (failures: %s)",
-                    int(required_global - global_elapsed),
-                    self._consecutive_failures,
-                )
-                return False
-
-        # Check per-entity rate limit (allows multiple entities)
-        if entity_id in self._last_refresh_per_entity:
-            entity_elapsed = (now - self._last_refresh_per_entity[entity_id]).total_seconds()
-            if entity_elapsed < self._min_per_entity_interval:
-                _LOGGER.debug(
-                    "Entity %s backoff active: %ss remaining",
-                    entity_id,
-                    int(self._min_per_entity_interval - entity_elapsed),
-                )
-                return False
-
-        return True
 
     async def trigger_refresh(
         self,
@@ -240,58 +209,54 @@ class RefreshHandler:
 
         # Mark refresh as pending
         self._pending_refresh = True
-        self._last_refresh_per_entity[entity_id] = datetime.now(UTC)
+        self._last_refresh_per_entity[entity_id] = dt_util.utcnow()
 
         # Track if home state refresh is needed
         self._pending_home_state_refresh = include_home_state
 
         # Schedule debounced refresh
         async def _debounced_refresh() -> None:
-            # Skip debounce delay if requested (for buttons like Resume All Schedules)
-            if not skip_debounce:
-                delay = self._get_debounce_delay()
-                await asyncio.sleep(delay)
+            try:
+                # Skip debounce delay if requested (for buttons like Resume All Schedules)
+                if not skip_debounce:
+                    delay = self._get_debounce_delay()
+                    await asyncio.sleep(delay)
 
-            if not self._pending_refresh:
-                return
-
-            self._pending_refresh = False
-
-            # Check global rate limit
-            now = datetime.now(UTC)
-            if self._global_last_refresh:
-                global_elapsed = (now - self._global_last_refresh).total_seconds()
-                required_global = self._get_backoff_interval()
-                if global_elapsed < required_global:
-                    _LOGGER.debug("Global backoff active: %ss remaining", int(required_global - global_elapsed))
+                if not self._pending_refresh:
                     return
 
-            _LOGGER.info("Executing debounced refresh (triggered by: %s)", reason)
+                self._pending_refresh = False
 
-            try:
-                # Use coordinator.async_request_refresh()
-                # instead of direct API sync + file write + dispatcher signal.
-                # CoordinatorEntity handles entity update propagation automatically.
-                #
-                # include_home_state: coordinator._async_update_data() already handles
-                # home_state sync based on config_manager.get_home_state_sync_enabled().
-                # For immediate presence changes, the coordinator's full sync covers it.
-                await self._coordinator.async_request_refresh()
+                # Check global rate limit
+                now = dt_util.utcnow()
+                if self._global_last_refresh:
+                    global_elapsed = (now - self._global_last_refresh).total_seconds()
+                    required_global = self._get_backoff_interval()
+                    if global_elapsed < required_global:
+                        _LOGGER.debug("Global backoff active: %ss remaining", int(required_global - global_elapsed))
+                        return
 
-                self._global_last_refresh = datetime.now(UTC)
+                _LOGGER.info("Executing debounced refresh (triggered by: %s)", reason)
 
-                if self._consecutive_failures > 0:
-                    _LOGGER.info("Immediate refresh recovered after %s failures", self._consecutive_failures)
-                    self._consecutive_failures = 0
+                try:
+                    await self._coordinator.async_request_refresh()
 
-                _LOGGER.debug("Immediate refresh completed via coordinator")
+                    self._global_last_refresh = dt_util.utcnow()
 
-            except Exception:
-                self._consecutive_failures += 1
-                _LOGGER.exception(
-                    "Immediate refresh failed (attempt %s). Next backoff: %ss",
-                    self._consecutive_failures,
-                    self._get_backoff_interval(),
-                )
+                    if self._consecutive_failures > 0:
+                        _LOGGER.info("Immediate refresh recovered after %s failures", self._consecutive_failures)
+                        self._consecutive_failures = 0
+
+                    _LOGGER.debug("Immediate refresh completed via coordinator")
+
+                except Exception:
+                    self._consecutive_failures += 1
+                    _LOGGER.exception(
+                        "Immediate refresh failed (attempt %s). Next backoff: %ss",
+                        self._consecutive_failures,
+                        self._get_backoff_interval(),
+                    )
+            finally:
+                self._debounce_task = None
 
         self._debounce_task = asyncio.create_task(_debounced_refresh())

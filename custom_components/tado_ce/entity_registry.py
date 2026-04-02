@@ -19,6 +19,7 @@ class EntityMeta:
     icon: str | None = None
     enabled_default: bool = True
     legacy_name: str | None = None
+    feature_group: str | None = None  # cleanup group tag; None = core, never cleaned up
 
 
 # ---------------------------------------------------------------------------
@@ -129,6 +130,7 @@ ENTITY_REGISTRY: dict[str, EntityMeta] = {
         entity_category="diagnostic",
         icon=None,  # uses device_class temperature
         legacy_name="Outside Temp",
+        feature_group="weather",
     ),
     "sensor_solar_intensity": EntityMeta(
         translation_key="solar_intensity",
@@ -136,6 +138,7 @@ ENTITY_REGISTRY: dict[str, EntityMeta] = {
         entity_category="diagnostic",
         icon="mdi:white-balance-sunny",
         legacy_name="Solar Intensity",
+        feature_group="weather",
     ),
     "sensor_weather": EntityMeta(
         translation_key="weather",
@@ -143,6 +146,7 @@ ENTITY_REGISTRY: dict[str, EntityMeta] = {
         entity_category="diagnostic",
         icon="mdi:weather-partly-cloudy",  # default; dynamic icon in entity
         legacy_name="Weather",
+        feature_group="weather",
     ),
     # ===================================================================
     # Zone Core Sensors (sensor_zone.py) — 7 entries + 1 hot water power
@@ -167,6 +171,7 @@ ENTITY_REGISTRY: dict[str, EntityMeta] = {
         entity_category="diagnostic",
         icon="mdi:radiator",
         legacy_name="Heating",
+        feature_group="zone_diagnostics",
     ),
     "sensor_ac_power": EntityMeta(
         translation_key="ac_power",
@@ -212,6 +217,7 @@ ENTITY_REGISTRY: dict[str, EntityMeta] = {
         entity_category="diagnostic",
         icon="mdi:chart-timeline-variant",  # default; dynamic icon in entity
         legacy_name="Schedule Deviation",
+        feature_group="smart_comfort",
     ),
     "sensor_next_schedule": EntityMeta(
         translation_key="next_schedule",
@@ -219,6 +225,7 @@ ENTITY_REGISTRY: dict[str, EntityMeta] = {
         entity_category="diagnostic",
         icon="mdi:calendar-clock",
         legacy_name="Next Schedule",
+        feature_group="smart_comfort",
     ),
     "sensor_next_sched_temp": EntityMeta(
         translation_key="next_sched_temp",
@@ -226,6 +233,7 @@ ENTITY_REGISTRY: dict[str, EntityMeta] = {
         entity_category="diagnostic",
         icon="mdi:thermometer-chevron-up",  # default; dynamic icon in entity
         legacy_name="Next Sched Temp",
+        feature_group="smart_comfort",
     ),
     "sensor_preheat_advisor": EntityMeta(
         translation_key="preheat_advisor",
@@ -233,6 +241,7 @@ ENTITY_REGISTRY: dict[str, EntityMeta] = {
         entity_category="diagnostic",
         icon="mdi:clock-start",  # default; dynamic icon in entity
         legacy_name="Preheat Advisor",
+        feature_group="smart_comfort",
     ),
     "sensor_comfort_target": EntityMeta(
         translation_key="comfort_target",
@@ -240,6 +249,7 @@ ENTITY_REGISTRY: dict[str, EntityMeta] = {
         entity_category="diagnostic",
         icon="mdi:thermometer-auto",  # default; dynamic icon in entity
         legacy_name="Comfort Target",
+        feature_group="smart_comfort",
     ),
     # ===================================================================
     # Environment Sensors (sensor_environment.py) — 6 entries, all DIAGNOSTIC
@@ -250,6 +260,7 @@ ENTITY_REGISTRY: dict[str, EntityMeta] = {
         entity_category="diagnostic",
         icon="mdi:mushroom",
         legacy_name="Mold Risk",
+        feature_group="environment",
     ),
     "sensor_mold_risk_pct": EntityMeta(
         translation_key="mold_risk_pct",
@@ -257,6 +268,7 @@ ENTITY_REGISTRY: dict[str, EntityMeta] = {
         entity_category="diagnostic",
         icon="mdi:water-percent",
         legacy_name="Mold Risk %",
+        feature_group="environment",
     ),
     "sensor_condensation_risk": EntityMeta(
         translation_key="condensation_risk",
@@ -264,6 +276,7 @@ ENTITY_REGISTRY: dict[str, EntityMeta] = {
         entity_category="diagnostic",
         icon="mdi:water-alert",
         legacy_name="Condensation",
+        feature_group="environment",
     ),
     "sensor_surface_temp": EntityMeta(
         translation_key="surface_temp",
@@ -271,6 +284,7 @@ ENTITY_REGISTRY: dict[str, EntityMeta] = {
         entity_category="diagnostic",
         icon="mdi:thermometer-lines",
         legacy_name="Surface Temp",
+        feature_group="environment",
     ),
     "sensor_dew_point": EntityMeta(
         translation_key="dew_point",
@@ -278,6 +292,7 @@ ENTITY_REGISTRY: dict[str, EntityMeta] = {
         entity_category="diagnostic",
         icon="mdi:water-thermometer",
         legacy_name="Dew Point",
+        feature_group="environment",
     ),
     "sensor_comfort_level": EntityMeta(
         translation_key="comfort_level",
@@ -285,6 +300,7 @@ ENTITY_REGISTRY: dict[str, EntityMeta] = {
         entity_category="diagnostic",
         icon="mdi:air-filter",
         legacy_name="Comfort Level",
+        feature_group="environment",
     ),
     # ===================================================================
     # Thermal Sensors (sensor_thermal.py) — 6 entries, all DIAGNOSTIC, all disabled by default
@@ -296,6 +312,7 @@ ENTITY_REGISTRY: dict[str, EntityMeta] = {
         icon="mdi:timer-sand",
         enabled_default=False,
         legacy_name="Thermal Inertia",
+        feature_group="thermal",
     ),
     "sensor_heating_rate": EntityMeta(
         translation_key="heating_rate",
@@ -304,6 +321,7 @@ ENTITY_REGISTRY: dict[str, EntityMeta] = {
         icon="mdi:trending-up",
         enabled_default=False,
         legacy_name="Heating Rate",
+        feature_group="thermal",
     ),
     "sensor_preheat_time": EntityMeta(
         translation_key="preheat_time",
@@ -312,6 +330,7 @@ ENTITY_REGISTRY: dict[str, EntityMeta] = {
         icon="mdi:clock-fast",
         enabled_default=False,
         legacy_name="Preheat Time",
+        feature_group="thermal",
     ),
     "sensor_confidence": EntityMeta(
         translation_key="confidence",
@@ -320,6 +339,7 @@ ENTITY_REGISTRY: dict[str, EntityMeta] = {
         icon="mdi:chart-line",
         enabled_default=False,
         legacy_name="Confidence",
+        feature_group="thermal",
     ),
     "sensor_heat_accel": EntityMeta(
         translation_key="heat_accel",
@@ -328,6 +348,7 @@ ENTITY_REGISTRY: dict[str, EntityMeta] = {
         icon="mdi:chart-bell-curve-cumulative",
         enabled_default=False,
         legacy_name="Heat Accel",
+        feature_group="thermal",
     ),
     "sensor_approach_factor": EntityMeta(
         translation_key="approach_factor",
@@ -336,6 +357,7 @@ ENTITY_REGISTRY: dict[str, EntityMeta] = {
         icon="mdi:target",
         enabled_default=False,
         legacy_name="Approach Factor",
+        feature_group="thermal",
     ),
     # ===================================================================
     # Insight Sensors (sensor_insight.py) — 2 entries, all DIAGNOSTIC
@@ -363,6 +385,7 @@ ENTITY_REGISTRY: dict[str, EntityMeta] = {
         entity_category="diagnostic",
         icon="mdi:battery",
         legacy_name="Battery",
+        feature_group="zone_diagnostics",
     ),
     "sensor_battery_suffixed": EntityMeta(
         translation_key="battery_suffixed",
@@ -370,6 +393,7 @@ ENTITY_REGISTRY: dict[str, EntityMeta] = {
         entity_category="diagnostic",
         icon="mdi:battery",
         legacy_name="Battery{device_suffix}",
+        feature_group="zone_diagnostics",
     ),
     "sensor_connection": EntityMeta(
         translation_key="connection",
@@ -377,6 +401,7 @@ ENTITY_REGISTRY: dict[str, EntityMeta] = {
         entity_category="diagnostic",
         icon="mdi:wifi",
         legacy_name="Connection",
+        feature_group="zone_diagnostics",
     ),
     "sensor_connection_suffixed": EntityMeta(
         translation_key="connection_suffixed",
@@ -384,6 +409,7 @@ ENTITY_REGISTRY: dict[str, EntityMeta] = {
         entity_category="diagnostic",
         icon="mdi:wifi",
         legacy_name="Connection{device_suffix}",
+        feature_group="zone_diagnostics",
     ),
     # ===================================================================
     # Binary Sensors (binary_sensor.py) — 5 entries
@@ -408,6 +434,7 @@ ENTITY_REGISTRY: dict[str, EntityMeta] = {
         entity_category="diagnostic",
         icon=None,  # uses device_class
         legacy_name="Preheat Now",
+        feature_group="smart_comfort",
     ),
     "binary_sensor_window_predicted": EntityMeta(
         translation_key="window_predicted",
@@ -421,6 +448,7 @@ ENTITY_REGISTRY: dict[str, EntityMeta] = {
         unique_id_suffix="bridge_connected",
         entity_category="diagnostic",
         icon=None,  # uses device_class CONNECTIVITY
+        feature_group="bridge",
     ),
 
     # ===================================================================
@@ -453,6 +481,7 @@ ENTITY_REGISTRY: dict[str, EntityMeta] = {
         entity_category=None,
         icon="mdi:calendar-refresh",
         legacy_name="Refresh Schedule",
+        feature_group="schedule_calendar",
     ),
     "button_boost": EntityMeta(
         translation_key="boost",
@@ -460,6 +489,7 @@ ENTITY_REGISTRY: dict[str, EntityMeta] = {
         entity_category=None,
         icon="mdi:fire",
         legacy_name="Boost",
+        feature_group="boost_buttons",
     ),
     "button_smart_boost": EntityMeta(
         translation_key="smart_boost",
@@ -467,6 +497,7 @@ ENTITY_REGISTRY: dict[str, EntityMeta] = {
         entity_category=None,
         icon="mdi:fire-alert",
         legacy_name="Smart Boost",
+        feature_group="boost_buttons",
     ),
     # ===================================================================
     # Selects (select.py) — 3 hub-level entries
@@ -501,6 +532,7 @@ ENTITY_REGISTRY: dict[str, EntityMeta] = {
         entity_category="config",
         icon="mdi:clock-fast",
         legacy_name="Early Start",
+        feature_group="device_controls",
     ),
     "switch_child_lock": EntityMeta(
         translation_key="child_lock",
@@ -508,6 +540,7 @@ ENTITY_REGISTRY: dict[str, EntityMeta] = {
         entity_category="config",
         icon="mdi:lock",
         legacy_name="Child Lock",
+        feature_group="device_controls",
     ),
     "switch_test_mode": EntityMeta(
         translation_key="test_mode",
@@ -559,6 +592,7 @@ ENTITY_REGISTRY: dict[str, EntityMeta] = {
         entity_category=None,
         icon="mdi:calendar-clock",
         legacy_name="Schedule",
+        feature_group="schedule_calendar",
     ),
     # ===================================================================
     # Device Tracker (device_tracker.py) — 1 entry
@@ -569,6 +603,7 @@ ENTITY_REGISTRY: dict[str, EntityMeta] = {
         entity_category="diagnostic",
         icon=None,
         legacy_name=None,
+        feature_group="mobile_devices",
     ),
     # ===================================================================
     # Bridge Number (bridge API — flow temperature control, hardcoded)
@@ -579,6 +614,7 @@ ENTITY_REGISTRY: dict[str, EntityMeta] = {
         unique_id_suffix="boiler_max_output_temperature",
         entity_category=None,
         icon="mdi:thermometer-water",
+        feature_group="bridge",
     ),
     # ===================================================================
     # Bridge Meta Sensors (sensor_bridge_meta.py) — 2 entries, DIAGNOSTIC
@@ -589,6 +625,7 @@ ENTITY_REGISTRY: dict[str, EntityMeta] = {
         entity_category="diagnostic",
         icon="mdi:information-outline",
         enabled_default=False,
+        feature_group="bridge",
     ),
     "sensor_bridge_schema_version": EntityMeta(
         translation_key="bridge_schema_version",
@@ -596,6 +633,7 @@ ENTITY_REGISTRY: dict[str, EntityMeta] = {
         entity_category="diagnostic",
         icon="mdi:file-tree",
         enabled_default=False,
+        feature_group="bridge",
     ),
     # ===================================================================
     # Weather Compensation Sensors (sensor_weather_compensation.py) — 2 entries
@@ -605,12 +643,14 @@ ENTITY_REGISTRY: dict[str, EntityMeta] = {
         unique_id_suffix="wc_target_flow_temp",
         entity_category="diagnostic",
         icon="mdi:thermometer-auto",
+        feature_group="weather_compensation",
     ),
     "sensor_wc_status": EntityMeta(
         translation_key="wc_status",
         unique_id_suffix="wc_status",
         entity_category="diagnostic",
         icon="mdi:thermostat-auto",
+        feature_group="weather_compensation",
     ),
 }
 

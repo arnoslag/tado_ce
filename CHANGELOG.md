@@ -2,6 +2,33 @@
 
 All notable changes to Tado CE will be documented in this file.
 
+## [3.5.0] - 2026-04-02
+
+**Redesigned Settings & Architecture Overhaul**
+
+### Features
+- **Redesigned Options Flow** — Settings are now split into four clear sections: General Settings (feature toggles), Advanced Settings (tuning parameters for enabled features only), Zone Configuration, and Reset to Defaults. You no longer need to scroll through 79 options on one page. First-time setup for Internet Bridge and Weather Compensation now guides you through credentials step by step. You can also reset settings back to defaults (per feature or everything at once) without losing your Tado account or bridge pairing.
+
+### Improvements
+- **Clearer Settings Descriptions** ([Discussion #131](https://github.com/hiall-fyi/tado_ce/discussions/131) - @Prodeguerriero) — All option descriptions in General Settings and Advanced Settings have been rewritten in plain language. Technical jargon like "rate calculation", "inertia end", and "setpoint deviation" has been replaced with descriptions that explain what each setting actually does for you. Mobile Device Tracking now clearly states that locations only update on HA restart unless you enable Frequent Sync. API cost info uses consistent "per poll" / "on restart" wording instead of the confusing "full sync" / "quick sync" distinction.
+- **Removed Legacy Options Flow** — The old single-page "Global Settings" flow has been fully removed (code, strings, and all translations). If you see a stale UI after upgrading, clear your browser cache.
+- **Smarter, Cleaner Insights** — Insights got a full overhaul. Recommendations now only appear when they're relevant to your actual settings (e.g. no geofencing alerts when you have geofencing off). The Home Insights summary focuses on the single most urgent action with a clear reason, instead of listing everything. Empty attributes no longer clutter the sensor. Persistent issues show escalated priority (a battery problem lasting 2 weeks shows as Critical, not Low). Zone-level sensors now include how long an issue has been active. The weekly digest is a simple trend comparison — new, resolved, up or down from last week.
+- **More Accurate "Feels Like" Temperature** — The Heat Index calculation no longer has a small jump at the transition point (~27°C). Previously, a tiny humidity increase could briefly make the "feels like" temperature drop instead of rise. Now the transition is smooth.
+- **Faster Startup** — The insights engine loads only the modules it needs instead of pulling in the entire 3,000-line file on every restart.
+
+### Bug Fixes
+- **Fixed quota deadlock on clean install** ([#204](https://github.com/hiall-fyi/tado_ce/issues/204) - @Saughassy) — On a fresh install with stale rate limit data and no known reset time, the integration could get stuck permanently in "quota critically low" state. Now allows both polling and manual actions to bootstrap fresh data when no reset time is known.
+- **Fixed temperature offset not updating after service call** ([#211](https://github.com/hiall-fyi/tado_ce/issues/211) - @mat01) — After calling `set_climate_temperature_offset`, the `offset_celsius` attribute kept showing the old value until the next HA restart. Automations that read-then-write offsets would oscillate. Now updates the local cache immediately so the new offset is reflected right away.
+
+### Internal
+- **Architecture Cleanup** — Options flow, service handlers, entity cleanup, optimistic state management, file persistence, hub sensor setup, and external sensor subscriptions have all been reorganised into smaller, focused modules. The monolithic `insights.py` (3,003 lines) has been split into 11 domain-specific modules and the re-export facade deleted. Weather compensation orchestration moved out of the coordinator into its own module. Net result: ~4,900 fewer lines of code with the same functionality.
+- **Code Deduplication** — 19 repetitive ConfigManager option-getters replaced with two generic helpers (~200 lines eliminated). The `zone_type` attribute repeated across 12 sensor classes is now provided by the base class. The "seconds until API reset" calculation duplicated in 3 places now lives in a single shared function. `parse_iso_datetime` simplified to 3 lines by leveraging Python 3.13 built-ins. Unused dead code removed (`_log_quota_warning_if_needed`, `RATELIMIT_FILE`, `climate_maps.py`).
+- **State Persistence** — Weather compensation settings, bridge health status, and window detection history now survive HA restarts. All state is saved automatically during normal operation and on shutdown.
+- **Unified Config Storage** — All configuration is now stored exclusively in the HA config entry. The separate `config_{home_id}.json` file is no longer written. Existing files are migrated automatically.
+- **Config Entry v12** — Config entry version bumped from 11 to 12 with automatic migration.
+
+---
+
 ## [3.4.1] - 2026-03-26
 
 ### Bug Fixes

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import contextlib
-from datetime import UTC
 import json
 import logging
 from typing import TYPE_CHECKING, Any
@@ -15,11 +14,13 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.core import callback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.util import dt as dt_util
 
 from .device_manager import get_hub_device_info
 from .entity_registry import ENTITY_REGISTRY, get_entity_category
 from .format_helpers import format_api_status as _format_api_status
-from .insights import calculate_api_status_recommendation
+from .helpers import parse_iso_datetime
+from .insights_api import calculate_api_status_recommendation
 
 if TYPE_CHECKING:
     from .coordinator import TadoDataUpdateCoordinator
@@ -30,20 +31,31 @@ _LOGGER = logging.getLogger(__name__)
 class TadoHubSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], SensorEntity):
     """Base class for Tado CE hub sensors.
 
-    Provides common init (device_info, available, native_value)
-    and the standard _handle_coordinator_update -> update() pattern.
-    Subclasses only need to set sensor-specific attrs in __init__
-    and implement update().
+    Provides common init (device_info, available, native_value, entity registry
+    metadata) and the standard _handle_coordinator_update -> update() pattern.
+    Subclasses pass a ``registry_key`` and only set sensor-specific attrs
+    (e.g. ``native_unit_of_measurement``, ``device_class``) in their own
+    ``__init__``.
     """
 
     _attr_has_entity_name = True
 
-    def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
-        """Initialize hub sensor with common attributes."""
+    def __init__(self, coordinator: TadoDataUpdateCoordinator, registry_key: str) -> None:
+        """Initialize hub sensor with metadata from entity registry."""
         super().__init__(coordinator)
+        _meta = ENTITY_REGISTRY[registry_key]
+        self._attr_translation_key = _meta.translation_key
+        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix}"
+        self._attr_entity_category = get_entity_category(_meta)
         self._attr_device_info = get_hub_device_info(coordinator.home_id)
         self._attr_available = False
         self._attr_native_value = None
+        # Only set static icon — subclasses with dynamic icons define @property
+        if _meta.icon is not None:
+            self._attr_icon = _meta.icon
+        # Only override when registry says disabled (HA default is True)
+        if not _meta.enabled_default:
+            self._attr_entity_registry_enabled_default = False
 
     @callback
     def _handle_coordinator_update(self) -> None:
@@ -59,14 +71,8 @@ class TadoHomeIdSensor(TadoHubSensor):
     """Sensor showing Tado Home ID."""
 
     def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
-        """Initialize the sensor."""
-        super().__init__(coordinator)
-        _meta = ENTITY_REGISTRY["sensor_home_id"]
-        self._attr_translation_key = _meta.translation_key
-        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix}"
-        self._attr_icon = _meta.icon
-        self._attr_entity_category = get_entity_category(_meta)
-        self._attr_entity_registry_enabled_default = _meta.enabled_default
+        """Initialize the TadoHomeIdSensor."""
+        super().__init__(coordinator, "sensor_home_id")
 
     @callback
     def update(self) -> None:
@@ -87,14 +93,10 @@ class TadoApiUsageSensor(TadoHubSensor):
     """Sensor for Tado API usage tracking."""
 
     def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
-        """Initialize the sensor."""
-        super().__init__(coordinator)
-        _meta = ENTITY_REGISTRY["sensor_api_usage"]
-        self._attr_translation_key = _meta.translation_key
-        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix}"
+        """Initialize the TadoApiUsageSensor."""
+        super().__init__(coordinator, "sensor_api_usage")
         self._attr_native_unit_of_measurement = "calls"
         self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_entity_category = get_entity_category(_meta)
         self._data: dict[str, Any] = {}
         self._call_history: list[dict[str, Any]] = []
 
@@ -154,10 +156,6 @@ class TadoApiUsageSensor(TadoHubSensor):
             # Read call history from coordinator data (async-loaded by data_loader)
             # instead of instantiating APICallTracker which does blocking file I/O.
             try:
-                from datetime import datetime
-
-                from homeassistant.util import dt as dt_util
-
                 history_data = (self.coordinator.data or {}).get("api_call_history")
                 self._call_history = []
 
@@ -172,9 +170,7 @@ class TadoApiUsageSensor(TadoHubSensor):
                     for call in all_calls[:50]:
                         call_copy = call.copy()
                         try:
-                            ts = datetime.fromisoformat(call["timestamp"])
-                            if ts.tzinfo is None:
-                                ts = ts.replace(tzinfo=dt_util.UTC)
+                            ts = parse_iso_datetime(call["timestamp"])
                             local_ts = dt_util.as_local(ts)
                             call_copy["timestamp"] = local_ts.strftime("%Y-%m-%d %H:%M:%S")
                         except Exception:
@@ -198,14 +194,9 @@ class TadoApiResetSensor(TadoHubSensor):
     """Sensor showing API rate limit reset time."""
 
     def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
-        """Initialize the sensor."""
-        super().__init__(coordinator)
-        _meta = ENTITY_REGISTRY["sensor_api_reset"]
-        self._attr_translation_key = _meta.translation_key
-        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix}"
-        self._attr_icon = _meta.icon
+        """Initialize the TadoApiResetSensor."""
+        super().__init__(coordinator, "sensor_api_reset")
         self._attr_device_class = SensorDeviceClass.TIMESTAMP
-        self._attr_entity_category = get_entity_category(_meta)
         self._reset_human: str | None = None
         self._reset_seconds: int | None = None
         self._reset_at: str | None = None
@@ -241,9 +232,7 @@ class TadoApiResetSensor(TadoHubSensor):
     def update(self) -> None:
         """Update sensor state from coordinator data."""
         try:
-            from datetime import datetime, timedelta
-
-            from homeassistant.util import dt as dt_util
+            from datetime import timedelta
 
             data = (self.coordinator.data or {}).get("ratelimit")
             if not data:
@@ -254,9 +243,7 @@ class TadoApiResetSensor(TadoHubSensor):
             test_mode_start = data.get("test_mode_start_time")
             if test_mode_start and self._test_mode:
                 try:
-                    start_time = datetime.fromisoformat(
-                        test_mode_start,
-                    )
+                    start_time = parse_iso_datetime(test_mode_start)
                     start_local = dt_util.as_local(start_time)
                     self._test_mode_start_time = start_local.strftime("%Y-%m-%d %H:%M:%S")
                 except Exception:
@@ -271,7 +258,7 @@ class TadoApiResetSensor(TadoHubSensor):
             reset_at = data.get("reset_at")
             if reset_at and reset_at != "unknown":
                 try:
-                    reset_time = datetime.fromisoformat(reset_at)
+                    reset_time = parse_iso_datetime(reset_at)
                     self._attr_native_value = reset_time
                     self._attr_available = True
                     reset_local = dt_util.as_local(reset_time)
@@ -285,7 +272,7 @@ class TadoApiResetSensor(TadoHubSensor):
             last_reset_utc = data.get("last_reset_utc")
             if last_reset_utc:
                 try:
-                    last_reset_time = datetime.fromisoformat(last_reset_utc)
+                    last_reset_time = parse_iso_datetime(last_reset_utc)
                     last_reset_local = dt_util.as_local(last_reset_time)
                     self._last_reset = last_reset_local.strftime("%Y-%m-%d %H:%M:%S")
                 except Exception as e:
@@ -295,14 +282,9 @@ class TadoApiResetSensor(TadoHubSensor):
                 self._last_reset = None
 
             try:
-                from homeassistant.util import dt as dt_util
-
                 last_updated = data.get("last_updated")
                 if last_updated:
-                    if last_updated.endswith(("Z", "00:00")) or "+" in last_updated:
-                        last_sync = datetime.fromisoformat(last_updated)
-                    else:
-                        last_sync = datetime.fromisoformat(last_updated).replace(tzinfo=UTC)
+                    last_sync = parse_iso_datetime(last_updated)
 
                     from .polling import get_polling_interval
 
@@ -332,14 +314,9 @@ class TadoApiLimitSensor(TadoHubSensor):
     """Sensor showing Tado API daily limit."""
 
     def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
-        """Initialize the sensor."""
-        super().__init__(coordinator)
-        _meta = ENTITY_REGISTRY["sensor_api_limit"]
-        self._attr_translation_key = _meta.translation_key
-        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix}"
-        self._attr_icon = _meta.icon
+        """Initialize the TadoApiLimitSensor."""
+        super().__init__(coordinator, "sensor_api_limit")
         self._attr_native_unit_of_measurement = "calls"
-        self._attr_entity_category = get_entity_category(_meta)
         self._attr_extra_state_attributes: dict[str, Any] = {}
         self._test_mode: bool = False
 
@@ -364,9 +341,7 @@ class TadoApiLimitSensor(TadoHubSensor):
 
             # Load recent API calls from history (last 100 calls only to avoid DB size issues)
             try:
-                from datetime import datetime, timedelta
-
-                from homeassistant.util import dt as dt_util
+                from datetime import timedelta
 
                 history = (self.coordinator.data or {}).get("api_call_history")
                 if history:
@@ -381,21 +356,19 @@ class TadoApiLimitSensor(TadoHubSensor):
                     for call in raw_recent_calls:
                         call_copy = call.copy()
                         try:
-                            ts = datetime.fromisoformat(call["timestamp"])
-                            if ts.tzinfo is None:
-                                ts = ts.replace(tzinfo=dt_util.UTC)
+                            ts = parse_iso_datetime(call["timestamp"])
                             local_ts = dt_util.as_local(ts)
                             call_copy["timestamp"] = local_ts.strftime("%Y-%m-%d %H:%M:%S")
                         except Exception:
                             _LOGGER.debug("Failed to convert timestamp for recent call entry")
                         recent_calls.append(call_copy)
 
-                    now = datetime.now(dt_util.UTC)
+                    now = dt_util.utcnow()
                     cutoff = now - timedelta(hours=24)
                     last_24h_count = sum(
                         1
                         for call in all_calls
-                        if datetime.fromisoformat(call["timestamp"]).replace(tzinfo=dt_util.UTC) > cutoff
+                        if parse_iso_datetime(call["timestamp"]) > cutoff
                     )
 
                     extra_attrs.update(
@@ -426,12 +399,8 @@ class TadoApiStatusSensor(TadoHubSensor):
     """Sensor showing Tado API status."""
 
     def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
-        """Initialize the sensor."""
-        super().__init__(coordinator)
-        _meta = ENTITY_REGISTRY["sensor_api_status"]
-        self._attr_translation_key = _meta.translation_key
-        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix}"
-        self._attr_entity_category = get_entity_category(_meta)
+        """Initialize the TadoApiStatusSensor."""
+        super().__init__(coordinator, "sensor_api_status")
         self._remaining_calls: int | None = None
         self._total_calls: int | None = None
         self._reset_time: str | None = None
@@ -486,13 +455,8 @@ class TadoTokenStatusSensor(TadoHubSensor):
     """Sensor showing Tado token status."""
 
     def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
-        """Initialize the sensor."""
-        super().__init__(coordinator)
-        _meta = ENTITY_REGISTRY["sensor_token_status"]
-        self._attr_translation_key = _meta.translation_key
-        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix}"
-        self._attr_entity_category = get_entity_category(_meta)
-        self._attr_entity_registry_enabled_default = _meta.enabled_default
+        """Initialize the TadoTokenStatusSensor."""
+        super().__init__(coordinator, "sensor_token_status")
 
     @property
     def icon(self) -> str:
@@ -522,14 +486,9 @@ class TadoZoneCountSensor(TadoHubSensor):
     """Sensor showing number of Tado zones."""
 
     def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
-        """Initialize the sensor."""
-        super().__init__(coordinator)
-        _meta = ENTITY_REGISTRY["sensor_zone_count"]
-        self._attr_translation_key = _meta.translation_key
-        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix}"
-        self._attr_icon = _meta.icon
+        """Initialize the TadoZoneCountSensor."""
+        super().__init__(coordinator, "sensor_zone_count")
         self._attr_native_unit_of_measurement = "zones"
-        self._attr_entity_category = get_entity_category(_meta)
         self._heating_zones = 0
         self._hot_water_zones = 0
         self._ac_zones = 0
@@ -564,14 +523,9 @@ class TadoLastSyncSensor(TadoHubSensor):
     """Sensor showing last sync time."""
 
     def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
-        """Initialize the sensor."""
-        super().__init__(coordinator)
-        _meta = ENTITY_REGISTRY["sensor_last_sync"]
-        self._attr_translation_key = _meta.translation_key
-        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix}"
-        self._attr_icon = _meta.icon
+        """Initialize the TadoLastSyncSensor."""
+        super().__init__(coordinator, "sensor_last_sync")
         self._attr_device_class = SensorDeviceClass.TIMESTAMP
-        self._attr_entity_category = get_entity_category(_meta)
 
     @callback
     def update(self) -> None:
@@ -581,12 +535,7 @@ class TadoLastSyncSensor(TadoHubSensor):
             if data:
                 last_updated = data.get("last_updated")
                 if last_updated:
-                    from datetime import datetime
-
-                    if last_updated.endswith(("Z", "00:00")) or "+" in last_updated:
-                        self._attr_native_value = datetime.fromisoformat(last_updated)
-                    else:
-                        self._attr_native_value = datetime.fromisoformat(last_updated).replace(tzinfo=UTC)
+                    self._attr_native_value = parse_iso_datetime(last_updated)
                     self._attr_available = True
                 else:
                     self._attr_available = False
@@ -603,14 +552,9 @@ class TadoNextSyncSensor(TadoHubSensor):
     """Sensor showing next API sync time."""
 
     def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
-        """Initialize the sensor."""
-        super().__init__(coordinator)
-        _meta = ENTITY_REGISTRY["sensor_next_sync"]
-        self._attr_translation_key = _meta.translation_key
-        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix}"
-        self._attr_icon = _meta.icon
+        """Initialize the TadoNextSyncSensor."""
+        super().__init__(coordinator, "sensor_next_sync")
         self._attr_device_class = SensorDeviceClass.TIMESTAMP
-        self._attr_entity_category = get_entity_category(_meta)
         self._countdown: str | None = None
         self._current_interval: int | None = None
         self._countdown_unsub: Any | None = None  # HA CALLBACK_TYPE
@@ -657,7 +601,7 @@ class TadoNextSyncSensor(TadoHubSensor):
             self._countdown = None
             return
 
-        now = datetime.now(UTC)
+        now = dt_util.utcnow()
         time_until = native - now
         if time_until.total_seconds() > 0:
             minutes = int(time_until.total_seconds() // 60)
@@ -670,7 +614,7 @@ class TadoNextSyncSensor(TadoHubSensor):
     def update(self) -> None:
         """Update sensor state from coordinator data."""
         try:
-            from datetime import datetime, timedelta
+            from datetime import timedelta
 
             data = (self.coordinator.data or {}).get("ratelimit")
             if not data:
@@ -680,10 +624,7 @@ class TadoNextSyncSensor(TadoHubSensor):
             if not last_updated:
                 return
 
-            if last_updated.endswith(("Z", "00:00")) or "+" in last_updated:
-                last_sync = datetime.fromisoformat(last_updated)
-            else:
-                last_sync = datetime.fromisoformat(last_updated).replace(tzinfo=UTC)
+            last_sync = parse_iso_datetime(last_updated)
 
             from .polling import get_polling_interval
 
@@ -708,16 +649,10 @@ class TadoPollingIntervalSensor(TadoHubSensor):
     """Sensor showing current polling interval."""
 
     def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
-        """Initialize the sensor."""
-        super().__init__(coordinator)
-        _meta = ENTITY_REGISTRY["sensor_polling_interval"]
-        self._attr_translation_key = _meta.translation_key
-        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix}"
-        self._attr_icon = _meta.icon
+        """Initialize the TadoPollingIntervalSensor."""
+        super().__init__(coordinator, "sensor_polling_interval")
         self._attr_native_unit_of_measurement = "min"
         self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_entity_category = get_entity_category(_meta)
-        self._attr_entity_registry_enabled_default = _meta.enabled_default
         self._source: str | None = None
         self._day_interval: int | None = None
         self._night_interval: int | None = None
@@ -762,8 +697,6 @@ class TadoPollingIntervalSensor(TadoHubSensor):
             # For display, show effective intervals (with defaults)
             self._day_interval = custom_day or DEFAULT_DAY_INTERVAL
             self._night_interval = custom_night or DEFAULT_NIGHT_INTERVAL
-
-            from homeassistant.util import dt as dt_util
 
             current_hour = dt_util.now().hour
             day_start = config_manager.get_day_start_hour()
@@ -814,16 +747,10 @@ class TadoApiHistorySensor(TadoHubSensor):
     """Sensor showing API call history."""
 
     def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
-        """Initialize the sensor."""
-        super().__init__(coordinator)
-        _meta = ENTITY_REGISTRY["sensor_call_history"]
-        self._attr_translation_key = _meta.translation_key
-        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix}"
-        self._attr_icon = _meta.icon
+        """Initialize the TadoApiHistorySensor."""
+        super().__init__(coordinator, "sensor_call_history")
         self._attr_native_unit_of_measurement = "calls"
         self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_entity_category = get_entity_category(_meta)
-        self._attr_entity_registry_enabled_default = _meta.enabled_default
         self._history: list[dict[str, Any]] = []
         self._history_period_days: int = 14
         self._oldest_call: str | None = None
@@ -849,9 +776,7 @@ class TadoApiHistorySensor(TadoHubSensor):
     def update(self) -> None:
         """Update sensor state from coordinator data."""
         try:
-            from datetime import datetime, timedelta
-
-            from homeassistant.util import dt as dt_util
+            from datetime import timedelta
 
             try:
                 _ed = self.coordinator
@@ -885,9 +810,7 @@ class TadoApiHistorySensor(TadoHubSensor):
             for call in all_calls[:100]:
                 call_copy = call.copy()
                 try:
-                    ts = datetime.fromisoformat(call["timestamp"])
-                    if ts.tzinfo is None:
-                        ts = ts.replace(tzinfo=dt_util.UTC)
+                    ts = parse_iso_datetime(call["timestamp"])
                     local_ts = dt_util.as_local(ts)
                     call_copy["timestamp"] = local_ts.strftime("%Y-%m-%d %H:%M:%S")
                 except Exception:
@@ -896,14 +819,10 @@ class TadoApiHistorySensor(TadoHubSensor):
             self._history = recent_calls
 
             try:
-                oldest_ts = datetime.fromisoformat(all_calls[-1]["timestamp"])
-                if oldest_ts.tzinfo is None:
-                    oldest_ts = oldest_ts.replace(tzinfo=dt_util.UTC)
+                oldest_ts = parse_iso_datetime(all_calls[-1]["timestamp"])
                 self._oldest_call = dt_util.as_local(oldest_ts).strftime("%Y-%m-%d %H:%M:%S")
 
-                newest_ts = datetime.fromisoformat(all_calls[0]["timestamp"])
-                if newest_ts.tzinfo is None:
-                    newest_ts = newest_ts.replace(tzinfo=dt_util.UTC)
+                newest_ts = parse_iso_datetime(all_calls[0]["timestamp"])
                 self._newest_call = dt_util.as_local(newest_ts).strftime("%Y-%m-%d %H:%M:%S")
             except Exception as e:
                 _LOGGER.debug("Failed to parse oldest/newest timestamps: %s", e)
@@ -911,10 +830,10 @@ class TadoApiHistorySensor(TadoHubSensor):
                 self._newest_call = None
 
             try:
-                now = datetime.now(UTC)
+                now = dt_util.utcnow()
                 cutoff = now - timedelta(hours=24)
                 last_24h_calls = [
-                    c for c in all_calls if datetime.fromisoformat(c["timestamp"]).replace(tzinfo=UTC) > cutoff
+                    c for c in all_calls if parse_iso_datetime(c["timestamp"]) > cutoff
                 ]
                 if last_24h_calls:
                     self._calls_per_hour = round(len(last_24h_calls) / 24, 1)
@@ -925,7 +844,7 @@ class TadoApiHistorySensor(TadoHubSensor):
                 self._calls_per_hour = None
 
             try:
-                today_str = datetime.now(UTC).strftime("%Y-%m-%d")
+                today_str = dt_util.utcnow().strftime("%Y-%m-%d")
                 self._calls_today = len(history_data.get(today_str, []))
             except Exception as e:
                 _LOGGER.debug("Failed to calculate calls today: %s", e)
@@ -955,14 +874,8 @@ class TadoApiBreakdownSensor(TadoHubSensor):
     """Sensor showing API call breakdown by type."""
 
     def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
-        """Initialize the sensor."""
-        super().__init__(coordinator)
-        _meta = ENTITY_REGISTRY["sensor_api_breakdown"]
-        self._attr_translation_key = _meta.translation_key
-        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix}"
-        self._attr_icon = _meta.icon
-        self._attr_entity_category = get_entity_category(_meta)
-        self._attr_entity_registry_enabled_default = _meta.enabled_default
+        """Initialize the TadoApiBreakdownSensor."""
+        super().__init__(coordinator, "sensor_api_breakdown")
         self._breakdown_24h: dict[str, int] = {}
         self._breakdown_today: dict[str, int] = {}
         self._breakdown_total: dict[str, int] = {}
@@ -984,7 +897,7 @@ class TadoApiBreakdownSensor(TadoHubSensor):
     def update(self) -> None:
         """Update sensor state from coordinator data."""
         try:
-            from datetime import datetime, timedelta
+            from datetime import timedelta
 
             history_data = (self.coordinator.data or {}).get("api_call_history")
             if not history_data:
@@ -1011,15 +924,13 @@ class TadoApiBreakdownSensor(TadoHubSensor):
                 self._chart_data = []
                 return
 
-            now = datetime.now(UTC)
+            now = dt_util.utcnow()
             cutoff_24h = now - timedelta(hours=24)
             breakdown_24h: dict[str, int] = {}
 
             for call in all_calls:
                 try:
-                    ts = datetime.fromisoformat(call["timestamp"])
-                    if ts.tzinfo is None:
-                        ts = ts.replace(tzinfo=UTC)
+                    ts = parse_iso_datetime(call["timestamp"])
 
                     if ts > cutoff_24h:
                         type_name = call.get("type_name", "unknown")

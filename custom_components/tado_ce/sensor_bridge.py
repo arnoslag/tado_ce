@@ -7,7 +7,6 @@ initialised from a ResolvedEntity produced by the discovery engine.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -22,6 +21,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .bridge_type_inference import format_display_value
 from .device_manager import get_hub_device_info
+from .helpers import parse_iso_datetime
 
 if TYPE_CHECKING:
     from .bridge_discovery import ResolvedEntity
@@ -112,22 +112,6 @@ def _format_value(
     return format_display_value(value, value_type, path)
 
 
-def _parse_timestamp(value: str) -> datetime | None:
-    """Parse ISO 8601 timestamp string into a timezone-aware datetime.
-
-    Handles formats like '2026-03-18T12:06:53.035Z' from the Tado Bridge API.
-    Returns None if parsing fails.
-    """
-    try:
-        dt = datetime.fromisoformat(value)
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=UTC)
-        return dt
-    except (ValueError, TypeError):
-        _LOGGER.debug("Failed to parse timestamp: %s", value)
-        return None
-
-
 # ---------------------------------------------------------------------------
 # Dynamic Bridge Sensor
 # ---------------------------------------------------------------------------
@@ -209,7 +193,11 @@ class TadoDynamicBridgeSensor(
         else:
             # Timestamp device class requires datetime object, not raw string
             if getattr(self, "_attr_device_class", None) == SensorDeviceClass.TIMESTAMP and isinstance(value, str):
-                self._attr_native_value = _parse_timestamp(value)
+                try:
+                    self._attr_native_value = parse_iso_datetime(value)
+                except (ValueError, TypeError):
+                    _LOGGER.debug("Failed to parse timestamp: %s", value)
+                    self._attr_native_value = None
             else:
                 self._attr_native_value = _format_value(
                     value,

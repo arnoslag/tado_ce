@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import deque
-from datetime import UTC, date, datetime
+from datetime import date, datetime, timedelta
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -12,10 +12,14 @@ from homeassistant.components.binary_sensor import (
     BinarySensorEntity,
 )
 from homeassistant.core import CALLBACK_TYPE, Event, EventStateChangedData, HomeAssistant, callback
-from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.util import dt as dt_util
 
-from .climate_helpers import read_external_sensor
+from .climate_helpers import (
+    read_external_sensor,
+    subscribe_external_sensors,
+    unsubscribe_external_sensors,
+)
 from .device_manager import get_hub_device_info, get_zone_device_info
 from .entity_registry import ENTITY_REGISTRY, get_entity_category
 from .format_helpers import (
@@ -33,11 +37,14 @@ from .format_helpers import (
 from .format_helpers import (
     strip_zone_prefix as _strip_zone_prefix,
 )
-from .insights import (
+from .helpers import parse_iso_datetime
+from .insights_models import (
     COOLDOWN_READINGS,
+    InsightTemperatureReading,
     SEASONAL_BASELINE_MIN_SAMPLES,
-    TemperatureReading,
     WindowPredictedResult,
+)
+from .insights_window import (
     detect_window_passive,
     detect_window_predicted,
 )
@@ -405,8 +412,6 @@ class TadoPreheatNowSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], Binar
             # Note: UFH buffer is already applied in TadoPreheatAdvisorSensor
             try:
                 recommended_str = preheat_state_val
-                from homeassistant.util import dt as dt_util
-
                 now = dt_util.now()
                 recommended_time = datetime.strptime(recommended_str, "%H:%M").replace(  # type: ignore[arg-type]
                     year=now.year,
@@ -441,6 +446,81 @@ class TadoPreheatNowSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], Binar
                     "recommended_start": self._recommended_start,
                 },
             )
+
+
+def _serialize_window_detection_state(
+    sensor: TadoWindowPredictedSensor,
+) -> dict[str, Any]:
+    """Serialize window detection state for persistence."""
+    return {
+        "detection_count_today": sensor._detection_count_today,
+        "last_count_reset_date": (
+            sensor._last_count_reset_date.isoformat()
+            if sensor._last_count_reset_date
+            else None
+        ),
+        "last_detected_at": (
+            sensor._last_detected_at.isoformat()
+            if sensor._last_detected_at
+            else None
+        ),
+        "anomaly_readings": sensor._anomaly_readings,
+        "temp_history": [
+            {
+                "temperature": r.temperature,
+                "humidity": r.humidity,
+                "timestamp": r.timestamp.isoformat(),
+            }
+            for r in sensor._temp_history
+        ],
+    }
+
+
+def _restore_window_detection_state(
+    sensor: TadoWindowPredictedSensor,
+    data: dict[str, Any],
+) -> None:
+    """Restore window detection state from persisted data, pruning stale entries."""
+    if isinstance(data.get("detection_count_today"), int):
+        sensor._detection_count_today = data["detection_count_today"]
+    date_str = data.get("last_count_reset_date")
+    if isinstance(date_str, str):
+        try:
+            sensor._last_count_reset_date = date.fromisoformat(date_str)
+        except ValueError:
+            pass  # Corrupt date — keep default
+    detected_str = data.get("last_detected_at")
+    if isinstance(detected_str, str):
+        try:
+            sensor._last_detected_at = parse_iso_datetime(detected_str)
+        except (ValueError, TypeError):
+            pass  # Corrupt timestamp — keep default
+    if isinstance(data.get("anomaly_readings"), int):
+        sensor._anomaly_readings = data["anomaly_readings"]
+    # Restore temp_history with staleness pruning (>1 hour = stale)
+    raw_history = data.get("temp_history")
+    if isinstance(raw_history, list):
+        now = dt_util.utcnow()
+        cutoff = now - timedelta(hours=1)
+        for entry in raw_history:
+            if not isinstance(entry, dict):
+                continue
+            try:
+                ts = parse_iso_datetime(entry["timestamp"])
+                if ts < cutoff:
+                    continue  # Prune stale
+                reading = InsightTemperatureReading(
+                    temperature=float(entry["temperature"]),
+                    humidity=(
+                        float(entry["humidity"])
+                        if entry.get("humidity") is not None
+                        else None
+                    ),
+                    timestamp=ts,
+                )
+                sensor._temp_history.append(reading)
+            except (KeyError, ValueError, TypeError):
+                continue  # Skip corrupt entries
 
 
 class TadoWindowPredictedSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], BinarySensorEntity):
@@ -515,52 +595,57 @@ class TadoWindowPredictedSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], 
     async def async_added_to_hass(self) -> None:
         """Register listeners when entity is added to hass."""
         await super().async_added_to_hass()
+        # Restore persisted window detection state
+        raw = await self.coordinator.data_loader.async_load_window_detection()
+        if raw and isinstance(raw, dict):
+            zone_data = raw.get(self._zone_id)
+            if zone_data and isinstance(zone_data, dict):
+                _restore_window_detection_state(self, zone_data)
+                _LOGGER.debug(
+                    "Window detection zone %s: restored persisted state "
+                    "(count=%d, history=%d readings)",
+                    self._zone_id,
+                    self._detection_count_today,
+                    len(self._temp_history),
+                )
         self._subscribe_external_sensors()
 
     async def async_will_remove_from_hass(self) -> None:
         """Unregister listeners when entity is removed."""
         self._unsubscribe_external_sensors()
+        await self._async_save_detection_state()
         await super().async_will_remove_from_hass()
+
+    async def _async_save_detection_state(self) -> None:
+        """Persist window detection state via Store."""
+        try:
+            raw = await self.coordinator.data_loader.async_load_window_detection()
+            all_zones: dict[str, Any] = raw if raw and isinstance(raw, dict) else {}
+            all_zones[self._zone_id] = _serialize_window_detection_state(self)
+            self.coordinator.data_loader.save_window_detection(all_zones)
+        except (OSError, AttributeError):
+            _LOGGER.debug("Failed to save window detection state for zone %s", self._zone_id)
 
     @callback
     def _subscribe_external_sensors(self) -> None:
         """Subscribe to external temp sensor state changes for real-time window detection."""
-        self._unsubscribe_external_sensors()
-
-        zcm = self.coordinator.zone_config_manager
-        if not zcm:
-            return
-
-        config = zcm.get_zone_config(self._zone_id)
-        temp_sensor = config.get("external_temp_sensor", "")
-        if not temp_sensor:
-            return
+        unsubscribe_external_sensors(self._unsub_external_sensors)
 
         @callback
-        def _handle_external_sensor_change(event: Event[EventStateChangedData]) -> None:
+        def _on_external_sensor_change(event: Event[EventStateChangedData]) -> None:
             """Handle external temp sensor state change — re-run window detection."""
-            new_state = event.data.get("new_state")
-            if new_state is None or new_state.state in ("unknown", "unavailable", ""):
-                return
-
-            try:
-                float(new_state.state)
-            except (ValueError, TypeError):
-                return
-
-            # Re-run full update to incorporate new temperature reading
             self.update()
             self.async_write_ha_state()
 
-        unsub = async_track_state_change_event(self.hass, [temp_sensor], _handle_external_sensor_change)
-        self._unsub_external_sensors.append(unsub)
+        self._unsub_external_sensors = subscribe_external_sensors(
+            self, self._zone_id, _on_external_sensor_change,
+            include_humidity=False,
+        )
 
     @callback
     def _unsubscribe_external_sensors(self) -> None:
         """Unsubscribe from external sensor state change listeners."""
-        for unsub in self._unsub_external_sensors:
-            unsub()
-        self._unsub_external_sensors.clear()
+        unsubscribe_external_sensors(self._unsub_external_sensors)
 
     @callback
     def _handle_coordinator_update(self) -> None:
@@ -648,6 +733,11 @@ class TadoWindowPredictedSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], 
         if not self.hass:
             return
 
+        is_transition = (
+            (result.detected and not self._prev_detected)
+            or (not result.detected and self._prev_detected and not result.cooldown_active)
+        )
+
         if result.detected and not self._prev_detected:
             self.hass.bus.async_fire("tado_ce_window_predicted", {
                 "zone_id": self._zone_id,
@@ -666,15 +756,19 @@ class TadoWindowPredictedSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], 
 
         self._prev_detected = result.detected
 
+        # Persist state on transitions to avoid losing detection history on crash
+        if is_transition:
+            self.hass.async_create_task(self._async_save_detection_state())
+
     def _update_detection_history(self, result: WindowPredictedResult) -> None:
         """Update detection history attributes."""
-        today = datetime.now(tz=UTC).date()
+        today = dt_util.utcnow().date()
         if self._last_count_reset_date != today:
             self._detection_count_today = 0
             self._last_count_reset_date = today
 
         if result.detected and not self._prev_detected:
-            self._last_detected_at = datetime.now(UTC)
+            self._last_detected_at = dt_util.utcnow()
             self._detection_count_today += 1
             self._detection_mode_used = result.detection_mode
 
@@ -721,9 +815,9 @@ class TadoWindowPredictedSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], 
                 return
 
             # Add reading to history (throttle to avoid duplicates)
-            now = datetime.now(UTC)
+            now = dt_util.utcnow()
             if self._last_reading_time is None or (now - self._last_reading_time).total_seconds() >= 25:
-                reading = TemperatureReading(
+                reading = InsightTemperatureReading(
                     temperature=current_temp,
                     humidity=current_humidity,
                     timestamp=now,

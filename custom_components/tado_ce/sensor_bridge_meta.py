@@ -7,9 +7,11 @@ Provides two diagnostic sensors:
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime
 import logging
 from typing import TYPE_CHECKING, Any
+
+from homeassistant.util import dt as dt_util
 
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.const import EntityCategory
@@ -124,7 +126,7 @@ class TadoBridgeSchemaVersionSensor(
         if self._previous_fields is not None:
             diff = diff_responses(self._previous_fields, current_fields)
             if diff.has_changes:
-                self._last_schema_change = datetime.now(UTC)
+                self._last_schema_change = dt_util.utcnow()
                 self._recent_changes = diff.to_change_list()
                 _LOGGER.info("Bridge API schema change detected: %s", diff.summary)
 

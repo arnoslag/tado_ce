@@ -18,6 +18,9 @@ _LOGGER = logging.getLogger(__name__)
 
 _BRIDGE_API_BASE = "https://my.tado.com/api/v2/homeByBridge"
 
+# HTTP timeout for Bridge API calls (10s — simple GET/PUT operations)
+_BRIDGE_API_TIMEOUT = aiohttp.ClientTimeout(total=10)
+
 # Temperature constraints (matches Tado app)
 MIN_FLOW_TEMP = 25.0
 MAX_FLOW_TEMP = 80.0
@@ -58,7 +61,7 @@ class TadoBridgeApiClient:
         params = {"authKey": self._auth_key}
         _LOGGER.debug("Bridge API GET request - URL: %s", url.replace(self._auth_key, "[AUTH_KEY]"))
         try:
-            async with self._session.get(url, params=params) as resp:
+            async with self._session.get(url, params=params, timeout=_BRIDGE_API_TIMEOUT) as resp:
                 _LOGGER.debug("Bridge API response status: %s", resp.status)
                 if resp.status != HTTPStatus.OK:
                     msg = "Bridge API GET wiring state failed: HTTP %s"
@@ -83,7 +86,7 @@ class TadoBridgeApiClient:
         params = {"authKey": self._auth_key}
         payload = {"boilerMaxOutputTemperatureInCelsius": snapped}
         try:
-            async with self._session.put(url, params=params, json=payload) as resp:
+            async with self._session.put(url, params=params, json=payload, timeout=_BRIDGE_API_TIMEOUT) as resp:
                 if resp.status not in (HTTPStatus.OK, HTTPStatus.NO_CONTENT):
                     msg = "Bridge API PUT max temp failed: HTTP %s"
                     raise TadoBridgeApiError(msg % resp.status)

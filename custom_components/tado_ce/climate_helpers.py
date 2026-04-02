@@ -5,14 +5,19 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from homeassistant.core import CALLBACK_TYPE, Event, EventStateChangedData, callback
+from homeassistant.helpers.event import async_track_state_change_event
+
 if TYPE_CHECKING:
-    from collections.abc import Coroutine
+    from collections.abc import Callable, Coroutine
 
     from homeassistant.components.climate import HVACAction, HVACMode  # type: ignore[attr-defined]
     from homeassistant.core import HomeAssistant
 
     from .coordinator import TadoDataUpdateCoordinator
     from .zone_config_manager import ZoneConfigManager
+
+from .optimistic_helpers import clear_optimistic_state, set_optimistic_fields
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -163,7 +168,14 @@ async def api_call_with_rollback(
     entity._attr_hvac_mode = hvac_mode
     entity._attr_hvac_action = hvac_action
     entity._overlay_type = overlay_type
-    await entity._set_optimistic_state(hvac_mode, hvac_action, target_temp=target_temp)
+    await set_optimistic_fields(
+        entity, entity.coordinator,
+        expected={"hvac_mode": hvac_mode, "hvac_action": hvac_action},
+        preserved_attrs={
+            "fan_mode": getattr(entity, "_attr_fan_mode", None),
+            "swing_mode": getattr(entity, "_attr_swing_mode", None),
+        } if hasattr(entity, "_attr_fan_mode") else None,
+    )
     entity.async_write_ha_state()
 
     # API call with timeout
@@ -184,7 +196,76 @@ async def api_call_with_rollback(
         entity._attr_hvac_mode = old_mode
         entity._attr_hvac_action = old_action
         entity._overlay_type = old_overlay
-        entity._clear_optimistic_state()
+        clear_optimistic_state(entity)
         entity.async_write_ha_state()
 
     return api_success
+
+
+def subscribe_external_sensors(
+    entity: Any,  # noqa: ANN401 — accepts any HA entity with .hass and .coordinator
+    zone_id: str,
+    on_change: Callable[[Event[EventStateChangedData]], None],
+    *,
+    include_humidity: bool = True,
+) -> list[CALLBACK_TYPE]:
+    """Subscribe to external sensor state changes for real-time updates.
+
+    Looks up configured external sensors from zone config, validates
+    state changes are numeric, and calls on_change for valid updates.
+
+    Args:
+        entity: The HA entity (needs .hass and .coordinator attributes)
+        zone_id: Zone ID to look up config for
+        on_change: Callback to invoke on valid state changes
+        include_humidity: If True, also subscribe to humidity sensor
+
+    Returns:
+        List of unsubscribe callbacks (caller stores and manages these)
+
+    """
+    zcm = entity.coordinator.zone_config_manager
+    if not zcm:
+        return []
+
+    config = zcm.get_zone_config(zone_id)
+    entity_ids: list[str] = []
+
+    temp_sensor = config.get("external_temp_sensor", "")
+    if temp_sensor:
+        entity_ids.append(temp_sensor)
+
+    if include_humidity:
+        humidity_sensor = config.get("external_humidity_sensor", "")
+        if humidity_sensor:
+            entity_ids.append(humidity_sensor)
+
+    if not entity_ids:
+        return []
+
+    @callback
+    def _validated_change(event: Event[EventStateChangedData]) -> None:
+        """Filter invalid states then delegate to caller's on_change."""
+        new_state = event.data.get("new_state")
+        if new_state is None or new_state.state in ("unknown", "unavailable", ""):
+            return
+        try:
+            float(new_state.state)
+        except (ValueError, TypeError):
+            return
+        on_change(event)
+
+    unsub = async_track_state_change_event(entity.hass, entity_ids, _validated_change)
+    return [unsub]
+
+
+def unsubscribe_external_sensors(unsub_list: list[CALLBACK_TYPE]) -> None:
+    """Unsubscribe from external sensor state change listeners.
+
+    Args:
+        unsub_list: List of unsubscribe callbacks to invoke and clear
+
+    """
+    for unsub in unsub_list:
+        unsub()
+    unsub_list.clear()
