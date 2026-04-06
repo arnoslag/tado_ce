@@ -2,6 +2,13 @@
 
 All notable changes to Tado CE will be documented in this file.
 
+## [3.5.2] - 2026-04-06
+
+### Bug Fixes
+- **Fixed token refresh and API calls not retrying on DNS/network failures** ([#214](https://github.com/hiall-fyi/tado_ce/issues/214)) — If your DNS server briefly refused a query or the connection to Tado's servers timed out, the integration would give up immediately instead of retrying. This could leave all entities unavailable until the next poll cycle. Now token refresh and all API calls retry up to 3 times with exponential backoff on any transient network error (DNS failures, connection timeouts, connection resets), matching the existing 403 retry behaviour.
+
+---
+
 ## [3.5.1] - 2026-04-06
 
 **Reliability & Code Quality**

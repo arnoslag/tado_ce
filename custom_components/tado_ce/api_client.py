@@ -765,6 +765,25 @@ class TadoApiClient(TadoAuthMixin):
             _LOGGER.error("API call failed: %s %s → %s", method, endpoint, status)
         return "return_none"
 
+    async def _should_retry_network_error(
+        self, attempt: int, error_type: str, method: str, endpoint: str,
+    ) -> bool:
+        """Check if a network error should be retried, sleeping if so.
+
+        Returns:
+            True if caller should continue the retry loop, False to give up.
+        """
+        if attempt < MAX_RETRY_ATTEMPTS:
+            delay = retry_delay(attempt)
+            _LOGGER.warning(
+                "API %s (attempt %s/%s), retrying in %.1fs: %s %s",
+                error_type, attempt, MAX_RETRY_ATTEMPTS, delay, method, endpoint,
+            )
+            await asyncio.sleep(delay)
+            return True
+        _LOGGER.warning("API %s after %s attempts: %s %s", error_type, MAX_RETRY_ATTEMPTS, method, endpoint)
+        return False
+
     async def _execute_single_api_attempt(
         self,
         method: str,
@@ -844,12 +863,9 @@ class TadoApiClient(TadoAuthMixin):
                 if should_continue:
                     continue
                 return result
-            except TimeoutError:
-                _LOGGER.warning("API call timed out after %ss: %s %s", _API_CALL_TIMEOUT.total, method, endpoint)
-                return None
-            except aiohttp.ClientError:
-                _LOGGER.exception("Network error")
-                return None
+            except (TimeoutError, aiohttp.ClientError):
+                if not await self._should_retry_network_error(attempt, "network error", method, endpoint):
+                    return None
             except TadoAuthError:
                 raise
             except Exception:

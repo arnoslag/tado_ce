@@ -185,12 +185,61 @@ class TadoAuthMixin:
         _LOGGER.debug("Access token refreshed successfully")
         return self._access_token
 
+    async def _attempt_token_refresh(
+        self: _AuthHost,
+        config: dict[str, Any],
+        refresh_token: str,
+        attempt: int,
+    ) -> str | None:
+        """Execute a single token refresh HTTP request.
+
+        Returns:
+            Access token on success, None on non-retryable HTTP error.
+
+        Raises:
+            TadoAuthError: On auth failure (401/invalid_grant) or exhausted 403 retries.
+        """
+        async with self._session.post(
+            f"{TADO_AUTH_URL}/token",
+            data={
+                "client_id": CLIENT_ID,
+                "grant_type": "refresh_token",
+                "refresh_token": refresh_token,
+            },
+            timeout=_TOKEN_REFRESH_TIMEOUT,
+        ) as resp:
+            if resp.status == HTTPStatus.OK:
+                data = await resp.json()
+                return await self._handle_successful_token_response(data, config, refresh_token)
+
+            error_text = await resp.text()
+
+            # 401 / invalid_grant = real auth failure — no retry
+            if resp.status == HTTPStatus.UNAUTHORIZED or "invalid_grant" in error_text:
+                _LOGGER.error("Token refresh auth failure: %s - %s", resp.status, error_text)
+                config["refresh_token"] = None
+                await self._save_config(config)
+                raise TadoAuthError("Refresh token invalid (auth failure)")
+
+            # 403 = likely transient CDN/WAF block — retry via loop
+            if resp.status == HTTPStatus.FORBIDDEN:
+                if attempt < MAX_RETRY_ATTEMPTS:
+                    _LOGGER.debug("Token refresh got 403, retry %s/%s", attempt, MAX_RETRY_ATTEMPTS)
+                    return None  # signal caller to retry
+                _LOGGER.error("Token refresh 403 after %s attempts: %s", MAX_RETRY_ATTEMPTS, error_text[:200])
+                raise TadoAuthError(f"Token refresh failed after {MAX_RETRY_ATTEMPTS} attempts (403)")
+
+            # Other HTTP errors — no retry
+            _LOGGER.error("Token refresh failed: %s - %s", resp.status, error_text)
+            return None
+
     async def _refresh_token(self: _AuthHost) -> str | None:
-        """Refresh access token with retry for transient 403.
+        """Refresh access token with retry for transient 403 and network errors.
 
         OAuth2 refresh token requests are idempotent — safe to retry with
-        the same refresh_token. Only 403 (CDN/WAF transient block) is
-        retried; 401 / invalid_grant are real auth failures.
+        the same refresh_token. Transient errors (403 CDN/WAF block, DNS
+        failures, connection timeouts) are retried; 401 / invalid_grant
+        are real auth failures and never retried.
         """
         config = await self._load_config()
         refresh_token = config.get("refresh_token")
@@ -203,57 +252,23 @@ class TadoAuthMixin:
 
         for attempt in range(1, MAX_RETRY_ATTEMPTS + 1):
             try:
-                async with self._session.post(
-                    f"{TADO_AUTH_URL}/token",
-                    data={
-                        "client_id": CLIENT_ID,
-                        "grant_type": "refresh_token",
-                        "refresh_token": refresh_token,
-                    },
-                    timeout=_TOKEN_REFRESH_TIMEOUT,
-                ) as resp:
-                    if resp.status == HTTPStatus.OK:
-                        data = await resp.json()
-                        return await self._handle_successful_token_response(data, config, refresh_token)
-
-                    error_text = await resp.text()
-
-                    # 401 / invalid_grant = real auth failure — no retry
-                    if resp.status == HTTPStatus.UNAUTHORIZED or "invalid_grant" in error_text:
-                        _LOGGER.error("Token refresh auth failure: %s - %s", resp.status, error_text)
-                        config["refresh_token"] = None
-                        await self._save_config(config)
-                        raise TadoAuthError("Refresh token invalid (auth failure)")
-
-                    # 403 = likely transient CDN/WAF block — retry
-                    if resp.status == HTTPStatus.FORBIDDEN:
-                        if attempt < MAX_RETRY_ATTEMPTS:
-                            _LOGGER.debug(
-                                "Token refresh got 403, retry %s/%s",
-                                attempt, MAX_RETRY_ATTEMPTS,
-                            )
-                            delay = retry_delay(attempt)
-                            await asyncio.sleep(delay)
-                            continue
-                        _LOGGER.error(
-                            "Token refresh 403 after %s attempts: %s",
-                            MAX_RETRY_ATTEMPTS, error_text[:200],
-                        )
-                        raise TadoAuthError(
-                            f"Token refresh failed after {MAX_RETRY_ATTEMPTS} attempts (403)"
-                        )
-
-                    # Other errors — no retry
-                    _LOGGER.error("Token refresh failed: %s - %s", resp.status, error_text)
-                    return None
-
+                result = await self._attempt_token_refresh(config, refresh_token, attempt)
+                if result is not None:
+                    return result
+                # None = transient (403), retry after backoff
             except TadoAuthError:
                 raise
             except aiohttp.ClientError:
-                _LOGGER.exception("Network error during token refresh")
-                return None
+                if attempt >= MAX_RETRY_ATTEMPTS:
+                    _LOGGER.exception("Network error during token refresh (exhausted %s retries)", MAX_RETRY_ATTEMPTS)
+                    return None
             except Exception:
                 _LOGGER.exception("Unexpected error during token refresh")
                 return None
+
+            # Backoff before next attempt (403 or network error)
+            delay = retry_delay(attempt)
+            _LOGGER.warning("Token refresh failed (attempt %s/%s), retrying in %.1fs", attempt, MAX_RETRY_ATTEMPTS, delay)
+            await asyncio.sleep(delay)
 
         return None  # unreachable but satisfies type checker
