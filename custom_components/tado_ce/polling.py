@@ -7,6 +7,8 @@ from datetime import timedelta
 import logging
 from typing import TYPE_CHECKING, Any
 
+from homeassistant.util import dt as dt_util
+
 from .const import (
     DEFAULT_DAY_INTERVAL,
     DEFAULT_NIGHT_INTERVAL,
@@ -17,9 +19,6 @@ from .const import (
     QUOTA_RESERVE_CALLS,
     QUOTA_RESERVE_PERCENT,
 )
-
-from homeassistant.util import dt as dt_util
-
 from .helpers import parse_iso_datetime
 
 if TYPE_CHECKING:

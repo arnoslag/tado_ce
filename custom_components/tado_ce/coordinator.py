@@ -25,12 +25,10 @@ from .const import (
     DOMAIN,
     OVERLAY_MODE_DEFAULT,
     TIMER_DURATION_DEFAULT,
-    get_data_file,
 )
 from .exceptions import TadoAuthError, TadoBridgeApiError, TadoSyncError
 from .insight_history import InsightHistoryTracker
 from .polling import get_polling_interval, should_pause_polling
-from .storage import async_load_json
 from .weather_compensation import (
     WeatherCompensationState,
 )
@@ -226,13 +224,106 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """
         return self.entity_data.get(zone_id, {}).get(key)
 
+    async def _async_post_sync_processing(
+        self, zone_data: dict[str, Any] | list[Any] | None, weather_data: dict[str, Any] | list[Any] | None,
+    ) -> dict[str, Any]:
+        """Run post-sync processing: history detection, cache reads, bridge, WC.
+
+        Returns the assembled result dict.
+        """
+        # Detect API reset time from history
+        from .ratelimit import (
+            async_detect_reset_from_history,
+            async_update_ratelimit_reset_time,
+        )
+
+        detected_reset = await async_detect_reset_from_history(self.hass, self.home_id)
+        if detected_reset:
+            _LOGGER.debug(
+                "Tado CE: HA history detected reset at %s UTC",
+                detected_reset.strftime("%H:%M"),
+            )
+            await async_update_ratelimit_reset_time(
+                self.hass, detected_reset, self.home_id, self.data_loader,
+            )
+
+        # Read all data from in-memory cache (populated by api_client write-through)
+        config_data = self.data_loader.get_cached("config")
+        home_state_data = self.data_loader.get_cached("home_state")
+        ratelimit_data = self.data_loader.get_cached("ratelimit")
+        api_call_history_data = self.data_loader.get_cached("api_call_history")
+        zones_info_data = self.data_loader.get_cached("zones_info")
+        mobile_devices_data = self.data_loader.get_cached("mobile_devices")
+        offsets_data = self.data_loader.get_cached("offsets")
+        schedules_data = self.data_loader.get_cached("schedules")
+        ac_capabilities = self.data_loader.get_cached("ac_capabilities")
+        home_details_data = self.data_loader.get_cached("home_details")
+
+        # Accumulate outdoor temp history
+        await self._accumulate_outdoor_temp_history(weather_data)
+
+        # Notify HeatingCycleCoordinator of zone updates
+        await self._notify_heating_cycle_updates(zone_data)
+
+        # Cleanup expired entity freshness entries
+        await self._cleanup_entity_freshness()
+
+        # Save dirty data (piggyback on poll cycle)
+        if self.insight_history.needs_save:
+            await self.insight_history.async_save()
+        if self.api_tracker.needs_save:
+            await self.api_tracker.async_save_if_dirty()
+
+        # Bridge API data (optional)
+        bridge_data = await self._async_fetch_bridge_data()
+
+        # Lazy-load persisted weather compensation state on first poll
+        if not self._wc_state_loaded and self.config_manager.get_wc_enabled():
+            raw = await self.data_loader.async_load_wc_state()
+            if raw and isinstance(raw, dict):
+                self._wc_state = WeatherCompensationState.from_dict(raw)
+                _LOGGER.debug("Weather compensation: restored persisted state")
+            self._wc_state_loaded = True
+
+        # Weather compensation (after bridge data — needs bridge client)
+        _zone_dict = zone_data if isinstance(zone_data, dict) else None
+        _weather_dict = weather_data if isinstance(weather_data, dict) else None
+        wc_data = await self._async_run_weather_compensation(
+            bridge_data, _zone_dict, _weather_dict,
+        )
+        if wc_data is not None:
+            self.data_loader.save_wc_state(self._wc_state.to_dict())
+
+        result: dict[str, Any] = {
+            "zones": zone_data or {},
+            "config": config_data or {},
+            "home_state": home_state_data or {},
+            "ac_capabilities": ac_capabilities or {},
+            "ratelimit": ratelimit_data or {},
+            "api_call_history": api_call_history_data or {},
+            "zones_info": zones_info_data or [],
+            "weather": weather_data or {},
+            "mobile_devices": mobile_devices_data or [],
+            "offsets": offsets_data or {},
+            "schedules": schedules_data or {},
+            "home_details": home_details_data or {},
+        }
+        if bridge_data is not None:
+            result["bridge"] = bridge_data
+        if wc_data is not None:
+            result["weather_compensation"] = wc_data
+
+        # State restore: Away → Home clears captured states, then detect timer expiration
+        await self._handle_state_restore_updates(home_state_data, result)
+
+        return result
+
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data from Tado API. Dynamically adjusts update_interval."""
-        # Track previous success state for recovery logging
         was_failing = self.last_update_success is False
 
         # 1. Load ratelimit and check quota
-        await self._async_load_ratelimit()
+        self._load_ratelimit_from_cache()
         if self._cached_ratelimit:
             should_pause, reason = should_pause_polling(
                 self._cached_ratelimit,
@@ -247,7 +338,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         new_interval = get_polling_interval(self.config_manager, self._cached_ratelimit)
         self.update_interval = timedelta(minutes=new_interval)
 
-        # 3. Execute API sync (full vs quick)
+        # 3. Execute API sync
         do_full_sync = self._should_do_full_sync()
         cm = self.config_manager
 
@@ -273,99 +364,13 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if do_full_sync:
             self._last_full_sync = dt_util.utcnow()
 
-        # Log recovery after previous failure
         if was_failing:
             _LOGGER.info("Tado CE: Connection restored — sync successful after previous failure")
 
-        # 4. Detect API reset time from history
-        from .ratelimit import (
-            async_detect_reset_from_history,
-            async_update_ratelimit_reset_time,
-        )
-
-        detected_reset = await async_detect_reset_from_history(self.hass, self.home_id)
-        if detected_reset:
-            _LOGGER.debug(
-                "Tado CE: HA history detected reset at %s UTC",
-                detected_reset.strftime("%H:%M"),
-            )
-            await async_update_ratelimit_reset_time(
-                self.hass, detected_reset, self.home_id, self.data_loader,
-            )
-
-        # 5. Read all data from in-memory cache (populated by api_client write-through)
+        # 4. Post-sync processing: cache reads, bridge, WC, state restore
         zone_data = self.data_loader.get_cached("zones")
-        config_data = self.data_loader.get_cached("config")
-        home_state_data = self.data_loader.get_cached("home_state")
-        ratelimit_data = self.data_loader.get_cached("ratelimit")
-        api_call_history_data = self.data_loader.get_cached("api_call_history")
-        zones_info_data = self.data_loader.get_cached("zones_info")
         weather_data = self.data_loader.get_cached("weather")
-        mobile_devices_data = self.data_loader.get_cached("mobile_devices")
-        offsets_data = self.data_loader.get_cached("offsets")
-        schedules_data = self.data_loader.get_cached("schedules")
-        ac_capabilities = self.data_loader.get_cached("ac_capabilities")
-        home_details_data = self.data_loader.get_cached("home_details")
-
-        # 5e. Accumulate outdoor temp history (depends on weather_data above)
-        await self._accumulate_outdoor_temp_history(weather_data)
-
-        # 6. Notify HeatingCycleCoordinator of zone updates
-        await self._notify_heating_cycle_updates(zone_data)
-
-        # 8. Cleanup expired entity freshness entries (replaces 5-min timer)
-        await self._cleanup_entity_freshness()
-
-        # 9. Save insight history if dirty (piggyback on poll cycle)
-        if self.insight_history.needs_save:
-            await self.insight_history.async_save()
-
-        # 10. Bridge API data (optional — only if bridge credentials configured)
-        bridge_data = await self._async_fetch_bridge_data()
-
-        # 10a. Lazy-load persisted weather compensation state on first poll
-        if not self._wc_state_loaded and self.config_manager.get_wc_enabled():
-            raw = await self.data_loader.async_load_wc_state()
-            if raw and isinstance(raw, dict):
-                self._wc_state = WeatherCompensationState.from_dict(raw)
-                _LOGGER.debug("Weather compensation: restored persisted state")
-            self._wc_state_loaded = True
-
-        # 11. Weather compensation (after bridge data — needs bridge client)
-        # Type narrowing: get_cached returns dict|list|None but zone/weather are always dict|None
-        _zone_dict = zone_data if isinstance(zone_data, dict) else None
-        _weather_dict = weather_data if isinstance(weather_data, dict) else None
-        wc_data = await self._async_run_weather_compensation(
-            bridge_data, _zone_dict, _weather_dict,
-        )
-
-        # 11a. Persist weather compensation state after evaluation
-        if wc_data is not None:
-            self.data_loader.save_wc_state(self._wc_state.to_dict())
-
-        result: dict[str, Any] = {
-            "zones": zone_data or {},
-            "config": config_data or {},
-            "home_state": home_state_data or {},
-            "ac_capabilities": ac_capabilities or {},
-            "ratelimit": ratelimit_data or {},
-            "api_call_history": api_call_history_data or {},
-            "zones_info": zones_info_data or [],
-            "weather": weather_data or {},
-            "mobile_devices": mobile_devices_data or [],
-            "offsets": offsets_data or {},
-            "schedules": schedules_data or {},
-            "home_details": home_details_data or {},
-        }
-        if bridge_data is not None:
-            result["bridge"] = bridge_data
-        if wc_data is not None:
-            result["weather_compensation"] = wc_data
-
-        # 12. State restore: Away → Home clears captured states, then detect timer expiration
-        await self._handle_state_restore_updates(home_state_data, result)
-
-        return result
+        return await self._async_post_sync_processing(zone_data, weather_data)
 
     async def _accumulate_outdoor_temp_history(
         self, weather_data: dict[str, Any] | list[Any] | None,
@@ -386,11 +391,15 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._outdoor_temp_history = loaded
             self._outdoor_temp_loaded = True
 
+        prev_last = self._outdoor_temp_history[-1] if self._outdoor_temp_history else None
+
         self._outdoor_temp_history.append(outdoor_temp)
         if len(self._outdoor_temp_history) > _OUTDOOR_TEMP_HISTORY_MAX:
             del self._outdoor_temp_history[: len(self._outdoor_temp_history) - _OUTDOOR_TEMP_HISTORY_MAX]
 
-        self.data_loader.save_outdoor_temp_history(self._outdoor_temp_history)
+        # Only schedule Store write when the new reading differs from the previous
+        if outdoor_temp != prev_last:
+            self.data_loader.save_outdoor_temp_history(self._outdoor_temp_history)
 
     async def _notify_heating_cycle_updates(
         self, zone_data: dict[str, Any] | list[Any] | None,
@@ -416,7 +425,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         target_temp,
                         current_temp,
                     )
-            except Exception:
+            except (KeyError, TypeError, ValueError):
                 _LOGGER.debug("HeatingCycleCoordinator update failed for zone %s", zone_id)
 
     async def _handle_state_restore_updates(
@@ -547,22 +556,13 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             bridge_data=bridge_data,
         )
 
-    async def _async_load_ratelimit(self) -> None:
-        """Load ratelimit data via async I/O."""
-        try:
-            ratelimit_path = get_data_file("ratelimit", self.home_id)
-            data = await async_load_json(self.hass, ratelimit_path)
-            if data is not None and isinstance(data, dict):
-                self._cached_ratelimit = data
-                _LOGGER.debug(
-                    "Tado CE: async_load_ratelimit - loaded used=%s",
-                    self._cached_ratelimit.get("used"),
-                )
-            else:
-                self._cached_ratelimit = None
-        except Exception as e:
+    def _load_ratelimit_from_cache(self) -> None:
+        """Load ratelimit data from DataLoader in-memory cache."""
+        data = self.data_loader.get_cached("ratelimit")
+        if data is not None and isinstance(data, dict):
+            self._cached_ratelimit = data
+        else:
             self._cached_ratelimit = None
-            _LOGGER.debug("Tado CE: async_load_ratelimit - exception: %s", e)
 
     async def mark_entity_fresh(self, entity_id: str) -> None:
         """Mark entity as having a recent API call."""
@@ -594,7 +594,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Remove expired freshness entries."""
         async with self._freshness_lock:
             now = time.monotonic()
-            expired = [eid for eid, timestamp in self.entity_freshness.items() if now - timestamp > 60]
+            expired = [eid for eid, timestamp in self.entity_freshness.items() if now - timestamp > 60]  # noqa: PLR2004 — 60s freshness TTL
             for eid in expired:
                 del self.entity_freshness[eid]
             if expired:

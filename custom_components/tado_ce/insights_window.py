@@ -1,5 +1,5 @@
-"""Window detection insights — active and passive open-window detection.
-
+"""Window detection insights — active and passive open-window detection.  # backward compat
+  # backward compat
 Provides detect_window_predicted (active HVAC mode) and
 detect_window_passive (rate-based multi-signal scoring) functions.
 """
@@ -21,13 +21,51 @@ from .insights_models import (
 )
 
 
-def detect_window_predicted(  # noqa: C901, PLR0913, PLR0912
+def _classify_confidence(
+    anomaly_count: int,
+    total_change: float,
+    high_confidence_count: int,
+    high_confidence_change: float,
+    medium_change_threshold: float,
+) -> str:
+    """Classify window detection confidence level."""
+    if anomaly_count >= high_confidence_count and total_change >= high_confidence_change:
+        return "high"
+    if anomaly_count >= high_confidence_count or total_change >= medium_change_threshold:
+        return "medium"
+    return "low"
+
+
+def _build_recommendation(
+    zone_name: str,
+    confidence: str,
+    hvac_mode: str,
+    total_change: float,
+    anomaly_count: int,
+) -> str:
+    """Build a human-readable recommendation string."""
+    action = "heating active but temperature dropping" if hvac_mode == "heating" else "cooling active but temperature rising"
+
+    if confidence == "high":
+        return (
+            f"{zone_name}: Close window now — {action}, {total_change:.1f}°C "
+            f"change over {anomaly_count} readings"
+        )
+    if confidence == "medium":
+        return (
+            f"{zone_name}: Check windows — {action}, "
+            f"{total_change:.1f}°C change detected"
+        )
+    return f"{zone_name}: Verify windows are closed — {action}"
+
+
+def detect_window_predicted(
     readings: list[InsightTemperatureReading],
-    hvac_active: bool,  # noqa: FBT001
+    hvac_active: bool,
     zone_name: str = "Room",
-    temp_threshold: float = 1.5,  # noqa: ARG001 — backward compat
+    temp_threshold: float = 1.5,
     time_window_minutes: int = 5,
-    humidity_check: bool = True,  # noqa: FBT001, FBT002, ARG001 — backward compat
+    humidity_check: bool = True,
     hvac_mode: str = "heating",
     consecutive_drops: int = 2,
     sensitivity: str = "medium",
@@ -38,23 +76,14 @@ def detect_window_predicted(  # noqa: C901, PLR0913, PLR0912
     consecutive polling readings, an open window is the most likely cause.
     """
     _not_detected = WindowPredictedResult(
-        detected=False,
-        confidence="none",
-        temp_drop=0.0,
-        time_window_minutes=time_window_minutes,
-        recommendation="",
-        anomaly_readings=0,
+        detected=False, confidence="none", temp_drop=0.0,
+        time_window_minutes=time_window_minutes, recommendation="", anomaly_readings=0,
     )
 
-    if not hvac_active:
+    if not hvac_active or len(readings) < WINDOW_MIN_READINGS:
         return _not_detected
 
-    if len(readings) < WINDOW_MIN_READINGS:
-        return _not_detected
-
-    preset = WINDOW_SENSITIVITY_PRESETS.get(
-        sensitivity, WINDOW_SENSITIVITY_PRESETS["medium"],
-    )
+    preset = WINDOW_SENSITIVITY_PRESETS.get(sensitivity, WINDOW_SENSITIVITY_PRESETS["medium"])
     consecutive_drops = int(preset["consecutive_drops"])
     high_confidence_count = int(preset["high_confidence_count"])
     high_confidence_change = float(preset["high_confidence_change"])
@@ -62,9 +91,11 @@ def detect_window_predicted(  # noqa: C901, PLR0913, PLR0912
 
     anomaly_count = 0
     for i in range(len(readings) - 1, 0, -1):
-        newer = readings[i].temperature
-        older = readings[i - 1].temperature
-        is_anomaly = newer < older if hvac_mode == "heating" else newer > older
+        is_anomaly = (
+            readings[i].temperature < readings[i - 1].temperature
+            if hvac_mode == "heating"
+            else readings[i].temperature > readings[i - 1].temperature
+        )
         if is_anomaly:
             anomaly_count += 1
         else:
@@ -76,44 +107,22 @@ def detect_window_predicted(  # noqa: C901, PLR0913, PLR0912
     start_idx = len(readings) - 1 - anomaly_count
     total_change = abs(readings[start_idx].temperature - readings[-1].temperature)
 
-    if anomaly_count >= high_confidence_count and total_change >= high_confidence_change:
-        confidence = "high"
-    elif anomaly_count >= high_confidence_count or total_change >= medium_change_threshold:
-        confidence = "medium"
-    else:
-        confidence = "low"
-
-    if hvac_mode == "heating":
-        action = "heating active but temperature dropping"
-    else:
-        action = "cooling active but temperature rising"
-
-    if confidence == "high":
-        recommendation = (
-            f"{zone_name}: Close window now — {action}, {total_change:.1f}°C "
-            f"change over {anomaly_count} readings"
-        )
-    elif confidence == "medium":
-        recommendation = (
-            f"{zone_name}: Check windows — {action}, "
-            f"{total_change:.1f}°C change detected"
-        )
-    else:
-        recommendation = f"{zone_name}: Verify windows are closed — {action}"
+    confidence = _classify_confidence(
+        anomaly_count, total_change, high_confidence_count,
+        high_confidence_change, medium_change_threshold,
+    )
+    recommendation = _build_recommendation(zone_name, confidence, hvac_mode, total_change, anomaly_count)
 
     return WindowPredictedResult(
-        detected=True,
-        confidence=confidence,
-        temp_drop=round(total_change, 2),
-        time_window_minutes=time_window_minutes,
-        recommendation=recommendation,
+        detected=True, confidence=confidence, temp_drop=round(total_change, 2),
+        time_window_minutes=time_window_minutes, recommendation=recommendation,
         anomaly_readings=anomaly_count,
     )
 
 
 def _redistribute_weights(
-    has_humidity: bool,  # noqa: FBT001
-    has_outdoor: bool,  # noqa: FBT001
+    has_humidity: bool,
+    has_outdoor: bool,
 ) -> tuple[float, float, float]:
     """Redistribute signal weights when signals are unavailable.
 
@@ -159,14 +168,14 @@ def _calc_temp_rate_score(
     readings: list[InsightTemperatureReading],
     threshold: float,
     hvac_mode: str,
-    flat_tolerant: bool = True,  # noqa: FBT001, FBT002
+    flat_tolerant: bool = True,
 ) -> tuple[float, int]:
     """Calculate temperature drop rate score (0.0-1.0) and anomaly count.
 
     flat_tolerant=True: flat readings do not break streak (passive mode).
     flat_tolerant=False: flat readings break streak (active mode compat).
     """
-    if len(readings) < 2:  # noqa: PLR2004
+    if len(readings) < 2:  # noqa: PLR2004 — need at least 2 readings for rate
         return 0.0, 0
 
     anomaly_count = 0
@@ -257,7 +266,7 @@ def _calc_outdoor_diff_score(
     return (diff - OUTDOOR_DIFF_LOW) / (OUTDOOR_DIFF_HIGH - OUTDOOR_DIFF_LOW)
 
 
-def detect_window_passive(  # noqa: PLR0913
+def detect_window_passive(
     readings: list[InsightTemperatureReading],
     zone_name: str = "Room",
     sensitivity: str = "medium",

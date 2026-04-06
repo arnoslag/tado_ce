@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
     from .coordinator import TadoConfigEntry, TadoDataUpdateCoordinator
+    from .data_loader import DataLoader
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -109,7 +110,7 @@ async def async_setup_entry(
             _LOGGER.exception("Failed to fetch schedule for %s", zone_name)
 
     # Save schedules to file
-    await _async_save_schedules(hass, schedules, home_id)
+    await _async_save_schedules(hass, schedules, home_id, data_loader=data_loader)
 
     # Create calendar entity for each zone
     calendars = []
@@ -128,7 +129,12 @@ async def async_setup_entry(
     _LOGGER.info("Added %s Tado schedule calendars", len(calendars))
 
 
-async def _async_save_schedules(hass: HomeAssistant, schedules: dict[str, Any], home_id: str | None = None) -> None:
+async def _async_save_schedules(
+    hass: HomeAssistant,
+    schedules: dict[str, Any],
+    home_id: str | None = None,
+    data_loader: DataLoader | None = None,
+) -> None:
     """Save schedules to file using atomic write."""
     schedules_file = get_data_file("schedules", home_id)
 
@@ -136,6 +142,10 @@ async def _async_save_schedules(hass: HomeAssistant, schedules: dict[str, Any], 
         save_json_sync(schedules_file, schedules)
 
     await hass.async_add_executor_job(_save)
+
+    # Write-through: update DataLoader cache
+    if data_loader is not None:
+        data_loader.update_cache("schedules", schedules)
 
 
 class TadoZoneScheduleCalendar(CoordinatorEntity["TadoDataUpdateCoordinator"], CalendarEntity):
@@ -202,20 +212,27 @@ class TadoZoneScheduleCalendar(CoordinatorEntity["TadoDataUpdateCoordinator"], C
         await super().async_will_remove_from_hass()
 
     async def _async_reload_schedule(self) -> None:
-        """Reload schedule from file after Refresh Schedule button press."""
-
-        def _load() -> None:
-            home_id = self.coordinator.home_id
-            schedules_file = get_data_file("schedules", home_id)
-            data = load_json_sync(schedules_file)
-            return data if data is not None else {}  # type: ignore[return-value]
-
+        """Reload schedule from DataLoader cache (or disk fallback)."""
         try:
-            schedules = await self.hass.async_add_executor_job(_load)  # type: ignore[func-returns-value]
-            if self._zone_id in schedules:  # type: ignore[operator]
-                self._schedule = schedules[self._zone_id]  # type: ignore[index]
-                _LOGGER.info("Reloaded schedule for %s", self._zone_name)
-                # Trigger state update
+            # Prefer DataLoader cache (populated by button.py write-through)
+            cached = self.coordinator.data_loader.get_cached("schedules")
+            if cached and isinstance(cached, dict) and self._zone_id in cached:
+                self._schedule = cached[self._zone_id]
+                _LOGGER.info("Reloaded schedule for %s (from cache)", self._zone_name)
+                self.async_write_ha_state()
+                return
+
+            # Fallback to disk read
+            def _load() -> dict[str, Any]:
+                home_id = self.coordinator.home_id
+                schedules_file = get_data_file("schedules", home_id)
+                data = load_json_sync(schedules_file)
+                return data if data is not None else {}  # type: ignore[return-value]
+
+            schedules = await self.hass.async_add_executor_job(_load)
+            if self._zone_id in schedules:
+                self._schedule = schedules[self._zone_id]
+                _LOGGER.info("Reloaded schedule for %s (from disk)", self._zone_name)
                 self.async_write_ha_state()
         except Exception:
             _LOGGER.exception("Failed to reload schedule for %s", self._zone_name)

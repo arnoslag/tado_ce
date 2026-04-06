@@ -87,7 +87,7 @@ def should_block_manual_action(
             # If next reset time has passed, allow actions to detect actual reset
             if now_utc >= next_reset:
                 return False, ""
-        except Exception as e:
+        except (ValueError, TypeError) as e:
             _LOGGER.debug("Failed to check reset time: %s", e)
     else:
         # No reset time known (fresh install / stale data) — allow actions
@@ -166,7 +166,7 @@ async def async_check_bootstrap_reserve(
             return False, ""
 
         return should_block_manual_action(ratelimit_data, config_manager)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 — defensive bootstrap check, must not block service call
         _LOGGER.debug("Failed to check bootstrap reserve: %s", e)
         return False, ""
 
@@ -225,6 +225,65 @@ async def async_check_bootstrap_reserve_or_raise(
 
 
 
+def _find_reset_in_history(history: list[Any]) -> datetime | None:
+    """Scan history states to find the API usage reset point.
+
+    Returns:
+        Reset time (datetime) or None if not detected.
+    """
+    min_value = float("inf")
+    min_time = None
+    prev_value = None
+
+    for state in history:
+        try:
+            value = int(state.state)
+            state_time = state.last_changed
+
+            # Detect reset: value dropped significantly (>50% drop or to <10)
+            if prev_value is not None and prev_value > 50:  # noqa: PLR2004 — threshold for meaningful usage
+                if value < prev_value * 0.2 or value < 10:  # noqa: PLR2004 — reset detection threshold
+                    _LOGGER.debug(
+                        "HA History Detection: Reset detected! %s -> %s at %s",
+                        prev_value, value, state_time,
+                    )
+                    return state_time.replace(tzinfo=UTC) if state_time.tzinfo is None else state_time  # type: ignore[no-any-return]
+
+            if value < min_value:
+                min_value = value
+                min_time = state_time
+
+            prev_value = value
+
+        except (ValueError, TypeError):
+            continue
+
+    # If no clear reset detected, use minimum value time
+    if min_time and min_value < 20:  # noqa: PLR2004 — low usage threshold
+        _LOGGER.debug("HA History Detection: Using minimum value as reset: %s at %s", min_value, min_time)
+        return min_time.replace(tzinfo=UTC) if min_time.tzinfo is None else min_time  # type: ignore[no-any-return]
+
+    _LOGGER.debug("HA History Detection: Could not detect reset (min_value=%s)", min_value)
+    return None
+
+
+def _resolve_api_usage_entity_id(hass: HomeAssistant, home_id: str | None) -> str:
+    """Resolve the API usage sensor entity_id, preferring registry lookup."""
+    from homeassistant.helpers import entity_registry as er
+
+    if home_id:
+        target_uid = f"tado_ce_{home_id}_api_usage"
+        registry = er.async_get(hass)
+        entry = registry.async_get_entity_id("sensor", "tado_ce", target_uid)
+        if entry:
+            _LOGGER.debug("HA History Detection: Found entity via registry: %s (uid=%s)", entry, target_uid)
+            return entry
+        _LOGGER.debug("HA History Detection: Registry miss for uid=%s", target_uid)
+
+    _LOGGER.debug("HA History Detection: Using fallback entity_id: sensor.tado_ce_api_usage")
+    return "sensor.tado_ce_api_usage"
+
+
 async def async_detect_reset_from_history(hass: HomeAssistant, home_id: str | None = None) -> datetime | None:
     """Detect API reset time from Home Assistant sensor history.
 
@@ -241,36 +300,15 @@ async def async_detect_reset_from_history(hass: HomeAssistant, home_id: str | No
     try:
         from homeassistant.components.recorder import get_instance  # type: ignore[attr-defined]
         from homeassistant.components.recorder.history import get_significant_states
-        from homeassistant.helpers import entity_registry as er
 
-        # Query last 36 hours of history (to catch reset even if it was yesterday)
         end_time = dt_util.utcnow()
         start_time = end_time - timedelta(hours=36)
 
-        # Find correct entity_id via unique_id (multi-home safe)
-        entity_id = None
-        if home_id:
-            target_uid = f"tado_ce_{home_id}_api_usage"
-            registry = er.async_get(hass)
-            entry = registry.async_get_entity_id("sensor", "tado_ce", target_uid)
-            if entry:
-                entity_id = entry
-                _LOGGER.debug("HA History Detection: Found entity via registry: %s (uid=%s)", entity_id, target_uid)
-            else:
-                _LOGGER.debug("HA History Detection: Registry miss for uid=%s", target_uid)
+        entity_id = _resolve_api_usage_entity_id(hass, home_id)
 
-        # Fallback to hardcoded entity_id (single-home or registry miss)
-        if not entity_id:
-            entity_id = "sensor.tado_ce_api_usage"
-            _LOGGER.debug("HA History Detection: Using fallback entity_id: %s", entity_id)
-
-        # Get history from recorder
         def _get_history() -> dict[str, list[Any]]:
             result = get_significant_states(
-                hass,
-                start_time,
-                end_time,
-                [entity_id],
+                hass, start_time, end_time, [entity_id],
                 significant_changes_only=False,
             )
             return dict(result) if result else {}
@@ -278,67 +316,44 @@ async def async_detect_reset_from_history(hass: HomeAssistant, home_id: str | No
         states = await get_instance(hass).async_add_executor_job(_get_history)
 
         if not states or entity_id not in states:
-            # Log available keys to help diagnose entity_id mismatch
             available_keys = list(states.keys()) if states else []
             _LOGGER.debug(
                 "HA History Detection: No history for %s (available keys: %s)",
-                entity_id,
-                available_keys[:5] if available_keys else "none",
+                entity_id, available_keys[:5] if available_keys else "none",
             )
             return None
 
         history = states[entity_id]
-        if len(history) < 10:
+        if len(history) < 10:  # noqa: PLR2004 — minimum history points
             _LOGGER.debug("HA History Detection: Not enough history points (%s) for %s", len(history), entity_id)
             return None
 
-        # Parse states and find minimum value (reset point)
-        # The reset is when value drops from high to low
-        min_value = float("inf")
-        min_time = None
-        prev_value = None
-
-        for state in history:
-            try:
-                value = int(state.state)
-                state_time = state.last_changed
-
-                # Detect reset: value dropped significantly (>50% drop or to <10)
-                if prev_value is not None and prev_value > 50:
-                    if value < prev_value * 0.2 or value < 10:
-                        # This is likely the reset point
-                        _LOGGER.debug(
-                            "HA History Detection: Reset detected! %s -> %s at %s",
-                            prev_value,
-                            value,
-                            state_time,
-                        )
-                        return state_time.replace(tzinfo=UTC) if state_time.tzinfo is None else state_time  # type: ignore[no-any-return]
-
-                # Track minimum as fallback
-                if value < min_value:
-                    min_value = value
-                    min_time = state_time
-
-                prev_value = value
-
-            except (ValueError, TypeError):
-                continue
-
-        # If no clear reset detected, use minimum value time
-        if min_time and min_value < 20:
-            _LOGGER.debug("HA History Detection: Using minimum value as reset: %s at %s", min_value, min_time)
-            return min_time.replace(tzinfo=UTC) if min_time.tzinfo is None else min_time  # type: ignore[no-any-return]
-
-        _LOGGER.debug("HA History Detection: Could not detect reset (min_value=%s)", min_value)
-        return None
+        return _find_reset_in_history(history)
 
     except ImportError:
         _LOGGER.debug("Recorder component not available")
         return None
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 — HA entity update pattern
         _LOGGER.debug("Failed to detect reset from history: %s", e)
         return None
+
+
+def _recalculate_reset_fields(data: dict[str, Any], detected_reset: datetime) -> None:
+    """Recalculate reset_seconds, reset_at, reset_human from detected reset time."""
+    now_utc = dt_util.utcnow()
+    next_reset = detected_reset + timedelta(hours=24)
+
+    while next_reset <= now_utc:
+        next_reset += timedelta(hours=24)
+
+    seconds_until_reset = int((next_reset - now_utc).total_seconds())
+
+    if seconds_until_reset > 0:
+        hours = seconds_until_reset // 3600
+        minutes = (seconds_until_reset % 3600) // 60
+        data["reset_seconds"] = seconds_until_reset
+        data["reset_at"] = next_reset.isoformat()
+        data["reset_human"] = f"{hours}h {minutes}m" if hours > 0 else f"{minutes}m"
 
 
 async def async_update_ratelimit_reset_time(
@@ -364,51 +379,29 @@ async def async_update_ratelimit_reset_time(
         if data_loader is not None:
             cached = data_loader.get_cached("ratelimit")
             if isinstance(cached, dict):
-                # Work on a copy so we don't mutate cache before disk write succeeds
                 data = dict(cached)
 
         if data is None:
             ratelimit_path = get_data_file("ratelimit", home_id)
             loaded = await async_load_json(hass, ratelimit_path)
-            if loaded is None:
-                return
             if not isinstance(loaded, dict):
                 return
             data = loaded
 
-        # Only update if detected time is different from stored time
-        current_reset = data.get("last_reset_utc")
         new_reset = detected_reset.strftime("%Y-%m-%dT%H:%M:%SZ")
+        if data.get("last_reset_utc") == new_reset:
+            return
 
-        if current_reset != new_reset:
-            data["last_reset_utc"] = new_reset
+        data["last_reset_utc"] = new_reset
+        _recalculate_reset_fields(data, detected_reset)
 
-            # Recalculate reset_seconds, reset_at, reset_human
-            now_utc = dt_util.utcnow()
-            next_reset = detected_reset + timedelta(hours=24)
+        ratelimit_path = get_data_file("ratelimit", home_id)
+        await async_save_json(hass, ratelimit_path, data)
 
-            # If next_reset is in the past, add another 24h
-            while next_reset <= now_utc:
-                next_reset += timedelta(hours=24)
+        if data_loader is not None:
+            data_loader.update_cache("ratelimit", data)
 
-            seconds_until_reset = int((next_reset - now_utc).total_seconds())
+        _LOGGER.info("Updated reset time from HA history: %s UTC", detected_reset.strftime("%H:%M"))
 
-            if seconds_until_reset > 0:
-                hours = seconds_until_reset // 3600
-                minutes = (seconds_until_reset % 3600) // 60
-                data["reset_seconds"] = seconds_until_reset
-                data["reset_at"] = next_reset.isoformat()
-                data["reset_human"] = f"{hours}h {minutes}m" if hours > 0 else f"{minutes}m"
-
-            # Write back with atomic write
-            ratelimit_path = get_data_file("ratelimit", home_id)
-            await async_save_json(hass, ratelimit_path, data)
-
-            # Write-through: update DataLoader cache
-            if data_loader is not None:
-                data_loader.update_cache("ratelimit", data)
-
-            _LOGGER.info("Updated reset time from HA history: %s UTC", detected_reset.strftime("%H:%M"))
-
-    except Exception as e:
+    except (OSError, ValueError) as e:
         _LOGGER.debug("Failed to update ratelimit reset time: %s", e)

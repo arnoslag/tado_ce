@@ -66,7 +66,7 @@ class TadoOutsideTemperatureSensor(CoordinatorEntity["TadoDataUpdateCoordinator"
                 self._attr_available = self._attr_native_value is not None
             else:
                 self._attr_available = False
-        except Exception:
+        except Exception:  # noqa: BLE001 — HA entity update pattern
             _LOGGER.debug("Failed to update outside temperature sensor")
             self._attr_available = False
 
@@ -114,7 +114,7 @@ class TadoSolarIntensitySensor(CoordinatorEntity["TadoDataUpdateCoordinator"], S
                 self._attr_available = self._attr_native_value is not None
             else:
                 self._attr_available = False
-        except Exception:
+        except Exception:  # noqa: BLE001 — HA entity update pattern
             _LOGGER.debug("Failed to update solar intensity sensor")
             self._attr_available = False
 
@@ -185,6 +185,6 @@ class TadoWeatherStateSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], Sen
                 self._attr_available = self._attr_native_value is not None
             else:
                 self._attr_available = False
-        except Exception:
+        except Exception:  # noqa: BLE001 — HA entity update pattern
             _LOGGER.debug("Failed to update weather state sensor")
             self._attr_available = False

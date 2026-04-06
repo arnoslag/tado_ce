@@ -52,7 +52,7 @@ def calculate_battery_recommendation(
     return ""
 
 
-def calculate_connection_recommendation(  # noqa: PLR0911
+def calculate_connection_recommendation(
     connection_state: str,
     zone_name: str,
     last_seen: str | None = None,

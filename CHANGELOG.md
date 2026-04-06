@@ -2,6 +2,31 @@
 
 All notable changes to Tado CE will be documented in this file.
 
+## [3.5.1] - 2026-04-06
+
+**Reliability & Code Quality**
+
+### Improvements
+- **More resilient API calls** — All API operations (temperature offsets, child lock, zone overlays, presence lock, schedules, meter readings, away configuration) now automatically retry when the Tado cloud returns a transient 403 error. Previously, only the main polling calls had retry logic — actions like changing temperature or toggling child lock would silently fail on a temporary CDN/WAF block. Now every cloud API call retries up to 3 times with exponential backoff before giving up.
+- **Token refresh also retries on 403** — If the Tado login server returns a transient 403 during token refresh, the integration now retries instead of immediately failing. Real authentication errors (401, invalid_grant) are still handled instantly without retry.
+- **Dangling async tasks fixed** — Background tasks in the write optimizer (action debouncer and refresh coalescer) now properly track their lifecycle and log exceptions instead of silently swallowing them. Cleanup on shutdown cancels all pending tasks.
+
+### Bug Fixes
+- **Fixed stale insights sticking around after resolving** — The Home Insights sensor could show issues that had already resolved but were still within the reappearance grace period. For example, a mold risk warning that cleared would keep showing in the "persistent issues" list for up to an hour. Now only genuinely active issues appear.
+
+### Internal
+- **Centralised API call path** — All cloud API calls now go through a single entry point, so every operation gets the same retry logic, rate limit tracking, and error handling automatically.
+- **Test suite reorganised** — 10 test files merged or renamed to match their source modules. Zero test cases deleted — all 4,094 tests pass.
+- **Removed duplicated logic** — The overlay mode mapping (used in 3 places) and retry-with-backoff pattern (used in 5 places) each live in a single shared helper now.
+- **Faster polling** — Rate limit data is now read from memory instead of reading a file from disk on every poll cycle.
+- **Tighter error handling** — 104 overly broad error catches across 29 files narrowed down to catch only the specific errors that can actually happen. Legitimate broad catches (required by HA) are annotated so they don't get accidentally tightened later.
+- **Simpler functions** — 55 functions that were too complex have been broken into smaller, focused helpers. Every function now stays under the complexity threshold.
+- **Self-documenting values** — 101 unexplained numbers (thresholds, limits, timeouts) replaced with named constants so the code explains itself.
+- **Background task safety** — The write optimizer now properly tracks and cleans up its background tasks, and logs errors instead of silently dropping them.
+- **Dead code and lint cleanup** — Removed ~35 unused constants, 3 stale imports, and tidied formatting across 40+ files.
+
+---
+
 ## [3.5.0] - 2026-04-02
 
 **Redesigned Settings & Architecture Overhaul**

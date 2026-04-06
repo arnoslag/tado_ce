@@ -1,5 +1,5 @@
-"""Tado CE zone configuration manager — per-zone settings storage and listener pattern."""
-
+"""Tado CE zone configuration manager — per-zone settings storage and listener pattern."""  # generic config store, values are heterogeneous
+  # generic config store, values are heterogeneous
 from __future__ import annotations
 
 from contextlib import suppress
@@ -92,7 +92,7 @@ class ZoneConfigManager:
         zone_config = self._config.get(str(zone_id), {})
         return key in zone_config
 
-    def get_zone_value(self, zone_id: str, key: str, default: Any = None) -> Any:  # noqa: ANN401 — generic config store, values are heterogeneous
+    def get_zone_value(self, zone_id: str, key: str, default: Any = None) -> Any:
         """Get a specific configuration value for a zone.
 
         Args:
@@ -108,7 +108,7 @@ class ZoneConfigManager:
             return config.get(key, DEFAULT_ZONE_CONFIG.get(key))
         return config.get(key, default)
 
-    async def async_set_zone_value(self, zone_id: str, key: str, value: Any) -> None:  # noqa: ANN401 — generic config store, values are heterogeneous
+    async def async_set_zone_value(self, zone_id: str, key: str, value: Any) -> None:
         """Set a configuration value for a zone.
 
         Args:

@@ -1,4 +1,4 @@
-"""Tado CE entry lifecycle — per-entry component creation and cleanup."""
+"""Tado CE entry lifecycle — per-entry component creation and cleanup."""  # coordinator attributes are heterogeneous
 
 from __future__ import annotations
 
@@ -81,7 +81,7 @@ async def async_cleanup_entry_components(
     if coordinator is None:
         return
 
-    def _attr(field: str) -> Any:  # noqa: ANN401 — coordinator attributes are heterogeneous
+    def _attr(field: str) -> Any:
         """Get field from coordinator, or None if missing."""
         return getattr(coordinator, field, None)
 

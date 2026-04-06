@@ -188,23 +188,87 @@ class AdaptivePreheatManager:
         _LOGGER.debug("Adaptive Preheat: Monitoring %s sensors", len(entities_to_monitor))
 
         # Check current state of all sensors (in case they're already ON)
-        # Uses coordinator entity_data if available; falls back gracefully
-        # since state listeners will catch future transitions anyway.
-        if self._coordinator:
-            for zone_id in self._enabled_zones:
-                # Skip if home is in AWAY mode (#171)
-                home_state = (self._coordinator.data or {}).get("home_state")
-                if home_state and home_state.get("presence") != "HOME":
-                    _LOGGER.debug("Adaptive Preheat: Skipping initial check — home is in away mode")
-                    break
+        await self._check_initial_preheat_states()
 
-                preheat_data = self._coordinator.get_entity_data(zone_id, "preheat_now")
-                if preheat_data and preheat_data.get("state") == "on":
-                    _LOGGER.info(
-                        "Adaptive Preheat: %s preheat_now already ON, triggering preheat",
-                        self._zone_info[zone_id]["name"],
-                    )
-                    await self._trigger_preheat(zone_id)
+    async def _check_initial_preheat_states(self) -> None:
+        """Check current state of all sensors in case they're already ON.
+
+        Uses coordinator entity_data if available; falls back gracefully
+        since state listeners will catch future transitions anyway.
+        """
+        if not self._coordinator:
+            return
+
+        if self._is_home_away():
+            _LOGGER.debug("Adaptive Preheat: Skipping initial check — home is in away mode")
+            return
+
+        for zone_id in self._enabled_zones:
+            preheat_data = self._coordinator.get_entity_data(zone_id, "preheat_now")
+            if preheat_data and preheat_data.get("state") == "on":
+                _LOGGER.info(
+                    "Adaptive Preheat: %s preheat_now already ON, triggering preheat",
+                    self._zone_info[zone_id]["name"],
+                )
+                await self._trigger_preheat(zone_id)
+
+    def _is_home_away(self) -> bool:
+        """Check if home is in AWAY mode."""
+        if not self._coordinator:
+            return False
+        home_state = (self._coordinator.data or {}).get("home_state")
+        return bool(home_state and home_state.get("presence") != "HOME")
+
+    def _get_zone_state(self, zone_id: str) -> dict[str, Any] | None:
+        """Get zone state data from coordinator."""
+        coord_data = self._coordinator.data or {}  # type: ignore[union-attr]
+        zone_states = (coord_data.get("zones") or {}).get("zoneStates") or {}
+        return zone_states.get(zone_id) or zone_states.get(str(zone_id))
+
+    def _should_suppress_passive(self, zone_id: str, zone_name: str) -> bool:
+        """Check if passive mode should suppress preheat due to existing overlay."""
+        zd = self._get_zone_state(zone_id)
+        if zd and zd.get("overlay") is not None:
+            _LOGGER.info(
+                "Adaptive Preheat: %s suppressed (passive mode) — zone has active overlay (%s)",
+                zone_name,
+                zd["overlay"].get("type", "unknown"),
+            )
+            return True
+        return False
+
+    def _get_target_temp(self, zone_id: str, zone_name: str) -> float | None:
+        """Get and validate target temperature from preheat advisor data."""
+        preheat_data = self._coordinator.get_entity_data(zone_id, "preheat_advisor")  # type: ignore[union-attr]
+        if not preheat_data:
+            _LOGGER.warning("Adaptive Preheat: %s preheat advisor data not available", zone_name)
+            return None
+
+        raw = preheat_data.get("target_temperature")
+        if not raw:
+            _LOGGER.warning("Adaptive Preheat: %s no target temperature", zone_name)
+            return None
+
+        try:
+            return float(raw)
+        except (ValueError, TypeError):
+            _LOGGER.warning("Adaptive Preheat: %s invalid target temp: %s", zone_name, raw)
+            return None
+
+    def _is_already_at_target(self, zone_id: str, zone_name: str, target_temp: float) -> bool:
+        """Check if zone is already at or near target temperature."""
+        zone_data = self._get_zone_state(zone_id)
+        if not zone_data:
+            return False
+        sensor_data = zone_data.get("sensorDataPoints") or {}
+        current_temp = (sensor_data.get("insideTemperature") or {}).get("celsius")
+        if current_temp is not None and current_temp >= target_temp - 0.5:
+            _LOGGER.info(
+                "Adaptive Preheat: %s already at target (%s°C >= %s°C), skipping",
+                zone_name, current_temp, target_temp,
+            )
+            return True
+        return False
 
     async def _trigger_preheat(self, zone_id: str) -> None:
         """Trigger heating for a zone.
@@ -222,13 +286,10 @@ class AdaptivePreheatManager:
         zone_name = zone_info["name"]
 
         # Defense-in-depth: suppress preheat when home is in AWAY mode (#171)
-        if self._coordinator:
-            home_state = (self._coordinator.data or {}).get("home_state")
-            if home_state and home_state.get("presence") != "HOME":
-                _LOGGER.info("Adaptive Preheat: %s suppressed — home is in away mode", zone_name)
-                return
+        if self._is_home_away():
+            _LOGGER.info("Adaptive Preheat: %s suppressed — home is in away mode", zone_name)
+            return
 
-        # Check if we already have an active overlay for this zone
         if zone_id in self._active_overlays:
             _LOGGER.debug("Adaptive Preheat: %s already has active overlay", zone_name)
             return
@@ -239,57 +300,16 @@ class AdaptivePreheatManager:
             zone_cfg = self._zone_config_manager.get_zone_config(zone_id)
             preheat_mode = zone_cfg.get("adaptive_preheat", "off")
 
-        if preheat_mode == "passive":
-            coord_data_check = self._coordinator.data or {}  # type: ignore[union-attr]
-            zone_states_check = (coord_data_check.get("zones") or {}).get("zoneStates") or {}
-            zd = zone_states_check.get(zone_id) or zone_states_check.get(str(zone_id))
-            if zd and zd.get("overlay") is not None:
-                _LOGGER.info(
-                    "Adaptive Preheat: %s suppressed (passive mode) — zone has active overlay (%s)",
-                    zone_name,
-                    zd["overlay"].get("type", "unknown"),
-                )
-                return
-
-        # Get target temperature from coordinator.entity_data (published by TadoPreheatAdvisorSensor)
-        preheat_data = self._coordinator.get_entity_data(zone_id, "preheat_advisor")  # type: ignore[union-attr]
-
-        if not preheat_data:
-            _LOGGER.warning("Adaptive Preheat: %s preheat advisor data not available", zone_name)
+        if preheat_mode == "passive" and self._should_suppress_passive(zone_id, zone_name):
             return
 
-        target_temp = preheat_data.get("target_temperature")
-        if not target_temp:
-            _LOGGER.warning("Adaptive Preheat: %s no target temperature", zone_name)
+        target_temp = self._get_target_temp(zone_id, zone_name)
+        if target_temp is None:
             return
 
-        try:
-            target_temp = float(target_temp)
-        except (ValueError, TypeError):
-            _LOGGER.warning("Adaptive Preheat: %s invalid target temp: %s", zone_name, target_temp)
+        if self._is_already_at_target(zone_id, zone_name, target_temp):
             return
 
-        # Check current temperature from coordinator data (no hass.states.get needed)
-        coord_data = self._coordinator.data or {}  # type: ignore[union-attr]
-        zones_data = coord_data.get("zones") or {}
-        zone_states = zones_data.get("zoneStates") or {}
-        zone_data = zone_states.get(zone_id) or zone_states.get(str(zone_id))
-
-        if zone_data:
-            sensor_data = zone_data.get("sensorDataPoints") or {}
-            current_temp = (sensor_data.get("insideTemperature") or {}).get("celsius")
-            if current_temp is not None and current_temp >= target_temp - 0.5:
-                _LOGGER.info(
-                    "Adaptive Preheat: %s already at target (%s°C >= %s°C), skipping",
-                    zone_name,
-                    current_temp,
-                    target_temp,
-                )
-                return
-
-        # Set heating overlay via API
-        # Note: TADO_MODE termination = "until next schedule block" in Tado API
-        # The API doesn't accept NEXT_TIME_BLOCK directly
         _LOGGER.info("Adaptive Preheat: Triggering %s to %s°C (until next schedule block)", zone_name, target_temp)
 
         # Active mode: capture state before setting overlay (state restoration)
@@ -298,6 +318,10 @@ class AdaptivePreheatManager:
                 zone_id, "climate_heating", "preheat",
             )
 
+        await self._set_preheat_overlay(zone_id, zone_name, target_temp)
+
+    async def _set_preheat_overlay(self, zone_id: str, zone_name: str, target_temp: float) -> None:
+        """Set the heating overlay via API."""
         try:
             client = self._api_client
             if client is None:
@@ -309,7 +333,6 @@ class AdaptivePreheatManager:
                 "power": "ON",
                 "temperature": {"celsius": target_temp},
             }
-            # TADO_MODE = follows device settings, which defaults to "until next schedule block"
             termination = {"type": "TADO_MODE"}
 
             success = await client.set_zone_overlay(zone_id, setting, termination)

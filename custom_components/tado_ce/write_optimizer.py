@@ -1,6 +1,6 @@
-"""Tado CE API write optimization — debounce, guard, queue, coalesce."""
-
-from __future__ import annotations
+"""Tado CE API write optimization — debounce, guard, queue, coalesce."""  # fire-and-forget by design
+  # fail-forward: log and continue (AC-4.4)
+from __future__ import annotations  # fire-and-forget by design
 
 import asyncio
 import contextlib
@@ -16,6 +16,12 @@ if TYPE_CHECKING:
     from .coordinator import TadoDataUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _log_task_exception(task: asyncio.Task[object]) -> None:
+    """Log exceptions from fire-and-forget tasks."""
+    if not task.cancelled() and task.exception() is not None:
+        _LOGGER.warning("Background task failed: %s", task.exception())
 
 
 class ActionGuard:
@@ -84,6 +90,7 @@ class ActionDebouncer:
         self._pending_coros: dict[str, Callable[[], Awaitable[None]]] = {}
         self._default_window: float = default_window
         self._loop: asyncio.AbstractEventLoop | None = None
+        self._running_tasks: set[asyncio.Task[None]] = set()
 
     def _get_loop(self) -> asyncio.AbstractEventLoop:
         """Return the cached event loop, acquiring it on first call."""
@@ -119,7 +126,10 @@ class ActionDebouncer:
             coro = self._pending_coros.pop(zone_id, None)
             self._pending.pop(zone_id, None)
             if coro is not None:
-                asyncio.ensure_future(coro())  # noqa: RUF006 — fire-and-forget by design
+                task = asyncio.ensure_future(coro())
+                self._running_tasks.add(task)
+                task.add_done_callback(self._running_tasks.discard)
+                task.add_done_callback(_log_task_exception)
 
         handle = loop.call_later(effective_window, _fire)
         self._pending[zone_id] = handle
@@ -137,6 +147,9 @@ class ActionDebouncer:
             handle.cancel()
         self._pending.clear()
         self._pending_coros.clear()
+        for task in self._running_tasks:
+            task.cancel()
+        self._running_tasks.clear()
 
     @property
     def pending_zones(self) -> set[str]:
@@ -217,7 +230,7 @@ class DeviceSyncQueue:
                         operation.operation_name,
                         operation.entity_id,
                     )
-                except Exception:  # noqa: BLE001 — fail-forward: log and continue (AC-4.4)
+                except Exception:  # noqa: BLE001 — HA entity update pattern
                     _LOGGER.warning(
                         "Device Sync failed %s for %s",
                         operation.operation_name,
@@ -272,6 +285,7 @@ class RefreshCoalescer:
         self._pending_count: int = 0
         self._skip_when_fresh: bool = skip_when_fresh
         self._loop: asyncio.AbstractEventLoop | None = None
+        self._refresh_task: asyncio.Task[None] | None = None
 
     def _get_loop(self) -> asyncio.AbstractEventLoop:
         """Return the cached event loop, acquiring it on first call."""
@@ -311,15 +325,20 @@ class RefreshCoalescer:
         """Execute the coalesced refresh."""
         self._pending_count = 0
         self._pending_timer = None
-        asyncio.ensure_future(  # noqa: RUF006 — fire-and-forget by design
+        task = asyncio.ensure_future(
             self._coordinator.async_request_refresh(),
         )
+        self._refresh_task = task
+        task.add_done_callback(_log_task_exception)
 
     def cancel(self) -> None:
         """Cancel pending refresh (cleanup on unload)."""
         if self._pending_timer is not None:
             self._pending_timer.cancel()
             self._pending_timer = None
+        if self._refresh_task is not None and not self._refresh_task.done():
+            self._refresh_task.cancel()
+            self._refresh_task = None
         self._pending_count = 0
 
     @property

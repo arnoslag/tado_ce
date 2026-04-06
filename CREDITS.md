@@ -21,6 +21,10 @@ Thank you to everyone who supported the project through [Buy Me a Coffee](https:
 
 Community contributors who helped shape each release through bug reports, feature requests, testing, and feedback.
 
+### v3.5.1
+
+- **[@driagi](https://github.com/driagi)** — Flagged that the integration lacked error recovery when API calls failed, with all entities staying unavailable until manual reconfiguration ([#206](https://github.com/hiall-fyi/tado_ce/issues/206)). This report prompted a full review of every API call path over the Easter break, uncovering that 11 cloud operations had no retry logic at all. The resulting audit also led to the codebase-wide quality cleanup in this release — clearing the deck before the HomeKit local control work ahead.
+
 ### v3.5.0
 
 - **[@Saughassy](https://github.com/Saughassy)** — Original clean install crash report that led to the deeper quota deadlock root cause fix ([#204](https://github.com/hiall-fyi/tado_ce/issues/204))

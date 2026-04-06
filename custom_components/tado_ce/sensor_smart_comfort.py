@@ -34,6 +34,13 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
+# Smart comfort sensor thresholds
+_DEVIATION_ICON_THRESHOLD = 0.5  # °C — deviation above/below this changes icon
+_MIN_HEATING_RATE = 0.1  # °C/h — minimum meaningful heating rate for preheat calculation
+_MIN_COOLING_RATE = -0.1  # °C/h — minimum meaningful cooling rate
+_DEVIATION_ICON_COLD = -2  # °C — deviation below this shows "cold" icon
+_DEVIATION_ICON_HOT = 2  # °C — deviation above this shows "hot" icon
+
 
 class TadoScheduleDeviationSensor(TadoZoneSensor):
     """Represent a Tado schedule deviation sensor."""
@@ -85,9 +92,9 @@ class TadoScheduleDeviationSensor(TadoZoneSensor):
         """Dynamic icon based on comparison."""
         if self._attr_native_value is None:
             return "mdi:chart-timeline-variant"
-        if self._attr_native_value > 0.5:  # type: ignore[operator]
+        if self._attr_native_value > _DEVIATION_ICON_THRESHOLD:  # type: ignore[operator]
             return "mdi:thermometer-chevron-up"
-        if self._attr_native_value < -0.5:  # type: ignore[operator]
+        if self._attr_native_value < -_DEVIATION_ICON_THRESHOLD:  # type: ignore[operator]
             return "mdi:thermometer-chevron-down"
         return "mdi:thermometer-check"
 
@@ -148,7 +155,7 @@ class TadoScheduleDeviationSensor(TadoZoneSensor):
 
             self._attr_available = True
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — HA entity update pattern
             _LOGGER.debug("Failed to update historical comparison for zone %s: %s", self._zone_id, e)
             self._attr_available = False
 
@@ -235,7 +242,7 @@ class TadoNextScheduleTimeSensor(TadoZoneSensor):
 
             self._attr_available = True
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — HA entity update pattern
             _LOGGER.debug("Failed to update next schedule for zone %s: %s", self._zone_id, e)
             self._attr_available = False
 
@@ -346,7 +353,7 @@ class TadoNextScheduleTempSensor(TadoZoneSensor):
 
             self._attr_available = True
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — HA entity update pattern
             _LOGGER.debug("Failed to update next schedule temp for zone %s: %s", self._zone_id, e)
             self._attr_available = False
 
@@ -427,6 +434,204 @@ class TadoPreheatAdvisorSensor(TadoZoneSensor):
         self.update()
         self.async_write_ha_state()
 
+    def _set_simple_status(
+        self,
+        value: str,
+        *,
+        confidence: str,
+        summary: str,
+        target_temp: float | None = None,
+        target_time: str | None = None,
+        duration_minutes: int | None = None,
+        heating_rate: float | None = None,
+    ) -> None:
+        """Set sensor to a simple status state (no preheat calculation)."""
+        self._attr_native_value = value
+        self._attr_available = True
+        self._target_temp = target_temp
+        self._target_time = target_time
+        self._duration_minutes = duration_minutes
+        self._heating_rate = heating_rate
+        self._confidence = confidence
+        self._summary = summary
+        self._cooling_rate = None
+        self._predicted_crossover_time = None
+        self._is_cooling_prediction = False
+
+    def _resolve_cycle_heating_rate(self) -> tuple[float | None, str | None]:
+        """Resolve heating rate and confidence from HeatingCycleCoordinator."""
+        heating_cycle_coordinator = self.coordinator.heating_cycle_coordinator
+        if not heating_cycle_coordinator:
+            return None, None
+        zone_data_cycle = heating_cycle_coordinator.get_zone_data(self._zone_id)
+        if not zone_data_cycle or zone_data_cycle.get("heating_rate") is None:
+            return None, None
+        rate = zone_data_cycle.get("heating_rate")
+        cycle_count = zone_data_cycle.get("cycle_count", 0)
+        if cycle_count >= 5:  # noqa: PLR2004
+            confidence = "high"
+        elif cycle_count >= 3:  # noqa: PLR2004
+            confidence = "medium"
+        else:
+            confidence = "low"
+        return rate, confidence
+
+    def _get_ufh_buffer(self) -> int:
+        """Get UFH buffer minutes from per-zone config (0 for radiator)."""
+        zone_config_mgr = self.coordinator.zone_config_manager
+        if not zone_config_mgr:
+            return 0
+        heating_type = zone_config_mgr.get_zone_value(self._zone_id, "heating_type", "radiator")
+        if heating_type == "ufh":
+            return zone_config_mgr.get_zone_value(self._zone_id, "ufh_buffer_minutes", 30)  # type: ignore[return-value]
+        return 0
+
+    def _apply_preheat_timing(
+        self,
+        start_dt: object,
+        minutes_needed: int,
+        heating_rate: float,
+        confidence: str,
+        ufh_buffer: int,
+    ) -> None:
+        """Apply preheat timing result to sensor state."""
+        now = dt_util.now()
+        self._is_tomorrow = start_dt.date() > now.date()  # type: ignore[union-attr]
+        time_str = start_dt.strftime("%H:%M")  # type: ignore[union-attr]
+        self._attr_native_value = f"Tomorrow {time_str}" if self._is_tomorrow else time_str
+        self._duration_minutes = minutes_needed
+        self._heating_rate = heating_rate
+        self._confidence = confidence
+        self._cooling_rate = None
+        self._predicted_crossover_time = None
+        self._is_cooling_prediction = False
+        self._summary = (
+            f"Start at {self._attr_native_value} ({minutes_needed} min to reach {self._target_temp:.1f}°C)"
+        )
+        if ufh_buffer > 0:
+            self._summary += f" (includes {ufh_buffer} min UFH buffer)"
+        self._attr_available = True
+
+    def _check_active_cooling_preheat(self, zone_data: dict) -> bool:
+        """Check if active setpoint needs proactive cooling-based preheat.
+
+        Returns True if cooling preheat was applied (caller should return).
+        """
+        from datetime import timedelta
+
+        active_setting = zone_data.get("setting") or {}
+        active_power = active_setting.get("power")
+        active_target = (active_setting.get("temperature") or {}).get("celsius")
+
+        if not (
+            active_power == "ON"
+            and active_target is not None
+            and self._current_temp is not None
+            and self._current_temp >= active_target
+        ):
+            return False
+
+        now = dt_util.now()
+        active_deadline = now + timedelta(hours=2)
+        active_cooling = self._check_cooling_prediction(active_target, active_deadline, now)
+        if active_cooling is None:
+            return False
+
+        self._target_temp = active_target
+        self._target_time = "Active setpoint"
+        self._is_tomorrow = False
+        self._apply_cooling_preheat(active_cooling["crossover_dt"], now)
+        return True
+
+    def _calculate_preheat_from_block(self, next_block: object, manager: object) -> None:
+        """Calculate preheat timing from a schedule block with heating ON."""
+        from datetime import timedelta
+
+        ufh_buffer = self._get_ufh_buffer()
+        cycle_heating_rate, cycle_confidence = self._resolve_cycle_heating_rate()
+
+        # Use HeatingCycleCoordinator data if available
+        if cycle_heating_rate is not None and cycle_heating_rate > _MIN_HEATING_RATE:
+            temp_diff = self._target_temp - self._current_temp  # type: ignore[operator]
+            minutes_needed = min(int((temp_diff / cycle_heating_rate) * 60) + ufh_buffer, 240)
+            recommended_start = next_block.start_time - timedelta(minutes=minutes_needed)  # type: ignore[union-attr]
+            self._apply_preheat_timing(
+                recommended_start, minutes_needed, cycle_heating_rate,
+                cycle_confidence, ufh_buffer,  # type: ignore[arg-type]
+            )
+            return
+
+        # Fallback to SmartComfortManager
+        advice = manager.get_preheat_advice(  # type: ignore[union-attr]
+            self._zone_id, self._target_temp, next_block.start_time, self._current_temp,  # type: ignore[union-attr]
+        )
+
+        if advice is None:
+            temp_diff = self._target_temp - self._current_temp  # type: ignore[operator]
+            self._set_simple_status(
+                "Insufficient data", confidence="insufficient_data",
+                summary=f"Need +{temp_diff:.1f}°C by {self._target_time} (no heating history)",
+                target_temp=self._target_temp, target_time=self._target_time,
+            )
+            return
+
+        # Valid preheat recommendation — apply UFH buffer
+        adjusted_duration = min(advice.estimated_duration_minutes + ufh_buffer, 240)
+        adjusted_start = next_block.start_time - timedelta(minutes=adjusted_duration)  # type: ignore[union-attr]
+
+        now = dt_util.now()
+        self._is_tomorrow = adjusted_start.date() > now.date()
+        time_str = adjusted_start.strftime("%H:%M")
+        self._attr_native_value = f"Tomorrow {time_str}" if self._is_tomorrow else time_str
+        self._duration_minutes = adjusted_duration
+        self._heating_rate = advice.heating_rate
+        self._confidence = advice.confidence
+        self._cooling_rate = None
+        self._predicted_crossover_time = None
+        self._is_cooling_prediction = False
+        self._summary = advice.to_summary()
+        if ufh_buffer > 0:
+            self._summary += f" (includes {ufh_buffer} min UFH buffer)"
+        self._attr_available = True
+
+    def _handle_schedule_block(self, next_block: object, manager: object) -> None:
+        """Handle a schedule block — heating OFF, already at target, or preheat needed."""
+        # Next block is heating OFF
+        if not next_block.is_heating_on or next_block.target_temp is None:  # type: ignore[union-attr]
+            now = dt_util.now()
+            self._is_tomorrow = next_block.start_time.date() > now.date()  # type: ignore[union-attr]
+            time_str = next_block.start_time.strftime("%H:%M")  # type: ignore[union-attr]
+            target_time = f"Tomorrow {time_str}" if self._is_tomorrow else time_str
+            self._set_simple_status(
+                "Heating OFF", confidence="high",
+                summary=f"Heating turns OFF at {target_time}",
+                target_time=target_time, duration_minutes=0,
+            )
+            return
+
+        self._target_temp = next_block.target_temp  # type: ignore[union-attr]
+        self._is_tomorrow = next_block.start_time.date() > dt_util.now().date()  # type: ignore[union-attr]
+        time_str = next_block.start_time.strftime("%H:%M")  # type: ignore[union-attr]
+        self._target_time = f"Tomorrow {time_str}" if self._is_tomorrow else time_str
+
+        # Already at or above target
+        if self._current_temp >= self._target_temp:
+            cooling_info = self._check_cooling_prediction(
+                self._target_temp, next_block.start_time, dt_util.now(),  # type: ignore[arg-type]
+            )
+            if cooling_info is None:
+                self._set_simple_status(
+                    "Ready", confidence="high",
+                    summary=f"Already at {self._target_temp:.1f}\u00b0C (no preheat needed)",
+                    target_temp=self._target_temp, target_time=self._target_time,
+                )
+                return
+            self._apply_cooling_preheat(cooling_info["crossover_dt"], dt_util.now())
+            return
+
+        # Need to preheat
+        self._calculate_preheat_from_block(next_block, manager)
+
     @callback
     def update(self) -> None:
         """Update preheat advice based on schedule and heating rate.
@@ -438,8 +643,6 @@ class TadoPreheatAdvisorSensor(TadoZoneSensor):
         4. If no schedule or heating OFF, show appropriate status
         """
         try:
-            from datetime import timedelta
-
             from .smart_comfort import get_next_schedule_change
 
             manager = self.coordinator.smart_comfort_manager if self.hass else None
@@ -463,215 +666,30 @@ class TadoPreheatAdvisorSensor(TadoZoneSensor):
             # Suppress preheat when home is in AWAY mode (#171)
             home_state = (self.coordinator.data or {}).get("home_state")
             if home_state and home_state.get("presence") != "HOME":
-                self._attr_native_value = "Away"
-                self._attr_available = True
-                self._target_temp = None
-                self._target_time = None
-                self._duration_minutes = None
-                self._heating_rate = None
-                self._confidence = "away_mode"
-                self._summary = "Preheat suppressed — home is in away mode"
-                self._cooling_rate = None
-                self._predicted_crossover_time = None
-                self._is_cooling_prediction = False
+                self._set_simple_status(
+                    "Away", confidence="away_mode",
+                    summary="Preheat suppressed — home is in away mode",
+                )
                 return
 
             # Check cooling prediction against CURRENT active target (Discussion #163)
-            # If room is above current setpoint but cooling, trigger proactive preheat
-            active_setting = zone_data.get("setting") or {}
-            active_power = active_setting.get("power")
-            active_target = (active_setting.get("temperature") or {}).get("celsius")
+            if self._check_active_cooling_preheat(zone_data):
+                return
 
-            if (
-                active_power == "ON"
-                and active_target is not None
-                and self._current_temp >= active_target
-            ):
-                now = dt_util.now()
-                # Use a 2-hour lookahead as deadline for active target cooling
-                active_deadline = now + timedelta(hours=2)
-                active_cooling = self._check_cooling_prediction(
-                    active_target, active_deadline, now,
-                )
-                if active_cooling is not None:
-                    self._target_temp = active_target
-                    self._target_time = "Active setpoint"
-                    self._is_tomorrow = False
-                    crossover_dt = active_cooling["crossover_dt"]
-                    self._apply_cooling_preheat(crossover_dt, now)
-                    return
-
-            # Get next schedule change from schedules.json (per-entry data_loader)
+            # Get next schedule change
             _dl = self.coordinator.data_loader
             next_block = get_next_schedule_change(self._zone_id, data_loader=_dl)
 
             if next_block is None:
-                # No schedule data or no more blocks today
-                self._attr_native_value = "No schedule"
-                self._attr_available = True
-                self._target_temp = None
-                self._target_time = None
-                self._duration_minutes = None
-                self._heating_rate = None
-                self._confidence = "no_schedule"
-                self._summary = "No upcoming schedule changes today"
-                self._cooling_rate = None
-                self._predicted_crossover_time = None
-                self._is_cooling_prediction = False
-                return
-
-            # Check if next block has heating ON
-            if not next_block.is_heating_on or next_block.target_temp is None:
-                # Next block is heating OFF
-                now = dt_util.now()
-                self._is_tomorrow = next_block.start_time.date() > now.date()
-                time_str = next_block.start_time.strftime("%H:%M")
-                self._attr_native_value = "Heating OFF"
-                self._attr_available = True
-                self._target_temp = None
-                self._target_time = f"Tomorrow {time_str}" if self._is_tomorrow else time_str
-                self._duration_minutes = 0
-                self._heating_rate = None
-                self._confidence = "high"
-                self._summary = f"Heating turns OFF at {self._target_time}"
-                self._cooling_rate = None
-                self._predicted_crossover_time = None
-                self._is_cooling_prediction = False
-                return
-
-            self._target_temp = next_block.target_temp
-            self._is_tomorrow = next_block.start_time.date() > dt_util.now().date()
-            time_str = next_block.start_time.strftime("%H:%M")
-            self._target_time = f"Tomorrow {time_str}" if self._is_tomorrow else time_str
-
-            # Check if already at or above target
-            if self._current_temp >= self._target_temp:
-                # NEW: Check cooling rate before declaring "Ready"
-                cooling_info = self._check_cooling_prediction(
-                    self._target_temp, next_block.start_time, dt_util.now(),
+                self._set_simple_status(
+                    "No schedule", confidence="no_schedule",
+                    summary="No upcoming schedule changes today",
                 )
-
-                if cooling_info is None:
-                    # No cooling concern — original "Ready" behavior
-                    self._attr_native_value = "Ready"
-                    self._attr_available = True
-                    self._duration_minutes = 0
-                    self._heating_rate = None
-                    self._confidence = "high"
-                    self._summary = f"Already at {self._target_temp:.1f}\u00b0C (no preheat needed)"
-                    self._cooling_rate = None
-                    self._predicted_crossover_time = None
-                    self._is_cooling_prediction = False
-                    return
-
-                # Cooling prediction active — use shared helper
-                self._apply_cooling_preheat(cooling_info["crossover_dt"], dt_util.now())
                 return
 
-            # Need to preheat - calculate timing
-            # Prioritize HeatingCycleCoordinator rate over SmartComfort rate
-            # HeatingCycleCoordinator uses complete heating cycles for more accurate rate
-            heating_cycle_coordinator = self.coordinator.heating_cycle_coordinator
-            cycle_heating_rate = None
-            cycle_confidence = None
+            self._handle_schedule_block(next_block, manager)
 
-            # Get UFH buffer from per-zone config
-            ufh_buffer = 0
-            zone_config_mgr = self.coordinator.zone_config_manager
-            if zone_config_mgr:
-                heating_type = zone_config_mgr.get_zone_value(self._zone_id, "heating_type", "radiator")
-                if heating_type == "ufh":
-                    ufh_buffer = zone_config_mgr.get_zone_value(self._zone_id, "ufh_buffer_minutes", 30)
-
-            if heating_cycle_coordinator:
-                zone_data_cycle = heating_cycle_coordinator.get_zone_data(self._zone_id)
-                if zone_data_cycle and zone_data_cycle.get("heating_rate") is not None:
-                    # HeatingCycleCoordinator rate is already in °C/h
-                    cycle_heating_rate = zone_data_cycle.get("heating_rate")
-                    cycle_count = zone_data_cycle.get("cycle_count", 0)
-                    # Determine confidence based on cycle count
-                    if cycle_count >= 5:
-                        cycle_confidence = "high"
-                    elif cycle_count >= 3:
-                        cycle_confidence = "medium"
-                    else:
-                        cycle_confidence = "low"
-
-            # If we have HeatingCycleCoordinator data, use it directly
-            if cycle_heating_rate is not None and cycle_heating_rate > 0.1:
-                temp_diff = self._target_temp - self._current_temp
-                hours_needed = temp_diff / cycle_heating_rate
-                minutes_needed = int(hours_needed * 60)
-
-                # Add UFH buffer for underfloor heating systems
-                minutes_needed += ufh_buffer
-
-                minutes_needed = min(minutes_needed, 240)  # Cap at 4 hours
-
-                recommended_start = next_block.start_time - timedelta(minutes=minutes_needed)
-
-                now = dt_util.now()
-                self._is_tomorrow = recommended_start.date() > now.date()
-                time_str = recommended_start.strftime("%H:%M")
-                self._attr_native_value = f"Tomorrow {time_str}" if self._is_tomorrow else time_str
-                self._duration_minutes = minutes_needed
-                self._heating_rate = cycle_heating_rate
-                self._confidence = cycle_confidence  # type: ignore[assignment]
-                self._cooling_rate = None
-                self._predicted_crossover_time = None
-                self._is_cooling_prediction = False
-                self._summary = (
-                    f"Start at {self._attr_native_value} ({minutes_needed} min to reach {self._target_temp:.1f}°C)"
-                )
-                if ufh_buffer > 0:
-                    self._summary += f" (includes {ufh_buffer} min UFH buffer)"
-                self._attr_available = True
-                return
-
-            # Fallback to SmartComfortManager
-            advice = manager.get_preheat_advice(
-                self._zone_id,
-                self._target_temp,
-                next_block.start_time,
-                self._current_temp,
-            )
-
-            if advice is None:
-                # Not enough data to calculate heating rate
-                self._attr_native_value = "Insufficient data"
-                self._attr_available = True
-                self._duration_minutes = None
-                self._heating_rate = None
-                self._confidence = "insufficient_data"
-                temp_diff = self._target_temp - self._current_temp
-                self._summary = f"Need +{temp_diff:.1f}°C by {self._target_time} (no heating history)"
-                self._cooling_rate = None
-                self._predicted_crossover_time = None
-                self._is_cooling_prediction = False
-                return
-
-            # We have a valid preheat recommendation
-            # Apply UFH buffer to SmartComfortManager advice
-            adjusted_duration = advice.estimated_duration_minutes + ufh_buffer
-            adjusted_duration = min(adjusted_duration, 240)  # Cap at 4 hours
-            adjusted_start = next_block.start_time - timedelta(minutes=adjusted_duration)
-
-            now = dt_util.now()
-            self._is_tomorrow = adjusted_start.date() > now.date()
-            time_str = adjusted_start.strftime("%H:%M")
-            self._attr_native_value = f"Tomorrow {time_str}" if self._is_tomorrow else time_str
-            self._duration_minutes = adjusted_duration
-            self._heating_rate = advice.heating_rate
-            self._confidence = advice.confidence
-            self._cooling_rate = None
-            self._predicted_crossover_time = None
-            self._is_cooling_prediction = False
-            self._summary = advice.to_summary()
-            if ufh_buffer > 0:
-                self._summary += f" (includes {ufh_buffer} min UFH buffer)"
-            self._attr_available = True
-
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — HA entity update pattern
             _LOGGER.debug("Failed to update preheat advice for zone %s: %s", self._zone_id, e)
             self._attr_available = False
         finally:
@@ -718,12 +736,12 @@ class TadoPreheatAdvisorSensor(TadoZoneSensor):
                 if inertia_time is not None:
                     inertia_minutes = int(inertia_time)
 
-        if heating_rate is None or heating_rate <= 0.1:
+        if heating_rate is None or heating_rate <= _MIN_HEATING_RATE:
             manager = self.coordinator.smart_comfort_manager
             if manager and manager.get_heating_rate(self._zone_id):
                 heating_rate = manager.get_heating_rate(self._zone_id)
 
-        if heating_rate is None or heating_rate <= 0.1:
+        if heating_rate is None or heating_rate <= _MIN_HEATING_RATE:
             # No heating rate — show crossover warning only
             self._attr_native_value = crossover_dt.strftime("%H:%M")
             self._attr_available = True
@@ -790,7 +808,7 @@ class TadoPreheatAdvisorSensor(TadoZoneSensor):
         cooling_rate = manager.get_cooling_rate(self._zone_id)
 
         # No data or stable temperature
-        if cooling_rate is None or cooling_rate >= -0.1:
+        if cooling_rate is None or cooling_rate >= _MIN_COOLING_RATE:
             return None
 
         # Clamp extreme rates
@@ -880,9 +898,9 @@ class TadoSmartComfortTargetSensor(TadoZoneSensor):
         """Dynamic icon based on deviation from comfort."""
         if self._deviation is None:
             return "mdi:thermometer-auto"
-        if self._deviation < -2:
+        if self._deviation < _DEVIATION_ICON_COLD:
             return "mdi:thermometer-low"  # Too cold
-        if self._deviation > 2:
+        if self._deviation > _DEVIATION_ICON_HOT:
             return "mdi:thermometer-high"  # Too hot
         return "mdi:thermometer-check"  # Comfortable
 
@@ -943,7 +961,7 @@ class TadoSmartComfortTargetSensor(TadoZoneSensor):
             self._attr_native_value = comfort_target
             self._attr_available = True
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — HA entity update pattern
             _LOGGER.debug("Failed to update Smart Comfort target for zone %s: %s", self._zone_id, e)
             self._attr_available = False
 

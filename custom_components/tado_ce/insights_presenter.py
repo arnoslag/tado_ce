@@ -1,4 +1,4 @@
-"""Tado CE Insights Presenter — correlation, aggregation, and formatting.
+"""Tado CE Insights Presenter — correlation, aggregation, and formatting.  # kept for interface consistency
 
 Handles all presentation-layer logic: correlating related insights,
 aggregating home-level summaries, building smart summaries, calculating
@@ -10,9 +10,9 @@ domain calculation modules.
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+import re
 from typing import TYPE_CHECKING, Any
 
 from .helpers import parse_iso_datetime as _parse_iso_dt
@@ -234,7 +234,7 @@ def _get_action_label(insight_type: str) -> str:
 def escalate_priorities(
     insights: list[Insight],
     history: InsightHistoryTracker,
-    now: datetime,  # noqa: ARG001 — kept for interface consistency
+    now: datetime,
 ) -> list[Insight]:
     """Return new list with escalated priorities based on persistence duration.
 
@@ -379,6 +379,72 @@ def calculate_insight_health_score(insights: list[Insight]) -> int:
 
 
 
+def _narrative_zone_str(zones: list[str]) -> str:
+    """Format zone names with natural language joining."""
+    if not zones:
+        return ""
+    if len(zones) == 1:
+        return zones[0]
+    if len(zones) == 2:  # noqa: PLR2004
+        return f"{zones[0]} and {zones[1]}"
+    return f"{', '.join(zones[:-1])}, and {zones[-1]}"
+
+
+def _narrative_urgency_reason(label: str, grp: dict[str, Any]) -> str:
+    """Build an urgency reason clause based on insight type and duration."""
+    insight_type = _reverse_action_label(label)
+    dur = grp.get("max_duration_days", 0)
+
+    if insight_type == "battery":
+        if dur >= 14:  # noqa: PLR2004
+            return f"first reported {dur} days ago"
+        if dur >= 2:  # noqa: PLR2004
+            return f"reported {dur} days ago"
+        return "to avoid losing control"
+
+    if insight_type == "mold_risk":
+        if dur >= 7:  # noqa: PLR2004
+            return f"ongoing for {dur} days"
+        if dur >= 2:  # noqa: PLR2004
+            return f"reported {dur} days ago"
+        return "needs attention"
+
+    # General fallback
+    if dur >= 2:  # noqa: PLR2004
+        return f"reported {dur} days ago"
+    return ""
+
+
+def _narrative_build_primary(label: str, grp: dict[str, Any]) -> str:
+    """Build the primary narrative sentence for the top action."""
+    zones = grp["zones"]
+    zs = _narrative_zone_str(zones)
+    reason = _narrative_urgency_reason(label, grp)
+
+    core = f"{label} in {zs}" if zs else label
+    if reason:
+        return f"{core} \u2014 {reason}."
+    return f"{core}."
+
+
+def _narrative_build_secondary(label: str, grp: dict[str, Any]) -> str:
+    """Build a brief secondary mention for one extra action."""
+    zones = grp["zones"]
+    zs = _narrative_zone_str(zones)
+    insight_type = _reverse_action_label(label)
+    verb = "are" if len(zones) > 1 else "is"
+
+    # Use short phrasing depending on type
+    if insight_type == "comfort" and zs:
+        return f"{zs} {verb} also running cold."
+    if insight_type in ("mold_risk", "condensation") and zs:
+        have = "have" if len(zones) > 1 else "has"
+        return f"{zs} also {have} {insight_type.replace('_', ' ')} concerns."
+    if zs:
+        return f"{zs} also needs attention." if len(zones) == 1 else f"{zs} also need attention."
+    return f"{label} also needs attention."
+
+
 def _build_narrative_summary(
     sorted_actions: list[tuple[str, dict[str, Any]]],
 ) -> str:
@@ -391,84 +457,14 @@ def _build_narrative_summary(
     if not sorted_actions:
         return "All zones are running well \u2014 no issues detected."
 
-    # --- helpers -----------------------------------------------------------
-
-    def _zone_str(zones: list[str]) -> str:
-        """Format zone names with natural language joining."""
-        if not zones:
-            return ""
-        if len(zones) == 1:
-            return zones[0]
-        if len(zones) == 2:
-            return f"{zones[0]} and {zones[1]}"
-        return f"{', '.join(zones[:-1])}, and {zones[-1]}"
-
-    def _urgency_reason(label: str, grp: dict[str, Any]) -> str:
-        """Build an urgency reason clause based on insight type and duration."""
-        insight_type = _reverse_action_label(label)
-        dur = grp.get("max_duration_days", 0)
-
-        if insight_type == "battery":
-            if dur >= 14:
-                return f"first reported {dur} days ago"
-            if dur >= 2:
-                return f"reported {dur} days ago"
-            return "to avoid losing control"
-
-        if insight_type == "mold_risk":
-            if dur >= 7:
-                return f"ongoing for {dur} days"
-            if dur >= 2:
-                return f"reported {dur} days ago"
-            return "needs attention"
-
-        # General fallback
-        if dur >= 2:
-            return f"reported {dur} days ago"
-        return ""
-
-    def _build_primary(label: str, grp: dict[str, Any]) -> str:
-        """Build the primary narrative sentence for the top action."""
-        zones = grp["zones"]
-        zs = _zone_str(zones)
-        reason = _urgency_reason(label, grp)
-
-        if zs:
-            core = f"{label} in {zs}"
-        else:
-            core = label
-
-        if reason:
-            return f"{core} \u2014 {reason}."
-        return f"{core}."
-
-    def _build_secondary(label: str, grp: dict[str, Any]) -> str:
-        """Build a brief secondary mention for one extra action."""
-        zones = grp["zones"]
-        zs = _zone_str(zones)
-        insight_type = _reverse_action_label(label)
-        verb = "are" if len(zones) > 1 else "is"
-
-        # Use short phrasing depending on type
-        if insight_type == "comfort" and zs:
-            return f"{zs} {verb} also running cold."
-        if insight_type in ("mold_risk", "condensation") and zs:
-            have = "have" if len(zones) > 1 else "has"
-            return f"{zs} also {have} {insight_type.replace('_', ' ')} concerns."
-        if zs:
-            return f"{zs} also needs attention." if len(zones) == 1 else f"{zs} also need attention."
-        return f"{label} also needs attention."
-
-    # --- build summary -----------------------------------------------------
-
     top_label, top_grp = sorted_actions[0]
-    primary = _build_primary(top_label, top_grp)
+    primary = _narrative_build_primary(top_label, top_grp)
 
-    if len(sorted_actions) < 2:
+    if len(sorted_actions) < 2:  # noqa: PLR2004
         result = primary
     else:
         sec_label, sec_grp = sorted_actions[1]
-        secondary = f" {_build_secondary(sec_label, sec_grp)}"
+        secondary = f" {_narrative_build_secondary(sec_label, sec_grp)}"
         candidate = f"{primary}{secondary}"
         result = candidate if len(candidate) <= SUMMARY_MAX_LENGTH else primary
 
@@ -506,9 +502,9 @@ def build_flat_action_list(
 
         # Consistent duration phrasing per insight type
         dur_suffix = ""
-        if dur >= 2:
+        if dur >= 2:  # noqa: PLR2004 — show duration for 2+ days
             insight_type = _reverse_action_label(label)
-            if insight_type == "battery" and dur >= 14:
+            if insight_type == "battery" and dur >= 14:  # noqa: PLR2004 — 14 days = overdue battery
                 dur_suffix = f" (overdue \u2014 {dur} days)"
             elif insight_type == "battery":
                 dur_suffix = f" ({dur} days)"
@@ -518,7 +514,7 @@ def build_flat_action_list(
         if zones:
             if len(zones) == 1:
                 zone_str = zones[0]
-            elif len(zones) == 2:
+            elif len(zones) == 2:  # noqa: PLR2004 — natural language "X and Y"
                 zone_str = f"{zones[0]} and {zones[1]}"
             else:
                 zone_str = f"{', '.join(zones[:-1])}, and {zones[-1]}"
@@ -571,6 +567,55 @@ def _reverse_action_label(label: str) -> str:
 
 
 
+def _extract_max_duration_days(recommendation: str) -> int:
+    """Extract the maximum duration in days from a recommendation string."""
+    dur_days = 0
+    for m in _DURATION_RE.finditer(recommendation):
+        for g in m.groups():
+            if g is not None:
+                try:
+                    dur_days = max(dur_days, int(g))
+                except ValueError:
+                    pass
+                break
+    return dur_days
+
+
+def _collect_insights_and_zones(
+    zone_insights: dict[str, list[Insight]],
+) -> tuple[list[Insight], set[str]]:
+    """Collect all insights and zone names from zone_insights dict."""
+    all_insights: list[Insight] = []
+    all_zone_names: set[str] = set()
+    for zone_name, insights in zone_insights.items():
+        if zone_name.startswith("_"):
+            all_insights.extend(insights)
+            continue
+        all_zone_names.add(zone_name)
+        if insights:
+            all_insights.extend(insights)
+    return all_insights, all_zone_names
+
+
+def _group_insights_by_action(
+    all_insights: list[Insight],
+) -> dict[str, dict[str, Any]]:
+    """Group insights by action label, tracking zones, priority, and duration."""
+    action_groups: dict[str, dict[str, Any]] = {}
+    for insight in all_insights:
+        label = _get_action_label(insight.insight_type)
+        if label not in action_groups:
+            action_groups[label] = {"zones": [], "priority": insight.priority, "max_duration_days": 0}
+        grp = action_groups[label]
+        if insight.zone_name and insight.zone_name not in grp["zones"]:
+            grp["zones"].append(insight.zone_name)
+        grp["priority"] = max(grp["priority"], insight.priority)
+        dur = _extract_max_duration_days(insight.recommendation or "")
+        if dur > 0:
+            grp["max_duration_days"] = max(grp["max_duration_days"], dur)
+    return action_groups
+
+
 def aggregate_home_insights(
     zone_insights: dict[str, list[Insight]],
 ) -> dict[str, Any]:
@@ -594,42 +639,11 @@ def aggregate_home_insights(
     if not zone_insights:
         return empty_result
 
-    all_insights: list[Insight] = []
-    all_zone_names: set[str] = set()
-
-    for zone_name, insights in zone_insights.items():
-        if zone_name.startswith("_"):
-            all_insights.extend(insights)
-            continue
-        all_zone_names.add(zone_name)
-        if insights:
-            all_insights.extend(insights)
-
+    all_insights, _all_zone_names = _collect_insights_and_zones(zone_insights)
     if not all_insights:
         return empty_result
 
-    action_groups: dict[str, dict[str, Any]] = {}
-    for insight in all_insights:
-        label = _get_action_label(insight.insight_type)
-        if label not in action_groups:
-            action_groups[label] = {"zones": [], "priority": insight.priority, "max_duration_days": 0}
-        grp = action_groups[label]
-        if insight.zone_name and insight.zone_name not in grp["zones"]:
-            grp["zones"].append(insight.zone_name)
-        grp["priority"] = max(grp["priority"], insight.priority)
-        # Extract duration from recommendation text (multiple patterns)
-        rec = insight.recommendation or ""
-        _dur_days = 0
-        for m in _DURATION_RE.finditer(rec):
-            for g in m.groups():
-                if g is not None:
-                    try:
-                        _dur_days = max(_dur_days, int(g))
-                    except ValueError:
-                        pass
-                    break
-        if _dur_days > 0:
-            grp["max_duration_days"] = max(grp["max_duration_days"], _dur_days)
+    action_groups = _group_insights_by_action(all_insights)
 
     sorted_actions = sorted(
         action_groups.items(),
@@ -651,7 +665,65 @@ def aggregate_home_insights(
 
 
 
-def calculate_historical_deviation_recommendation(  # noqa: C901, PLR0911
+def _deviation_warmer_msg(
+    zone_name: str,
+    abs_dev: float,
+    current_temp: float | None,
+    historical_avg: float | None,
+) -> str:
+    """Build recommendation for significantly warmer deviation."""
+    if current_temp is not None and historical_avg is not None:
+        return (
+            f"{zone_name}: {abs_dev:.1f}\u00b0C warmer than usual "
+            f"({current_temp:.1f}\u00b0C vs avg {historical_avg:.1f}\u00b0C) "
+            f"\u2014 check if heating schedule needs adjustment"
+        )
+    return (
+        f"{zone_name}: {abs_dev:.1f}\u00b0C warmer than usual "
+        f"\u2014 review heating schedule"
+    )
+
+
+def _deviation_above_msg(zone_name: str, abs_dev: float, current_temp: float | None) -> str:
+    """Build recommendation for moderately above-average deviation."""
+    if current_temp is not None:
+        return (
+            f"{zone_name}: {abs_dev:.1f}\u00b0C above average "
+            f"({current_temp:.1f}\u00b0C) \u2014 monitor for pattern"
+        )
+    return f"{zone_name}: {abs_dev:.1f}\u00b0C above average \u2014 monitor for pattern"
+
+
+def _deviation_colder_msg(
+    zone_name: str,
+    abs_dev: float,
+    current_temp: float | None,
+    historical_avg: float | None,
+) -> str:
+    """Build recommendation for significantly colder deviation."""
+    if current_temp is not None and historical_avg is not None:
+        return (
+            f"{zone_name}: {abs_dev:.1f}\u00b0C colder than usual "
+            f"({current_temp:.1f}\u00b0C vs avg {historical_avg:.1f}\u00b0C) "
+            f"\u2014 check windows and heating system"
+        )
+    return (
+        f"{zone_name}: {abs_dev:.1f}\u00b0C colder than usual "
+        f"\u2014 check windows and heating"
+    )
+
+
+def _deviation_below_msg(zone_name: str, abs_dev: float, current_temp: float | None) -> str:
+    """Build recommendation for moderately below-average deviation."""
+    if current_temp is not None:
+        return (
+            f"{zone_name}: {abs_dev:.1f}\u00b0C below average "
+            f"({current_temp:.1f}\u00b0C) \u2014 check for drafts or open windows"
+        )
+    return f"{zone_name}: {abs_dev:.1f}\u00b0C below average \u2014 check for drafts"
+
+
+def calculate_historical_deviation_recommendation(
     deviation: float | None,
     zone_name: str,
     current_temp: float | None = None,
@@ -679,50 +751,16 @@ def calculate_historical_deviation_recommendation(  # noqa: C901, PLR0911
         return ""
 
     if deviation > TEMP_DEVIATION_SIGNIFICANT:
-        if current_temp is not None and historical_avg is not None:
-            return (
-                f"{zone_name}: {abs_deviation:.1f}\u00b0C warmer than usual "
-                f"({current_temp:.1f}\u00b0C vs avg {historical_avg:.1f}\u00b0C) "
-                f"\u2014 check if heating schedule needs adjustment"
-            )
-        return (
-            f"{zone_name}: {abs_deviation:.1f}\u00b0C warmer than usual "
-            f"\u2014 review heating schedule"
-        )
+        return _deviation_warmer_msg(zone_name, abs_deviation, current_temp, historical_avg)
 
     if deviation > TEMP_DEVIATION_NORMAL:
-        if current_temp is not None:
-            return (
-                f"{zone_name}: {abs_deviation:.1f}\u00b0C above average "
-                f"({current_temp:.1f}\u00b0C) \u2014 monitor for pattern"
-            )
-        return (
-            f"{zone_name}: {abs_deviation:.1f}\u00b0C above average "
-            f"\u2014 monitor for pattern"
-        )
+        return _deviation_above_msg(zone_name, abs_deviation, current_temp)
 
     if deviation < -TEMP_DEVIATION_SIGNIFICANT:
-        if current_temp is not None and historical_avg is not None:
-            return (
-                f"{zone_name}: {abs_deviation:.1f}\u00b0C colder than usual "
-                f"({current_temp:.1f}\u00b0C vs avg {historical_avg:.1f}\u00b0C) "
-                f"\u2014 check windows and heating system"
-            )
-        return (
-            f"{zone_name}: {abs_deviation:.1f}\u00b0C colder than usual "
-            f"\u2014 check windows and heating"
-        )
+        return _deviation_colder_msg(zone_name, abs_deviation, current_temp, historical_avg)
 
     if deviation < -TEMP_DEVIATION_NORMAL:
-        if current_temp is not None:
-            return (
-                f"{zone_name}: {abs_deviation:.1f}\u00b0C below average "
-                f"({current_temp:.1f}\u00b0C) \u2014 check for drafts or open windows"
-            )
-        return (
-            f"{zone_name}: {abs_deviation:.1f}\u00b0C below average "
-            f"\u2014 check for drafts"
-        )
+        return _deviation_below_msg(zone_name, abs_deviation, current_temp)
 
     return ""
 
@@ -805,12 +843,19 @@ def _collect_weekly_stats(
     )
 
 
-def _describe_issue_keys(keys: set[str]) -> str:
-    """Describe a set of issue keys as a readable phrase.
+def _natural_join(items: list[str]) -> str:
+    """Join a list of strings with natural language (commas + 'and')."""
+    if not items:
+        return ""
+    if len(items) == 1:
+        return items[0]
+    if len(items) == 2:  # noqa: PLR2004
+        return f"{items[0]} and {items[1]}"
+    return f"{', '.join(items[:-1])}, and {items[-1]}"
 
-    Groups by insight type and lists affected zones.
-    E.g. ``"mold risk in Ensuite"`` or ``"battery in Guest and Lounge"``.
-    """
+
+def _group_keys_by_type(keys: set[str]) -> dict[str, list[str]]:
+    """Group issue keys by insight type, collecting zone names."""
     type_zones: dict[str, list[str]] = {}
     for key in sorted(keys):
         parts = key.split(":", 1)
@@ -823,26 +868,26 @@ def _describe_issue_keys(keys: set[str]) -> str:
             type_zones[itype] = []
         if zone:
             type_zones[itype].append(zone)
+    return type_zones
+
+
+def _describe_issue_keys(keys: set[str]) -> str:
+    """Describe a set of issue keys as a readable phrase.
+
+    Groups by insight type and lists affected zones.
+    E.g. ``"mold risk in Ensuite"`` or ``"battery in Guest and Lounge"``.
+    """
+    type_zones = _group_keys_by_type(keys)
 
     fragments: list[str] = []
     for itype, zones in type_zones.items():
         readable = itype.replace("_", " ")
         if zones:
-            if len(zones) == 1:
-                zone_str = zones[0]
-            elif len(zones) == 2:
-                zone_str = f"{zones[0]} and {zones[1]}"
-            else:
-                zone_str = f"{', '.join(zones[:-1])}, and {zones[-1]}"
-            fragments.append(f"{readable} in {zone_str}")
+            fragments.append(f"{readable} in {_natural_join(zones)}")
         else:
             fragments.append(readable)
 
-    if len(fragments) == 1:
-        return fragments[0]
-    if len(fragments) == 2:
-        return f"{fragments[0]} and {fragments[1]}"
-    return f"{', '.join(fragments[:-1])}, and {fragments[-1]}"
+    return _natural_join(fragments)
 
 
 def _describe_resolved_keys(keys: set[str]) -> str:

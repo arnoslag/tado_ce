@@ -21,7 +21,6 @@ from dataclasses import dataclass, fields
 from datetime import datetime
 from typing import Any, Self, get_type_hints
 
-
 from .helpers import parse_iso_datetime
 
 
@@ -54,7 +53,7 @@ class _SerializableMixin:
 class HeatingCycleReading(_SerializableMixin):
     """Single temperature measurement during a heating cycle.
 
-    Attributes
+    Attributes:
     ----------
     time:
         UTC timestamp of the measurement.
@@ -75,7 +74,7 @@ class InsightTemperatureReading:
     Includes humidity because mold-risk, condensation, and window-detection
     calculations all depend on it.
 
-    Attributes
+    Attributes:
     ----------
     temperature:
         Measured temperature in °C.
@@ -96,7 +95,7 @@ class InsightTemperatureReading:
 class SmartComfortReading(_SerializableMixin):
     """A single temperature reading with heating context for comfort analysis.
 
-    Attributes
+    Attributes:
     ----------
     timestamp:
         UTC timestamp of the measurement.

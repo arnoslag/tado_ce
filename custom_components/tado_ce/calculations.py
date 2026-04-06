@@ -1,4 +1,4 @@
-"""Tado CE centralized physics calculations — dew point, surface temp, risk classifiers, comfort models.
+"""Tado CE centralized physics calculations — dew point, surface temp, risk classifiers, comfort models.  # readability: named result
 
 Single source of truth for all thermodynamic formulas, risk classification,
 and comfort calculations. All functions return exact (unrounded) values;
@@ -30,14 +30,14 @@ MOLD_RISK_HIGH: float = 5.0  # °C — margin < 5 → High
 MOLD_RISK_MEDIUM: float = 7.0  # °C — margin < 7 → Medium
 
 # ============ Condensation Risk Thresholds — HEATING ============
-# margin = surface_temp - indoor_dew_point, uses <= comparisons  # noqa: ERA001
+# margin = surface_temp - indoor_dew_point, uses <= comparisons
 CONDENSATION_HEATING_CRITICAL: float = 1.0  # °C
 CONDENSATION_HEATING_HIGH: float = 3.0  # °C
 CONDENSATION_HEATING_MEDIUM: float = 5.0  # °C
 CONDENSATION_HEATING_LOW: float = 7.0  # °C
 
 # ============ Condensation Risk Thresholds — AC ============
-# margin = window_outer_surface_temp - outdoor_dew_point, uses < comparisons  # noqa: ERA001
+# margin = window_outer_surface_temp - outdoor_dew_point, uses < comparisons
 CONDENSATION_AC_CRITICAL: float = 2.0  # °C
 CONDENSATION_AC_HIGH: float = 4.0  # °C
 CONDENSATION_AC_MEDIUM: float = 6.0  # °C
@@ -134,11 +134,11 @@ def calculate_heat_index(temperature: float, humidity: float) -> float:
     )
 
     # Step 3a: Low-RH adjustment
-    if rh < 13.0 and 80.0 < t_f < 112.0:
+    if rh < 13.0 and 80.0 < t_f < 112.0:  # noqa: PLR2004 — NWS Heat Index formula constants
         hi -= ((13.0 - rh) / 4.0) * math.sqrt((17.0 - abs(t_f - 95.0)) / 17.0)
 
     # Step 3b: High-RH adjustment
-    elif rh > 85.0 and 80.0 < t_f < 87.0:
+    elif rh > 85.0 and 80.0 < t_f < 87.0:  # noqa: PLR2004 — NWS Heat Index formula constants
         hi += ((rh - 85.0) / 10.0) * ((87.0 - t_f) / 5.0)
 
     rothfusz_c = (hi - 32.0) * 5.0 / 9.0
@@ -245,7 +245,7 @@ def calculate_surface_rh(effective_temp: float, dew_point: float) -> int | None:
 
         surface_rh = (_svp(dew_point) / _svp(effective_temp)) * 100.0
         return round(min(100.0, max(0.0, surface_rh)))
-    except Exception:
+    except (ValueError, TypeError, ZeroDivisionError):
         _LOGGER.debug(
             "Failed to calculate surface RH (effective_temp=%s, dew_point=%s)",
             effective_temp,
@@ -449,5 +449,5 @@ def estimate_cooling_crossover(
     temp_margin = current_temp - target_temp
     hours = temp_margin / abs(effective_rate)
 
-    return hours  # noqa: RET504 — readability: named result
+    return hours
 

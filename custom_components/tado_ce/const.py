@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Final
 
 DOMAIN = "tado_ce"
 MANUFACTURER = "Joe Yiu (@hiall-fyi)"
@@ -76,12 +77,6 @@ SERVICE_DEACTIVATE_OPEN_WINDOW = "deactivate_open_window"
 SERVICE_SET_OPEN_WINDOW_MODE = "set_open_window_mode"
 SERVICE_RESTORE_PREVIOUS_STATE = "restore_previous_state"
 
-# Adaptive Preheat Override Mode
-ADAPTIVE_PREHEAT_OFF = "off"
-ADAPTIVE_PREHEAT_ACTIVE = "active"
-ADAPTIVE_PREHEAT_PASSIVE = "passive"
-ADAPTIVE_PREHEAT_OPTIONS = ["Off", "Active", "Passive"]
-
 # API Base URLs
 TADO_API_BASE = "https://my.tado.com/api/v2"
 TADO_AUTH_URL = "https://login.tado.com/oauth2"
@@ -89,7 +84,6 @@ CLIENT_ID = "1bb50063-6b0c-4d11-bd99-387f4a91cc46"
 
 # API Endpoints (relative to TADO_API_BASE)
 API_ENDPOINT_ME = f"{TADO_API_BASE}/me"
-API_ENDPOINT_HOMES = f"{TADO_API_BASE}/homes"  # + /{home_id}
 API_ENDPOINT_DEVICES = f"{TADO_API_BASE}/devices"  # + /{serial}
 
 # Auth Endpoints
@@ -180,13 +174,13 @@ DEFAULT_DAY_INTERVAL = 30  # minutes (default day polling interval)
 DEFAULT_NIGHT_INTERVAL = 120  # minutes (default night polling interval)
 MIN_CUSTOM_INTERVAL = 1  # minutes (custom interval floor - allows 1-min for high-quota users)
 MAX_POLLING_INTERVAL = 120  # minutes (ensure reasonable updates even with low quota)
+MAX_CUSTOM_INTERVAL = 1440  # minutes (24 hours — maximum custom polling interval)
 POLLING_SAFETY_BUFFER = 0.90  # Reserve 10% quota for manual calls and unexpected usage
 
 # Quota Reserve Protection Constants
 # When remaining quota falls below threshold, pause polling to reserve for manual operations
 QUOTA_RESERVE_CALLS = 5  # Minimum reserved calls (absolute floor) - pause polling
 QUOTA_RESERVE_PERCENT = 0.05  # Reserve 5% of daily limit (whichever is larger)
-QUOTA_RESERVE_ENABLED_DEFAULT = True
 
 # Bootstrap Reserve - absolute minimum calls that are NEVER used
 # These are reserved for auto-recovery after API reset (detecting reset, initial sync)
@@ -209,38 +203,10 @@ WINDOW_U_VALUES = {
 DEFAULT_WINDOW_TYPE = "double_pane"
 INTERIOR_SURFACE_HEAT_TRANSFER_COEFFICIENT = 8.0  # W/m²K (standard value for indoor surfaces)
 
-# UFH (Underfloor Heating) Slow Response Mode
-# Additional buffer time for underfloor heating systems which have higher thermal lag
-UFH_BUFFER_MINUTES_DEFAULT = 0  # Default: no buffer (standard radiators)
-UFH_BUFFER_MINUTES_MIN = 0
-UFH_BUFFER_MINUTES_MAX = 60  # Max 60 minutes additional buffer
-
-
-# =============================================================================
-# Per-Zone Thermal Analytics
-# =============================================================================
-
-# Config key for zones with Thermal Analytics enabled
-# Empty list = all zones with heatingPower (default)
-# Non-empty list = only specified zone IDs
-CONF_THERMAL_ANALYTICS_ZONES = "thermal_analytics_zones"
 
 # =============================================================================
 # Per-Zone Configuration Constants
 # =============================================================================
-
-# Zone Features Toggles - control which entity groups are visible
-# Core features are ALWAYS ON (not in UI)
-# Only Thermal Analytics and Zone Configuration are user-configurable
-# These values are for reference only - actual defaults are in config_manager.py
-ZONE_FEATURES_TOGGLES = {
-    "zone_diagnostics_enabled": True,  # Battery, connection, heating power sensors (always ON)
-    "device_controls_enabled": True,  # Child lock, early start switches (always ON)
-    "boost_buttons_enabled": True,  # Boost buttons (always ON)
-    "environment_sensors_enabled": True,  # Mold risk, comfort level, condensation risk (always ON)
-    "thermal_analytics_enabled": False,  # Thermal analytics sensors (user toggle, default OFF)
-    "zone_configuration_enabled": False,  # Per-zone config entities (user toggle, default OFF)
-}
 
 # Overlay mode values (UPPERCASE - matches Tado API)
 OVERLAY_MODE_TADO_MODE = "TADO_MODE"
@@ -291,7 +257,6 @@ SURFACE_TEMP_OFFSET_STEP = 0.1
 
 # Heating type values
 HEATING_TYPE_RADIATOR = "radiator"
-HEATING_TYPE_UFH = "ufh"
 HEATING_TYPE_OPTIONS = ["Radiator", "UFH"]
 
 # Smart comfort mode options (for per-zone select)
@@ -302,33 +267,17 @@ CONDENSATION_RISK_NONE_THRESHOLD = 13.0  # Below this = None
 CONDENSATION_RISK_LOW_THRESHOLD = 15.5  # Below this = Low
 CONDENSATION_RISK_MODERATE_THRESHOLD = 18.0  # Below this = Moderate, above = High
 
-# Per-zone temperature limits
-ZONE_MIN_TEMP_MIN = 5.0
-ZONE_MIN_TEMP_MAX = 25.0
-ZONE_MAX_TEMP_MIN = 15.0
-ZONE_MAX_TEMP_MAX = 30.0
-ZONE_TEMP_STEP = 0.5
-
 # Open window mode defaults
 OPEN_WINDOW_DEFAULT_TEMP = 5.0  # Frost protection temperature (°C)
 OPEN_WINDOW_DEFAULT_TIMEOUT = 900  # 15 minutes in seconds (Tado default)
-OPEN_WINDOW_MAX_TIMEOUT = 3600  # 60 minutes max
 
 # Timer duration limits
 TIMER_DURATION_MIN = 15
-TIMER_DURATION_MAX = 180
-TIMER_DURATION_STEP = 15
 
 # Timer duration options (for per-zone select)
 TIMER_DURATION_OPTIONS = ["15", "30", "45", "60", "90", "120", "180"]
 
-# UFH buffer limits (same as existing, but for per-zone)
-ZONE_UFH_BUFFER_MIN = 0
-ZONE_UFH_BUFFER_MAX = 60
-ZONE_UFH_BUFFER_STEP = 5
-
 # Window type options (for per-zone select)
-WINDOW_TYPE_OPTIONS = ["Single Pane", "Double Pane", "Triple Pane", "Passive House"]
 WINDOW_TYPE_MAP = {
     "Single Pane": "single_pane",
     "Double Pane": "double_pane",
@@ -353,10 +302,6 @@ WINDOW_DETECTION_MODE_MAP = {
 WINDOW_DETECTION_MODE_REVERSE_MAP = {v: k for k, v in WINDOW_DETECTION_MODE_MAP.items()}
 WINDOW_DETECTION_MODE_DEFAULT = "auto"
 
-# External sensor entity ID default (empty = not configured, use Tado API values)
-EXTERNAL_SENSOR_DEFAULT = ""
-EXTERNAL_SENSOR_NONE_OPTION = "none"
-
 # Temperature offset limits (per-zone)
 TEMP_OFFSET_MIN = -3.0
 TEMP_OFFSET_MAX = 3.0
@@ -376,4 +321,11 @@ DEVICE_SYNC_DELAY_DEFAULT = 1.0  # seconds
 DEVICE_SYNC_DELAY_MIN = 0.5  # seconds
 DEVICE_SYNC_DELAY_MAX = 5.0  # seconds
 DEVICE_SYNC_QUEUE_MAX_DEPTH = 20
+
+# =============================================================================
+# Retry / Transient Error Constants
+# =============================================================================
+
+MAX_RETRY_ATTEMPTS: Final = 3
+RETRY_BASE_DELAY: Final = 2  # seconds — exponential: 2s, 4s, 8s
 

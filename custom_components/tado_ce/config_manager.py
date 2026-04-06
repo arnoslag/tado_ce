@@ -1,4 +1,4 @@
-"""Tado CE Configuration Manager — config entry settings access and persistence.
+"""Tado CE Configuration Manager — config entry settings access and persistence.  # generic config store, values are heterogeneous
 
 Manages user configuration settings stored in Home Assistant config entry.
 """
@@ -66,7 +66,7 @@ class ConfigurationManager:
         self._hass = hass
         # Don't sync on init to avoid blocking - will be synced when needed
 
-    def _get_option(self, key: str, default: Any) -> Any:  # noqa: ANN401 — generic config store, values are heterogeneous
+    def _get_option(self, key: str, default: Any) -> Any:
         """Get option value with real-time update support.
 
         Reads directly from config_entry.options to get real-time value
@@ -280,34 +280,42 @@ class ConfigurationManager:
         """
         return self._get_int_option("night_start_hour", DEFAULT_NIGHT_START_HOUR, 0, 23)
 
+    def _get_optional_interval(self, key: str) -> int | None:
+        """Get optional polling interval with float→int conversion and range validation.
+
+        Handles HA NumberSelector (float), legacy TextSelector (str),
+        None (not configured), and out-of-range values.
+
+        Returns:
+            Interval in minutes (1-1440), or None if not configured/invalid.
+        """
+        interval = self._get_option(key, None)
+        if interval is None:
+            return None
+
+        if isinstance(interval, float):
+            interval = int(interval)
+        elif isinstance(interval, str):
+            if not interval.strip():
+                return None
+            try:
+                interval = int(float(interval))
+            except (ValueError, TypeError, OverflowError):
+                _LOGGER.warning("Invalid %s: %s, ignoring", key, interval)
+                return None
+
+        if not isinstance(interval, int) or interval < 1 or interval > 1440:  # noqa: PLR2004 — 1440 min = 24h max interval
+            _LOGGER.warning("Invalid %s: %s, ignoring", key, interval)
+            return None
+        return interval
+
     def get_custom_day_interval(self) -> int | None:
         """Get custom day polling interval in minutes.
 
         Returns:
             Polling interval in minutes (1-1440), or None if not configured
         """
-        interval = self._get_option("custom_day_interval", None)
-        if interval is None:
-            return None
-
-        # Convert float to int (HA NumberSelector returns float)
-        if isinstance(interval, float):
-            interval = int(interval)
-        elif isinstance(interval, str):
-            # Handle legacy TextSelector data
-            if not interval.strip():
-                return None
-            try:
-                interval = int(float(interval))
-            except (ValueError, TypeError, OverflowError):
-                _LOGGER.warning("Invalid custom_day_interval: %s, ignoring", interval)
-                return None
-
-        # Validate range
-        if not isinstance(interval, int) or interval < 1 or interval > 1440:
-            _LOGGER.warning("Invalid custom_day_interval: %s, ignoring", interval)
-            return None
-        return interval
+        return self._get_optional_interval("custom_day_interval")
 
     def get_custom_night_interval(self) -> int | None:
         """Get custom night polling interval in minutes.
@@ -315,28 +323,7 @@ class ConfigurationManager:
         Returns:
             Polling interval in minutes (1-1440), or None if not configured
         """
-        interval = self._get_option("custom_night_interval", None)
-        if interval is None:
-            return None
-
-        # Convert float to int (HA NumberSelector returns float)
-        if isinstance(interval, float):
-            interval = int(interval)
-        elif isinstance(interval, str):
-            # Handle legacy TextSelector data
-            if not interval.strip():
-                return None
-            try:
-                interval = int(float(interval))
-            except (ValueError, TypeError, OverflowError):
-                _LOGGER.warning("Invalid custom_night_interval: %s, ignoring", interval)
-                return None
-
-        # Validate range
-        if not isinstance(interval, int) or interval < 1 or interval > 1440:
-            _LOGGER.warning("Invalid custom_night_interval: %s, ignoring", interval)
-            return None
-        return interval
+        return self._get_optional_interval("custom_night_interval")
 
     def get_api_history_retention_days(self) -> int:
         """Get API call history retention period in days.
@@ -413,16 +400,6 @@ class ConfigurationManager:
             "smart_comfort_mode",
             self._get_option("weather_compensation", DEFAULT_WEATHER_COMPENSATION),
         )
-
-    def get_weather_compensation(self) -> str:
-        """Get the weather compensation preset (legacy, use get_smart_comfort_mode instead).
-
-        Adjusts heating/cooling rate predictions based on outdoor temp.
-
-        Returns:
-            Preset name: 'none', 'light', 'moderate', or 'aggressive'
-        """
-        return self.get_smart_comfort_mode()
 
     def get_use_feels_like(self) -> bool:
         """Check if feels-like temperature should be used.

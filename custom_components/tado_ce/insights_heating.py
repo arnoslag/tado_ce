@@ -1,4 +1,4 @@
-"""Heating insights — anomaly, preheat, boiler flow, efficiency.
+"""Heating insights — anomaly, preheat, boiler flow, efficiency.  # used in recommendation text
 
 Provides insight functions for heating-related conditions.
 """
@@ -251,7 +251,7 @@ def calculate_heating_off_cold_room_insight(
 def calculate_confidence_recommendation(
     confidence_percent: float | None,
     zone_name: str,
-    cycle_count: int = 0,  # noqa: ARG001 — used in recommendation text
+    cycle_count: int = 0,
     completed_count: int = 0,
 ) -> str:
     """Calculate SMART recommendation for thermal analysis confidence.

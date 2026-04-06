@@ -13,6 +13,8 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 import aiohttp
+from homeassistant.exceptions import HomeAssistantError
+from homeassistant.util import dt as dt_util
 
 from .api_auth import TadoAuthMixin
 from .api_call_tracker import (
@@ -25,12 +27,9 @@ from .api_call_tracker import (
     CALL_TYPE_ZONE_STATES,
     CALL_TYPE_ZONES,
 )
-from homeassistant.exceptions import HomeAssistantError
-from homeassistant.util import dt as dt_util
-
-from .const import API_ENDPOINT_DEVICES, TADO_API_BASE
+from .const import API_ENDPOINT_DEVICES, MAX_RETRY_ATTEMPTS, TADO_API_BASE
 from .exceptions import TadoAuthError, TadoSyncError
-from .helpers import parse_iso_datetime
+from .helpers import parse_iso_datetime, retry_delay
 from .storage import async_load_json, async_save_json
 
 if TYPE_CHECKING:
@@ -47,6 +46,27 @@ _LOGGER = logging.getLogger(__name__)
 
 # HTTP timeout for Tado Cloud API calls (30s covers slow responses; normal < 5s)
 _API_CALL_TIMEOUT = aiohttp.ClientTimeout(total=30)
+
+# Methods safe to retry on transient 403 (idempotent)
+_RETRYABLE_METHODS = frozenset({"GET", "PUT", "DELETE"})
+
+
+def _format_reset_display(
+    now_utc: datetime,
+    calculated_reset_seconds: int | None,
+    fallback_reset_seconds: int,
+) -> tuple[str | None, str | None, int]:
+    """Format reset time for display.
+
+    Returns (reset_at, reset_human, reset_seconds).
+    """
+    if calculated_reset_seconds and calculated_reset_seconds > 0:
+        hours = calculated_reset_seconds // 3600
+        minutes = (calculated_reset_seconds % 3600) // 60
+        reset_human = f"{hours}h {minutes}m" if hours > 0 else f"{minutes}m"
+        reset_dt = now_utc + timedelta(seconds=calculated_reset_seconds)
+        return reset_dt.isoformat(), reset_human, calculated_reset_seconds
+    return None, None, fallback_reset_seconds
 
 
 def _detect_call_type(endpoint: str) -> int | None:
@@ -202,9 +222,342 @@ class TadoApiClient(TadoAuthMixin):
             data = await async_load_json(self._hass, ratelimit_path)  # type: ignore[arg-type]
             if data is not None and isinstance(data, dict):
                 return data
-        except Exception as e:
+        except (OSError, ValueError) as e:
             _LOGGER.debug("Could not load ratelimit file: %s", e)
         return {}
+
+    def _calculate_test_mode_ratelimit(
+        self,
+        now_utc: datetime,
+        prev_data: dict[str, Any],
+        last_reset_utc: str | None,
+        status: str,
+    ) -> dict[str, Any]:
+        """Calculate simulated ratelimit values for test mode.
+
+        Independent 24-hour cycle per Test Mode session.
+        Each enable starts a fresh cycle, disable returns to Live quota.
+        """
+        prev_test_mode = prev_data.get("test_mode", False)
+        prev_test_mode_start = prev_data.get("test_mode_start_time")
+        prev_test_mode_used = prev_data.get("test_mode_used", 0)
+
+        _LOGGER.debug(
+            "Test Mode: prev_test_mode=%s, prev_test_mode_start=%s, prev_test_mode_used=%s",
+            prev_test_mode,
+            prev_test_mode_start,
+            prev_test_mode_used,
+        )
+
+        # Detect fresh enable (transition from disabled to enabled)
+        # OR first time enabling (no start time recorded)
+        fresh_enable = not prev_test_mode or prev_test_mode_start is None
+
+        # Backup live last_reset_utc when entering Test Mode
+        if fresh_enable and last_reset_utc:
+            _LOGGER.info("Test Mode: Backing up live last_reset_utc=%s", last_reset_utc)
+
+        # Check for 24h cycle expiry
+        cycle_expired = False
+        if not fresh_enable and prev_test_mode_start:
+            try:
+                start_time = parse_iso_datetime(prev_test_mode_start)
+                cycle_end = start_time + timedelta(hours=24)
+                if now_utc >= cycle_end:
+                    cycle_expired = True
+                    _LOGGER.info(
+                        "Test Mode: 24h cycle expired (started: %s, now: %s)",
+                        prev_test_mode_start,
+                        now_utc.isoformat(),
+                    )
+            except (ValueError, TypeError) as e:
+                _LOGGER.warning("Test Mode: Failed to parse start time: %s", e)
+                fresh_enable = True
+
+        # Reset on fresh enable or cycle expiry
+        if fresh_enable or cycle_expired:
+            test_mode_start_time = now_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
+            test_mode_used = 0
+            _LOGGER.info(
+                "Test Mode: %s - starting new cycle at %s",
+                "Fresh enable" if fresh_enable else "24h cycle reset",
+                test_mode_start_time,
+            )
+        else:
+            test_mode_start_time = prev_test_mode_start  # type: ignore[assignment]
+            test_mode_used = prev_test_mode_used
+
+        # Handle error status - preserve test_mode_used
+        if status == "error":
+            _LOGGER.debug("Test Mode: Error status, preserving used=%s", test_mode_used)
+        else:
+            test_mode_used = min(test_mode_used + 1, 100)
+            _LOGGER.debug("Test Mode: Simulated used=%s", test_mode_used)
+
+        # Calculate simulated values
+        remaining = max(0, 100 - test_mode_used)
+
+        # Calculate simulated reset time from test_mode_start_time
+        try:
+            start_time = parse_iso_datetime(test_mode_start_time)
+            test_mode_reset_at = start_time + timedelta(hours=24)
+            test_mode_reset_seconds = max(0, int((test_mode_reset_at - now_utc).total_seconds()))
+        except (ValueError, TypeError) as e:
+            _LOGGER.warning("Test Mode: Failed to calculate reset time: %s", e)
+            test_mode_reset_at = now_utc + timedelta(hours=24)
+            test_mode_reset_seconds = 86400
+
+        _LOGGER.debug(
+            "Test Mode: Storing simulated values - used=%s, remaining=%s, limit=100, reset_at=%s",
+            test_mode_used,
+            remaining,
+            test_mode_reset_at.isoformat(),
+        )
+
+        return {
+            "limit": 100,
+            "used": test_mode_used,
+            "remaining": remaining,
+            "percentage_used": round(test_mode_used, 1),
+            "test_mode_flag": True,
+            "test_mode_start_time": test_mode_start_time,
+            "test_mode_used": test_mode_used,
+            "test_mode_reset_at": test_mode_reset_at,
+            "test_mode_reset_seconds": test_mode_reset_seconds,
+        }
+
+    def _calculate_live_ratelimit(
+        self,
+        now_utc: datetime,
+        prev_data: dict[str, Any],
+        real_limit: int,
+        real_remaining: int,
+        prev_remaining: int | None,
+        last_reset_utc: str | None,
+    ) -> dict[str, Any]:
+        """Calculate ratelimit values from real API headers."""
+        limit = real_limit
+        remaining = real_remaining
+        used = limit - remaining
+        percentage_used = round((used / limit) * 100, 1) if limit > 0 else 0
+
+        # Restore live last_reset_utc when exiting Test Mode
+        prev_test_mode = prev_data.get("test_mode", False)
+        if prev_test_mode:
+            live_last_reset_utc = prev_data.get("live_last_reset_utc")
+            if live_last_reset_utc:
+                last_reset_utc = live_last_reset_utc
+                _LOGGER.info("Test Mode disabled: Restored live last_reset_utc=%s", last_reset_utc)
+            else:
+                _LOGGER.debug("Test Mode disabled: No live_last_reset_utc backup found, will re-estimate")
+
+        # Detect if rate limit has reset (remaining increased significantly)
+        if prev_remaining is not None and remaining is not None:
+            reset_threshold = max(20, int(limit * 0.05))
+            if remaining > prev_remaining + reset_threshold:
+                last_reset_utc = now_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
+                _LOGGER.info(
+                    "Rate limit reset detected at %s (remaining: %s -> %s, threshold: %s)",
+                    last_reset_utc,
+                    prev_remaining,
+                    remaining,
+                    reset_threshold,
+                )
+
+        return {
+            "limit": limit,
+            "used": used,
+            "remaining": remaining,
+            "percentage_used": percentage_used,
+            "test_mode_flag": False,
+            "last_reset_utc": last_reset_utc,
+        }
+
+    def _calculate_reset_seconds(
+        self,
+        now_utc: datetime,
+        api_reset_seconds: int,
+        last_reset_utc: str | None,
+        used: int,
+    ) -> tuple[int | None, str | None]:
+        """Calculate seconds until reset using multiple strategies.
+
+        Returns (calculated_reset_seconds, updated_last_reset_utc).
+        """
+        calculated: int | None = None
+
+        # Strategy 1: Use API-provided reset_seconds if available and valid
+        if api_reset_seconds and api_reset_seconds > 0:
+            return api_reset_seconds, last_reset_utc
+
+        # Strategy 2: Calculate from last known reset time (rolling 24h window)
+        if last_reset_utc:
+            calculated = self._reset_from_last_known(now_utc, last_reset_utc)
+            if calculated is not None:
+                return calculated, last_reset_utc
+
+        # Strategy 3: Extrapolate from usage rate
+        if used > 0:
+            calculated, last_reset_utc = self._reset_from_extrapolation(
+                now_utc, used, last_reset_utc,
+            )
+            if calculated is not None:
+                return calculated, last_reset_utc
+
+        # Strategy 4: Estimate from call history (first call mode)
+        calculated = self._reset_from_call_history(now_utc)
+        return calculated, last_reset_utc
+
+    def _reset_from_last_known(
+        self, now_utc: datetime, last_reset_utc: str,
+    ) -> int | None:
+        """Calculate reset seconds from last known reset time (rolling 24h window)."""
+        try:
+            last_reset = parse_iso_datetime(last_reset_utc)
+            next_reset = last_reset + timedelta(hours=24)
+            while next_reset <= now_utc:
+                next_reset += timedelta(hours=24)
+            seconds_until_reset = int((next_reset - now_utc).total_seconds())
+            if seconds_until_reset > 0:
+                _LOGGER.debug("Using last_reset_utc: next reset at %s UTC", next_reset.strftime("%H:%M"))
+                return seconds_until_reset
+        except (ValueError, TypeError) as e:
+            _LOGGER.debug("Failed to calculate reset from last_reset_utc: %s", e)
+        return None
+
+    def _reset_from_extrapolation(
+        self,
+        now_utc: datetime,
+        used: int,
+        last_reset_utc: str | None,
+    ) -> tuple[int | None, str | None]:
+        """Extrapolate reset time from usage rate.
+
+        Returns (calculated_reset_seconds, updated_last_reset_utc).
+        """
+        tracker = self._api_tracker
+        if not tracker:
+            return None, last_reset_utc
+        try:
+            estimated_reset = tracker.extrapolate_reset_time(used)
+            if estimated_reset:
+                if not last_reset_utc:
+                    last_reset_utc = estimated_reset.strftime("%Y-%m-%dT%H:%M:%SZ")
+                    _LOGGER.debug("Set last_reset_utc from extrapolation: %s", last_reset_utc)
+                next_reset = estimated_reset + timedelta(hours=24)
+                seconds_until_reset = int((next_reset - now_utc).total_seconds())
+                if seconds_until_reset > 0:
+                    _LOGGER.debug("Using extrapolated reset time: %s UTC", estimated_reset.strftime("%H:%M"))
+                    return seconds_until_reset, last_reset_utc
+        except (ValueError, TypeError, KeyError) as e:
+            _LOGGER.debug("Failed to extrapolate reset time: %s", e)
+        return None, last_reset_utc
+
+    @staticmethod
+    def _find_first_calls_by_day(all_calls: list[dict]) -> dict[str, Any]:
+        """Find the earliest API call for each day from call history."""
+        first_calls_by_day: dict[str, Any] = {}
+        for call in all_calls:
+            call_time = parse_iso_datetime(call["timestamp"])
+            date_key = call_time.strftime("%Y-%m-%d")
+            if date_key not in first_calls_by_day or call_time < first_calls_by_day[date_key]:
+                first_calls_by_day[date_key] = call_time
+        return first_calls_by_day
+
+    @staticmethod
+    def _round_to_nearest_hour(dt_val: datetime) -> int:
+        """Round a datetime to the nearest hour (0-23)."""
+        hour = dt_val.hour
+        if dt_val.minute >= 30:  # noqa: PLR2004
+            hour = (hour + 1) % 24  # noqa: PLR2004
+        return hour
+
+    @staticmethod
+    def _find_most_common_reset_hour(
+        first_calls_by_day: dict[str, Any],
+    ) -> tuple[int, int] | None:
+        """Find the most common hour from first-call-of-day data.
+
+        Returns (most_common_hour, count) or None if insufficient data.
+        """
+        hour_counts: dict[int, int] = {}
+        for first_call in first_calls_by_day.values():
+            hour = first_call.hour
+            if first_call.minute >= 30:  # noqa: PLR2004
+                hour = (hour + 1) % 24  # noqa: PLR2004
+            hour_counts[hour] = hour_counts.get(hour, 0) + 1
+
+        if not hour_counts:
+            return None
+        most_common_hour = max(hour_counts, key=hour_counts.get)  # type: ignore[arg-type]
+        count = hour_counts[most_common_hour]
+        if count < 2:  # noqa: PLR2004
+            return None
+        return most_common_hour, count
+
+    @staticmethod
+    def _average_reset_minute(
+        first_calls_by_day: dict[str, Any], target_hour: int,
+    ) -> int | None:
+        """Calculate average minute-of-day for calls matching the target hour."""
+        minutes_in_hour = []
+        for first_call in first_calls_by_day.values():
+            call_hour = first_call.hour
+            if first_call.minute >= 30:  # noqa: PLR2004
+                call_hour = (call_hour + 1) % 24  # noqa: PLR2004
+            if call_hour == target_hour:
+                minutes_in_hour.append(first_call.hour * 60 + first_call.minute)
+        if not minutes_in_hour:
+            return None
+        return sum(minutes_in_hour) // len(minutes_in_hour)
+
+    def _reset_from_call_history(self, now_utc: datetime) -> int | None:
+        """Estimate reset time from call history using first-call-of-day mode.
+
+        Look at the first call of each day and find the most common time (mode).
+        Filters out outliers like HA restarts at odd hours.
+        """
+        tracker = self._api_tracker
+        if not tracker:
+            return None
+        try:
+            all_calls = tracker.get_call_history(days=14)
+            first_calls_by_day = self._find_first_calls_by_day(all_calls)
+
+            if len(first_calls_by_day) < 2:  # noqa: PLR2004
+                return None
+
+            hour_result = self._find_most_common_reset_hour(first_calls_by_day)
+            if hour_result is None:
+                _LOGGER.debug(
+                    "Not enough data for mode calculation (%s days, no hour with 2+ occurrences)",
+                    len(first_calls_by_day),
+                )
+                return None
+
+            most_common_hour, match_count = hour_result
+            avg_minutes = self._average_reset_minute(first_calls_by_day, most_common_hour)
+            if avg_minutes is None:
+                return None
+
+            reset_hour = avg_minutes // 60
+            reset_minute = avg_minutes % 60
+
+            today_reset = now_utc.replace(
+                hour=reset_hour, minute=reset_minute, second=0, microsecond=0,
+            )
+            next_reset = today_reset + timedelta(days=1) if today_reset <= now_utc else today_reset
+
+            seconds_until_reset = int((next_reset - now_utc).total_seconds())
+            if seconds_until_reset > 0:
+                _LOGGER.debug(
+                    "Estimated reset at %02d:%02d UTC (mode from %s days, %s matches)",
+                    reset_hour, reset_minute, len(first_calls_by_day), match_count,
+                )
+                return seconds_until_reset
+        except (ValueError, TypeError, KeyError) as e:
+            _LOGGER.debug("Failed to estimate reset from call history: %s", e)
+        return None
 
     async def save_ratelimit(self, status: str = "ok") -> None:
         """Save current rate limit info to file for sensor updates.
@@ -223,8 +576,6 @@ class TadoApiClient(TadoAuthMixin):
             status: Status string ("ok", "rate_limited", "error")
         """
         now_utc = dt_util.utcnow()
-
-        # Load previous rate limit data to detect reset (native async)
         prev_data = await self._load_ratelimit()
 
         # Get real API values from parsed headers
@@ -233,312 +584,51 @@ class TadoApiClient(TadoAuthMixin):
         reset_seconds = self._rate_limit.get("reset_seconds", 0)
 
         # Check Test Mode from config_manager (real-time, not cached)
-        test_mode_enabled = False
-        config_manager = self._config_manager
-        if config_manager is None:
-            _LOGGER.debug("No config_manager available for test_mode check, assuming test_mode=False")
-
-        if config_manager:
-            try:
-                test_mode_enabled = config_manager.get_test_mode_enabled()
-            except (AttributeError, TypeError) as e:
-                _LOGGER.warning("Could not get test_mode from config_manager: %s", e)
-
+        test_mode_enabled = self._is_test_mode_enabled()
         _LOGGER.debug("save_ratelimit: test_mode_enabled=%s", test_mode_enabled)
 
-        # Get previous remaining and last known reset time
         prev_remaining = prev_data.get("remaining")
         last_reset_utc = prev_data.get("last_reset_utc")
 
         if test_mode_enabled:
-            # === TEST MODE: SIMULATED 100-CALL TIER ===
-            # Independent 24-hour cycle per Test Mode session
-            # Each enable starts a fresh cycle, disable returns to Live quota
-
-            prev_test_mode = prev_data.get("test_mode", False)
-            prev_test_mode_start = prev_data.get("test_mode_start_time")
-            prev_test_mode_used = prev_data.get("test_mode_used", 0)
-
-            _LOGGER.debug(
-                "Test Mode: prev_test_mode=%s, prev_test_mode_start=%s, prev_test_mode_used=%s",
-                prev_test_mode,
-                prev_test_mode_start,
-                prev_test_mode_used,
-            )
-
-            # Detect fresh enable (transition from disabled to enabled)
-            # OR first time enabling (no start time recorded)
-            fresh_enable = not prev_test_mode or prev_test_mode_start is None
-
-            # Backup live last_reset_utc when entering Test Mode
-            # This allows restoring the correct reset time when Test Mode is disabled
-            if fresh_enable and last_reset_utc:
-                _LOGGER.info("Test Mode: Backing up live last_reset_utc=%s", last_reset_utc)
-                # Will be saved as live_last_reset_utc in the data dict below
-
-            # Check for 24h cycle expiry
-            cycle_expired = False
-            if not fresh_enable and prev_test_mode_start:
-                try:
-                    start_time = parse_iso_datetime(
-                        prev_test_mode_start,
-                    )
-                    cycle_end = start_time + timedelta(hours=24)
-                    if now_utc >= cycle_end:
-                        cycle_expired = True
-                        _LOGGER.info(
-                            "Test Mode: 24h cycle expired (started: %s, now: %s)",
-                            prev_test_mode_start,
-                            now_utc.isoformat(),
-                        )
-                except (ValueError, TypeError) as e:
-                    _LOGGER.warning("Test Mode: Failed to parse start time: %s", e)
-                    fresh_enable = True  # Treat as fresh enable on parse error
-
-            # Reset on fresh enable or cycle expiry
-            if fresh_enable or cycle_expired:
-                test_mode_start_time = now_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
-                test_mode_used = 0
-                _LOGGER.info(
-                    "Test Mode: %s - starting new cycle at %s",
-                    "Fresh enable" if fresh_enable else "24h cycle reset",
-                    test_mode_start_time,
-                )
-            else:
-                # Continue existing cycle
-                test_mode_start_time = prev_test_mode_start  # type: ignore[assignment]
-                test_mode_used = prev_test_mode_used
-
-            # Handle error status - preserve test_mode_used
-            if status == "error":
-                _LOGGER.debug("Test Mode: Error status, preserving used=%s", test_mode_used)
-            else:
-                # Increment by 1, cap at 100
-                test_mode_used = min(test_mode_used + 1, 100)
-                _LOGGER.debug("Test Mode: Simulated used=%s", test_mode_used)
-
-            # Calculate simulated values
-            limit = 100
-            used = test_mode_used
-            remaining = max(0, 100 - test_mode_used)
-            percentage_used = round(test_mode_used, 1)  # used is already percentage for 100-call tier
-            test_mode_flag = True
-
-            # Calculate simulated reset time from test_mode_start_time
-            try:
-                start_time = parse_iso_datetime(
-                    test_mode_start_time,
-                )
-                test_mode_reset_at = start_time + timedelta(hours=24)
-                test_mode_reset_seconds = int((test_mode_reset_at - now_utc).total_seconds())
-                test_mode_reset_seconds = max(0, test_mode_reset_seconds)
-            except (ValueError, TypeError) as e:
-                _LOGGER.warning("Test Mode: Failed to calculate reset time: %s", e)
-                test_mode_reset_at = now_utc + timedelta(hours=24)
-                test_mode_reset_seconds = 86400
-
-            _LOGGER.debug(
-                "Test Mode: Storing simulated values - used=%s, remaining=%s, limit=%s, reset_at=%s",
-                used,
-                remaining,
-                limit,
-                test_mode_reset_at.isoformat(),
+            result = self._calculate_test_mode_ratelimit(
+                now_utc, prev_data, last_reset_utc, status,
             )
         else:
-            # === NORMAL MODE: REAL API VALUES ===
-            limit = real_limit
-            remaining = real_remaining
-            used = limit - remaining
-            percentage_used = round((used / limit) * 100, 1) if limit > 0 else 0
-            test_mode_flag = False
+            result = self._calculate_live_ratelimit(
+                now_utc, prev_data, real_limit, real_remaining, prev_remaining, last_reset_utc,
+            )
 
-            # Restore live last_reset_utc when exiting Test Mode
-            # This ensures we use the correct reset time instead of re-estimating
-            prev_test_mode = prev_data.get("test_mode", False)
-            if prev_test_mode:
-                # Just exited Test Mode - restore backed up reset time
-                live_last_reset_utc = prev_data.get("live_last_reset_utc")
-                if live_last_reset_utc:
-                    last_reset_utc = live_last_reset_utc
-                    _LOGGER.info("Test Mode disabled: Restored live last_reset_utc=%s", last_reset_utc)
-                else:
-                    _LOGGER.debug("Test Mode disabled: No live_last_reset_utc backup found, will re-estimate")
+        limit = result["limit"]
+        used = result["used"]
+        remaining = result["remaining"]
+        percentage_used = result["percentage_used"]
+        test_mode_flag = result["test_mode_flag"]
+        last_reset_utc = result.get("last_reset_utc", last_reset_utc)
 
-            # Detect if rate limit has reset (remaining increased significantly)
-            # Use dynamic threshold: max(20, 5% of limit) to handle both 5000 and 100 call limits
-            # - 5000 calls: threshold = max(20, 250) = 250
-            # - 100 calls: threshold = max(20, 5) = 20
-            if prev_remaining is not None and remaining is not None:
-                reset_threshold = max(20, int(limit * 0.05))
-                if remaining > prev_remaining + reset_threshold:  # Reset detected
-                    last_reset_utc = now_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
-                    _LOGGER.info(
-                        "Rate limit reset detected at %s (remaining: %s -> %s, threshold: %s)",
-                        last_reset_utc,
-                        prev_remaining,
-                        remaining,
-                        reset_threshold,
-                    )
-
-        # Calculate reset time using multiple strategies
-        calculated_reset_seconds = None
-
-        # Strategy 1: Use API-provided reset_seconds if available and valid
-        if reset_seconds and reset_seconds > 0:
-            calculated_reset_seconds = reset_seconds
-
-        # Strategy 2: Calculate from last known reset time (rolling 24h window)
-        if calculated_reset_seconds is None and last_reset_utc:
-            try:
-                last_reset = parse_iso_datetime(last_reset_utc)
-                next_reset = last_reset + timedelta(hours=24)
-
-                # If next_reset is in the past, add 24h until it's in the future
-                while next_reset <= now_utc:
-                    next_reset += timedelta(hours=24)
-
-                seconds_until_reset = int((next_reset - now_utc).total_seconds())
-
-                if seconds_until_reset > 0:
-                    calculated_reset_seconds = seconds_until_reset
-                    _LOGGER.debug("Using last_reset_utc: next reset at %s UTC", next_reset.strftime("%H:%M"))
-            except (ValueError, TypeError) as e:
-                _LOGGER.debug("Failed to calculate reset from last_reset_utc: %s", e)
-
-        # Strategy 3: Extrapolate from usage rate (NEW)
-        # Calculate average API calls per hour, then extrapolate backwards to find reset time.
-        # This is more accurate than "first call mode" because it uses actual usage patterns.
-        # NOTE: Only use this if we don't have last_reset_utc - don't overwrite existing value!
-        if calculated_reset_seconds is None and used > 0:
-            tracker = self._api_tracker
-            if tracker:
-                try:
-                    estimated_reset = tracker.extrapolate_reset_time(used)
-                    if estimated_reset:
-                        # Only update last_reset_utc if we don't have one
-                        # Don't overwrite existing value from detected reset!
-                        if not last_reset_utc:
-                            last_reset_utc = estimated_reset.strftime("%Y-%m-%dT%H:%M:%SZ")
-                            _LOGGER.debug("Set last_reset_utc from extrapolation: %s", last_reset_utc)
-
-                        next_reset = estimated_reset + timedelta(hours=24)
-                        seconds_until_reset = int((next_reset - now_utc).total_seconds())
-
-                        if seconds_until_reset > 0:
-                            calculated_reset_seconds = seconds_until_reset
-                            _LOGGER.debug("Using extrapolated reset time: %s UTC", estimated_reset.strftime("%H:%M"))
-                except (ValueError, TypeError, KeyError) as e:
-                    _LOGGER.debug("Failed to extrapolate reset time: %s", e)
-
-        # Strategy 4: Estimate from call history (first call mode)
-        # Look at the first call of each day and find the most common time (mode).
-        # This filters out outliers like HA restarts at odd hours.
-        # The reset time is fixed (~11:24 UTC) based on when the account first made API calls.
-        if calculated_reset_seconds is None:
-            tracker = self._api_tracker
-            if tracker:
-                try:
-                    # Get first call of each day from history
-                    first_calls_by_day: dict[str, Any] = {}
-                    all_calls = tracker.get_call_history(days=14)
-
-                    for call in all_calls:
-                        ts = call["timestamp"]
-                        call_time = parse_iso_datetime(ts)
-
-                        date_key = call_time.strftime("%Y-%m-%d")
-                        if date_key not in first_calls_by_day or call_time < first_calls_by_day[date_key]:
-                            first_calls_by_day[date_key] = call_time
-
-                    if len(first_calls_by_day) >= 2:
-                        # Round each first call time to nearest hour and count occurrences
-                        hour_counts: dict[str, Any] = {}
-                        for first_call in first_calls_by_day.values():
-                            # Round to nearest hour
-                            hour = first_call.hour
-                            if first_call.minute >= 30:
-                                hour = (hour + 1) % 24
-                            hour_counts[hour] = hour_counts.get(hour, 0) + 1
-
-                        # Find most common hour (mode) - require at least 2 occurrences
-                        # to filter out outliers when we have limited data
-                        most_common_hour = max(hour_counts, key=hour_counts.get)  # type: ignore[arg-type]
-                        most_common_count = hour_counts[most_common_hour]
-
-                        # If no hour has >= 2 occurrences, we don't have enough data
-                        if most_common_count < 2:
-                            _LOGGER.debug(
-                                "Not enough data for mode calculation (%s days, no hour with 2+ occurrences)",
-                                len(first_calls_by_day),
-                            )
-                        else:
-                            # Get average minute from calls in that hour range
-                            minutes_in_hour = []
-                            for first_call in first_calls_by_day.values():
-                                call_hour = first_call.hour
-                                if first_call.minute >= 30:
-                                    call_hour = (call_hour + 1) % 24
-                                if call_hour == most_common_hour:
-                                    # Use actual hour:minute for averaging
-                                    minutes_in_hour.append(first_call.hour * 60 + first_call.minute)
-
-                            if minutes_in_hour:
-                                avg_minutes = sum(minutes_in_hour) // len(minutes_in_hour)
-                                reset_hour = avg_minutes // 60
-                                reset_minute = avg_minutes % 60
-
-                                today_reset = now_utc.replace(
-                                    hour=reset_hour,
-                                    minute=reset_minute,
-                                    second=0,
-                                    microsecond=0,
-                                )
-
-                                if today_reset <= now_utc:
-                                    next_reset = today_reset + timedelta(days=1)
-                                else:
-                                    next_reset = today_reset
-
-                                seconds_until_reset = int((next_reset - now_utc).total_seconds())
-                                if seconds_until_reset > 0:
-                                    calculated_reset_seconds = seconds_until_reset
-                                    _LOGGER.debug(
-                                        "Estimated reset at %02d:%02d UTC (mode from %s days, %s matches)",
-                                        reset_hour,
-                                        reset_minute,
-                                        len(first_calls_by_day),
-                                        hour_counts.get(most_common_hour, 0),
-                                    )
-                except (ValueError, TypeError, KeyError) as e:
-                    _LOGGER.debug("Failed to estimate reset from call history: %s", e)
-
-        # Format reset time for display
-        reset_at = None
-        reset_human = None
-
-        # Test Mode uses its own reset time calculation
+        # Calculate reset time
         if test_mode_flag:
-            # Use Test Mode reset time (test_mode_start_time + 24h)
-            reset_seconds = test_mode_reset_seconds
-            reset_at = test_mode_reset_at.isoformat()
-            hours = test_mode_reset_seconds // 3600
-            minutes = (test_mode_reset_seconds % 3600) // 60
-            reset_human = f"{hours}h {minutes}m" if hours > 0 else f"{minutes}m"
-        elif calculated_reset_seconds and calculated_reset_seconds > 0:
-            hours = calculated_reset_seconds // 3600
-            minutes = (calculated_reset_seconds % 3600) // 60
-            reset_human = f"{hours}h {minutes}m" if hours > 0 else f"{minutes}m"
-            reset_dt = now_utc + timedelta(seconds=calculated_reset_seconds)
-            reset_at = reset_dt.isoformat()
-            reset_seconds = calculated_reset_seconds
+            # Test Mode uses its own reset time
+            reset_seconds = result["test_mode_reset_seconds"]
+            reset_at: str | None = result["test_mode_reset_at"].isoformat()
+            hours = reset_seconds // 3600
+            minutes = (reset_seconds % 3600) // 60
+            reset_human: str | None = f"{hours}h {minutes}m" if hours > 0 else f"{minutes}m"
+        else:
+            calculated_reset_seconds, last_reset_utc = self._calculate_reset_seconds(
+                now_utc, reset_seconds, last_reset_utc, used,
+            )
+            reset_at, reset_human, reset_seconds = _format_reset_display(
+                now_utc, calculated_reset_seconds, reset_seconds,
+            )
 
         # Update status based on usage
         if remaining == 0:
             status = "rate_limited"
-        elif percentage_used > 80:
+        elif percentage_used > 80:  # noqa: PLR2004 — API quota warning threshold
             status = "warning"
 
-        data = {
+        data: dict[str, Any] = {
             "limit": limit,
             "remaining": remaining,
             "used": used,
@@ -549,28 +639,10 @@ class TadoApiClient(TadoAuthMixin):
             "last_updated": now_utc.isoformat(),
             "last_reset_utc": last_reset_utc,
             "status": status,
-            "test_mode": test_mode_flag,  # Indicate if values are simulated
+            "test_mode": test_mode_flag,
         }
 
-        if test_mode_flag:
-            data["test_mode_start_time"] = test_mode_start_time
-            data["test_mode_used"] = test_mode_used
-            # Backup live last_reset_utc when in Test Mode
-            # Use existing backup if available, otherwise use current last_reset_utc
-            live_backup = prev_data.get("live_last_reset_utc") or last_reset_utc
-            if live_backup:
-                data["live_last_reset_utc"] = live_backup
-        else:
-            # Preserve previous Test Mode state when disabled (for debugging/logging)
-            # but don't use it for calculations
-            prev_start = prev_data.get("test_mode_start_time")
-            prev_used = prev_data.get("test_mode_used")
-            if prev_start is not None:
-                data["test_mode_start_time"] = prev_start
-            if prev_used is not None:
-                data["test_mode_used"] = prev_used
-            # Clear live_last_reset_utc backup after restoring (no longer needed)
-            # Don't persist it in Normal Mode to keep data clean
+        self._populate_test_mode_metadata(data, test_mode_flag, result, prev_data, last_reset_utc)
 
         try:
             await self._save_ratelimit(data)
@@ -580,6 +652,41 @@ class TadoApiClient(TadoAuthMixin):
                 _LOGGER.debug("Rate limit saved: %s/%s (%s%%)", used, limit, percentage_used)
         except (OSError, HomeAssistantError) as e:
             _LOGGER.debug("Failed to save rate limit: %s", e)
+
+    def _is_test_mode_enabled(self) -> bool:
+        """Check if test mode is enabled via config_manager."""
+        config_manager = self._config_manager
+        if config_manager is None:
+            _LOGGER.debug("No config_manager available for test_mode check, assuming test_mode=False")
+            return False
+        try:
+            return config_manager.get_test_mode_enabled()
+        except (AttributeError, TypeError) as e:
+            _LOGGER.warning("Could not get test_mode from config_manager: %s", e)
+            return False
+
+    @staticmethod
+    def _populate_test_mode_metadata(
+        data: dict[str, Any],
+        test_mode_flag: bool,
+        result: dict[str, Any],
+        prev_data: dict[str, Any],
+        last_reset_utc: str | None,
+    ) -> None:
+        """Populate test mode metadata fields in the ratelimit data dict."""
+        if test_mode_flag:
+            data["test_mode_start_time"] = result["test_mode_start_time"]
+            data["test_mode_used"] = result["test_mode_used"]
+            live_backup = prev_data.get("live_last_reset_utc") or last_reset_utc
+            if live_backup:
+                data["live_last_reset_utc"] = live_backup
+        else:
+            prev_start = prev_data.get("test_mode_start_time")
+            prev_used = prev_data.get("test_mode_used")
+            if prev_start is not None:
+                data["test_mode_start_time"] = prev_start
+            if prev_used is not None:
+                data["test_mode_used"] = prev_used
 
     async def _save_ratelimit(self, data: dict[str, Any]) -> None:
         """Save rate limit using executor I/O with atomic write."""
@@ -591,189 +698,190 @@ class TadoApiClient(TadoAuthMixin):
         if self._data_loader is not None:
             self._data_loader.update_cache("ratelimit", data)
 
+    async def _handle_401(
+        self, method: str, endpoint: str, attempt: int,
+    ) -> bool:
+        """Handle 401 Unauthorized. Returns True if should retry (continue loop)."""
+        if method == "GET" and attempt == 1:
+            _LOGGER.debug("Token expired mid-call, refreshing: %s", endpoint)
+            self._access_token = None
+            self._token_expiry = None
+            return True
+        _LOGGER.warning("Token expired on %s %s — not retrying", method, endpoint)
+        self._access_token = None
+        self._token_expiry = None
+        return False
+
+    async def _handle_403(
+        self, method: str, endpoint: str, attempt: int,
+    ) -> bool:
+        """Handle 403 Forbidden with retry. Returns True if should retry (continue loop)."""
+        self._access_token = None
+        self._token_expiry = None
+        if attempt < MAX_RETRY_ATTEMPTS:
+            _LOGGER.debug(
+                "API 403 on %s %s, retry %s/%s",
+                method, endpoint, attempt, MAX_RETRY_ATTEMPTS,
+            )
+            delay = retry_delay(attempt)
+            await asyncio.sleep(delay)
+            return True
+        _LOGGER.error("API 403 after %s retries: %s %s", MAX_RETRY_ATTEMPTS, method, endpoint)
+        return False
+
+    async def _resolve_api_url(self, endpoint: str, full_url: str | None) -> str | None:
+        """Resolve the API URL from endpoint or full_url."""
+        if full_url:
+            return full_url
+        config = await self._load_config()
+        home_id = config.get("home_id")
+        if not home_id:
+            _LOGGER.error("No home_id configured")
+            return None
+        return f"{TADO_API_BASE}/homes/{home_id}/{endpoint}"
+
+    async def _handle_error_status(
+        self,
+        status: int,
+        method: str,
+        endpoint: str,
+        attempt: int,
+        is_safe_to_retry: bool,
+    ) -> str:
+        """Handle non-success HTTP status. Returns 'continue', 'return_none'."""
+        if status == HTTPStatus.UNAUTHORIZED:
+            if await self._handle_401(method, endpoint, attempt):
+                return "continue"
+            return "return_none"
+
+        if status == HTTPStatus.FORBIDDEN and is_safe_to_retry:
+            if await self._handle_403(method, endpoint, attempt):
+                return "continue"
+            return "return_none"
+
+        if status == HTTPStatus.TOO_MANY_REQUESTS:
+            _LOGGER.error("Rate limit exceeded: %s", endpoint)
+        else:
+            _LOGGER.error("API call failed: %s %s → %s", method, endpoint, status)
+        return "return_none"
+
+    async def _execute_single_api_attempt(
+        self,
+        method: str,
+        url: str,
+        token: str,
+        data: dict[str, Any] | None,
+        success_statuses: set,
+        parse_ratelimit: bool,
+        attempt: int,
+        tracker: object | None,
+        call_type: str | None,
+    ) -> tuple[dict[str, Any] | None, bool]:
+        """Execute a single API attempt. Returns (result, should_continue).
+
+        Returns (data, False) on success, (None, True) on retryable error,
+        (None, False) on terminal error.
+        """
+        async with self._session.request(
+            method, url,
+            headers={"Authorization": f"Bearer {token}"},
+            json=data if method in ("PUT", "POST") else None,
+            timeout=_API_CALL_TIMEOUT,
+        ) as resp:
+            if parse_ratelimit and attempt == 1:
+                self._parse_ratelimit_headers(dict(resp.headers))
+            if tracker and call_type:
+                await tracker.async_record_call(call_type, resp.status)  # type: ignore[union-attr]
+
+            if resp.status in success_statuses:
+                if resp.status == HTTPStatus.NO_CONTENT or resp.content_length == 0:
+                    return {}, False
+                return await resp.json(), False  # type: ignore[return-value]
+
+            action = await self._handle_error_status(
+                resp.status, method, url, attempt,
+                method in _RETRYABLE_METHODS,
+            )
+            return None, action == "continue"
+
     async def api_call(
         self,
         endpoint: str,
         method: str = "GET",
         data: dict[str, Any] | None = None,
         parse_ratelimit: bool = True,
-        _retried: bool = False,
+        full_url: str | None = None,
+        extra_success_statuses: frozenset[int] | None = None,
     ) -> dict[str, Any] | None:
-        """Make authenticated API call.
+        """Make authenticated API call with transient 403 retry.
 
-        Args:
-            endpoint: API endpoint (e.g., "zoneStates", "weather")
-            method: HTTP method
-            data: Request body data
-            parse_ratelimit: Whether to parse rate limit headers
-            _retried: Internal flag — True if this is a 401 retry (prevents infinite loop)
-
-        Returns:
-            Response data, or None if failed
+        GET/PUT/DELETE are idempotent — safe to retry on 403.
+        POST is not retried on 403 (non-idempotent).
+        401 on GET triggers one token refresh + retry; on other methods just logs.
         """
-        token = await self.get_access_token()
-        if not token:
-            _LOGGER.error("Failed to get access token")
+        url = await self._resolve_api_url(endpoint, full_url)
+        if url is None:
             return None
 
-        config = await self._load_config()
-        home_id = config.get("home_id")
-        if not home_id:
-            _LOGGER.error("No home_id configured")
-            return None
-
-        url = f"{TADO_API_BASE}/homes/{home_id}/{endpoint}"
-        headers = {"Authorization": f"Bearer {token}"}
-
-        # Detect call type for tracking
         call_type = _detect_call_type(endpoint)
         tracker = self._api_tracker
 
-        try:
-            if method == "GET":
-                async with self._session.get(url, headers=headers, timeout=_API_CALL_TIMEOUT) as resp:
-                    if parse_ratelimit:
-                        self._parse_ratelimit_headers(dict(resp.headers))
+        _success = {HTTPStatus.OK, HTTPStatus.CREATED, HTTPStatus.NO_CONTENT}
+        if extra_success_statuses:
+            _success |= extra_success_statuses  # type: ignore[arg-type]
 
-                    if tracker and call_type:
-                        await tracker.async_record_call(call_type, resp.status)
+        for attempt in range(1, MAX_RETRY_ATTEMPTS + 1):
+            token = await self.get_access_token()
+            if not token:
+                _LOGGER.error("Failed to get access token")
+                return None
 
-                    if resp.status == HTTPStatus.UNAUTHORIZED:
-                        if _retried:
-                            _LOGGER.warning("Token still invalid after refresh — giving up")
-                            return None
-                        _LOGGER.debug("Token expired mid-call, refreshing and retrying: %s", endpoint)
-                        self._access_token = None
-                        self._token_expiry = None
-                        return await self.api_call(
-                            endpoint, method, data,
-                            parse_ratelimit=False, _retried=True,
-                        )
+            try:
+                result, should_continue = await self._execute_single_api_attempt(
+                    method, url, token, data, _success,
+                    parse_ratelimit, attempt, tracker, call_type,
+                )
+                if should_continue:
+                    continue
+                return result
+            except TimeoutError:
+                _LOGGER.warning("API call timed out after %ss: %s %s", _API_CALL_TIMEOUT.total, method, endpoint)
+                return None
+            except aiohttp.ClientError:
+                _LOGGER.exception("Network error")
+                return None
+            except TadoAuthError:
+                raise
+            except Exception:
+                _LOGGER.exception("Unexpected error")
+                return None
 
-                    if resp.status == HTTPStatus.TOO_MANY_REQUESTS:
-                        _LOGGER.error("Rate limit exceeded")
-                        return None
-
-                    if resp.status != HTTPStatus.OK:
-                        _LOGGER.error("API call failed: %s", resp.status)
-                        return None
-
-                    return await resp.json()  # type: ignore[no-any-return]
-
-            elif method in ("PUT", "POST"):
-                json_data = data or None
-                async with self._session.request(
-                    method,
-                    url,
-                    headers=headers,
-                    json=json_data,
-                    timeout=_API_CALL_TIMEOUT,
-                ) as resp:
-                    if parse_ratelimit:
-                        self._parse_ratelimit_headers(dict(resp.headers))
-
-                    if tracker and call_type:
-                        await tracker.async_record_call(call_type, resp.status)
-
-                    if resp.status == HTTPStatus.UNAUTHORIZED:
-                        _LOGGER.warning("Token expired on %s %s — not retrying (non-idempotent)", method, endpoint)
-                        self._access_token = None
-                        self._token_expiry = None
-                        return None
-
-                    if resp.status in (HTTPStatus.OK, HTTPStatus.CREATED, HTTPStatus.NO_CONTENT):
-                        if resp.content_length and resp.content_length > 0:
-                            return await resp.json()  # type: ignore[no-any-return]
-                        return {}
-
-                    _LOGGER.error("API call failed: %s", resp.status)
-                    return None
-
-            elif method == "DELETE":
-                async with self._session.delete(url, headers=headers, timeout=_API_CALL_TIMEOUT) as resp:
-                    if parse_ratelimit:
-                        self._parse_ratelimit_headers(dict(resp.headers))
-
-                    if tracker and call_type:
-                        await tracker.async_record_call(call_type, resp.status)
-
-                    if resp.status == HTTPStatus.UNAUTHORIZED:
-                        _LOGGER.warning("Token expired on DELETE %s — not retrying (non-idempotent)", endpoint)
-                        self._access_token = None
-                        self._token_expiry = None
-                        return None
-
-                    if resp.status in (HTTPStatus.OK, HTTPStatus.NO_CONTENT):
-                        return {}
-
-                    _LOGGER.error("API call failed: %s", resp.status)
-                    return None
-
-        except TimeoutError:
-            _LOGGER.warning("API call timed out after %ss: %s %s", _API_CALL_TIMEOUT.total, method, endpoint)
-            return None
-        except aiohttp.ClientError:
-            _LOGGER.exception("Network error")
-            return None
-        except TadoAuthError:
-            # Re-raise auth errors — must propagate to async_sync/coordinator
-            raise
-        except Exception:
-            _LOGGER.exception("Unexpected error")
-            return None
-
-        return None  # Unsupported method
+        return None
 
     async def get_device_offset(self, serial: str) -> float | None:
         """Get temperature offset for a specific device."""
-        token = await self.get_access_token()
-        if not token:
-            return None
-
         url = f"{API_ENDPOINT_DEVICES}/{serial}/temperatureOffset"
-        headers = {"Authorization": f"Bearer {token}"}
-
-        try:
-            async with self._session.get(url, headers=headers) as resp:
-                if resp.status != HTTPStatus.OK:
-                    _LOGGER.warning("Failed to get offset for %s: %s", serial, resp.status)
-                    return None
-
-                data = await resp.json()
-                return data.get("celsius")  # type: ignore[no-any-return]
-
-        except Exception as e:
-            _LOGGER.warning("Error getting offset for %s: %s", serial, e)
+        result = await self.api_call(
+            f"devices/{serial}/temperatureOffset",
+            full_url=url,
+        )
+        if result is None:
             return None
+        return result.get("celsius")  # type: ignore[no-any-return]
 
     async def set_device_offset(self, serial: str, offset: float) -> bool:
         """Set temperature offset for a specific device."""
-        token = await self.get_access_token()
-        if not token:
-            return False
-
         url = f"{API_ENDPOINT_DEVICES}/{serial}/temperatureOffset"
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-        }
-
-        try:
-            async with self._session.put(
-                url,
-                headers=headers,
-                json={"celsius": offset},
-            ) as resp:
-                if resp.status in (HTTPStatus.OK, HTTPStatus.NO_CONTENT):
-                    _LOGGER.info("Set offset %s°C for device %s", offset, serial)
-                    return True
-
-                _LOGGER.error("Failed to set offset: %s", resp.status)
-                return False
-
-        except Exception:
-            _LOGGER.exception("Error setting offset")
-            return False
+        result = await self.api_call(
+            f"devices/{serial}/temperatureOffset",
+            method="PUT",
+            data={"celsius": offset},
+            full_url=url,
+        )
+        if result is not None:
+            _LOGGER.info("Set offset %s°C for device %s", offset, serial)
+            return True
+        return False
 
     async def set_child_lock(self, serial: str, enabled: bool) -> bool:
         """Set child lock state for a specific device.
@@ -785,105 +893,35 @@ class TadoApiClient(TadoAuthMixin):
         Returns:
             True if successful, False otherwise.
         """
-        token = await self.get_access_token()
-        if not token:
-            return False
-
         url = f"{API_ENDPOINT_DEVICES}/{serial}/childLock"
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-        }
-
-        try:
-            async with self._session.put(
-                url,
-                headers=headers,
-                json={"childLockEnabled": enabled},
-            ) as resp:
-                if resp.status in (HTTPStatus.OK, HTTPStatus.NO_CONTENT):
-                    state_str = "enabled" if enabled else "disabled"
-                    _LOGGER.info("Child lock %s for device %s", state_str, serial)
-                    return True
-
-                _LOGGER.error("Failed to set child lock: %s", resp.status)
-                return False
-
-        except Exception:
-            _LOGGER.exception("Error setting child lock for %s", serial)
-            return False
+        result = await self.api_call(
+            f"devices/{serial}/childLock",
+            method="PUT",
+            data={"childLockEnabled": enabled},
+            full_url=url,
+        )
+        if result is not None:
+            state_str = "enabled" if enabled else "disabled"
+            _LOGGER.info("Child lock %s for device %s", state_str, serial)
+            return True
+        return False
 
     async def set_zone_overlay(self, zone_id: str, setting: dict[str, Any], termination: dict[str, Any]) -> bool:
         """Set zone overlay (manual control)."""
-        config = await self._load_config()
-        home_id = config.get("home_id")
-        if not home_id:
-            return False
-
-        token = await self.get_access_token()
-        if not token:
-            return False
-
-        url = f"{TADO_API_BASE}/homes/{home_id}/zones/{zone_id}/overlay"
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-        }
-
-        payload = {"setting": setting, "termination": termination}
-        tracker = self._api_tracker
-
-        try:
-            async with self._session.put(url, headers=headers, json=payload) as resp:
-                self._parse_ratelimit_headers(dict(resp.headers))
-
-                if tracker:
-                    await tracker.async_record_call(CALL_TYPE_OVERLAY, resp.status)
-
-                if resp.status in (HTTPStatus.OK, HTTPStatus.CREATED):
-                    return True
-
-                # Log detailed error for debugging
-                error_text = await resp.text()
-                _LOGGER.error("Failed to set overlay: %s - %s", resp.status, error_text)
-                _LOGGER.debug("Overlay payload was: %s", payload)
-                return False
-
-        except Exception:
-            _LOGGER.exception("Error setting overlay")
-            return False
+        result = await self.api_call(
+            f"zones/{zone_id}/overlay",
+            method="PUT",
+            data={"setting": setting, "termination": termination},
+        )
+        return result is not None
 
     async def delete_zone_overlay(self, zone_id: str) -> bool:
         """Delete zone overlay (return to schedule)."""
-        config = await self._load_config()
-        home_id = config.get("home_id")
-        if not home_id:
-            return False
-
-        token = await self.get_access_token()
-        if not token:
-            return False
-
-        url = f"{TADO_API_BASE}/homes/{home_id}/zones/{zone_id}/overlay"
-        headers = {"Authorization": f"Bearer {token}"}
-        tracker = self._api_tracker
-
-        try:
-            async with self._session.delete(url, headers=headers) as resp:
-                self._parse_ratelimit_headers(dict(resp.headers))
-
-                if tracker:
-                    await tracker.async_record_call(CALL_TYPE_OVERLAY, resp.status)
-
-                if resp.status in (HTTPStatus.OK, HTTPStatus.NO_CONTENT):
-                    return True
-
-                _LOGGER.error("Failed to delete overlay: %s", resp.status)
-                return False
-
-        except Exception:
-            _LOGGER.exception("Error deleting overlay")
-            return False
+        result = await self.api_call(
+            f"zones/{zone_id}/overlay",
+            method="DELETE",
+        )
+        return result is not None
 
     async def get_zone_schedule(self, zone_id: str) -> dict[str, Any] | None:
         """Get zone schedule (timetable and blocks).
@@ -891,152 +929,123 @@ class TadoApiClient(TadoAuthMixin):
         Returns:
             dict with 'type' (timetable type) and 'blocks' (dict of day_type -> blocks)
         """
-        config = await self._load_config()
-        home_id = config.get("home_id")
-        if not home_id:
+        # Step 1: Get active timetable
+        active = await self.api_call(
+            f"zones/{zone_id}/schedule/activeTimetable",
+        )
+        if active is None:
             return None
 
-        token = await self.get_access_token()
-        if not token:
-            return None
+        timetable_id = active.get("id", 0)
+        timetable_type = active.get("type", "ONE_DAY")
 
-        headers = {"Authorization": f"Bearer {token}"}
+        # Determine which day types to fetch based on timetable type
+        day_types_map = {
+            "ONE_DAY": ["MONDAY_TO_SUNDAY"],
+            "THREE_DAY": ["MONDAY_TO_FRIDAY", "SATURDAY", "SUNDAY"],
+            "SEVEN_DAY": ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"],
+        }
+        day_types = day_types_map.get(timetable_type, ["MONDAY_TO_SUNDAY"])
 
-        try:
-            # Get active timetable
-            url = f"{TADO_API_BASE}/homes/{home_id}/zones/{zone_id}/schedule/activeTimetable"
-            async with self._session.get(url, headers=headers) as resp:
-                self._parse_ratelimit_headers(dict(resp.headers))
-                if resp.status != HTTPStatus.OK:
-                    _LOGGER.error("Failed to get active timetable: %s", resp.status)
-                    return None
-                active = await resp.json()
+        # Step 2: Fetch blocks for each day type (individual failures OK)
+        blocks_by_day: dict[str, Any] = {}
+        for day_type in day_types:
+            blocks = await self.api_call(
+                f"zones/{zone_id}/schedule/timetables/{timetable_id}/blocks/{day_type}",
+            )
+            if blocks is not None:
+                blocks_by_day[day_type] = blocks
+            else:
+                _LOGGER.warning("Failed to get blocks for %s", day_type)
+                blocks_by_day[day_type] = []
 
-            timetable_id = active.get("id", 0)
-            timetable_type = active.get("type", "ONE_DAY")
-
-            # Determine which day types to fetch based on timetable type
-            day_types_map = {
-                "ONE_DAY": ["MONDAY_TO_SUNDAY"],
-                "THREE_DAY": ["MONDAY_TO_FRIDAY", "SATURDAY", "SUNDAY"],
-                "SEVEN_DAY": ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"],
-            }
-            day_types = day_types_map.get(timetable_type, ["MONDAY_TO_SUNDAY"])
-
-            # Fetch blocks for each day type
-            blocks_by_day = {}
-            for day_type in day_types:
-                url = (
-                    f"{TADO_API_BASE}/homes/{home_id}/zones/{zone_id}"
-                    f"/schedule/timetables/{timetable_id}/blocks/{day_type}"
-                )
-                async with self._session.get(url, headers=headers) as resp:
-                    self._parse_ratelimit_headers(dict(resp.headers))
-                    if resp.status == HTTPStatus.OK:
-                        blocks_by_day[day_type] = await resp.json()
-                    else:
-                        _LOGGER.warning("Failed to get blocks for %s: %s", day_type, resp.status)
-                        blocks_by_day[day_type] = []
-
-            return {
-                "type": timetable_type,
-                "timetable_id": timetable_id,
-                "blocks": blocks_by_day,
-            }
-
-        except Exception:
-            _LOGGER.exception("Error fetching zone schedule")
-            return None
+        return {
+            "type": timetable_type,
+            "timetable_id": timetable_id,
+            "blocks": blocks_by_day,
+        }
 
     async def set_presence_lock(self, state: str) -> bool:
         """Set home presence lock (HOME/AWAY)."""
-        config = await self._load_config()
-        home_id = config.get("home_id")
-        if not home_id:
-            return False
-
-        token = await self.get_access_token()
-        if not token:
-            return False
-
-        url = f"{TADO_API_BASE}/homes/{home_id}/presenceLock"
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-        }
-        tracker = self._api_tracker
-
-        try:
-            async with self._session.put(
-                url,
-                headers=headers,
-                json={"homePresence": state},
-            ) as resp:
-                self._parse_ratelimit_headers(dict(resp.headers))
-
-                if tracker:
-                    await tracker.async_record_call(CALL_TYPE_PRESENCE_LOCK, resp.status)
-
-                if resp.status in (HTTPStatus.OK, HTTPStatus.NO_CONTENT):
-                    _LOGGER.info("Presence lock set to %s", state)
-                    return True
-
-                _LOGGER.error("Failed to set presence lock: %s", resp.status)
-                return False
-
-        except Exception:
-            _LOGGER.exception("Error setting presence lock")
-            return False
+        result = await self.api_call(
+            "presenceLock",
+            method="PUT",
+            data={"homePresence": state},
+        )
+        if result is not None:
+            _LOGGER.info("Presence lock set to %s", state)
+            return True
+        return False
 
     async def delete_presence_lock(self) -> bool:
         """Delete presence lock to resume geofencing (Auto mode).
 
         Deleting the presence lock allows geofencing to resume control.
+        422 means presenceLock doesn't exist (already in auto mode) — treated as success.
         """
-        config = await self._load_config()
-        home_id = config.get("home_id")
-        if not home_id:
-            return False
+        result = await self.api_call(
+            "presenceLock",
+            method="DELETE",
+            extra_success_statuses=frozenset({HTTPStatus.UNPROCESSABLE_ENTITY}),
+        )
+        if result is not None:
+            _LOGGER.info("Presence lock deleted (Auto mode - geofencing resumed)")
+            return True
+        return False
 
-        token = await self.get_access_token()
-        if not token:
-            return False
 
-        url = f"{TADO_API_BASE}/homes/{home_id}/presenceLock"
-        headers = {
-            "Authorization": f"Bearer {token}",
-        }
-        tracker = self._api_tracker
+    async def _sync_and_save(self, endpoint: str, file_key: str, label: str) -> Any:
+        """Fetch an API endpoint and save to file. Returns data or None."""
+        data = await self.api_call(endpoint)
+        if data:
+            await self._save_json_file(self._get_data_file(file_key), data)
+            _LOGGER.debug("%s saved", label)
+        return data
 
-        try:
-            async with self._session.delete(url, headers=headers) as resp:
-                self._parse_ratelimit_headers(dict(resp.headers))
+    async def _sync_quick_extras(
+        self,
+        *,
+        weather_enabled: bool,
+        home_state_sync_enabled: bool,
+        mobile_devices_enabled: bool,
+        mobile_devices_frequent_sync: bool,
+    ) -> None:
+        """Sync optional data during quick sync (weather, home state, mobile devices)."""
+        if weather_enabled:
+            await self._sync_and_save("weather", "weather", "Weather data")
 
-                if tracker:
-                    await tracker.async_record_call(CALL_TYPE_PRESENCE_LOCK, resp.status)
+        if home_state_sync_enabled:
+            home_state = await self._sync_and_save("state", "home_state", "Home state")
+            if home_state:
+                _LOGGER.debug("Home state presence: %s", home_state.get("presence"))
 
-                if resp.status in (HTTPStatus.OK, HTTPStatus.NO_CONTENT):
-                    _LOGGER.info("Presence lock deleted (Auto mode - geofencing resumed)")
-                    return True
+        if mobile_devices_enabled and mobile_devices_frequent_sync:
+            mobile_data = await self._sync_and_save("mobileDevices", "mobile_devices", "Mobile devices (frequent sync)")
+            if mobile_data:
+                _LOGGER.debug("Mobile devices count: %s", len(mobile_data))
 
-                # 422 means presenceLock doesn't exist (already in auto mode)
-                # This is success since the end state is what we want
-                if resp.status == HTTPStatus.UNPROCESSABLE_ENTITY:
-                    _LOGGER.info("Presence lock already deleted (already in Auto mode)")
-                    return True
+    async def _sync_full_extras(
+        self,
+        *,
+        mobile_devices_enabled: bool,
+        offset_enabled: bool,
+    ) -> None:
+        """Sync additional data during full sync (zones_info, mobile, offsets, AC caps)."""
+        zones_info = await self._sync_and_save("zones", "zones_info", "Zone info")
+        if not zones_info:
+            return
 
-                # Log response body for debugging other errors
-                try:
-                    body = await resp.text()
-                    _LOGGER.error("Failed to delete presence lock: %s, body: %s", resp.status, body)
-                except Exception:
-                    _LOGGER.exception("Failed to delete presence lock: %s (could not read response body)", resp.status)
-                return False
+        _LOGGER.debug("Zone info: %s zones", len(zones_info))
 
-        except Exception:
-            _LOGGER.exception("Error deleting presence lock")
-            return False
+        if mobile_devices_enabled:
+            mobile_data = await self._sync_and_save("mobileDevices", "mobile_devices", "Mobile devices")
+            if mobile_data:
+                _LOGGER.debug("Mobile devices count: %s", len(mobile_data))
 
+        if offset_enabled:
+            await self._sync_offsets(zones_info)  # type: ignore[arg-type]
+
+        await self._sync_ac_capabilities(zones_info)  # type: ignore[arg-type]
 
     async def async_sync(
         self,
@@ -1053,24 +1062,9 @@ class TadoApiClient(TadoAuthMixin):
         from network failures:
         - TadoAuthError → ConfigEntryAuthFailed (triggers HA reauth flow)
         - TadoSyncError → UpdateFailed (coordinator retries on next poll)
-
-        Args:
-            quick: If True, only sync zoneStates (and weather if enabled).
-                   If False, also sync zones_info, mobile_devices, offsets, AC caps.
-            weather_enabled: Whether to fetch weather data.
-            mobile_devices_enabled: Whether to fetch mobile devices.
-            mobile_devices_frequent_sync: If True, fetch mobile devices on quick sync too.
-            offset_enabled: Whether to fetch temperature offsets.
-            home_state_sync_enabled: Whether to fetch home state (for away mode).
-
-        Raises:
-            TadoAuthError: If authentication fails (expired refresh token).
-            TadoSyncError: If sync fails due to network/server errors.
         """
         sync_type = "quick" if quick else "full"
         _LOGGER.info("Tado CE async sync starting (%s)", sync_type)
-
-        # Ensure home_id is loaded for per-home file paths
         await self._ensure_home_id()
 
         try:
@@ -1082,53 +1076,21 @@ class TadoApiClient(TadoAuthMixin):
                 raise TadoSyncError("Failed to fetch zone states")
 
             await self._save_json_file(self._get_data_file("zones"), zones_data)
-            zone_count = len((zones_data.get("zoneStates") or {}).keys())
-            _LOGGER.debug("Zone states saved (%s zones)", zone_count)
+            _LOGGER.debug("Zone states saved (%s zones)", len((zones_data.get("zoneStates") or {}).keys()))
 
-            # Fetch weather if enabled
-            if weather_enabled:
-                weather_data = await self.api_call("weather")
-                if weather_data:
-                    await self._save_json_file(self._get_data_file("weather"), weather_data)
-                    _LOGGER.debug("Weather data saved")
+            await self._sync_quick_extras(
+                weather_enabled=weather_enabled,
+                home_state_sync_enabled=home_state_sync_enabled,
+                mobile_devices_enabled=mobile_devices_enabled,
+                mobile_devices_frequent_sync=mobile_devices_frequent_sync,
+            )
 
-            # Fetch home state if enabled (needed for away mode)
-            if home_state_sync_enabled:
-                home_state = await self.api_call("state")
-                if home_state:
-                    await self._save_json_file(self._get_data_file("home_state"), home_state)
-                    _LOGGER.debug("Home state saved (presence: %s)", home_state.get("presence"))
-
-            # Fetch mobile devices on quick sync if frequent sync enabled
-            if quick and mobile_devices_enabled and mobile_devices_frequent_sync:
-                mobile_data = await self.api_call("mobileDevices")
-                if mobile_data:
-                    await self._save_json_file(self._get_data_file("mobile_devices"), mobile_data)
-                    _LOGGER.debug("Mobile devices saved (frequent sync, %s devices)", len(mobile_data))
-
-            # Full sync: also fetch zone info, mobile devices, offsets, AC caps
             if not quick:
-                # Fetch zone info
-                zones_info = await self.api_call("zones")
-                if zones_info:
-                    await self._save_json_file(self._get_data_file("zones_info"), zones_info)
-                    _LOGGER.debug("Zone info saved (%s zones)", len(zones_info))
+                await self._sync_full_extras(
+                    mobile_devices_enabled=mobile_devices_enabled,
+                    offset_enabled=offset_enabled,
+                )
 
-                    # Fetch mobile devices if enabled
-                    if mobile_devices_enabled:
-                        mobile_data = await self.api_call("mobileDevices")
-                        if mobile_data:
-                            await self._save_json_file(self._get_data_file("mobile_devices"), mobile_data)
-                            _LOGGER.debug("Mobile devices saved (%s devices)", len(mobile_data))
-
-                    # Fetch temperature offsets if enabled
-                    if offset_enabled:
-                        await self._sync_offsets(zones_info)  # type: ignore[arg-type]
-
-                    # Fetch AC zone capabilities
-                    await self._sync_ac_capabilities(zones_info)  # type: ignore[arg-type]
-
-            # Save rate limit info
             await self.save_ratelimit("ok")
 
             rl = self._rate_limit
@@ -1136,10 +1098,8 @@ class TadoApiClient(TadoAuthMixin):
             _LOGGER.info("Tado CE async sync SUCCESS (%s): %s/%s API calls used", sync_type, used, rl.get("limit", "?"))
 
         except TadoAuthError:
-            # Re-raise auth errors — coordinator needs to trigger reauth flow
             raise
         except TadoSyncError:
-            # Re-raise sync errors — coordinator handles retry
             raise
         except aiohttp.ClientError as e:
             _LOGGER.exception("Tado CE async sync network error")
@@ -1197,7 +1157,7 @@ class TadoApiClient(TadoAuthMixin):
                             offsets[zone_id] = offset
                             _LOGGER.debug("Offset for zone %s: %s°C", zone_id, offset)
                         break  # Only need first device per zone
-                    except Exception as e:
+                    except (KeyError, TypeError, ValueError) as e:
                         _LOGGER.warning("Failed to fetch offset for device %s: %s", serial, e)
 
         if offsets:
@@ -1224,7 +1184,7 @@ class TadoApiClient(TadoAuthMixin):
                 if existing:
                     _LOGGER.debug("AC capabilities loaded from cache (%s zones)", len(existing))
                     return
-        except Exception as e:
+        except (KeyError, TypeError, ValueError) as e:
             _LOGGER.debug("AC capabilities cache corrupted, fetching fresh: %s", e)
 
         ac_capabilities = {}
@@ -1243,7 +1203,7 @@ class TadoApiClient(TadoAuthMixin):
                     ac_capabilities[zone_id] = caps
                     modes = [m for m in ["COOL", "HEAT", "DRY", "FAN", "AUTO"] if m in caps]
                     _LOGGER.debug("AC capabilities for zone %s: modes=%s", zone_id, modes)
-            except Exception as e:
+            except (KeyError, TypeError, ValueError) as e:
                 _LOGGER.warning("Failed to fetch AC capabilities for zone %s: %s", zone_id, e)
 
         if ac_capabilities:
@@ -1260,47 +1220,22 @@ class TadoApiClient(TadoAuthMixin):
         Returns:
             True if successful, False otherwise
         """
-        config = await self._load_config()
-        home_id = config.get("home_id")
-        if not home_id:
-            _LOGGER.error("No home_id configured")
-            return False
-
-        token = await self.get_access_token()
-        if not token:
-            return False
-
         if not date:
             # Use Home Assistant's timezone for local date
             try:
                 date = dt_util.now().strftime("%Y-%m-%d")
-            except Exception:
+            except (ValueError, TypeError):
                 date = dt_util.utcnow().strftime("%Y-%m-%d")
 
-        url = f"{TADO_API_BASE}/homes/{home_id}/meterReadings"
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-        }
-        payload = {"date": date, "reading": reading}
-
-        try:
-            async with self._session.post(url, headers=headers, json=payload) as resp:
-                self._parse_ratelimit_headers(dict(resp.headers))
-
-                if resp.status in (HTTPStatus.OK, HTTPStatus.CREATED):
-                    _LOGGER.info("Added meter reading: %s on %s", reading, date)
-                    return True
-
-                _LOGGER.error("Failed to add meter reading: %s", resp.status)
-                return False
-
-        except aiohttp.ClientError:
-            _LOGGER.exception("Network error adding meter reading")
-            return False
-        except Exception:
-            _LOGGER.exception("Error adding meter reading")
-            return False
+        result = await self.api_call(
+            "meterReadings",
+            method="POST",
+            data={"date": date, "reading": reading},
+        )
+        if result is not None:
+            _LOGGER.info("Added meter reading: %s on %s", reading, date)
+            return True
+        return False
 
     async def identify_device(self, device_serial: str) -> bool:
         """Make a device flash its LED to identify it.
@@ -1311,29 +1246,16 @@ class TadoApiClient(TadoAuthMixin):
         Returns:
             True if successful, False otherwise
         """
-        token = await self.get_access_token()
-        if not token:
-            _LOGGER.error("Failed to get access token")
-            return False
-
         url = f"{API_ENDPOINT_DEVICES}/{device_serial}/identify"
-        headers = {"Authorization": f"Bearer {token}"}
-
-        try:
-            async with self._session.post(url, headers=headers) as resp:
-                if resp.status in (HTTPStatus.OK, HTTPStatus.NO_CONTENT):
-                    _LOGGER.info("Identify command sent to device %s", device_serial)
-                    return True
-
-                _LOGGER.error("Failed to identify device: %s", resp.status)
-                return False
-
-        except aiohttp.ClientError:
-            _LOGGER.exception("Network error identifying device")
-            return False
-        except Exception:
-            _LOGGER.exception("Error identifying device")
-            return False
+        result = await self.api_call(
+            f"devices/{device_serial}/identify",
+            method="POST",
+            full_url=url,
+        )
+        if result is not None:
+            _LOGGER.info("Identify command sent to device %s", device_serial)
+            return True
+        return False
 
     async def set_away_configuration(
         self,
@@ -1353,25 +1275,9 @@ class TadoApiClient(TadoAuthMixin):
         Returns:
             True if successful, False otherwise
         """
-        config = await self._load_config()
-        home_id = config.get("home_id")
-        if not home_id:
-            _LOGGER.error("No home_id configured")
-            return False
-
-        token = await self.get_access_token()
-        if not token:
-            return False
-
-        url = f"{TADO_API_BASE}/homes/{home_id}/zones/{zone_id}/schedule/awayConfiguration"
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-        }
-
         # Build payload based on mode
         if mode == "auto":
-            payload = {
+            payload: dict[str, Any] = {
                 "type": "HEATING",
                 "autoAdjust": True,
                 "comfortLevel": comfort_level,
@@ -1394,23 +1300,15 @@ class TadoApiClient(TadoAuthMixin):
                 "setting": {"type": "HEATING", "power": "OFF"},
             }
 
-        try:
-            async with self._session.put(url, headers=headers, json=payload) as resp:
-                self._parse_ratelimit_headers(dict(resp.headers))
-
-                if resp.status in (HTTPStatus.OK, HTTPStatus.NO_CONTENT):
-                    _LOGGER.info("Set away configuration for zone %s: %s", zone_id, mode)
-                    return True
-
-                _LOGGER.error("Failed to set away configuration: %s", resp.status)
-                return False
-
-        except aiohttp.ClientError:
-            _LOGGER.exception("Network error setting away configuration")
-            return False
-        except Exception:
-            _LOGGER.exception("Error setting away configuration")
-            return False
+        result = await self.api_call(
+            f"zones/{zone_id}/schedule/awayConfiguration",
+            method="PUT",
+            data=payload,
+        )
+        if result is not None:
+            _LOGGER.info("Set away configuration for zone %s: %s", zone_id, mode)
+            return True
+        return False
 
 
     async def activate_open_window(self, zone_id: str) -> bool:

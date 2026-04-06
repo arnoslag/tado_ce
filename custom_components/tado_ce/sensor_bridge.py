@@ -39,7 +39,7 @@ _FORMATTER_REGISTRY: dict[str, Any] | None = None
 
 def _get_formatter_registry() -> dict[str, Any]:
     """Build and cache the named formatter registry."""
-    global _FORMATTER_REGISTRY  # noqa: PLW0603
+    global _FORMATTER_REGISTRY
     if _FORMATTER_REGISTRY is None:
         from . import format_helpers as fh
 

@@ -1,5 +1,5 @@
-"""Tado CE Heating Climate Entity — TRV/thermostat control, timer, overlay."""
-
+"""Tado CE Heating Climate Entity — TRV/thermostat control, timer, overlay."""  # zone config values are heterogeneous
+  # HA entity interface
 from __future__ import annotations
 
 import asyncio
@@ -17,9 +17,11 @@ from homeassistant.components.climate.const import (
 )
 from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
 from homeassistant.core import CALLBACK_TYPE, Event, EventStateChangedData, callback
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from .const import DOMAIN
 from .climate_helpers import (
     api_call_with_rollback,
     read_external_sensor,
@@ -38,13 +40,13 @@ from .helpers import (
     build_timer_termination,
     get_zone_overlay_termination,
 )
-from .ratelimit import async_check_bootstrap_reserve_or_raise as _check_bootstrap_reserve_or_raise
 from .optimistic_helpers import (
     OptimisticUpdateResult,
     clear_optimistic_state,
     resolve_optimistic_update,
     set_optimistic_fields,
 )
+from .ratelimit import async_check_bootstrap_reserve_or_raise as _check_bootstrap_reserve_or_raise
 from .schedule_helpers import get_current_schedule_target
 from .write_optimizer import ActionGuard
 
@@ -212,7 +214,7 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity,
         if zone_config_manager:
 
             @callback
-            def _handle_zone_config_change(zone_id: str, key: str, value: Any) -> None:  # noqa: ANN401 — zone config values are heterogeneous
+            def _handle_zone_config_change(zone_id: str, key: str, value: Any) -> None:
                 """Handle zone config change."""
                 if zone_id == self._zone_id and key in ("min_temp", "max_temp"):
                     self._update_temp_limits()
@@ -324,11 +326,117 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity,
         self.update()
         self.async_write_ha_state()
 
+    def _update_sensor_data(self, zone_data: dict) -> None:
+        """Extract sensor data and apply external sensor overrides."""
+        sensor_data = zone_data.get("sensorDataPoints") or {}
+        self._attr_current_temperature = (sensor_data.get("insideTemperature") or {}).get("celsius")
+        self._attr_current_humidity = (sensor_data.get("humidity") or {}).get("percentage")
+
+        # External sensor overrides
+        zcm = self.coordinator.zone_config_manager
+        ext_temp = read_external_sensor(self.hass, zcm, self._zone_id, "external_temp_sensor")
+        if ext_temp is not None:
+            self._attr_current_temperature = ext_temp
+            self._temperature_source = "external"
+        else:
+            self._temperature_source = "tado"
+
+        ext_hum = read_external_sensor(self.hass, zcm, self._zone_id, "external_humidity_sensor")
+        if ext_hum is not None:
+            self._attr_current_humidity = ext_hum
+            self._humidity_source = "external"
+        else:
+            self._humidity_source = "tado"
+
+        # Track configured entity_ids for extra_state_attributes
+        if zcm:
+            zc = zcm.get_zone_config(self._zone_id)
+            self._external_temp_sensor = zc.get("external_temp_sensor", "")
+            self._external_humidity_sensor = zc.get("external_humidity_sensor", "")
+
+    def _determine_api_hvac_mode(self, power: str | None, zone_data: dict) -> HVACMode:
+        """Determine HVAC mode from API power state and overlay type."""
+        self._overlay_type = zone_data.get("overlayType")
+
+        if power == "ON":
+            setting = zone_data.get("setting") or {}
+            temp = (setting.get("temperature") or {}).get("celsius")
+            self._attr_target_temperature = temp
+            self._schedule_heating_cycle_update(temp)
+            return HVACMode.HEAT if self._overlay_type == "MANUAL" else HVACMode.AUTO
+
+        # Power is OFF
+        return HVACMode.OFF if self._overlay_type == "MANUAL" else HVACMode.AUTO
+
+    def _schedule_heating_cycle_update(self, temp: float | None) -> None:
+        """Schedule async heating cycle coordinator update if applicable."""
+        if temp is None or self._attr_current_temperature is None:
+            return
+        heating_cycle_coordinator = self.coordinator.heating_cycle_coordinator
+        if not heating_cycle_coordinator:
+            return
+
+        _zone_id = self._zone_id
+        _zone_name = self._zone_name
+        _current_temp = self._attr_current_temperature
+
+        async def _safe_heating_cycle_update() -> None:
+            """Fire-and-forget wrapper with error logging."""
+            try:
+                await heating_cycle_coordinator.on_zone_update(
+                    _zone_id, temp, _current_temp,
+                )
+            except (KeyError, TypeError, ValueError):
+                _LOGGER.debug(
+                    "HeatingCycleCoordinator update failed for zone %s",
+                    _zone_name,
+                    exc_info=True,
+                )
+
+        self.hass.async_create_task(_safe_heating_cycle_update())
+
+    def _apply_optimistic_or_api_state(
+        self, api_hvac_mode: HVACMode, api_hvac_action: HVACAction, power: str | None,
+    ) -> None:
+        """Apply optimistic or API state based on sequence comparison."""
+        result = resolve_optimistic_update(
+            self,
+            api_values={"hvac_mode": api_hvac_mode, "hvac_action": api_hvac_action},
+            entry_id=self._entry_id,
+        )
+
+        if result == OptimisticUpdateResult.PRESERVE_OPTIMISTIC:
+            self._attr_hvac_mode = self._expected_hvac_mode
+            self._attr_hvac_action = self._expected_hvac_action
+            _LOGGER.debug(
+                "%s: Using optimistic state: mode=%s, action=%s",
+                self._zone_name, self._attr_hvac_mode, self._attr_hvac_action,
+            )
+        else:
+            self._attr_hvac_mode = api_hvac_mode
+            self._attr_hvac_action = api_hvac_action
+            if power != "ON" and api_hvac_mode == HVACMode.OFF:
+                self._attr_hvac_action = HVACAction.OFF
+
+    def _record_smart_comfort(self) -> None:
+        """Record temperature for Smart Comfort analytics."""
+        _scm = self.coordinator.smart_comfort_manager
+        if not (_scm and _scm.is_enabled and self._attr_current_temperature is not None):
+            return
+        try:
+            _scm.record_temperature(
+                zone_id=self._zone_id,
+                zone_name=self._zone_name,
+                temperature=self._attr_current_temperature,
+                is_heating=(self._heating_power is not None and self._heating_power > 0),
+                target_temperature=self._attr_target_temperature,
+            )
+        except (KeyError, TypeError, ValueError) as e:
+            _LOGGER.debug("Failed to record smart comfort data for %s: %s", self._zone_name, e)
+
     @callback
     def update(self) -> None:
         """Update climate state from JSON file."""
-        # Layer 1 - Skip update if entity is fresh (coordinator-level protection)
-        # This prevents unnecessary file I/O and processing when entity has recent API call
         if self.coordinator.is_entity_fresh(self.entity_id):
             _LOGGER.debug("%s: Skipping update (entity is fresh)", self._zone_name)
             return
@@ -340,155 +448,38 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity,
                 self._home_id = config.get("home_id")
 
             data = coord_data.get("zones")
-            if data:
-                # Use 'or {}' pattern for null safety
-                zone_states = data.get("zoneStates") or {}
-                zone_data = zone_states.get(self._zone_id)
-            else:
-                zone_data = None
+            zone_data = (data.get("zoneStates") or {}).get(self._zone_id) if data else None
 
             if not zone_data:
                 self._attr_available = False
                 return
 
-            # Current temperature (use 'or {}' pattern for null safety)
-            sensor_data = zone_data.get("sensorDataPoints") or {}
-            self._attr_current_temperature = (sensor_data.get("insideTemperature") or {}).get("celsius")
-
-            # Current humidity
-            self._attr_current_humidity = (sensor_data.get("humidity") or {}).get("percentage")
-
-            # External sensor overrides (fallback to Tado API values above)
-            zcm = self.coordinator.zone_config_manager
-            ext_temp = read_external_sensor(self.hass, zcm, self._zone_id, "external_temp_sensor")
-            if ext_temp is not None:
-                self._attr_current_temperature = ext_temp
-                self._temperature_source = "external"
-            else:
-                self._temperature_source = "tado"
-
-            ext_hum = read_external_sensor(self.hass, zcm, self._zone_id, "external_humidity_sensor")
-            if ext_hum is not None:
-                self._attr_current_humidity = ext_hum
-                self._humidity_source = "external"
-            else:
-                self._humidity_source = "tado"
-
-            # Track configured entity_ids for extra_state_attributes
-            if zcm:
-                zc = zcm.get_zone_config(self._zone_id)
-                self._external_temp_sensor = zc.get("external_temp_sensor", "")
-                self._external_humidity_sensor = zc.get("external_humidity_sensor", "")
+            self._update_sensor_data(zone_data)
 
             # Heating power
             activity_data = zone_data.get("activityDataPoints") or {}
             self._heating_power = (activity_data.get("heatingPower") or {}).get("percentage", 0)
 
-            # Setting (target temp and mode)
+            # Determine API state
             setting = zone_data.get("setting") or {}
             power = setting.get("power")
-            self._overlay_type = zone_data.get("overlayType")
+            api_hvac_mode = self._determine_api_hvac_mode(power, zone_data)
 
-            # Determine API-reported state first
-            if power == "ON":
-                temp = (setting.get("temperature") or {}).get("celsius")
-                self._attr_target_temperature = temp
-
-                # fix: Use SINGLE atomic call to heating cycle coordinator
-                # This eliminates race conditions between setpoint and temperature updates
-                if temp is not None and self._attr_current_temperature is not None:
-                    heating_cycle_coordinator = self.coordinator.heating_cycle_coordinator
-                    if heating_cycle_coordinator:
-                        _zone_id = self._zone_id
-                        _zone_name = self._zone_name
-                        _current_temp = self._attr_current_temperature
-
-                        async def _safe_heating_cycle_update() -> None:
-                            """Fire-and-forget wrapper with error logging."""
-                            try:
-                                await heating_cycle_coordinator.on_zone_update(
-                                    _zone_id, temp, _current_temp,
-                                )
-                            except Exception:
-                                _LOGGER.debug(
-                                    "HeatingCycleCoordinator update failed for zone %s",
-                                    _zone_name,
-                                    exc_info=True,
-                                )
-
-                        self.hass.async_create_task(_safe_heating_cycle_update())
-
-                # Determine HVAC mode - match official Tado integration behavior
-                if self._overlay_type == "MANUAL":
-                    api_hvac_mode = HVACMode.HEAT
-                else:
-                    api_hvac_mode = HVACMode.AUTO
-            # Power is OFF
-            elif self._overlay_type == "MANUAL":
-                api_hvac_mode = HVACMode.OFF
-            else:
-                api_hvac_mode = HVACMode.AUTO
-
-            # Calculate hvac_action based on API state
-            # Temporarily set hvac_mode to calculate action correctly
+            # Calculate hvac_action
             old_hvac_mode = self._attr_hvac_mode
             self._attr_hvac_mode = api_hvac_mode
             api_hvac_action = self._calculate_hvac_action()
-            self._attr_hvac_mode = old_hvac_mode  # Restore for comparison
+            self._attr_hvac_mode = old_hvac_mode
 
-            # Sequence-based optimistic state handling
-            result = resolve_optimistic_update(
-                self,
-                api_values={"hvac_mode": api_hvac_mode, "hvac_action": api_hvac_action},
-                entry_id=self._entry_id,
-            )
-
-            # Apply state based on preservation decision
-            if result == OptimisticUpdateResult.PRESERVE_OPTIMISTIC:
-                # Keep optimistic mode and action until API confirms
-                self._attr_hvac_mode = self._expected_hvac_mode
-                self._attr_hvac_action = self._expected_hvac_action
-                _LOGGER.debug(
-                    "%s: Using optimistic state: mode=%s, action=%s",
-                    self._zone_name,
-                    self._attr_hvac_mode,
-                    self._attr_hvac_action,
-                )
-            else:
-                # Use API state
-                self._attr_hvac_mode = api_hvac_mode
-                self._attr_hvac_action = api_hvac_action
-
-                # Handle OFF mode specifics
-                if power != "ON" and api_hvac_mode in (HVACMode.OFF, HVACMode.AUTO):
-                    # Preserve last known target temperature for UX (#182)
-                    # — keeps climate card controls usable when zone is OFF
-                    if api_hvac_mode == HVACMode.OFF:
-                        self._attr_hvac_action = HVACAction.OFF
-
+            # Apply state
+            self._apply_optimistic_or_api_state(api_hvac_mode, api_hvac_action, power)
             self._attr_available = True
 
-            # Record temperature for Smart Comfort analytics
-            _scm = self.coordinator.smart_comfort_manager
-            if _scm and _scm.is_enabled and self._attr_current_temperature is not None:
-                try:
-                    _scm.record_temperature(
-                        zone_id=self._zone_id,
-                        zone_name=self._zone_name,
-                        temperature=self._attr_current_temperature,
-                        is_heating=(self._heating_power is not None and self._heating_power > 0),
-                        target_temperature=self._attr_target_temperature,
-                    )
-                except Exception as e:
-                    _LOGGER.debug("Failed to record smart comfort data for %s: %s", self._zone_name, e)
-
-            # Update preset mode from home state
+            self._record_smart_comfort()
             self._update_preset_mode()
-
-            # Update offset if enabled
             self._update_offset()
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — HA entity update pattern
             _LOGGER.warning("Failed to update %s: %s", self.name, e)
             self._attr_available = False
 
@@ -544,7 +535,7 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity,
                 api_success = await client.set_presence_lock(state)
         except TimeoutError:
             _LOGGER.warning("TIMEOUT: %s preset mode API call timed out", self._zone_name)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — HA entity action pattern
             _LOGGER.warning("ERROR: %s preset mode API call failed (%s)", self._zone_name, e)
 
         if api_success:
@@ -556,7 +547,49 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity,
             clear_optimistic_state(self)
             self.async_write_ha_state()
 
-    async def async_set_temperature(self, **kwargs: Any) -> None:  # noqa: ANN401 — HA entity interface
+    async def _execute_set_temp_api(
+        self,
+        client: object,
+        setting: dict,
+        termination: dict,
+        temperature: float,
+        old_temp: float | None,
+        old_mode: object,
+        old_action: object,
+        *,
+        raise_on_failure: bool = False,
+    ) -> None:
+        """Execute set_zone_overlay API call with rollback on failure."""
+        api_success = False
+        try:
+            async with asyncio.timeout(10):
+                api_success = await client.set_zone_overlay(self._zone_id, setting, termination)  # type: ignore[union-attr]
+        except TimeoutError:
+            _LOGGER.warning("TIMEOUT: %s API call timed out, reverting to %s", self._zone_name, old_temp)
+        except Exception as e:  # noqa: BLE001 — HA entity action pattern
+            _LOGGER.warning("ERROR: %s API call failed (%s), reverting to %s", self._zone_name, e, old_temp)
+
+        if api_success:
+            _LOGGER.info("Set %s to %s°C", self._zone_name, temperature)
+            heating_cycle_coordinator = self.coordinator.heating_cycle_coordinator
+            if heating_cycle_coordinator:
+                await heating_cycle_coordinator.on_setpoint_change(
+                    self._zone_id, temperature, self._attr_current_temperature,
+                )
+            await async_trigger_immediate_refresh(self.hass, self.entity_id, "temperature_change")
+        else:
+            self._attr_target_temperature = old_temp
+            self._attr_hvac_mode = old_mode  # type: ignore[assignment]
+            self._attr_hvac_action = old_action  # type: ignore[assignment]
+            clear_optimistic_state(self)
+            self.async_write_ha_state()
+            if raise_on_failure:
+                raise HomeAssistantError(
+                    f"{self._zone_name}: Set temperature to {temperature}°C failed",
+                    translation_domain=DOMAIN,
+                )
+
+    async def async_set_temperature(self, **kwargs: Any) -> None:
         """Set new target temperature.
 
         Optimized to use single API call when both temperature and hvac_mode are provided.
@@ -576,14 +609,9 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity,
             await self.async_set_hvac_mode(hvac_mode)
             return
 
-        # Handle OFF mode specially (no temperature needed)
-        if hvac_mode == HVACMode.OFF:
-            await self.async_set_hvac_mode(HVACMode.OFF)
-            return
-
-        # Handle AUTO mode specially (delete overlay, no temperature)
-        if hvac_mode == HVACMode.AUTO:
-            await self.async_set_hvac_mode(HVACMode.AUTO)
+        # Handle OFF/AUTO mode specially (no temperature needed)
+        if hvac_mode in (HVACMode.OFF, HVACMode.AUTO):
+            await self.async_set_hvac_mode(hvac_mode)
             return
 
         if temperature is None:
@@ -613,19 +641,15 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity,
         self._attr_target_temperature = temperature
         self._attr_hvac_mode = HVACMode.HEAT
         self._overlay_type = "MANUAL"  # type: ignore[assignment]
-        # Calculate hvac_action
         new_hvac_action = self._calculate_hvac_action(target_temp=temperature)
         self._attr_hvac_action = new_hvac_action
-        # Set optimistic state with sequence number and mark entity fresh
         await set_optimistic_fields(
             self, self.coordinator,
             expected={"hvac_mode": HVACMode.HEAT, "hvac_action": new_hvac_action},
         )
         _LOGGER.debug(
             "Optimistic update: %s target_temp=%s, hvac_action=%s",
-            self._zone_name,
-            temperature,
-            self._attr_hvac_action,
+            self._zone_name, temperature, self._attr_hvac_action,
         )
         self.async_write_ha_state()
 
@@ -638,63 +662,24 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity,
         }
         termination = get_zone_overlay_termination(self.hass, self._zone_id, entry_id=self._entry_id)
 
-        # Smart Actions debounce — wrap API call in closure
+        # Smart Actions debounce
         debounce_window = self.coordinator.config_manager.get_smart_actions_debounce_seconds()
         if debounce_window > 0:
             async def _execute_api_call() -> None:
                 """Execute the debounced API call."""
-                api_success = False
-                try:
-                    async with asyncio.timeout(10):
-                        api_success = await client.set_zone_overlay(self._zone_id, setting, termination)
-                except TimeoutError:
-                    _LOGGER.warning("TIMEOUT: %s API call timed out, reverting to %s", self._zone_name, old_temp)
-                except Exception as e:
-                    _LOGGER.warning("ERROR: %s API call failed (%s), reverting to %s", self._zone_name, e, old_temp)
-
-                if api_success:
-                    _LOGGER.info("Set %s to %s°C", self._zone_name, temperature)
-                    heating_cycle_coordinator = self.coordinator.heating_cycle_coordinator
-                    if heating_cycle_coordinator:
-                        await heating_cycle_coordinator.on_setpoint_change(
-                            self._zone_id, temperature, self._attr_current_temperature,
-                        )
-                    await async_trigger_immediate_refresh(self.hass, self.entity_id, "temperature_change")
-                else:
-                    self._attr_target_temperature = old_temp
-                    self._attr_hvac_mode = old_mode
-                    self._attr_hvac_action = old_action
-                    clear_optimistic_state(self)
-                    self.async_write_ha_state()
+                await self._execute_set_temp_api(
+                    client, setting, termination, temperature,
+                    old_temp, old_mode, old_action,
+                )
 
             await self.coordinator.action_debouncer.debounce(
                 self._zone_id, _execute_api_call, window=float(debounce_window),
             )
         else:
-            # No debounce — execute immediately (existing behavior)
-            api_success = False
-            try:
-                async with asyncio.timeout(10):
-                    api_success = await client.set_zone_overlay(self._zone_id, setting, termination)
-            except TimeoutError:
-                _LOGGER.warning("TIMEOUT: %s API call timed out, reverting to %s", self._zone_name, old_temp)
-            except Exception as e:
-                _LOGGER.warning("ERROR: %s API call failed (%s), reverting to %s", self._zone_name, e, old_temp)
-
-            if api_success:
-                _LOGGER.info("Set %s to %s°C", self._zone_name, temperature)
-                heating_cycle_coordinator = self.coordinator.heating_cycle_coordinator
-                if heating_cycle_coordinator:
-                    await heating_cycle_coordinator.on_setpoint_change(
-                        self._zone_id, temperature, self._attr_current_temperature,
-                    )
-                await async_trigger_immediate_refresh(self.hass, self.entity_id, "temperature_change")
-            else:
-                self._attr_target_temperature = old_temp
-                self._attr_hvac_mode = old_mode
-                self._attr_hvac_action = old_action
-                clear_optimistic_state(self)
-                self.async_write_ha_state()
+            await self._execute_set_temp_api(
+                client, setting, termination, temperature,
+                old_temp, old_mode, old_action, raise_on_failure=True,
+            )
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set new HVAC mode.
@@ -820,7 +805,7 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity,
                 api_success = await client.set_zone_overlay(self._zone_id, setting, termination)
         except TimeoutError:
             _LOGGER.warning("TIMEOUT: %s set_timer API call timed out", self._zone_name)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — HA entity action pattern
             _LOGGER.warning("ERROR: %s set_timer API call failed (%s)", self._zone_name, e)
 
         if api_success:

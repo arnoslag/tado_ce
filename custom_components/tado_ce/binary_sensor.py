@@ -40,8 +40,8 @@ from .format_helpers import (
 from .helpers import parse_iso_datetime
 from .insights_models import (
     COOLDOWN_READINGS,
-    InsightTemperatureReading,
     SEASONAL_BASELINE_MIN_SAMPLES,
+    InsightTemperatureReading,
     WindowPredictedResult,
 )
 from .insights_window import (
@@ -193,7 +193,7 @@ class TadoHomeSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], BinarySenso
                         return
 
             self._attr_available = False
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — HA entity update pattern
             _LOGGER.warning("TadoHomeSensor update failed: %s", e)
             self._attr_available = False
 
@@ -278,7 +278,7 @@ class TadoOpenWindowSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], Binar
                 self._attr_available = True
             else:
                 self._attr_available = False
-        except Exception:
+        except Exception:  # noqa: BLE001 — HA entity update pattern
             _LOGGER.debug("Failed to update open window sensor for zone %s", self._zone_id)
             self._attr_available = False
 
@@ -432,7 +432,7 @@ class TadoPreheatNowSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], Binar
                 self._attr_available = True
                 self._recommended_start = None
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — HA entity update pattern
             _LOGGER.debug("Failed to update preheat now for zone %s: %s", self._zone_id, e)
             self._attr_available = False
         finally:
@@ -476,6 +476,34 @@ def _serialize_window_detection_state(
     }
 
 
+def _restore_temp_history(
+    raw_history: list[Any],
+    cutoff: datetime,
+) -> list[InsightTemperatureReading]:
+    """Restore temperature history entries, pruning stale ones (>1 hour)."""
+    result: list[InsightTemperatureReading] = []
+    for entry in raw_history:
+        if not isinstance(entry, dict):
+            continue
+        try:
+            ts = parse_iso_datetime(entry["timestamp"])
+            if ts < cutoff:
+                continue  # Prune stale
+            reading = InsightTemperatureReading(
+                temperature=float(entry["temperature"]),
+                humidity=(
+                    float(entry["humidity"])
+                    if entry.get("humidity") is not None
+                    else None
+                ),
+                timestamp=ts,
+            )
+            result.append(reading)
+        except (KeyError, ValueError, TypeError):
+            continue  # Skip corrupt entries
+    return result
+
+
 def _restore_window_detection_state(
     sensor: TadoWindowPredictedSensor,
     data: dict[str, Any],
@@ -500,27 +528,8 @@ def _restore_window_detection_state(
     # Restore temp_history with staleness pruning (>1 hour = stale)
     raw_history = data.get("temp_history")
     if isinstance(raw_history, list):
-        now = dt_util.utcnow()
-        cutoff = now - timedelta(hours=1)
-        for entry in raw_history:
-            if not isinstance(entry, dict):
-                continue
-            try:
-                ts = parse_iso_datetime(entry["timestamp"])
-                if ts < cutoff:
-                    continue  # Prune stale
-                reading = InsightTemperatureReading(
-                    temperature=float(entry["temperature"]),
-                    humidity=(
-                        float(entry["humidity"])
-                        if entry.get("humidity") is not None
-                        else None
-                    ),
-                    timestamp=ts,
-                )
-                sensor._temp_history.append(reading)
-            except (KeyError, ValueError, TypeError):
-                continue  # Skip corrupt entries
+        cutoff = dt_util.utcnow() - timedelta(hours=1)
+        sensor._temp_history.extend(_restore_temp_history(raw_history, cutoff))
 
 
 class TadoWindowPredictedSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], BinarySensorEntity):
@@ -816,7 +825,7 @@ class TadoWindowPredictedSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], 
 
             # Add reading to history (throttle to avoid duplicates)
             now = dt_util.utcnow()
-            if self._last_reading_time is None or (now - self._last_reading_time).total_seconds() >= 25:
+            if self._last_reading_time is None or (now - self._last_reading_time).total_seconds() >= 25:  # noqa: PLR2004 — throttle interval seconds
                 reading = InsightTemperatureReading(
                     temperature=current_temp,
                     humidity=current_humidity,
@@ -903,6 +912,6 @@ class TadoWindowPredictedSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], 
                 },
             )
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — HA entity update pattern
             _LOGGER.debug("Failed to update window predicted for zone %s: %s", self._zone_id, e)
             self._attr_available = False

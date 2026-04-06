@@ -1,6 +1,6 @@
-"""Tado CE display formatting helpers — internal-to-display value conversions.
-
-All internal-to-display value conversions live here.
+"""Tado CE display formatting helpers — internal-to-display value conversions.  # generic lookup accepts any hashable value
+  # accepts list[Insight] without importing Insight
+All internal-to-display value conversions live here.  # HA attribute dict
 """
 
 from __future__ import annotations
@@ -116,7 +116,7 @@ CONNECTION_STATE_ATTR_MAP: dict[bool, str] = {True: "online", False: "offline"}
 # === Generic lookup helper ===
 
 
-def _lookup(mapping: dict[str, Any], value: Any, fallback_fn: Callable[..., Any] | None = None) -> str:  # noqa: ANN401 — generic lookup accepts any hashable value
+def _lookup(mapping: dict[str, Any], value: Any, fallback_fn: Callable[..., Any] | None = None) -> str:
     """Look up value in mapping. Falsy value -> 'Unknown', unmapped -> fallback."""
     if value is None or value == "":
         return "Unknown"
@@ -221,13 +221,13 @@ def format_health_score(score: int) -> str:
 
     Bands: 90-100 Excellent, 70-89 Good, 50-69 Fair, 25-49 Poor, 0-24 Critical.
     """
-    if score >= 90:
+    if score >= 90:  # noqa: PLR2004 — efficiency score band thresholds
         return f"🟢 {score} — Excellent"
-    if score >= 70:
+    if score >= 70:  # noqa: PLR2004 — efficiency score band thresholds
         return f"🟢 {score} — Good"
-    if score >= 50:
+    if score >= 50:  # noqa: PLR2004 — efficiency score band thresholds
         return f"🟡 {score} — Fair"
-    if score >= 25:
+    if score >= 25:  # noqa: PLR2004 — efficiency score band thresholds
         return f"🟠 {score} — Poor"
     return f"🔴 {score} — Critical"
 
@@ -340,9 +340,9 @@ def format_persistent_insights_grouped(
 
 
 def build_zone_insight_attributes(
-    insights: list[Any],  # noqa: ANN401 — accepts list[Insight] without importing Insight
+    insights: list[Any],
     zone_name: str,
-) -> dict[str, Any]:  # noqa: ANN401 — HA attribute dict
+) -> dict[str, Any]:
     """Build extra_state_attributes for a zone insight sensor.
 
     Conditional (non-empty only): insight_types, recommendations.

@@ -281,7 +281,7 @@ class DataLoader:
         Returns:
             True if valid duration, False otherwise.
         """
-        if not isinstance(duration, int) or duration < 15 or duration > 180:  # noqa: PLR2004
+        if not isinstance(duration, int) or duration < 15 or duration > 180:  # noqa: PLR2004 — Tado API timer bounds (15-180 min)
             _LOGGER.error("Invalid timer duration: %s", duration)
             return False
         self.save_auxiliary("timer_duration", {"timer_duration": duration})

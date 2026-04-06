@@ -80,7 +80,7 @@ async def async_init_smart_comfort(
 
     # Configure weather compensation
     outdoor_temp_entity = config_manager.get_outdoor_temp_entity()
-    weather_compensation = config_manager.get_weather_compensation()
+    weather_compensation = config_manager.get_smart_comfort_mode()
     use_feels_like = config_manager.get_use_feels_like()
 
     if outdoor_temp_entity:

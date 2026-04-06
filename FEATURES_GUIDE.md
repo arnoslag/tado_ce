@@ -35,7 +35,7 @@ Run multiple Tado accounts or homes in a single Home Assistant instance with ful
 
 ### Overview
 
-Each config entry is completely isolated — its own coordinator, API client, data loader, and cleanup. All per-entry state uses `ConfigEntry.runtime_data` instead of shared global state. A line-by-line audit across all 60 source files confirmed zero data isolation issues.
+Each config entry is completely isolated — its own coordinator, API client, data loader, and cleanup. All per-entry state uses `ConfigEntry.runtime_data` instead of shared global state. A line-by-line audit across all 85 source files confirmed zero data isolation issues.
 
 ### How It Works
 
@@ -1684,4 +1684,4 @@ Look for `Bridge API full response` in logs to verify the API is returning data.
 
 ---
 
-**Last Updated:** v3.4.0 (2026-03-23)
+**Last Updated:** v3.5.1 (2026-04-06)

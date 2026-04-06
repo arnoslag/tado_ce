@@ -57,6 +57,7 @@ class InsightHistoryTracker:
             ),
         )
         self._entries: dict[str, dict[str, Any]] = {}
+        self._active_keys: set[str] = set()
         self._dirty = False
 
     @property
@@ -225,6 +226,8 @@ class InsightHistoryTracker:
             del self._entries[key]
             self._dirty = True
 
+        self._active_keys = current_keys
+
     def get_duration(
         self,
         insight_type: str,
@@ -252,7 +255,11 @@ class InsightHistoryTracker:
             return None
 
     def get_persistent_insights(self, threshold_hours: int = 24) -> list[dict[str, Any]]:
-        """Return insights active for >= threshold_hours.
+        """Return insights that are currently active AND have been active for >= threshold_hours.
+
+        Only returns entries present in the current poll cycle. Entries kept
+        solely by the reappearance grace period (resolved but not yet pruned)
+        are excluded — they are no longer active issues.
 
         Returns:
             List of dicts with insight_type, zone_name, duration_hours, base_priority.
@@ -261,6 +268,9 @@ class InsightHistoryTracker:
         threshold = timedelta(hours=threshold_hours)
 
         for key, entry in self._entries.items():
+            # Skip entries not in current poll cycle (grace-period only)
+            if key not in self._active_keys:
+                continue
             try:
                 first = parse_iso_datetime(entry["first_seen"])
                 last = parse_iso_datetime(entry["last_seen"])

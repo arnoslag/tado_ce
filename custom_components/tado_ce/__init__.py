@@ -64,6 +64,146 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
     return True
 
 
+async def _async_init_data_layer(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    config_manager: ConfigurationManager,
+    home_id: str | None,
+) -> tuple[DataLoader, ZoneConfigManager, str, int, dict[str, Any]]:
+    """Initialize data layer: loader, zone config, overlay/timer, and entry components.
+
+    Returns (data_loader, zone_config_manager, overlay_mode, timer_duration, components).
+    """
+    data_loader = DataLoader(home_id or "default", hass=hass)
+    await hass.async_add_executor_job(data_loader.load_all_to_cache)
+
+    zone_config_manager = ZoneConfigManager(hass, home_id or "default", data_loader)
+    await zone_config_manager.async_load()
+    _LOGGER.info("Zone config manager initialized with %d zones", len(zone_config_manager.zones))
+
+    overlay_mode = await data_loader.async_load_overlay_mode()
+    _LOGGER.debug("Tado CE: Overlay mode loaded: %s", overlay_mode)
+
+    timer_duration = await data_loader.async_load_timer_duration()
+    _LOGGER.debug("Tado CE: Timer duration loaded: %d minutes", timer_duration)
+
+    from .entry_lifecycle import async_create_entry_components
+
+    try:
+        components = await async_create_entry_components(
+            hass, entry, config_manager, home_id, data_loader=data_loader,
+        )
+    except TadoAuthError as err:
+        raise ConfigEntryNotReady(
+            "Authentication failed during setup — check credentials",
+        ) from err
+    except (OSError, TimeoutError) as err:
+        raise ConfigEntryNotReady(
+            "Failed to create entry components — will retry",
+        ) from err
+
+    return data_loader, zone_config_manager, overlay_mode, timer_duration, components
+
+
+async def _async_init_optional_components(
+    hass: HomeAssistant,
+    config_manager: ConfigurationManager,
+    data_loader: DataLoader,
+    zone_config_manager: ZoneConfigManager,
+    components: dict[str, Any],
+    home_id: str | None,
+) -> dict[str, Any]:
+    """Initialize optional per-entry components.
+
+    Returns dict with smart_comfort_manager, heating_cycle_coordinator,
+    adaptive_preheat_manager, state_restore_manager.
+    """
+    from .setup_entry_helpers import (
+        async_init_adaptive_preheat,
+        async_init_heating_cycle,
+        async_init_smart_comfort,
+        async_init_state_restore,
+    )
+
+    return {
+        "smart_comfort_manager": await async_init_smart_comfort(
+            hass, data_loader, config_manager, home_id,
+        ),
+        "heating_cycle_coordinator": await async_init_heating_cycle(
+            hass, config_manager, home_id,
+        ),
+        "adaptive_preheat_manager": await async_init_adaptive_preheat(
+            hass, config_manager,
+            api_client=components["api_client"],
+            data_loader=data_loader,
+            zone_config_manager=zone_config_manager,
+        ),
+        "state_restore_manager": await async_init_state_restore(
+            hass, config_manager, data_loader,
+        ),
+    }
+
+
+async def _async_wire_and_start_coordinator(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    coordinator: TadoDataUpdateCoordinator,
+    optional: dict[str, Any],
+    overlay_mode: str,
+    timer_duration: int,
+    home_id: str | None,
+) -> None:
+    """Wire back-references, load caches, and perform first refresh."""
+    if optional["adaptive_preheat_manager"] is not None:
+        optional["adaptive_preheat_manager"].set_coordinator(coordinator)
+    if optional["state_restore_manager"] is not None:
+        optional["state_restore_manager"].set_coordinator(coordinator)
+
+    if optional["heating_cycle_coordinator"]:
+        from .setup_entry_helpers import schedule_heating_cycle_timeouts
+
+        schedule_heating_cycle_timeouts(hass, coordinator, optional["heating_cycle_coordinator"])
+
+    coordinator.overlay_mode = overlay_mode
+    coordinator.timer_duration = timer_duration
+
+    from .setup_entry_helpers import async_load_insight_history
+
+    await async_load_insight_history(coordinator)
+    await coordinator.async_config_entry_first_refresh()
+
+    zones_info = coordinator.data.get("zones_info") or []
+    if zones_info:
+        from .setup_entry_helpers import register_bridge_devices
+
+        register_bridge_devices(hass, entry.entry_id, zones_info)
+
+    entry.runtime_data = coordinator
+    _LOGGER.info("Coordinator stored for entry %s (home_id=%s)", entry.entry_id, home_id)
+
+
+async def _async_finalize_entry(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    coordinator: TadoDataUpdateCoordinator,
+    config_manager: ConfigurationManager,
+) -> None:
+    """Load platforms, register services, and set up update listener."""
+    platforms_to_load = list(BASE_PLATFORMS)
+    if CALENDAR_PLATFORM and config_manager.get_schedule_calendar_enabled():
+        platforms_to_load.append(CALENDAR_PLATFORM)
+        _LOGGER.info("Tado CE: Schedule Calendar enabled")
+
+    await hass.config_entries.async_forward_entry_setups(entry, platforms_to_load)
+    coordinator.loaded_platforms = frozenset(platforms_to_load)
+
+    if not hass.services.has_service(DOMAIN, SERVICE_SET_CLIMATE_TIMER):
+        await _async_register_services(hass)
+
+    _last_options_snapshot[entry.entry_id] = dict(entry.options)
+    entry.async_on_unload(entry.add_update_listener(async_reload_entry))
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Tado CE from a config entry."""
     _LOGGER.info(
@@ -103,36 +243,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if isinstance(old_coordinator, TadoDataUpdateCoordinator):
         _LOGGER.warning("Tado CE: Entry %s already setup, cancelling old coordinator", entry.entry_id)
 
-    data_loader = DataLoader(home_id or "default", hass=hass)
-
-    # Cold start: bulk-load all data files into cache (single executor job)
-    await hass.async_add_executor_job(data_loader.load_all_to_cache)
-
-    zone_config_manager = ZoneConfigManager(hass, home_id or "default", data_loader)
-    await zone_config_manager.async_load()
-    _LOGGER.info("Zone config manager initialized with %d zones", len(zone_config_manager.zones))
-
-    overlay_mode = await data_loader.async_load_overlay_mode()
-    _LOGGER.debug("Tado CE: Overlay mode loaded: %s", overlay_mode)
-
-    timer_duration = await data_loader.async_load_timer_duration()
-    _LOGGER.debug("Tado CE: Timer duration loaded: %d minutes", timer_duration)
-
-    # Create per-entry infrastructure (API tracker, client, timers, etc.)
-    from .entry_lifecycle import async_create_entry_components
-
-    try:
-        components = await async_create_entry_components(
-            hass, entry, config_manager, home_id, data_loader=data_loader,
-        )
-    except TadoAuthError as err:
-        raise ConfigEntryNotReady(
-            "Authentication failed during setup — check credentials",
-        ) from err
-    except (OSError, TimeoutError) as err:
-        raise ConfigEntryNotReady(
-            "Failed to create entry components — will retry",
-        ) from err
+    # Initialize data layer and entry components
+    data_loader, zone_config_manager, overlay_mode, timer_duration, components = (
+        await _async_init_data_layer(hass, entry, config_manager, home_id)
+    )
 
     # Check if per-home config file exists
     from .const import get_data_file
@@ -146,37 +260,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             home_id or "default",
         )
 
-    # Initialize optional per-entry components (before coordinator creation)
-    from .setup_entry_helpers import (
-        async_init_adaptive_preheat,
-        async_init_heating_cycle,
-        async_init_smart_comfort,
-        async_init_state_restore,
-    )
-
-    smart_comfort_manager = await async_init_smart_comfort(
-        hass,
-        data_loader,
-        config_manager,
-        home_id,
-    )
-    heating_cycle_coordinator = await async_init_heating_cycle(
-        hass,
-        config_manager,
-        home_id,
-    )
-    adaptive_preheat_manager = await async_init_adaptive_preheat(
-        hass,
-        config_manager,
-        api_client=components["api_client"],
-        data_loader=data_loader,
-        zone_config_manager=zone_config_manager,
-    )
-
-    state_restore_manager = await async_init_state_restore(
-        hass,
-        config_manager,
-        data_loader,
+    # Initialize optional per-entry components
+    optional = await _async_init_optional_components(
+        hass, config_manager, data_loader, zone_config_manager, components, home_id,
     )
 
     coordinator = TadoDataUpdateCoordinator(
@@ -187,74 +273,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         data_loader=data_loader,
         api_client=components["api_client"],
         api_tracker=components["api_tracker"],
-        smart_comfort_manager=smart_comfort_manager,
-        heating_cycle_coordinator=heating_cycle_coordinator,
-        adaptive_preheat_manager=adaptive_preheat_manager,
-        state_restore_manager=state_restore_manager,
+        smart_comfort_manager=optional["smart_comfort_manager"],
+        heating_cycle_coordinator=optional["heating_cycle_coordinator"],
+        adaptive_preheat_manager=optional["adaptive_preheat_manager"],
+        state_restore_manager=optional["state_restore_manager"],
     )
 
-    # Wire back-reference: AdaptivePreheatManager needs coordinator for entity_data access
-    if adaptive_preheat_manager is not None:
-        adaptive_preheat_manager.set_coordinator(coordinator)
+    await _async_wire_and_start_coordinator(
+        hass, entry, coordinator, optional, overlay_mode, timer_duration, home_id,
+    )
 
-    # Wire back-reference: StateRestoreManager needs coordinator for zone state access
-    if state_restore_manager is not None:
-        state_restore_manager.set_coordinator(coordinator)
-
-    # Schedule heating cycle timeout check if coordinator exists
-    if heating_cycle_coordinator:
-        from .setup_entry_helpers import schedule_heating_cycle_timeouts
-
-        schedule_heating_cycle_timeouts(hass, coordinator, heating_cycle_coordinator)
-
-    # Load overlay/timer cache into coordinator
-    coordinator.overlay_mode = overlay_mode
-    coordinator.timer_duration = timer_duration
-
-    # Load insight history from disk and prune stale entries
-    from .setup_entry_helpers import async_load_insight_history
-
-    await async_load_insight_history(coordinator)
-
-    # First refresh
-    await coordinator.async_config_entry_first_refresh()
-
-    # Pre-register bridge devices in device registry (HA official pattern)
-    # Ensures bridge device exists before zone devices reference it via via_device
-    zones_info = coordinator.data.get("zones_info") or []
-    if zones_info:
-        from .setup_entry_helpers import register_bridge_devices
-
-        register_bridge_devices(hass, entry.entry_id, zones_info)
-
-
-
-    # Store coordinator as runtime_data (HA official pattern)
-    entry.runtime_data = coordinator
-    _LOGGER.info("Coordinator stored for entry %s (home_id=%s)", entry.entry_id, home_id)
-
-    # Build platform list based on config
-    platforms_to_load = list(BASE_PLATFORMS)
-    if CALENDAR_PLATFORM and config_manager.get_schedule_calendar_enabled():
-        platforms_to_load.append(CALENDAR_PLATFORM)
-        _LOGGER.info("Tado CE: Schedule Calendar enabled")
-
-    await hass.config_entries.async_forward_entry_setups(entry, platforms_to_load)
-
-    # Remember which platforms were loaded so unload can match exactly
-    coordinator.loaded_platforms = frozenset(platforms_to_load)
-
-    # Lightweight re-registration guard (services normally registered in async_setup)
-    if not hass.services.has_service(DOMAIN, SERVICE_SET_CLIMATE_TIMER):
-        await _async_register_services(hass)
-
-    # Snapshot current options so the update listener can detect real options changes
-    # vs data-only changes (e.g., token rotation saving to entry.data).
-    # HA's add_update_listener fires for ANY entry mutation (data or options).
-    _last_options_snapshot[entry.entry_id] = dict(entry.options)
-
-    # Register update listener for options changes
-    entry.async_on_unload(entry.add_update_listener(async_reload_entry))
+    await _async_finalize_entry(hass, entry, coordinator, config_manager)
 
     _LOGGER.info("Tado CE: Integration loaded successfully")
     return True
@@ -312,15 +341,58 @@ async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
     try:
         cleanup_disabled_feature_entities(hass, entry)
-    except Exception as e:
+    except (KeyError, TypeError, ValueError) as e:
         _LOGGER.warning("Tado CE: Could not cleanup entities: %s", e)
 
     try:
         await async_handle_test_mode_transition(hass, entry)
-    except Exception as e:
+    except (KeyError, TypeError, ValueError) as e:
         _LOGGER.debug("Tado CE: Could not check Test Mode transition: %s", e)
 
     await hass.config_entries.async_reload(entry.entry_id)
+
+
+async def _async_shutdown_coordinator(coordinator: TadoDataUpdateCoordinator) -> None:
+    """Shut down coordinator: cancel tasks, persist state, save history."""
+    if hasattr(coordinator, "refresh_handler") and coordinator.refresh_handler:
+        coordinator.refresh_handler.cancel()
+        coordinator.refresh_handler = None  # type: ignore[assignment]
+        _LOGGER.debug("Cleaned up coordinator RefreshHandler")
+
+    coordinator.action_debouncer.cancel_all()
+    coordinator.refresh_coalescer.cancel()
+    await coordinator.device_sync_queue.shutdown()
+    _LOGGER.debug("Cleaned up write optimization components")
+
+    if hasattr(coordinator, "insight_history"):
+        await coordinator.insight_history.async_save()
+
+    await coordinator.async_shutdown_state_restore()
+    coordinator.save_wc_state_if_loaded()
+
+    if coordinator.api_tracker:
+        await coordinator.api_tracker.async_save_if_dirty()
+
+
+def _unregister_all_services(hass: HomeAssistant) -> None:
+    """Unregister all Tado CE services (called when last entry unloads)."""
+    for service_name in (
+        SERVICE_SET_CLIMATE_TIMER,
+        SERVICE_SET_WATER_HEATER_TIMER,
+        SERVICE_RESUME_SCHEDULE,
+        SERVICE_SET_TEMP_OFFSET,
+        SERVICE_GET_TEMP_OFFSET,
+        SERVICE_ADD_METER_READING,
+        SERVICE_IDENTIFY_DEVICE,
+        SERVICE_SET_AWAY_CONFIG,
+        SERVICE_ACTIVATE_OPEN_WINDOW,
+        SERVICE_DEACTIVATE_OPEN_WINDOW,
+        SERVICE_SET_OPEN_WINDOW_MODE,
+        SERVICE_RESTORE_PREVIOUS_STATE,
+    ):
+        if hass.services.has_service(DOMAIN, service_name):
+            hass.services.async_remove(DOMAIN, service_name)
+    _LOGGER.debug("Unregistered all services (last entry unloaded)")
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -329,43 +401,16 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     coordinator: TadoDataUpdateCoordinator | None = getattr(entry, "runtime_data", None)
 
-    # Clean up coordinator's RefreshHandler debounce task
-    if coordinator and hasattr(coordinator, "refresh_handler") and coordinator.refresh_handler:
-        coordinator.refresh_handler.cancel()
-        coordinator.refresh_handler = None  # type: ignore[assignment]
-        _LOGGER.debug("Cleaned up coordinator RefreshHandler")
-
-    # Clean up write optimization components
     if coordinator:
-        coordinator.action_debouncer.cancel_all()
-        coordinator.refresh_coalescer.cancel()
-        await coordinator.device_sync_queue.shutdown()
-        _LOGGER.debug("Cleaned up write optimization components")
+        await _async_shutdown_coordinator(coordinator)
 
-    # Save insight history before shutdown
-    if coordinator and hasattr(coordinator, "insight_history"):
-        await coordinator.insight_history.async_save()
-
-    # Persist captured state before shutdown
-    if coordinator:
-        await coordinator.async_shutdown_state_restore()
-
-    # Persist weather compensation state before shutdown
-    if coordinator:
-        coordinator.save_wc_state_if_loaded()
-
-    # Per-entry cleanup (API client, timers, managers) — via coordinator
     from .entry_lifecycle import async_cleanup_entry_components
 
     await async_cleanup_entry_components(hass, coordinator)
 
-    # --- Unload platforms ---
-
+    # Determine platforms to unload
     config_manager = getattr(coordinator, "config_manager", None) if coordinator else None
-
     platforms_to_unload = list(BASE_PLATFORMS)
-    # Only unload calendar if it was actually loaded during setup.
-    # HA raises ValueError if we try to unload a platform that was never loaded.
     if coordinator and hasattr(coordinator, "loaded_platforms"):
         platforms_to_unload = list(coordinator.loaded_platforms)
     elif CALENDAR_PLATFORM and config_manager and config_manager.get_schedule_calendar_enabled():
@@ -373,29 +418,11 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     unload_ok = await hass.config_entries.async_unload_platforms(entry, platforms_to_unload)
 
-    # --- Service lifecycle ---
-
+    # Unregister services if this is the last entry
     other_entries = [e for e in hass.config_entries.async_entries(DOMAIN) if e.entry_id != entry.entry_id]
     if len(other_entries) == 0:
-        for service_name in [
-            SERVICE_SET_CLIMATE_TIMER,
-            SERVICE_SET_WATER_HEATER_TIMER,
-            SERVICE_RESUME_SCHEDULE,
-            SERVICE_SET_TEMP_OFFSET,
-            SERVICE_GET_TEMP_OFFSET,
-            SERVICE_ADD_METER_READING,
-            SERVICE_IDENTIFY_DEVICE,
-            SERVICE_SET_AWAY_CONFIG,
-            SERVICE_ACTIVATE_OPEN_WINDOW,
-            SERVICE_DEACTIVATE_OPEN_WINDOW,
-            SERVICE_SET_OPEN_WINDOW_MODE,
-            SERVICE_RESTORE_PREVIOUS_STATE,
-        ]:
-            if hass.services.has_service(DOMAIN, service_name):
-                hass.services.async_remove(DOMAIN, service_name)
-        _LOGGER.debug("Unregistered all services (last entry unloaded)")
+        _unregister_all_services(hass)
 
-    # Clean up options snapshot
     _last_options_snapshot.pop(entry.entry_id, None)
 
     _LOGGER.info("Tado CE: Entry %s unloaded successfully", entry.entry_id)

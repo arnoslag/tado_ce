@@ -42,9 +42,9 @@ def _get_day_blocks(blocks: dict[str, Any], schedule_type: str, weekday: int) ->
     if schedule_type == "ONE_DAY":
         return blocks.get("MONDAY_TO_SUNDAY") or []
     if schedule_type == "THREE_DAY":
-        if weekday < 5:
+        if weekday < 5:  # noqa: PLR2004 — weekday 0-4 = Mon-Fri
             return blocks.get("MONDAY_TO_FRIDAY") or []
-        if weekday == 5:
+        if weekday == 5:  # noqa: PLR2004 — weekday 5 = Saturday
             return blocks.get("SATURDAY") or []
         return blocks.get("SUNDAY") or []
     # SEVEN_DAY
@@ -58,7 +58,7 @@ def _resolve_current_time(current_time: datetime | None) -> datetime:
         return current_time
     try:
         return dt_util.now()
-    except Exception:
+    except (ValueError, TypeError):
         return datetime.now(UTC)
 
 

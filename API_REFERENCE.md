@@ -261,4 +261,4 @@ These files persist across restarts and upgrades.
 
 ---
 
-**Last Updated:** v3.4.0 (2026-03-23)
+**Last Updated:** v3.5.1 (2026-04-06)

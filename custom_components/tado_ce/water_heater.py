@@ -1,4 +1,4 @@
-"""Tado CE Water Heater Platform — hot water control and scheduling."""
+"""Tado CE Water Heater Platform — hot water control and scheduling."""  # HA entity interface
 
 from __future__ import annotations
 
@@ -13,19 +13,21 @@ from homeassistant.components.water_heater import (
 )
 from homeassistant.const import STATE_OFF, UnitOfTemperature
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .ratelimit import async_check_bootstrap_reserve_or_raise as _check_bootstrap_reserve_or_raise
+from .const import DOMAIN, MAX_RETRY_ATTEMPTS
 from .device_manager import get_zone_device_info
 from .entity_registry import ENTITY_REGISTRY
 from .format_helpers import format_overlay_type as _format_overlay_type
-from .helpers import async_trigger_immediate_refresh, build_timer_termination
+from .helpers import async_trigger_immediate_refresh, build_timer_termination, retry_delay
 from .optimistic_helpers import (
     OptimisticUpdateResult,
     clear_optimistic_state,
     resolve_optimistic_update,
     set_optimistic_fields,
 )
+from .ratelimit import async_check_bootstrap_reserve_or_raise as _check_bootstrap_reserve_or_raise
 
 if TYPE_CHECKING:
     from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
@@ -134,6 +136,43 @@ class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeate
         self.update()
         self.async_write_ha_state()
 
+    def _extract_zone_data(self) -> dict[str, Any] | None:
+        """Extract and validate zone data from coordinator.
+
+        Returns:
+            Zone data dict if available and online, None otherwise.
+        """
+        coord_data = self.coordinator.data or {}
+        data = coord_data.get("zones")
+        if not data:
+            _LOGGER.debug("No zones data for %s (zone %s)", self._zone_name, self._zone_id)
+            return None
+
+        zone_states = data.get("zoneStates") or {}
+        zone_data = zone_states.get(self._zone_id)
+        if not zone_data:
+            _LOGGER.debug("No zone data for %s (zone %s)", self._zone_name, self._zone_id)
+            return None
+
+        link = zone_data.get("link") or {}
+        if link.get("state") != "ONLINE":
+            _LOGGER.debug("Zone %s link state: %s", self._zone_name, link.get("state"))
+            return None
+
+        return zone_data
+
+    def _resolve_api_operation(
+        self, overlay: dict[str, Any] | None, api_overlay_type: str | None, power: str | None,
+    ) -> str:
+        """Determine API operation mode from overlay state."""
+        if not overlay or api_overlay_type is None:
+            return STATE_AUTO
+        if api_overlay_type == "TIMER":
+            return STATE_HEAT
+        if api_overlay_type == "MANUAL":
+            return STATE_OFF if power == "OFF" else STATE_HEAT
+        return STATE_AUTO
+
     @callback
     def update(self) -> None:
         """Update water heater state from JSON file."""
@@ -144,27 +183,8 @@ class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeate
             return
 
         try:
-            coord_data = self.coordinator.data or {}
-            data = coord_data.get("zones")
-            if not data:
-                _LOGGER.debug("No zones data for %s (zone %s)", self._zone_name, self._zone_id)
-                self._attr_available = False
-                return
-
-            # Use 'or {}' pattern for null safety
-            zone_states = data.get("zoneStates") or {}
-            zone_data = zone_states.get(self._zone_id)
-
+            zone_data = self._extract_zone_data()
             if not zone_data:
-                _LOGGER.debug("No zone data for %s (zone %s)", self._zone_name, self._zone_id)
-                self._attr_available = False
-                return
-
-            # Check link state - if offline, mark unavailable
-            link = zone_data.get("link") or {}
-            link_state = link.get("state")
-            if link_state != "ONLINE":
-                _LOGGER.debug("Zone %s link state: %s", self._zone_name, link_state)
                 self._attr_available = False
                 return
 
@@ -186,15 +206,7 @@ class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeate
                 )
                 _LOGGER.debug("Hot water zone %s supports temperature control", self._zone_name)
 
-            # Detect API operation mode based on overlay state
-            if not overlay or api_overlay_type is None:
-                api_operation = STATE_AUTO
-            elif api_overlay_type == "TIMER":
-                api_operation = STATE_HEAT
-            elif api_overlay_type == "MANUAL":
-                api_operation = STATE_OFF if power == "OFF" else STATE_HEAT
-            else:
-                api_operation = STATE_AUTO
+            api_operation = self._resolve_api_operation(overlay, api_overlay_type, power)
 
             # Resolve optimistic state using shared helper
             result = resolve_optimistic_update(
@@ -232,6 +244,35 @@ class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeate
         except Exception:
             _LOGGER.exception("Failed to update %s", self.name)
             self._attr_available = False
+
+    async def _execute_operation_mode(self, operation_mode: str) -> bool:
+        """Execute a single attempt to set the operation mode via API.
+
+        Returns:
+            True if successful, False otherwise.
+        """
+        client = self.coordinator.api_client
+        if operation_mode == STATE_AUTO:
+            success = await client.delete_zone_overlay(self._zone_id)
+            if success:
+                _LOGGER.info("Resumed schedule for %s", self._zone_name)
+                await async_trigger_immediate_refresh(self.hass, self.entity_id, "hot_water_auto")
+            return success
+
+        if operation_mode == STATE_HEAT:
+            duration = self._get_timer_duration()
+            success = await self._async_set_timer(duration, None)
+            if success:
+                await async_trigger_immediate_refresh(self.hass, self.entity_id, "hot_water_heat")
+            return success
+
+        if operation_mode == STATE_OFF:
+            success = await self._async_turn_off()
+            if success:
+                await async_trigger_immediate_refresh(self.hass, self.entity_id, "hot_water_off")
+            return success
+
+        return False
 
     async def async_set_operation_mode(self, operation_mode: str) -> None:
         """Set new operation mode with retry logic (async)."""
@@ -271,52 +312,32 @@ class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeate
         self.async_write_ha_state()
 
         success = False
-        max_retries = 2  # Initial attempt + 1 retry
-        client = self.coordinator.api_client
+        for attempt in range(1, MAX_RETRY_ATTEMPTS + 1):
+            success = await self._execute_operation_mode(operation_mode)
+            if success:
+                break
 
-        for attempt in range(max_retries):
-            if operation_mode == STATE_AUTO:
-                # AUTO mode: Delete overlay to follow schedule
-                success = await client.delete_zone_overlay(self._zone_id)
-                if success:
-                    _LOGGER.info("Resumed schedule for %s", self._zone_name)
-                    await async_trigger_immediate_refresh(self.hass, self.entity_id, "hot_water_auto")
-                    break
-            elif operation_mode == STATE_HEAT:
-                # HEAT mode: Turn on with timer
-                duration = self._get_timer_duration()
-                success = await self._async_set_timer(duration, None)
-                if success:
-                    await async_trigger_immediate_refresh(self.hass, self.entity_id, "hot_water_heat")
-                    break
-            elif operation_mode == STATE_OFF:
-                # OFF mode: Turn off with manual overlay
-                success = await self._async_turn_off()
-                if success:
-                    await async_trigger_immediate_refresh(self.hass, self.entity_id, "hot_water_off")
-                    break
-
-            # If failed and not last attempt, wait and retry
-            if not success and attempt < max_retries - 1:
+            if attempt < MAX_RETRY_ATTEMPTS:
+                delay = retry_delay(attempt)
                 _LOGGER.warning(
-                    "Failed to set operation mode to %s (attempt %s/%s), retrying in 5 seconds...",
-                    operation_mode,
-                    attempt + 1,
-                    max_retries,
+                    "Failed to set operation mode to %s (attempt %s/%s), retrying in %.1fs",
+                    operation_mode, attempt, MAX_RETRY_ATTEMPTS, delay,
                 )
-                await asyncio.sleep(5)
+                await asyncio.sleep(delay)
 
         if not success:
             _LOGGER.error(
                 "ROLLBACK: Failed to set operation mode to %s after %s attempts.",
-                operation_mode,
-                max_retries,
+                operation_mode, MAX_RETRY_ATTEMPTS,
             )
-            # Rollback to previous state and clear all optimistic tracking
             self._attr_current_operation = previous_mode
             self._overlay_type = previous_overlay
             clear_optimistic_state(self)
             self.async_write_ha_state()
+            raise HomeAssistantError(
+                f"Hot water {self._zone_name}: Set {operation_mode} failed after {MAX_RETRY_ATTEMPTS} attempts",
+                translation_domain=DOMAIN,
+            )
 
     def set_operation_mode(self, operation_mode: str) -> None:
         """Set new operation mode (sync wrapper for backward compatibility).
@@ -399,7 +420,7 @@ class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeate
             await async_trigger_immediate_refresh(self.hass, self.entity_id, "hot_water_timer")
         return success
 
-    async def async_set_temperature(self, **kwargs: Any) -> None:  # noqa: ANN401 — HA entity interface
+    async def async_set_temperature(self, **kwargs: Any) -> None:
         """Set new target temperature (async)."""
         temperature = kwargs.get("temperature")
         if temperature is None:
@@ -460,7 +481,7 @@ class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeate
                 api_success = await client.set_zone_overlay(self._zone_id, setting, termination)
         except TimeoutError:
             _LOGGER.warning("TIMEOUT: %s temperature API call timed out", self._zone_name)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — HA entity action pattern
             _LOGGER.warning("ERROR: %s temperature API call failed (%s)", self._zone_name, e)
 
         if api_success:
@@ -473,3 +494,7 @@ class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeate
             self._overlay_type = old_overlay
             clear_optimistic_state(self)
             self.async_write_ha_state()
+            raise HomeAssistantError(
+                f"Hot water {self._zone_name}: Set temperature to {temperature}°C failed",
+                translation_domain=DOMAIN,
+            )

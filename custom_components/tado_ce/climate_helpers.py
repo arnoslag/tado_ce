@@ -1,11 +1,12 @@
-"""Tado CE climate helper functions — offset and preset mode updates."""
-
+"""Tado CE climate helper functions — offset and preset mode updates."""  # accepts any HA entity type (ClimateEntity, WaterHeaterEntity, etc.)
+  # accepts any HA entity with .hass and .coordinator
 from __future__ import annotations
 
 import logging
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.core import CALLBACK_TYPE, Event, EventStateChangedData, callback
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.event import async_track_state_change_event
 
 if TYPE_CHECKING:
@@ -17,6 +18,7 @@ if TYPE_CHECKING:
     from .coordinator import TadoDataUpdateCoordinator
     from .zone_config_manager import ZoneConfigManager
 
+from .const import DOMAIN
 from .optimistic_helpers import clear_optimistic_state, set_optimistic_fields
 
 _LOGGER = logging.getLogger(__name__)
@@ -50,7 +52,7 @@ def update_offset(
         if offsets:
             return offsets.get(zone_id)  # type: ignore[no-any-return]
         return None
-    except Exception:
+    except Exception:  # noqa: BLE001 — defensive helper for entity update path
         # Keep existing offset value on error — caller handles fallback
         return None
 
@@ -76,7 +78,7 @@ def update_preset_mode(coordinator: TadoDataUpdateCoordinator) -> str | None:
         if home_state:
             presence = home_state.get("presence", "HOME")
             return PRESET_HOME if presence == "HOME" else PRESET_AWAY
-    except Exception:
+    except Exception:  # noqa: BLE001 — defensive helper, property access may raise any error
         # Keep last known preset mode — caller handles fallback
         _LOGGER.debug("Failed to determine preset mode from home state")
     return None
@@ -124,7 +126,7 @@ def read_external_sensor(
 
 
 async def api_call_with_rollback(
-    entity: Any,  # noqa: ANN401 — accepts any HA entity type (ClimateEntity, WaterHeaterEntity, etc.)
+    entity: Any,
     api_coro: Coroutine,  # type: ignore[type-arg]
     *,
     hvac_mode: HVACMode,
@@ -185,7 +187,7 @@ async def api_call_with_rollback(
             api_success = await api_coro
     except TimeoutError:
         _LOGGER.warning("TIMEOUT: %s %s timed out", entity._zone_name, reason)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 — HA entity action pattern
         _LOGGER.warning("ERROR: %s %s failed (%s)", entity._zone_name, reason, e)
 
     if api_success:
@@ -198,12 +200,16 @@ async def api_call_with_rollback(
         entity._overlay_type = old_overlay
         clear_optimistic_state(entity)
         entity.async_write_ha_state()
+        raise HomeAssistantError(
+            f"{entity._zone_name}: {reason} failed",
+            translation_domain=DOMAIN,
+        )
 
     return api_success
 
 
 def subscribe_external_sensors(
-    entity: Any,  # noqa: ANN401 — accepts any HA entity with .hass and .coordinator
+    entity: Any,
     zone_id: str,
     on_change: Callable[[Event[EventStateChangedData]], None],
     *,

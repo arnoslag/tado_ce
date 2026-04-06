@@ -57,6 +57,42 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
+# Comfort deviation thresholds (°C from comfort target)
+_COMFORT_FREEZING_THRESHOLD = -6
+_COMFORT_COLD_THRESHOLD = -4
+_COMFORT_COOL_THRESHOLD = -2
+_COMFORT_WARM_THRESHOLD = 2
+_COMFORT_HOT_THRESHOLD = 4
+_COMFORT_SWELTERING_THRESHOLD = 6
+
+# Humidity thresholds for comfort suffix
+_HUMIDITY_DRY_THRESHOLD = 35  # % — below this is "Dry"
+_HUMIDITY_HUMID_THRESHOLD = 70  # % — above this is "Humid"
+
+
+def _classify_comfort_deviation(deviation: float) -> str:
+    """Classify comfort level based on temperature deviation from target.
+
+    Args:
+        deviation: Temperature deviation in °C (positive = warmer than target).
+
+    Returns:
+        Comfort level string.
+    """
+    if deviation < _COMFORT_FREEZING_THRESHOLD:
+        return "Freezing"
+    if deviation < _COMFORT_COLD_THRESHOLD:
+        return "Cold"
+    if deviation < _COMFORT_COOL_THRESHOLD:
+        return "Cool"
+    if deviation <= _COMFORT_WARM_THRESHOLD:
+        return "Comfortable"
+    if deviation <= _COMFORT_HOT_THRESHOLD:
+        return "Warm"
+    if deviation <= _COMFORT_SWELTERING_THRESHOLD:
+        return "Hot"
+    return "Sweltering"
+
 
 def _extract_mold_risk_data(
     zone_data: dict[str, Any], hass: HomeAssistant, zone_id: str, coordinator: TadoDataUpdateCoordinator,
@@ -236,7 +272,7 @@ class TadoMoldRiskSensor(TadoZoneSensor):
 
             self._attr_available = True
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — HA entity update pattern
             _LOGGER.debug("Failed to update mold risk for zone %s: %s", self._zone_id, e)
             self._attr_available = False
 
@@ -342,7 +378,7 @@ class TadoMoldRiskPercentageSensor(TadoZoneSensor):
             self._attr_native_value = surface_rh
             self._attr_available = True
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — HA entity update pattern
             _LOGGER.debug("Failed to update mold risk percentage for zone %s: %s", self._zone_id, e)
             self._attr_available = False
 
@@ -508,7 +544,7 @@ class TadoCondensationRiskSensor(TadoZoneSensor):
                 },
             )
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — HA entity update pattern
             _LOGGER.debug("Failed to update condensation risk for zone %s: %s", self._zone_id, e)
             self._attr_available = False
 
@@ -559,7 +595,7 @@ class TadoCondensationRiskSensor(TadoZoneSensor):
             if offset:
                 self._surface_temperature = self._surface_temperature + float(offset)
 
-        # Margin = surface_temp - indoor_dew_point  # noqa: ERA001
+        # Margin = surface_temp - indoor_dew_point
         # Positive = safe, Negative = condensation occurring
         margin_exact = self._surface_temperature - self._indoor_dew_point
         self._margin = round(margin_exact, 1)  # Rounded for display only
@@ -664,7 +700,7 @@ class TadoCondensationRiskSensor(TadoZoneSensor):
                     except (ValueError, TypeError):
                         pass
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — defensive helper, external state access may raise any error
             _LOGGER.debug("Error getting outdoor humidity from %s: %s", entity_id, e)
             return None
 
@@ -828,7 +864,7 @@ class TadoSurfaceTemperatureSensor(TadoZoneSensor):
             self._offset_applied = 0.0
             self._attr_available = True
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — HA entity update pattern
             _LOGGER.debug("Failed to update surface temperature for zone %s: %s", self._zone_id, e)
             self._attr_available = False
 
@@ -909,7 +945,7 @@ class TadoDewPointSensor(TadoZoneSensor):
             self._attr_native_value = round(_calculate_dew_point(self._room_temp, self._humidity), 1)
             self._attr_available = True
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — HA entity update pattern
             _LOGGER.debug("Failed to update dew point for zone %s: %s", self._zone_id, e)
             self._attr_available = False
 
@@ -997,6 +1033,22 @@ class TadoComfortLevelSensor(TadoZoneSensor):
         self.update()
         self.async_write_ha_state()
 
+    def _get_hvac_mode_from_coordinator(self) -> str | None:
+        """Get HVAC mode from coordinator data (no cross-entity hass.states.get)."""
+        coord_data = self.coordinator.data or {}
+        zone_states = (coord_data.get("zones") or {}).get("zoneStates") or {}
+        zone_state = zone_states.get(self._zone_id) or zone_states.get(str(self._zone_id))
+        if not zone_state:
+            return None
+        setting = zone_state.get("setting") or {}
+        power = setting.get("power")
+        overlay_type = zone_state.get("overlayType")
+        if power == "ON":
+            return "heat" if overlay_type == "MANUAL" else "auto"
+        if overlay_type == "MANUAL":
+            return "off"
+        return "auto"
+
     @callback
     def update(self) -> None:
         """Update air comfort using adaptive comfort model."""
@@ -1006,7 +1058,6 @@ class TadoComfortLevelSensor(TadoZoneSensor):
                 self._attr_available = False
                 return
 
-            # Get temperature and humidity
             sensor_data = zone_data.get("sensorDataPoints") or {}
             self._temperature = (sensor_data.get("insideTemperature") or {}).get("celsius")
             self._humidity = (sensor_data.get("humidity") or {}).get("percentage")
@@ -1015,7 +1066,6 @@ class TadoComfortLevelSensor(TadoZoneSensor):
                 self._attr_available = False
                 return
 
-            # Calculate dew point if humidity available
             if self._humidity is not None:
                 self._dew_point = _calculate_dew_point(self._temperature, self._humidity)
 
@@ -1042,35 +1092,14 @@ class TadoComfortLevelSensor(TadoZoneSensor):
 
             # Calculate comfort level
             if self._outdoor_temp is not None:
-                # Use ASHRAE 55 Adaptive Comfort model
                 comfort_level = self._calculate_adaptive_comfort()
                 self._comfort_model = "adaptive"
             else:
-                # Fallback to latitude-based seasonal thresholds
                 comfort_level = self._calculate_seasonal_comfort()
                 self._comfort_model = "seasonal"
 
-            # Add humidity suffix
             humidity_suffix = self._get_humidity_suffix()
-
             self._attr_native_value = comfort_level + humidity_suffix
-
-            # Get HVAC mode from coordinator data (no cross-entity hass.states.get)
-            hvac_mode = None
-            coord_data = self.coordinator.data or {}
-            zones_data = coord_data.get("zones") or {}
-            zone_states = zones_data.get("zoneStates") or {}
-            zone_state = zone_states.get(self._zone_id) or zone_states.get(str(self._zone_id))
-            if zone_state:
-                setting = zone_state.get("setting") or {}
-                power = setting.get("power")
-                overlay_type = zone_state.get("overlayType")
-                if power == "ON":
-                    hvac_mode = "heat" if overlay_type == "MANUAL" else "auto"
-                elif overlay_type == "MANUAL":
-                    hvac_mode = "off"
-                else:
-                    hvac_mode = "auto"
 
             self._recommendation = calculate_comfort_recommendation(
                 comfort_state=comfort_level,
@@ -1078,14 +1107,14 @@ class TadoComfortLevelSensor(TadoZoneSensor):
                 current_temp=self._temperature,
                 target_temp=self._comfort_temp,
                 humidity=self._humidity,
-                hvac_mode=hvac_mode,
+                hvac_mode=self._get_hvac_mode_from_coordinator(),
                 heat_index=self._heat_index,
                 heat_risk_level=self._heat_risk_level,
             )
 
             self._attr_available = True
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — HA entity update pattern
             _LOGGER.debug("Failed to update air comfort for zone %s: %s", self._zone_id, e)
             self._attr_available = False
 
@@ -1106,19 +1135,7 @@ class TadoComfortLevelSensor(TadoZoneSensor):
         deviation = effective_temp - self._comfort_temp  # type: ignore[operator]
 
         # Determine comfort level based on deviation
-        if deviation < -6:
-            return "Freezing"
-        if deviation < -4:
-            return "Cold"
-        if deviation < -2:
-            return "Cool"
-        if deviation <= 2:
-            return "Comfortable"
-        if deviation <= 4:
-            return "Warm"
-        if deviation <= 6:
-            return "Hot"
-        return "Sweltering"
+        return _classify_comfort_deviation(deviation)
 
     def _calculate_seasonal_comfort(self) -> str:
         """Calculate comfort using latitude-based seasonal thresholds.
@@ -1144,19 +1161,7 @@ class TadoComfortLevelSensor(TadoZoneSensor):
         deviation = effective_temp - comfort_target  # type: ignore[operator]
 
         # Determine comfort level based on deviation (same ranges as adaptive)
-        if deviation < -6:
-            return "Freezing"
-        if deviation < -4:
-            return "Cold"
-        if deviation < -2:
-            return "Cool"
-        if deviation <= 2:
-            return "Comfortable"
-        if deviation <= 4:
-            return "Warm"
-        if deviation <= 6:
-            return "Hot"
-        return "Sweltering"
+        return _classify_comfort_deviation(deviation)
 
     def _get_humidity_suffix(self) -> str:
         """Get humidity suffix for comfort display.
@@ -1167,8 +1172,8 @@ class TadoComfortLevelSensor(TadoZoneSensor):
         if self._humidity is None:
             return ""
 
-        if self._humidity < 35:
+        if self._humidity < _HUMIDITY_DRY_THRESHOLD:
             return " Dry"
-        if self._humidity > 70:
+        if self._humidity > _HUMIDITY_HUMID_THRESHOLD:
             return " Humid"
         return ""

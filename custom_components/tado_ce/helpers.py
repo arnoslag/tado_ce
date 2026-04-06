@@ -7,9 +7,10 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 import logging
+import random
 from typing import TYPE_CHECKING, Any
 
-from .const import OVERLAY_MODE_DEFAULT, TIMER_DURATION_DEFAULT
+from .const import OVERLAY_MODE_DEFAULT, RETRY_BASE_DELAY, TIMER_DURATION_DEFAULT
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -17,6 +18,24 @@ if TYPE_CHECKING:
     from .coordinator import TadoDataUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
+
+# Tado API only accepts: MANUAL, TADO_MODE, TIMER
+_OVERLAY_API_MAP: dict[str, str] = {
+    "NEXT_TIME_BLOCK": "TADO_MODE",
+}
+
+
+def _map_overlay_to_api(mode: str) -> str:
+    """Map internal overlay mode to Tado API-accepted value."""
+    return _OVERLAY_API_MAP.get(mode, mode)
+
+
+def retry_delay(attempt: int, base_delay: float = RETRY_BASE_DELAY) -> float:
+    """Calculate jittered retry delay for the given attempt number.
+
+    Uses full jitter pattern: uniform random between 0 and base_delay^attempt.
+    """
+    return random.uniform(0, base_delay**attempt)  # noqa: S311 — not crypto
 
 
 def _get_coordinator(hass: HomeAssistant, entry_id: str) -> TadoDataUpdateCoordinator:
@@ -88,7 +107,7 @@ async def async_trigger_immediate_refresh(
                 )
                 return
         _LOGGER.warning("No refresh handler found for entity %s", entity_id)
-    except Exception as e:
+    except (KeyError, TypeError, ValueError) as e:
         _LOGGER.warning("Failed to trigger immediate refresh: %s", e)
 
 
@@ -140,9 +159,7 @@ def get_overlay_termination(hass: HomeAssistant, entry_id: str | None = None) ->
             pass
 
     # Map internal storage values to API-accepted values
-    # Tado API only accepts: MANUAL, TADO_MODE, TIMER
-    if mode == "NEXT_TIME_BLOCK":
-        mode = "TADO_MODE"
+    mode = _map_overlay_to_api(mode)
 
     if mode == "TIMER":
         return {"type": "TIMER", "durationInSeconds": duration * 60}
@@ -181,14 +198,7 @@ def get_zone_overlay_termination(hass: HomeAssistant, zone_id: str, entry_id: st
 
         if zone_mode and zone_mode != "TADO_MODE":
             # Map to API values
-            # Note: Tado API only accepts MANUAL, TADO_MODE, TIMER
-            # NEXT_TIME_BLOCK maps to TADO_MODE which follows device settings
-            mode_map = {
-                "NEXT_TIME_BLOCK": "TADO_MODE",  # API doesn't accept NEXT_TIME_BLOCK
-                "TIMER": "TIMER",
-                "MANUAL": "MANUAL",
-            }
-            api_mode = mode_map.get(zone_mode, "TADO_MODE")
+            api_mode = _map_overlay_to_api(zone_mode)
 
             # Handle Timer mode with duration
             if api_mode == "TIMER":
@@ -237,10 +247,9 @@ def build_timer_termination(
 
     if overlay:
         overlay_upper = overlay.upper()
-        if overlay_upper == "NEXT_TIME_BLOCK":
-            return {"type": "TADO_MODE"}
-        if overlay_upper == "MANUAL":
-            return {"type": "MANUAL"}
+        api_mode = _map_overlay_to_api(overlay_upper)
+        if api_mode in ("TADO_MODE", "MANUAL"):
+            return {"type": api_mode}
 
     # Fall back to per-zone / global overlay config
     if hass and zone_id:

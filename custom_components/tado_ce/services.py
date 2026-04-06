@@ -12,7 +12,6 @@ from homeassistant.helpers.entity_platform import async_get_platforms
 import voluptuous as vol
 
 from . import ratelimit as _ratelimit
-from .helpers import build_timer_termination
 from .const import (
     DOMAIN,
     OPEN_WINDOW_DEFAULT_TEMP,
@@ -30,6 +29,7 @@ from .const import (
     SERVICE_SET_TEMP_OFFSET,
     SERVICE_SET_WATER_HEATER_TIMER,
 )
+from .helpers import build_timer_termination
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant, ServiceCall
@@ -388,6 +388,131 @@ def _build_setting_from_captured(
     return setting, termination
 
 
+def _parse_time_period(time_period: Any) -> int:
+    """Parse time_period to duration in minutes.
+
+    Accepts timedelta or HH:MM:SS string format.
+    Returns duration in minutes (1-1440).
+
+    Raises ValueError on invalid input.
+    """
+    from datetime import timedelta
+
+    if isinstance(time_period, timedelta):
+        duration_minutes = int(time_period.total_seconds() / 60)
+    else:
+        time_parts = str(time_period).split(":")
+        if len(time_parts) != TIMER_PARTS_COUNT:
+            msg = f"Invalid time_period format: {time_period}. Expected HH:MM:SS"
+            raise ValueError(msg)
+
+        hours = int(time_parts[0])
+        minutes = int(time_parts[1])
+        seconds = int(time_parts[2])
+
+        if not (0 <= hours <= MAX_TIMER_HOURS):
+            msg = f"Hours must be 0-24, got {hours}"
+            raise ValueError(msg)
+        if not (0 <= minutes <= MAX_TIMER_MINUTES):
+            msg = f"Minutes must be 0-59, got {minutes}"
+            raise ValueError(msg)
+        if not (0 <= seconds <= MAX_TIMER_SECONDS):
+            msg = f"Seconds must be 0-59, got {seconds}"
+            raise ValueError(msg)
+
+        duration_minutes = hours * 60 + minutes + (seconds // 60)
+
+    if duration_minutes < 1:
+        msg = f"Duration must be at least 1 minute, got {duration_minutes}"
+        raise ValueError(msg)
+    if duration_minutes > MAX_TIMER_DURATION_MINUTES:
+        msg = f"Duration must be at most 1440 minutes (24 hours), got {duration_minutes}"
+        raise ValueError(msg)
+
+    return duration_minutes
+
+
+async def _check_bootstrap_reserve(hass: HomeAssistant, entity_ids: list[str]) -> object | None:
+    """Check bootstrap reserve for the first entity's coordinator. Returns coordinator."""
+    if not entity_ids:
+        return None
+    try:
+        _coord = _resolve_coordinator(hass, entity_ids[0])
+        should_block, reason = await _ratelimit.async_check_bootstrap_reserve(hass, coordinator=_coord)
+        if should_block:
+            await _ratelimit.async_show_api_limit_notification(hass, reason)
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="api_quota_critically_low",
+            )
+        return _coord
+    except HomeAssistantError:
+        raise
+    except Exception as err:  # noqa: BLE001 — bootstrap check must not block service call
+        _LOGGER.debug("Suppressed exception in bootstrap check: %s", err)
+    return None
+
+
+def _validate_timer_params(
+    call: ServiceCall,
+) -> tuple[float, int | None, str | None]:
+    """Validate and parse set_climate_timer / set_water_heater_timer params.
+
+    Returns (temperature, duration_minutes, overlay).
+    """
+    temperature = call.data.get("temperature")
+    time_period = call.data.get("time_period")
+    overlay = call.data.get("overlay")
+
+    duration_minutes = None
+    if time_period:
+        try:
+            duration_minutes = _parse_time_period(time_period)
+            _LOGGER.info("Parsed time_period %s to %s minutes", time_period, duration_minutes)
+        except (ValueError, AttributeError, TypeError) as e:
+            error_msg = f"Failed to parse time_period: {e}"
+            _LOGGER.exception(error_msg)
+            raise vol.Invalid(error_msg) from e
+    elif not overlay:
+        error_msg = "Either time_period or overlay is required"
+        _LOGGER.error(error_msg)
+        raise vol.Invalid(error_msg)
+
+    if temperature is None:
+        error_msg = "temperature is required"
+        _LOGGER.error(error_msg)
+        raise vol.Invalid(error_msg)
+
+    return temperature, duration_minutes, overlay
+
+
+async def _execute_timer_on_entity(
+    hass: HomeAssistant,
+    coord: object,
+    entity_id: str,
+    domain: str,
+    temperature: float,
+    duration_minutes: int | None,
+    overlay: str | None,
+) -> None:
+    """Execute async_set_timer on a single entity with state capture."""
+    ent = _find_entity_by_id(hass, domain, entity_id)
+    if not ent or not hasattr(ent, "async_set_timer"):
+        return
+    try:
+        zone_id: str | None = getattr(ent, "_zone_id", None)
+        entity_type: str = getattr(ent, "_entity_type", f"{domain}_heating")
+        if zone_id and coord:
+            await coord.async_capture_state(zone_id, entity_type, "set_timer")  # type: ignore[union-attr]
+        await ent.async_set_timer(temperature, duration_minutes, overlay)
+        if duration_minutes:
+            _LOGGER.info("Set timer for %s: %s°C for %smin", entity_id, temperature, duration_minutes)
+        elif overlay:
+            _LOGGER.info("Set timer for %s: %s°C with overlay=%s", entity_id, temperature, overlay)
+    except Exception as e:
+        _LOGGER.exception("Failed to set timer for %s: %s", entity_id, e)
+
+
 async def handle_set_climate_timer(hass: HomeAssistant, call: ServiceCall) -> None:
     """Handle set_climate_timer service call.
 
@@ -396,230 +521,76 @@ async def handle_set_climate_timer(hass: HomeAssistant, call: ServiceCall) -> No
     - temperature (required)
     - time_period (required) - Time Period format (e.g., "01:30:00")
     - overlay (optional)
-
-    Added bootstrap reserve check - blocks action when quota critically low.
-    Per-entry bootstrap reserve check.
     """
     entity_ids = call.data.get("entity_id", [])
     if isinstance(entity_ids, str):
         entity_ids = [entity_ids]
-
-    # Expand groups to individual entity IDs
     entity_ids = _expand_group_entity_ids(hass, entity_ids, allowed_domains=["climate"])
 
-    if entity_ids:
-        try:
-            _coord = _resolve_coordinator(hass, entity_ids[0])
-            should_block, reason = await _ratelimit.async_check_bootstrap_reserve(hass, coordinator=_coord)
-            if should_block:
-                await _ratelimit.async_show_api_limit_notification(hass, reason)
-                raise HomeAssistantError(
-                    translation_domain=DOMAIN,
-                    translation_key="api_quota_critically_low",
-                )
-        except HomeAssistantError:
-            raise
-        except Exception as err:
-            _LOGGER.debug("Suppressed exception in set_climate_timer bootstrap check: %s", err)
-
-    temperature = call.data.get("temperature")
-    time_period = call.data.get("time_period")
-    overlay = call.data.get("overlay")
-
-    # time_period is optional when overlay is specified
-    # Validate: must have either time_period or overlay
-    duration_minutes = None
-    if time_period:
-        # Convert time_period to minutes with validation
-        try:
-            from datetime import timedelta
-
-            # Home Assistant cv.time_period returns timedelta
-            if isinstance(time_period, timedelta):
-                duration_minutes = int(time_period.total_seconds() / 60)
-            else:
-                # Fallback: parse string format HH:MM:SS
-                time_parts = str(time_period).split(":")
-                if len(time_parts) != TIMER_PARTS_COUNT:
-                    raise ValueError(f"Invalid time_period format: {time_period}. Expected HH:MM:SS")
-
-                hours = int(time_parts[0])
-                minutes = int(time_parts[1])
-                seconds = int(time_parts[2])
-
-                # Validate ranges
-                if not (0 <= hours <= MAX_TIMER_HOURS):
-                    raise ValueError(f"Hours must be 0-24, got {hours}")
-                if not (0 <= minutes <= MAX_TIMER_MINUTES):
-                    raise ValueError(f"Minutes must be 0-59, got {minutes}")
-                if not (0 <= seconds <= MAX_TIMER_SECONDS):
-                    raise ValueError(f"Seconds must be 0-59, got {seconds}")
-
-                duration_minutes = hours * 60 + minutes + (seconds // 60)
-
-            # Validate final duration (1-1440 minutes)
-            if duration_minutes < 1:
-                raise ValueError(f"Duration must be at least 1 minute, got {duration_minutes}")
-            if duration_minutes > MAX_TIMER_DURATION_MINUTES:
-                raise ValueError(f"Duration must be at most 1440 minutes (24 hours), got {duration_minutes}")
-
-            _LOGGER.info("Parsed time_period %s to %s minutes", time_period, duration_minutes)
-
-        except (ValueError, AttributeError, TypeError) as e:
-            error_msg = f"Failed to parse time_period: {e}"
-            _LOGGER.exception(error_msg)
-            raise vol.Invalid(error_msg) from e
-    elif not overlay:
-        error_msg = "Either time_period or overlay is required for set_climate_timer service"
-        _LOGGER.error(error_msg)
-        raise vol.Invalid(error_msg)
-
-    # Validate temperature if provided
-    if temperature is None:
-        error_msg = "temperature is required for set_climate_timer service"
-        _LOGGER.error(error_msg)
-        raise vol.Invalid(error_msg)
+    coord = await _check_bootstrap_reserve(hass, entity_ids)
+    temperature, duration_minutes, overlay = _validate_timer_params(call)
 
     for entity_id in entity_ids:
-        entity = hass.states.get(entity_id)
-        if entity:
-            # Get the climate entity and call async_set_timer
-            ent = _find_entity_by_id(hass, "climate", entity_id)
-            if ent and hasattr(ent, "async_set_timer"):
-                try:
-                    # Capture state before timer overlay
-                    zone_id: str | None = getattr(ent, "_zone_id", None)
-                    entity_type: str = getattr(ent, "_entity_type", "climate_heating")
-                    if zone_id:
-                        await _coord.async_capture_state(
-                            zone_id, entity_type, "set_timer",
-                        )
-                    await ent.async_set_timer(temperature, duration_minutes, overlay)
-                    if duration_minutes:
-                        _LOGGER.info(
-                            "Set timer for %s: %s°C for %smin",
-                            entity_id,
-                            temperature,
-                            duration_minutes,
-                        )
-                    elif overlay:
-                        _LOGGER.info(
-                            "Set timer for %s: %s°C with overlay=%s",
-                            entity_id,
-                            temperature,
-                            overlay,
-                        )
-                except Exception as e:
-                    error_msg = f"Failed to set timer for {entity_id}: {e}"
-                    _LOGGER.exception(error_msg)
-                    # Continue to next entity instead of failing completely
+        if hass.states.get(entity_id):
+            await _execute_timer_on_entity(
+                hass, coord, entity_id, "climate", temperature, duration_minutes, overlay,
+            )
 
 
-async def handle_set_water_heater_timer(hass: HomeAssistant, call: ServiceCall) -> None:
-    """Handle set_water_heater_timer service call.
-
-    Added bootstrap reserve check - blocks action when quota critically low.
-    Per-entry bootstrap reserve check.
-    """
-    entity_ids = call.data.get("entity_id", [])
-    if isinstance(entity_ids, str):
-        entity_ids = [entity_ids]
-
-    # Expand groups to individual entity IDs
-    entity_ids = _expand_group_entity_ids(hass, entity_ids, allowed_domains=["water_heater"])
-
-    if entity_ids:
-        try:
-            _coord = _resolve_coordinator(hass, entity_ids[0])
-            should_block, reason = await _ratelimit.async_check_bootstrap_reserve(hass, coordinator=_coord)
-            if should_block:
-                await _ratelimit.async_show_api_limit_notification(hass, reason)
-                raise HomeAssistantError(
-                    translation_domain=DOMAIN,
-                    translation_key="api_quota_critically_low",
-                )
-        except HomeAssistantError:
-            raise
-        except Exception as err:
-            _LOGGER.debug("Suppressed exception in set_water_heater_timer bootstrap check: %s", err)
-
+def _validate_water_heater_timer_params(
+    call: ServiceCall,
+) -> tuple[int, float | None]:
+    """Validate set_water_heater_timer params. Returns (duration_minutes, temperature)."""
     time_period = call.data.get("time_period")
     temperature = call.data.get("temperature")
 
-    # Validate time_period
     if not time_period:
         error_msg = "time_period is required for set_water_heater_timer service"
         _LOGGER.error(error_msg)
         raise vol.Invalid(error_msg)
 
-    # Convert time_period to minutes with validation
     try:
-        from datetime import timedelta
-
-        # Home Assistant cv.time_period returns timedelta
-        if isinstance(time_period, timedelta):
-            duration_minutes = int(time_period.total_seconds() / 60)
-        else:
-            # Fallback: parse string format HH:MM:SS
-            time_parts = str(time_period).split(":")
-            if len(time_parts) != TIMER_PARTS_COUNT:
-                raise ValueError(f"Invalid time_period format: {time_period}. Expected HH:MM:SS")
-
-            hours = int(time_parts[0])
-            minutes = int(time_parts[1])
-            seconds = int(time_parts[2])
-
-            # Validate ranges
-            if not (0 <= hours <= MAX_TIMER_HOURS):
-                raise ValueError(f"Hours must be 0-24, got {hours}")
-            if not (0 <= minutes <= MAX_TIMER_MINUTES):
-                raise ValueError(f"Minutes must be 0-59, got {minutes}")
-            if not (0 <= seconds <= MAX_TIMER_SECONDS):
-                raise ValueError(f"Seconds must be 0-59, got {seconds}")
-
-            duration_minutes = hours * 60 + minutes + (seconds // 60)
-
-        # Validate final duration (1-1440 minutes)
-        if duration_minutes < 1:
-            raise ValueError(f"Duration must be at least 1 minute, got {duration_minutes}")
-        if duration_minutes > MAX_TIMER_DURATION_MINUTES:
-            raise ValueError(f"Duration must be at most 1440 minutes (24 hours), got {duration_minutes}")
-
+        duration_minutes = _parse_time_period(time_period)
         _LOGGER.info("Parsed time_period %s to %s minutes", time_period, duration_minutes)
-
     except (ValueError, AttributeError, TypeError) as e:
         error_msg = f"Failed to parse time_period: {e}"
         _LOGGER.exception(error_msg)
         raise vol.Invalid(error_msg) from e
 
-    # Validate temperature if provided
     if temperature is not None:
         if not (WATER_HEATER_MIN_TEMP <= temperature <= WATER_HEATER_MAX_TEMP):
             error_msg = f"Temperature must be 30-80°C, got {temperature}"
             _LOGGER.error(error_msg)
             raise vol.Invalid(error_msg)
 
-    # Call water heater entities
+    return duration_minutes, temperature
+
+
+async def handle_set_water_heater_timer(hass: HomeAssistant, call: ServiceCall) -> None:
+    """Handle set_water_heater_timer service call."""
+    entity_ids = call.data.get("entity_id", [])
+    if isinstance(entity_ids, str):
+        entity_ids = [entity_ids]
+    entity_ids = _expand_group_entity_ids(hass, entity_ids, allowed_domains=["water_heater"])
+
+    await _check_bootstrap_reserve(hass, entity_ids)
+    duration_minutes, temperature = _validate_water_heater_timer_params(call)
+
     for entity_id in entity_ids:
         ent = _find_entity_by_id(hass, "water_heater", entity_id)
         if ent and hasattr(ent, "async_set_timer"):
             try:
-                # Capture state before timer overlay
                 zone_id: str | None = getattr(ent, "_zone_id", None)
                 if zone_id:
                     try:
                         wh_coord = _resolve_coordinator(hass, entity_id)
-                        await wh_coord.async_capture_state(
-                            zone_id, "water_heater", "set_timer",
-                        )
+                        await wh_coord.async_capture_state(zone_id, "water_heater", "set_timer")
                     except HomeAssistantError:
-                        _LOGGER.debug("State capture skipped for %s: coordinator not resolved", entity_id)
+                        _LOGGER.debug("State capture skipped for %s", entity_id)
                 await ent.async_set_timer(duration_minutes, temperature)
                 _LOGGER.info("Set timer for %s: %smin", entity_id, duration_minutes)
             except Exception as e:
-                error_msg = f"Failed to set timer for {entity_id}: {e}"
-                _LOGGER.exception(error_msg)
-                # Continue to next entity instead of failing completely
+                _LOGGER.exception("Failed to set timer for %s: %s", entity_id, e)
 
 
 async def handle_resume_schedule(hass: HomeAssistant, call: ServiceCall) -> None:
@@ -890,26 +861,54 @@ async def handle_deactivate_open_window(hass: HomeAssistant, call: ServiceCall) 
                     _LOGGER.error("Failed to deactivate open window for %s", entity_id)
 
 
+def _resolve_open_window_timeout(
+    coord: object, zone_id: str, user_duration: int | None,
+) -> int:
+    """Resolve open window timeout: user param > zone setting > default."""
+    if user_duration is not None:
+        return user_duration
+    zones_info = coord.data.get("zones_info") or []  # type: ignore[union-attr]
+    for zone in zones_info:
+        if str(zone.get("id")) == zone_id:
+            owd = zone.get("openWindowDetection") or {}
+            timeout = owd.get("timeoutInSeconds")
+            if timeout is not None:
+                return timeout  # type: ignore[return-value]
+            break
+    return OPEN_WINDOW_DEFAULT_TIMEOUT
+
+
+def _build_open_window_overlay(
+    zone_type: str, timeout: int,
+) -> tuple[dict, dict, str]:
+    """Build setting and termination for open window overlay. Returns (setting, termination, desc)."""
+    setting: dict[str, str | dict[str, float]] = (
+        {"type": "AIR_CONDITIONING", "power": "OFF"}
+        if zone_type == "AIR_CONDITIONING"
+        else {"type": "HEATING", "power": "ON", "temperature": {"celsius": OPEN_WINDOW_DEFAULT_TEMP}}
+    )
+
+    if timeout == 0:
+        termination: dict[str, str | int] = {"type": "MANUAL"}
+        duration_desc = "indefinite"
+    else:
+        termination = build_timer_termination(duration_minutes=int(timeout) // 60)
+        duration_desc = f"{int(timeout) // 60} min"
+
+    return setting, termination, duration_desc
+
+
 async def handle_set_open_window_mode(hass: HomeAssistant, call: ServiceCall) -> None:
     """Handle set_open_window_mode service call.
 
     Simulates open window mode using an overlay — sets zone to frost protection
-    temperature with a timer. Works independently of Tado's built-in detection,
-    making it suitable for external contact sensors (Zigbee, Z-Wave, etc.).
-
-    Uses the zone's openWindowDetection.timeoutInSeconds if available,
-    otherwise falls back to OPEN_WINDOW_DEFAULT_TIMEOUT (15 min).
-
-    Per-entry API client routing with bootstrap reserve check.
+    temperature with a timer.
     """
     entity_ids = call.data.get("entity_id", [])
     if isinstance(entity_ids, str):
         entity_ids = [entity_ids]
-
-    # Expand groups to individual entity IDs
     entity_ids = _expand_group_entity_ids(hass, entity_ids, allowed_domains=["climate"])
 
-    # Optional user-provided duration (seconds)
     duration_seconds = call.data.get("duration")
     capture_state = call.data.get("capture_state", True)
 
@@ -929,61 +928,25 @@ async def handle_set_open_window_mode(hass: HomeAssistant, call: ServiceCall) ->
             )
 
         ent = _find_entity_by_id(hass, "climate", entity_id)
-        if ent:
-            zone_id = getattr(ent, "_zone_id", None)
-            if zone_id:
-                # Capture state before applying frost protection overlay
-                if capture_state:
-                    entity_type: str = getattr(ent, "_entity_type", "climate_heating")
-                    await _coord.async_capture_state(
-                        zone_id, entity_type, "set_open_window_mode",
-                    )
-                # Determine timeout: user param > zone setting > default
-                timeout = duration_seconds
-                if timeout is None:
-                    # Try to get from zone's openWindowDetection config
-                    zones_info = _coord.data.get("zones_info") or []
-                    for zone in zones_info:
-                        if str(zone.get("id")) == zone_id:
-                            owd = zone.get("openWindowDetection") or {}
-                            timeout = owd.get("timeoutInSeconds")
-                            break
-                if timeout is None:
-                    timeout = OPEN_WINDOW_DEFAULT_TIMEOUT
+        if not ent:
+            continue
+        zone_id = getattr(ent, "_zone_id", None)
+        if not zone_id:
+            continue
 
-                # Build overlay: frost protection temp + termination
-                # Determine zone type for correct setting format
-                zone_type = getattr(ent, "_zone_type", "HEATING")
-                setting: dict[str, str | dict[str, float]] = (
-                    {
-                        "type": "AIR_CONDITIONING",
-                        "power": "OFF",
-                    }
-                    if zone_type == "AIR_CONDITIONING"
-                    else {
-                        "type": "HEATING",
-                        "power": "ON",
-                        "temperature": {"celsius": OPEN_WINDOW_DEFAULT_TEMP},
-                    }
-                )
+        if capture_state:
+            entity_type: str = getattr(ent, "_entity_type", "climate_heating")
+            await _coord.async_capture_state(zone_id, entity_type, "set_open_window_mode")
 
-                # Termination: duration=0 means indefinite (MANUAL), otherwise TIMER
-                termination: dict[str, str | int]
-                if timeout == 0:
-                    termination = {"type": "MANUAL"}
-                    duration_desc = "indefinite"
-                else:
-                    termination = build_timer_termination(duration_minutes=int(timeout) // 60)
-                    duration_desc = f"{int(timeout) // 60} min"
+        timeout = _resolve_open_window_timeout(_coord, zone_id, duration_seconds)
+        zone_type = getattr(ent, "_zone_type", "HEATING")
+        setting, termination, duration_desc = _build_open_window_overlay(zone_type, timeout)
 
-                success = await _coord.api_client.set_zone_overlay(zone_id, setting, termination)
-                if success:
-                    _LOGGER.info(
-                        "Set open window mode for %s (%s, %s°C)",
-                        entity_id, duration_desc, OPEN_WINDOW_DEFAULT_TEMP,
-                    )
-                else:
-                    _LOGGER.error("Failed to set open window mode for %s", entity_id)
+        success = await _coord.api_client.set_zone_overlay(zone_id, setting, termination)
+        if success:
+            _LOGGER.info("Set open window mode for %s (%s, %s°C)", entity_id, duration_desc, OPEN_WINDOW_DEFAULT_TEMP)
+        else:
+            _LOGGER.error("Failed to set open window mode for %s", entity_id)
 
 
 async def handle_get_temp_offset(hass: HomeAssistant, call: ServiceCall) -> None:
@@ -1109,7 +1072,7 @@ async def _async_register_services(hass: HomeAssistant) -> None:
             },
         ),
     )
-    
+
     hass.services.async_register(
         DOMAIN,
         SERVICE_SET_WATER_HEATER_TIMER,
@@ -1122,7 +1085,7 @@ async def _async_register_services(hass: HomeAssistant) -> None:
             },
         ),
     )
-    
+
     # Use cv.entity_ids + handler expansion to support groups
     hass.services.async_register(
         DOMAIN,
@@ -1134,7 +1097,7 @@ async def _async_register_services(hass: HomeAssistant) -> None:
             },
         ),
     )
-    
+
     hass.services.async_register(
         DOMAIN,
         SERVICE_SET_TEMP_OFFSET,
@@ -1146,7 +1109,7 @@ async def _async_register_services(hass: HomeAssistant) -> None:
             },
         ),
     )
-    
+
     hass.services.async_register(
         DOMAIN,
         SERVICE_ADD_METER_READING,
@@ -1158,7 +1121,7 @@ async def _async_register_services(hass: HomeAssistant) -> None:
             },
         ),
     )
-    
+
     hass.services.async_register(
         DOMAIN,
         SERVICE_IDENTIFY_DEVICE,
@@ -1169,7 +1132,7 @@ async def _async_register_services(hass: HomeAssistant) -> None:
             },
         ),
     )
-    
+
     hass.services.async_register(
         DOMAIN,
         SERVICE_SET_AWAY_CONFIG,
@@ -1183,7 +1146,7 @@ async def _async_register_services(hass: HomeAssistant) -> None:
             },
         ),
     )
-    
+
     hass.services.async_register(
         DOMAIN,
         SERVICE_ACTIVATE_OPEN_WINDOW,
@@ -1194,7 +1157,7 @@ async def _async_register_services(hass: HomeAssistant) -> None:
             },
         ),
     )
-    
+
     hass.services.async_register(
         DOMAIN,
         SERVICE_DEACTIVATE_OPEN_WINDOW,
@@ -1205,7 +1168,7 @@ async def _async_register_services(hass: HomeAssistant) -> None:
             },
         ),
     )
-    
+
     hass.services.async_register(
         DOMAIN,
         SERVICE_SET_OPEN_WINDOW_MODE,
@@ -1220,7 +1183,7 @@ async def _async_register_services(hass: HomeAssistant) -> None:
             },
         ),
     )
-    
+
     hass.services.async_register(
         DOMAIN,
         SERVICE_GET_TEMP_OFFSET,
@@ -1232,7 +1195,7 @@ async def _async_register_services(hass: HomeAssistant) -> None:
         ),
         supports_response=True,  # type: ignore[arg-type]
     )
-    
+
     hass.services.async_register(
         DOMAIN,
         SERVICE_RESTORE_PREVIOUS_STATE,
@@ -1243,5 +1206,5 @@ async def _async_register_services(hass: HomeAssistant) -> None:
             },
         ),
     )
-    
+
     _LOGGER.info("Tado CE: Services registered")

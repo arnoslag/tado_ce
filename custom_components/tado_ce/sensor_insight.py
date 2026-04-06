@@ -31,9 +31,15 @@ from .format_helpers import (
 from .insights_models import Insight
 from .insights_presenter import (
     aggregate_home_insights,
-    build_trend_digest as _build_trend_digest,
     calculate_insight_health_score,
+)
+from .insights_presenter import (
+    build_trend_digest as _build_trend_digest,
+)
+from .insights_presenter import (
     correlate_insights as _correlate_insights,
+)
+from .insights_presenter import (
     escalate_priorities as _escalate_priorities,
 )
 from .sensor_insight_collector import (
@@ -53,76 +59,68 @@ _LOGGER = logging.getLogger(__name__)
 _OVERDUE_DAYS = 14  # After 2 weeks, consider the issue overdue
 
 
+def _enhance_battery_duration(action: str, days: int, day_label: str) -> str:
+    """Enhance battery recommendation with duration urgency."""
+    if days >= _OVERDUE_DAYS:
+        if "within 1-2 weeks" in action:
+            return action.replace(
+                "within 1-2 weeks",
+                f"\u2014 {day_label} since first reported, replace now to avoid losing control",
+            )
+        if "TODAY" not in action:
+            return f"{action} \u2014 {day_label} overdue, replace now"
+    elif days >= 7:  # noqa: PLR2004
+        if "within 1-2 weeks" in action:
+            return action.replace("within 1-2 weeks", f"soon \u2014 reported {day_label} ago")
+    else:
+        return f"{action} (reported {day_label} ago)"
+    return action
+
+
+_DURATION_URGENT_TEMPLATES: dict[str, tuple[int, str]] = {
+    "connection": (3, "offline for {day_label}, check batteries and re-pair device"),
+    "condensation": (3, "{day_label} and worsening risk, act now"),
+    "heating_anomaly": (3, "ongoing for {day_label}, check TRV and radiator for blockages"),
+    "thermal_efficiency": (3, "ongoing for {day_label}, check TRV and radiator for blockages"),
+    "mold_risk": (7, "ongoing for {day_label}, ventilate daily and check for damp sources"),
+    "humidity_trend": (7, "ongoing for {day_label}, ventilate daily and check for damp sources"),
+}
+
+
+def _enhance_generic_duration(
+    action: str, insight_type: str, days: int, day_label: str,
+) -> str:
+    """Enhance recommendation with duration for non-battery insight types."""
+    if insight_type == "frost_risk":
+        return f"{action} \u2014 risk ongoing for {day_label}, increase minimum temperature"
+
+    template = _DURATION_URGENT_TEMPLATES.get(insight_type)
+    if template:
+        threshold, urgent_msg = template
+        if days >= threshold:
+            return f"{action} \u2014 {urgent_msg.format(day_label=day_label)}"
+
+    # Default: simple duration suffix (comfort, connection < 3d, etc.)
+    label = f"offline for {day_label}" if insight_type == "connection" else f"ongoing for {day_label}"
+    return f"{action} ({label})"
+
+
 def _enhance_recommendation_with_duration(
     recommendation: str,
     insight_type: str,
     days: int,
 ) -> str:
-    """Rewrite a recommendation to reflect urgency based on persistence duration.
-
-    Transforms FYI-style messages into FYA (For Your Action) messages
-    that tell the user exactly what to do and why it's urgent.
-
-    Args:
-        recommendation: Original recommendation text.
-        insight_type: Insight type key (e.g. "battery", "mold_risk").
-        days: Number of days the insight has been active.
-
-    Returns:
-        Enhanced recommendation string with actionable urgency.
-    """
+    """Rewrite a recommendation to reflect urgency based on persistence duration."""
     day_label = "1 day" if days == 1 else f"{days} days"
 
-    # Strip zone prefix ("Lounge: ...") to isolate the action part
     parts = recommendation.split(": ", 1)
     zone_prefix = f"{parts[0]}: " if len(parts) > 1 else ""
     action = parts[1] if len(parts) > 1 else parts[0]
 
     if insight_type == "battery":
-        if days >= _OVERDUE_DAYS:
-            # 14+ days: the "1-2 weeks" window has passed
-            if "within 1-2 weeks" in action:
-                action = action.replace(
-                    "within 1-2 weeks",
-                    f"\u2014 {day_label} since first reported, replace now to avoid losing control",
-                )
-            elif "TODAY" not in action:
-                action = f"{action} \u2014 {day_label} overdue, replace now"
-        elif days >= 7:
-            if "within 1-2 weeks" in action:
-                action = action.replace("within 1-2 weeks", f"soon \u2014 reported {day_label} ago")
-        else:
-            action = f"{action} (reported {day_label} ago)"
-        return f"{zone_prefix}{action}"
+        return f"{zone_prefix}{_enhance_battery_duration(action, days, day_label)}"
 
-    if insight_type == "connection":
-        if days >= 3:
-            return f"{zone_prefix}{action} \u2014 offline for {day_label}, check batteries and re-pair device"
-        return f"{zone_prefix}{action} (offline for {day_label})"
-
-    if insight_type in ("mold_risk", "humidity_trend"):
-        if days >= 7:
-            return f"{zone_prefix}{action} \u2014 ongoing for {day_label}, ventilate daily and check for damp sources"
-        return f"{zone_prefix}{action} (ongoing for {day_label})"
-
-    if insight_type == "condensation":
-        if days >= 3:
-            return f"{zone_prefix}{action} \u2014 {day_label} and worsening risk, act now"
-        return f"{zone_prefix}{action} (ongoing for {day_label})"
-
-    if insight_type in ("heating_anomaly", "thermal_efficiency"):
-        if days >= 3:
-            return f"{zone_prefix}{action} \u2014 ongoing for {day_label}, check TRV and radiator for blockages"
-        return f"{zone_prefix}{action} (ongoing for {day_label})"
-
-    if insight_type == "frost_risk":
-        return f"{zone_prefix}{action} \u2014 risk ongoing for {day_label}, increase minimum temperature"
-
-    if insight_type == "comfort":
-        return f"{zone_prefix}{action} (ongoing for {day_label})"
-
-    # Default: append duration
-    return f"{recommendation} (ongoing for {day_label})"
+    return f"{zone_prefix}{_enhance_generic_duration(action, insight_type, days, day_label)}"
 
 
 class TadoHomeInsightsSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], SensorEntity):
@@ -212,6 +210,28 @@ class TadoHomeInsightsSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], Sen
         self.update()
         self.async_write_ha_state()
 
+    @staticmethod
+    def _enhance_persistent_insights(
+        zone_insights: dict[str, list[Insight]],
+        history: object,
+    ) -> dict[str, list[Insight]]:
+        """Append duration text for persistent insights (≥ 24h)."""
+        for zone_key in zone_insights:
+            for i, insight in enumerate(zone_insights[zone_key]):
+                dur = history.get_duration(insight.insight_type, insight.zone_name)  # type: ignore[union-attr]
+                if dur is not None and dur.total_seconds() >= 86400:  # noqa: PLR2004
+                    days = int(dur.total_seconds() // 86400)  # noqa: PLR2004
+                    enhanced = _enhance_recommendation_with_duration(
+                        insight.recommendation, insight.insight_type, days,
+                    )
+                    zone_insights[zone_key][i] = Insight(
+                        priority=insight.priority,
+                        recommendation=enhanced,
+                        insight_type=insight.insight_type,
+                        zone_name=insight.zone_name,
+                    )
+        return zone_insights
+
     @callback
     def update(self) -> None:
         """Update home insights by collecting and aggregating zone data."""
@@ -219,19 +239,11 @@ class TadoHomeInsightsSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], Sen
             ctx = InsightContext.from_coordinator(self.coordinator)
 
             zone_insights = collect_zone_insights(
-                self.hass,
-                self.coordinator,
-                self._anomaly_start_times,
-                self._humidity_histories,
+                self.hass, self.coordinator,
+                self._anomaly_start_times, self._humidity_histories,
             )
 
-            cross_zone = get_cross_zone_insights(
-                self.hass,
-                self.coordinator,
-                zone_insights,
-                ctx,
-            )
-
+            cross_zone = get_cross_zone_insights(self.hass, self.coordinator, zone_insights, ctx)
             hub = get_hub_insights(self.hass, self.coordinator, ctx)
 
             if hub:
@@ -243,16 +255,12 @@ class TadoHomeInsightsSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], Sen
             for insights_list in zone_insights.values():
                 all_insights.extend(insights_list)
 
-            # Update insight history with current poll cycle
             now = dt_util.utcnow()
             self.coordinator.insight_history.update(all_insights, now)
 
-            # Escalate priorities based on persistence duration
             history = self.coordinator.insight_history
             escalated = _escalate_priorities(all_insights, history, now)
 
-            # Build escalated priority lookup for persistent_insights rendering
-            # Keys use formatted insight_type to match get_persistent_insights() output
             self._escalated_priority_map = {}
             for insight in escalated:
                 fmt_type = _format_insight_type(insight.insight_type)
@@ -260,52 +268,31 @@ class TadoHomeInsightsSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], Sen
                 existing = self._escalated_priority_map.get(key, 0)
                 self._escalated_priority_map[key] = max(existing, insight.priority.value)
 
-            # Rebuild zone_insights with escalated insights (preserving zone grouping)
+            # Rebuild zone_insights with escalated insights
             idx = 0
             for zone_key in zone_insights:
                 count = len(zone_insights[zone_key])
                 zone_insights[zone_key] = escalated[idx : idx + count]
                 idx += count
 
-            # Append duration text for persistent insights (≥ 24h)
-            for zone_key in zone_insights:
-                for i, insight in enumerate(zone_insights[zone_key]):
-                    dur = history.get_duration(insight.insight_type, insight.zone_name)
-                    if dur is not None and dur.total_seconds() >= 86400:
-                        days = int(dur.total_seconds() // 86400)
-                        enhanced = _enhance_recommendation_with_duration(
-                            insight.recommendation, insight.insight_type, days,
-                        )
-                        zone_insights[zone_key][i] = Insight(
-                            priority=insight.priority,
-                            recommendation=enhanced,
-                            insight_type=insight.insight_type,
-                            zone_name=insight.zone_name,
-                        )
-
-            # Correlate related insights within each zone
+            zone_insights = self._enhance_persistent_insights(zone_insights, history)
             zone_insights = _correlate_insights(zone_insights)
 
-            # Compute health score from escalated insights (before correlation)
             self._health_score = calculate_insight_health_score(escalated)
 
-            # Update weekly digest (recompute only when date changes)
             today = now.strftime("%Y-%m-%d")
             if today != self._weekly_digest_date:
-                self._weekly_digest = _build_trend_digest(
-                    self.coordinator.insight_history,
-                    now,
-                )
+                self._weekly_digest = _build_trend_digest(self.coordinator.insight_history, now)
                 self._weekly_digest_date = today
 
             self._aggregated = aggregate_home_insights(zone_insights)
-
-            cross_recs = [i.recommendation for i in cross_zone if i.recommendation]
-            self._aggregated["cross_zone_insights"] = cross_recs
+            self._aggregated["cross_zone_insights"] = [
+                i.recommendation for i in cross_zone if i.recommendation
+            ]
 
             self._attr_native_value = len(self._aggregated.get("actions_needed", []))
             self._attr_available = True
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — HA entity update pattern
             _LOGGER.debug("Failed to update home insights: %s", e)
             self._attr_available = False
 
@@ -404,8 +391,8 @@ class TadoZoneInsightsSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], Sen
             history = self.coordinator.insight_history
             for i, insight in enumerate(self._insights):
                 dur = history.get_duration(insight.insight_type, insight.zone_name)
-                if dur is not None and dur.total_seconds() >= 86400:
-                    days = int(dur.total_seconds() // 86400)
+                if dur is not None and dur.total_seconds() >= 86400:  # noqa: PLR2004 — 86400s = 1 day
+                    days = int(dur.total_seconds() // 86400)  # noqa: PLR2004 — 86400s = 1 day
                     enhanced = _enhance_recommendation_with_duration(
                         insight.recommendation, insight.insight_type, days,
                     )
@@ -418,6 +405,6 @@ class TadoZoneInsightsSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], Sen
 
             self._attr_native_value = len(self._insights)
             self._attr_available = True
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — HA entity update pattern
             _LOGGER.debug("Failed to update zone insights for %s: %s", self._zone_name, e)
             self._attr_available = False

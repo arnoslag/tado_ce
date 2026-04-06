@@ -1,4 +1,4 @@
-"""Tado CE API Auth Mixin — token management and config I/O.
+"""Tado CE API Auth Mixin — token management and config I/O.  # used in Protocol class body annotation
 
 Provides OAuth token refresh, config file loading/saving, and token
 caching logic. Designed as a mixin class for TadoApiClient.
@@ -6,18 +6,18 @@ caching logic. Designed as a mixin class for TadoApiClient.
 
 from __future__ import annotations
 
-import asyncio  # noqa: TC003 — used in Protocol class body annotation
+import asyncio
 from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
 import logging
 from typing import TYPE_CHECKING, Any, Protocol
 
 import aiohttp
-
 from homeassistant.exceptions import HomeAssistantError
 
-from .const import CLIENT_ID, CONFIG_FILE, TADO_AUTH_URL
+from .const import CLIENT_ID, CONFIG_FILE, MAX_RETRY_ATTEMPTS, TADO_AUTH_URL
 from .exceptions import TadoAuthError
+from .helpers import retry_delay
 from .storage import async_load_json, async_save_json
 
 if TYPE_CHECKING:
@@ -160,8 +160,38 @@ class TadoAuthMixin:
             # Token expired or missing, refresh it
             return await self._refresh_token()
 
+    async def _handle_successful_token_response(
+        self: _AuthHost, data: dict[str, Any], config: dict[str, Any], refresh_token: str,
+    ) -> str | None:
+        """Handle a successful token refresh response."""
+        self._access_token = data.get("access_token")
+        new_refresh_token = data.get("refresh_token")
+
+        if not self._access_token:
+            _LOGGER.error("No access token in response")
+            return None
+
+        # Save new refresh token if rotated
+        if new_refresh_token and new_refresh_token != refresh_token:
+            config["refresh_token"] = new_refresh_token
+            await self._save_config(config)
+            self._injected_refresh_token = new_refresh_token
+            if self._hass and self._config_entry:
+                new_data = {**self._config_entry.data, "refresh_token": new_refresh_token}
+                self._hass.config_entries.async_update_entry(self._config_entry, data=new_data)
+            _LOGGER.debug("Refresh token rotated and saved")
+
+        self._token_expiry = datetime.now(UTC) + timedelta(seconds=self.TOKEN_CACHE_DURATION)
+        _LOGGER.debug("Access token refreshed successfully")
+        return self._access_token
+
     async def _refresh_token(self: _AuthHost) -> str | None:
-        """Refresh access token using refresh token."""
+        """Refresh access token with retry for transient 403.
+
+        OAuth2 refresh token requests are idempotent — safe to retry with
+        the same refresh_token. Only 403 (CDN/WAF transient block) is
+        retried; 401 / invalid_grant are real auth failures.
+        """
         config = await self._load_config()
         refresh_token = config.get("refresh_token")
 
@@ -171,56 +201,59 @@ class TadoAuthMixin:
 
         _LOGGER.debug("Refreshing access token...")
 
-        try:
-            async with self._session.post(
-                f"{TADO_AUTH_URL}/token",
-                data={
-                    "client_id": CLIENT_ID,
-                    "grant_type": "refresh_token",
-                    "refresh_token": refresh_token,
-                },
-                timeout=_TOKEN_REFRESH_TIMEOUT,
-            ) as resp:
-                if resp.status != HTTPStatus.OK:
+        for attempt in range(1, MAX_RETRY_ATTEMPTS + 1):
+            try:
+                async with self._session.post(
+                    f"{TADO_AUTH_URL}/token",
+                    data={
+                        "client_id": CLIENT_ID,
+                        "grant_type": "refresh_token",
+                        "refresh_token": refresh_token,
+                    },
+                    timeout=_TOKEN_REFRESH_TIMEOUT,
+                ) as resp:
+                    if resp.status == HTTPStatus.OK:
+                        data = await resp.json()
+                        return await self._handle_successful_token_response(data, config, refresh_token)
+
                     error_text = await resp.text()
-                    _LOGGER.error("Token refresh failed: %s - %s", resp.status, error_text)
-                    if "invalid_grant" in error_text:
-                        _LOGGER.error("Refresh token expired - user must re-authenticate")
+
+                    # 401 / invalid_grant = real auth failure — no retry
+                    if resp.status == HTTPStatus.UNAUTHORIZED or "invalid_grant" in error_text:
+                        _LOGGER.error("Token refresh auth failure: %s - %s", resp.status, error_text)
                         config["refresh_token"] = None
                         await self._save_config(config)
-                        raise TadoAuthError("Refresh token expired (invalid_grant)")
+                        raise TadoAuthError("Refresh token invalid (auth failure)")
+
+                    # 403 = likely transient CDN/WAF block — retry
+                    if resp.status == HTTPStatus.FORBIDDEN:
+                        if attempt < MAX_RETRY_ATTEMPTS:
+                            _LOGGER.debug(
+                                "Token refresh got 403, retry %s/%s",
+                                attempt, MAX_RETRY_ATTEMPTS,
+                            )
+                            delay = retry_delay(attempt)
+                            await asyncio.sleep(delay)
+                            continue
+                        _LOGGER.error(
+                            "Token refresh 403 after %s attempts: %s",
+                            MAX_RETRY_ATTEMPTS, error_text[:200],
+                        )
+                        raise TadoAuthError(
+                            f"Token refresh failed after {MAX_RETRY_ATTEMPTS} attempts (403)"
+                        )
+
+                    # Other errors — no retry
+                    _LOGGER.error("Token refresh failed: %s - %s", resp.status, error_text)
                     return None
 
-                data = await resp.json()
-                self._access_token = data.get("access_token")
-                new_refresh_token = data.get("refresh_token")
+            except TadoAuthError:
+                raise
+            except aiohttp.ClientError:
+                _LOGGER.exception("Network error during token refresh")
+                return None
+            except Exception:
+                _LOGGER.exception("Unexpected error during token refresh")
+                return None
 
-                if not self._access_token:
-                    _LOGGER.error("No access token in response")
-                    return None
-
-                # Save new refresh token if rotated
-                if new_refresh_token and new_refresh_token != refresh_token:
-                    config["refresh_token"] = new_refresh_token
-                    await self._save_config(config)
-                    # Update in-memory injected token so _load_config() uses the new one
-                    self._injected_refresh_token = new_refresh_token
-                    # Persist to ConfigEntry.data so token survives HA restarts
-                    if self._hass and self._config_entry:
-                        new_data = {**self._config_entry.data, "refresh_token": new_refresh_token}
-                        self._hass.config_entries.async_update_entry(self._config_entry, data=new_data)
-                    _LOGGER.debug("Refresh token rotated and saved")
-
-                self._token_expiry = datetime.now(UTC) + timedelta(seconds=self.TOKEN_CACHE_DURATION)
-                _LOGGER.debug("Access token refreshed successfully")
-                return self._access_token
-
-        except TadoAuthError:
-            # Must propagate so coordinator triggers reauth flow
-            raise
-        except aiohttp.ClientError:
-            _LOGGER.exception("Network error during token refresh")
-            return None
-        except Exception:
-            _LOGGER.exception("Unexpected error during token refresh")
-            return None
+        return None  # unreachable but satisfies type checker

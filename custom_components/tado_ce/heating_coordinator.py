@@ -22,8 +22,6 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
-# Update interval for checking cycle timeouts
-UPDATE_INTERVAL_SECONDS = 60
 
 
 class HeatingCycleCoordinator(DataUpdateCoordinator):

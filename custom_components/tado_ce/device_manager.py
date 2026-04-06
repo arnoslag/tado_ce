@@ -38,7 +38,7 @@ def load_version() -> str:
         with manifest_path.open() as f:
             manifest = json.load(f)
             return manifest.get("version", "unknown")  # type: ignore[no-any-return]
-    except Exception as e:
+    except (OSError, ValueError) as e:
         _LOGGER.warning("Failed to load version from manifest: %s", e)
         return "unknown"
 

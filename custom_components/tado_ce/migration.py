@@ -13,6 +13,10 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
+# Migration version constants
+_MIN_SUPPORTED_VERSION = 11  # versions below this are too old to migrate
+_V11_VERSION = 11  # config entry version that needs v11→v12 migration
+
 # Module-level set to track duplicate cleanup operations (prevents re-running)
 _duplicate_cleanup_done: set[str] = set()
 
@@ -83,7 +87,7 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) ->
         hass.config_entries.async_update_entry(config_entry, version=target_version)
         return True
 
-    if initial_version < 11:
+    if initial_version < _MIN_SUPPORTED_VERSION:
         _LOGGER.error(
             "Config entry version %s is too old. "
             "Minimum supported version is 11 (v3.0.0). "
@@ -92,7 +96,7 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) ->
         )
         return False
 
-    if initial_version == 11:
+    if initial_version == _V11_VERSION:
         _LOGGER.info("Migrating config entry from v11 to v12")
         await async_migrate_config_json(hass, config_entry)
         hass.config_entries.async_update_entry(config_entry, version=12)
@@ -143,7 +147,7 @@ async def async_handle_test_mode_transition(
             try:
                 await client.get_me()
                 _LOGGER.info("Tado CE: API refresh completed - rate limit data updated with real values")
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 — HA entity update pattern
                 _LOGGER.warning("Tado CE: API refresh failed (will use backup): %s", e)
 
 

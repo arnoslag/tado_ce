@@ -94,6 +94,7 @@ class APICallTracker:
         self._call_history: dict[str, list[dict[str, Any]]] = {}
         self._last_cleanup_date = None
         self._initialized = False
+        self._dirty = False
 
         # Do not call blocking mkdir here — __init__ runs in the event loop.
         # Directory creation is deferred to _save_history_sync() / _save_history_async().
@@ -169,6 +170,21 @@ class APICallTracker:
             self._initialized = True
             _LOGGER.debug("Loaded API call history (sync): %s dates", len(self._call_history))
 
+    @property
+    def needs_save(self) -> bool:
+        """Return True if there are unsaved changes."""
+        return self._dirty
+
+    async def async_save_if_dirty(self) -> None:
+        """Save call history to disk if there are unsaved changes.
+
+        Called by coordinator poll cycle and integration unload.
+        """
+        if not self._dirty:
+            return
+        await self._save_history_async(dict(self._call_history))
+        self._dirty = False
+
     async def async_record_call(self, call_type: int, status_code: int, timestamp: datetime | None = None) -> None:
         """Record an API call asynchronously.
 
@@ -205,8 +221,8 @@ class APICallTracker:
                 self._last_cleanup_date = today  # type: ignore[assignment]
                 should_cleanup = True
 
-        # Save using native async I/O
-        await self._save_history_async(dict(self._call_history))
+        # Mark dirty — actual save happens in coordinator poll cycle or unload
+        self._dirty = True
 
         if should_cleanup:
             await self.async_cleanup_old_records()

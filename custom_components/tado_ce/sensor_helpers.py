@@ -58,7 +58,7 @@ def get_outdoor_temperature(hass: HomeAssistant, entity_id: str, use_feels_like:
             return float(state.state)
     except (ValueError, TypeError):
         pass
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 — defensive helper, external state access may raise any error
         _LOGGER.debug("Error getting outdoor temperature from %s: %s", entity_id, e)
 
     return None
@@ -121,7 +121,7 @@ def get_effective_temperature(
 
         return (surface_temp, outdoor_temp, surface_temp, source, surface_offset)
 
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 — defensive helper for entity update path
         _LOGGER.debug("Error determining temperature source for zone %s: %s", zone_id, e)
         return fallback
 

@@ -1,4 +1,4 @@
-"""Tado CE Thermal Analysis Sensors — inertia, heating rate, preheat time, etc."""
+"""Tado CE Thermal Analysis Sensors — inertia, heating rate, preheat time, etc."""  # readability: named result
 
 from __future__ import annotations
 
@@ -178,7 +178,7 @@ class TadoPreheatTimeSensor(CoordinatorEntity["HeatingCycleCoordinator"], Sensor
             current_temp,
             target_temp,
         )
-        return estimate  # noqa: RET504 — readability: named result
+        return estimate
 
     @property
     def available(self) -> bool:

@@ -25,18 +25,6 @@ TO_REDACT_CONFIG = {
     "email",
 }
 
-TO_REDACT_COORDINATOR = {
-    "home_id",
-    "serialNo",
-    "shortSerialNo",
-    "currentFwVersion",
-    "latitude",
-    "longitude",
-    "address",
-    "geolocation",
-    "geoTrackingEnabled",
-}
-
 
 async def async_get_config_entry_diagnostics(
     hass: HomeAssistant,

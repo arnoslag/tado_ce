@@ -1,5 +1,4 @@
 """Tado CE Switch Platform — child lock and early start."""
-
 from __future__ import annotations
 
 import logging
@@ -8,13 +7,15 @@ from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .ratelimit import async_check_bootstrap_reserve_or_raise as _check_bootstrap_reserve_or_raise
+from .const import DOMAIN
 from .device_manager import get_hub_device_info, get_zone_device_info
 from .entity_registry import ENTITY_REGISTRY, get_entity_category
 from .helpers import async_trigger_immediate_refresh
 from .optimistic_helpers import OptimisticUpdateResult, clear_optimistic_state, resolve_optimistic_update
+from .ratelimit import async_check_bootstrap_reserve_or_raise as _check_bootstrap_reserve_or_raise
 from .write_optimizer import DeviceOperation
 
 if TYPE_CHECKING:
@@ -187,7 +188,7 @@ class TadoEarlyStartSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switc
 
         # Early start state is not in the cached files, so we keep the last known state
 
-    async def async_turn_on(self, **kwargs: Any) -> None:  # noqa: ANN401 — HA entity interface
+    async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn on early start - async.
 
         Added optimistic tracking and proper rollback (parity with climate entities).
@@ -221,8 +222,12 @@ class TadoEarlyStartSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switc
             self._attr_is_on = old_is_on
             clear_optimistic_state(self)
             self.async_write_ha_state()
+            raise HomeAssistantError(
+                f"Early Start {self._zone_name}: device sync queue full",
+                translation_domain=DOMAIN,
+            )
 
-    async def async_turn_off(self, **kwargs: Any) -> None:  # noqa: ANN401 — HA entity interface
+    async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn off early start - async.
 
         Added optimistic tracking and proper rollback (parity with climate entities).
@@ -255,6 +260,10 @@ class TadoEarlyStartSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switc
             self._attr_is_on = old_is_on
             clear_optimistic_state(self)
             self.async_write_ha_state()
+            raise HomeAssistantError(
+                f"Early Start {self._zone_name}: device sync queue full",
+                translation_domain=DOMAIN,
+            )
 
     async def _async_set_early_start(self, enabled: bool) -> bool:
         """Set early start state via async API."""
@@ -372,10 +381,10 @@ class TadoChildLockSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switch
                                 return
 
             self._attr_available = False
-        except Exception:
+        except Exception:  # noqa: BLE001 — HA entity update pattern
             self._attr_available = False
 
-    async def async_turn_on(self, **kwargs: Any) -> None:  # noqa: ANN401 — HA entity interface
+    async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn on child lock - async.
 
         Added optimistic tracking and proper rollback (parity with climate entities).
@@ -409,8 +418,12 @@ class TadoChildLockSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switch
             self._attr_is_on = old_is_on
             clear_optimistic_state(self)
             self.async_write_ha_state()
+            raise HomeAssistantError(
+                f"Child Lock {self._zone_name}: device sync queue full",
+                translation_domain=DOMAIN,
+            )
 
-    async def async_turn_off(self, **kwargs: Any) -> None:  # noqa: ANN401 — HA entity interface
+    async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn off child lock - async.
 
         Added optimistic tracking and proper rollback (parity with climate entities).
@@ -443,6 +456,10 @@ class TadoChildLockSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switch
             self._attr_is_on = old_is_on
             clear_optimistic_state(self)
             self.async_write_ha_state()
+            raise HomeAssistantError(
+                f"Child Lock {self._zone_name}: device sync queue full",
+                translation_domain=DOMAIN,
+            )
 
     async def _async_set_child_lock(self, enabled: bool) -> bool:
         """Set child lock state via centralized API client."""
@@ -493,11 +510,11 @@ class TadoHubToggleSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switch
         self._attr_is_on = self._read_option()
         self.async_write_ha_state()
 
-    async def async_turn_on(self, **kwargs: Any) -> None:  # noqa: ANN401 — HA entity interface
+    async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn on the toggle."""
         await self._async_set_option(True)
 
-    async def async_turn_off(self, **kwargs: Any) -> None:  # noqa: ANN401 — HA entity interface
+    async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn off the toggle."""
         await self._async_set_option(False)
 
@@ -522,5 +539,5 @@ class TadoHubToggleSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switch
 
             try:
                 await async_handle_test_mode_transition(self.hass, entry)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 — transition handling must not block switch toggle
                 _LOGGER.debug("Tado CE: Test mode transition handling: %s", exc)

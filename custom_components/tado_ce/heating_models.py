@@ -9,8 +9,6 @@ from typing import Any
 from .helpers import parse_iso_datetime
 from .models import HeatingCycleReading
 
-__all__ = ["HeatingCycleReading"]
-
 
 
 
@@ -75,9 +73,9 @@ class HeatingCycleConfig:
 
     def validate(self) -> None:
         """Validate configuration values."""
-        if not 1 <= self.rolling_window_days <= 30:
+        if not 1 <= self.rolling_window_days <= 30:  # noqa: PLR2004 — config validation bounds
             raise ValueError("rolling_window_days must be between 1 and 30")
-        if not 0.05 <= self.inertia_threshold_celsius <= 0.5:
+        if not 0.05 <= self.inertia_threshold_celsius <= 0.5:  # noqa: PLR2004 — config validation bounds
             raise ValueError("inertia_threshold_celsius must be between 0.05 and 0.5")
-        if not 1 <= self.min_cycles <= 10:
+        if not 1 <= self.min_cycles <= 10:  # noqa: PLR2004 — config validation bounds
             raise ValueError("min_cycles must be between 1 and 10")

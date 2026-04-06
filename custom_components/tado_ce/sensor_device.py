@@ -10,8 +10,6 @@ from homeassistant.core import callback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
-from .helpers import parse_iso_datetime
-
 from .device_manager import get_device_name_suffix, get_zone_device_info
 from .entity_registry import ENTITY_REGISTRY, get_entity_category
 from .format_helpers import (
@@ -26,6 +24,7 @@ from .format_helpers import (
 from .format_helpers import (
     strip_zone_prefix as _strip_zone_prefix,
 )
+from .helpers import parse_iso_datetime
 from .insights_device import (
     calculate_battery_recommendation,
     calculate_connection_recommendation,

@@ -123,10 +123,10 @@ def is_within_optimistic_window(
     """
     if optimistic_set_at is None:
         return False
-    from .helpers import get_optimistic_window  # noqa: PLC0415
+    from .helpers import get_optimistic_window
 
     elapsed = time.monotonic() - optimistic_set_at
-    return elapsed < get_optimistic_window(hass, entry_id=entry_id) if hass else elapsed < 17.0
+    return elapsed < get_optimistic_window(hass, entry_id=entry_id) if hass else elapsed < 17.0  # noqa: PLR2004 — fallback optimistic window seconds
 
 
 def resolve_optimistic_update(

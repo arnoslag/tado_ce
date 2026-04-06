@@ -1,5 +1,5 @@
-"""Environment insights — mold risk, comfort, condensation, humidity trend.
-
+"""Environment insights — mold risk, comfort, condensation, humidity trend.  # reserved for future use
+  # reserved for future use
 Provides recommendation functions for environment-related conditions
 including mold risk, comfort levels, condensation, and humidity trends.
 """
@@ -21,7 +21,89 @@ from .insights_models import (
 )
 
 
-def calculate_mold_risk_recommendation(  # noqa: C901, PLR0913, PLR0911, PLR0912
+def _mold_critical_recommendation(
+    zone_name: str,
+    humidity: float | None,
+    current_temp: float | None,
+    target_temp: float | None,
+) -> str:
+    """Build mold risk recommendation for Critical level."""
+    transition = "Critical\u2192High"
+    actions: list[str] = []
+    if humidity and humidity > MOLD_HUMIDITY_CRITICAL:
+        delta_h = round(humidity - 60)
+        actions.append(f"reduce humidity by {delta_h}% (from {humidity:.0f}% to <60%)")
+    if current_temp and target_temp and current_temp < target_temp:
+        delta_t = round(target_temp - current_temp, 1)
+        actions.append(f"increase heating by {delta_t}\u00b0C (to {target_temp:.0f}\u00b0C)")
+    elif current_temp:
+        suggested = (target_temp + 2) if target_temp else (current_temp + 2)  # noqa: PLR2004
+        if suggested <= current_temp:
+            actions.append("check wall/window insulation \u2014 room warm but surfaces cold")
+        else:
+            delta = round(suggested - current_temp, 1)
+            actions.append(f"increase heating by +{delta}\u00b0C (to {suggested:.0f}\u00b0C)")
+
+    if actions:
+        return f"{zone_name} [{transition}]: URGENT \u2014 {' and '.join(actions)}. Ventilate 10 min."
+    return f"{zone_name} [{transition}]: URGENT \u2014 Ventilate 10 min and increase heating by +2\u00b0C"
+
+
+def _mold_high_recommendation(
+    zone_name: str,
+    humidity: float | None,
+    margin: float | None,
+    current_temp: float | None,
+    target_temp: float | None,
+) -> str:
+    """Build mold risk recommendation for High level."""
+    transition = "High\u2192Medium"
+    if humidity and humidity > MOLD_HUMIDITY_HIGH:
+        delta_h = round(humidity - 55)
+        return (
+            f"{zone_name} [{transition}]: Humidity {humidity:.0f}% "
+            f"(reduce by {delta_h}% to 55%) \u2014 dehumidifier or ventilate 15 min"
+        )
+    if margin is not None and margin < MOLD_MARGIN_HIGH:
+        needed = round(5 - margin, 1)  # noqa: PLR2004
+        base_temp = target_temp or current_temp
+        if base_temp:
+            suggested = base_temp + 1.5
+            if current_temp and suggested <= current_temp:
+                return (
+                    f"{zone_name} [{transition}]: Surface {margin:.1f}\u00b0C above dew point "
+                    f"(need +{needed}\u00b0C margin) \u2014 improve insulation or ventilate 15 min"
+                )
+            return (
+                f"{zone_name} [{transition}]: Surface {margin:.1f}\u00b0C above dew point "
+                f"(need +{needed}\u00b0C margin) \u2014 increase heating by +1.5\u00b0C (to {suggested:.0f}\u00b0C)"
+            )
+    return f"{zone_name} [{transition}]: Ventilate 15 min or increase heating by +1.5\u00b0C"
+
+
+def _mold_medium_recommendation(
+    zone_name: str,
+    humidity: float | None,
+    margin: float | None,
+) -> str:
+    """Build mold risk recommendation for Medium level."""
+    transition = "Medium\u2192Low"
+    if humidity and humidity > MOLD_HUMIDITY_MEDIUM:
+        delta_h = round(humidity - 55)
+        return (
+            f"{zone_name} [{transition}]: Humidity {humidity:.0f}% "
+            f"(reduce by {delta_h}% to 55%) \u2014 ventilate 10 min after cooking/showering"
+        )
+    if margin is not None and margin < MOLD_MARGIN_MEDIUM:
+        needed = round(7 - margin, 1)  # noqa: PLR2004
+        return (
+            f"{zone_name} [{transition}]: Surface {margin:.1f}\u00b0C above dew point "
+            f"(need +{needed}\u00b0C margin) \u2014 ensure adequate ventilation"
+        )
+    return f"{zone_name} [{transition}]: Moderate risk \u2014 ventilate daily 10 min"
+
+
+def calculate_mold_risk_recommendation(
     risk_level: str,
     zone_name: str,
     humidity: float | None = None,
@@ -30,115 +112,94 @@ def calculate_mold_risk_recommendation(  # noqa: C901, PLR0913, PLR0911, PLR0912
     current_temp: float | None = None,
     target_temp: float | None = None,
 ) -> str:
-    """Calculate SMART recommendation for mold risk with delta format.
-
-    Uses delta-first format showing changes needed before absolute
-    targets. Includes level transition guidance (e.g. Critical->High).
-
-    FIX: Removed arbitrary min() temperature caps that could
-    suggest temperatures below current room temp. When room is already warm
-    but surface temp is low (insulation issue), recommends ventilation/
-    insulation check instead of pointless heating increase.
-
-    Args:
-        risk_level: Current risk level (Critical, High, Medium, Low)
-        zone_name: Name of the zone
-        humidity: Current humidity percentage
-        surface_temp: Calculated surface temperature
-        dew_point: Calculated dew point
-        current_temp: Current room temperature
-        target_temp: Current heating target temperature
-
-    Returns:
-        SMART recommendation string (empty if no action needed)
-    """
+    """Calculate SMART recommendation for mold risk with delta format."""
     if risk_level in ("Minimal", "Low"):
         return ""
 
-    # Calculate margin for specific recommendations
     margin = None
     if surface_temp is not None and dew_point is not None:
         margin = surface_temp - dew_point
 
-    # Level transition targets (margin thresholds)
-    # Critical (<3) -> High needs margin >= 3
-    # High (3-5) -> Medium needs margin >= 5
-    # Medium (5-7) -> Low needs margin >= 7
-
     if risk_level == "Critical":
-        # Target: move to High (margin >= 3)
-        transition = "Critical\u2192High"
-        actions = []
-        if humidity and humidity > MOLD_HUMIDITY_CRITICAL:
-            delta_h = round(humidity - 60)
-            actions.append(f"reduce humidity by {delta_h}% (from {humidity:.0f}% to <60%)")
-        if current_temp and target_temp and current_temp < target_temp:
-            delta_t = round(target_temp - current_temp, 1)
-            actions.append(f"increase heating by {delta_t}\u00b0C (to {target_temp:.0f}\u00b0C)")
-        elif current_temp:
-            # Use target_temp as base when available,
-            # and guard against suggesting temp <= current_temp
-            suggested = (target_temp + 2) if target_temp else (current_temp + 2)
-            if suggested <= current_temp:
-                # Room already warm — issue is insulation, not heating
-                actions.append("check wall/window insulation \u2014 room warm but surfaces cold")
-            else:
-                delta = round(suggested - current_temp, 1)
-                actions.append(f"increase heating by +{delta}\u00b0C (to {suggested:.0f}\u00b0C)")
-
-        if actions:
-            return f"{zone_name} [{transition}]: URGENT \u2014 {' and '.join(actions)}. Ventilate 10 min."
-        return f"{zone_name} [{transition}]: URGENT \u2014 Ventilate 10 min and increase heating by +2\u00b0C"
-
+        return _mold_critical_recommendation(zone_name, humidity, current_temp, target_temp)
     if risk_level == "High":
-        # Target: move to Medium (margin >= 5)
-        transition = "High\u2192Medium"
-        if humidity and humidity > MOLD_HUMIDITY_HIGH:
-            delta_h = round(humidity - 55)
-            return (
-                f"{zone_name} [{transition}]: Humidity {humidity:.0f}% "
-                f"(reduce by {delta_h}% to 55%) \u2014 dehumidifier or ventilate 15 min"
-            )
-        if margin is not None and margin < MOLD_MARGIN_HIGH:
-            needed = round(5 - margin, 1)
-            # Use target_temp as base when available,
-            # guard against suggesting temp <= current_temp
-            base_temp = target_temp or current_temp
-            if base_temp:
-                suggested = base_temp + 1.5
-                if current_temp and suggested <= current_temp:
-                    # Room already warm — issue is insulation, not heating
-                    return (
-                        f"{zone_name} [{transition}]: Surface {margin:.1f}\u00b0C above dew point "
-                        f"(need +{needed}\u00b0C margin) \u2014 improve insulation or ventilate 15 min"
-                    )
-                return (
-                    f"{zone_name} [{transition}]: Surface {margin:.1f}\u00b0C above dew point "
-                    f"(need +{needed}\u00b0C margin) \u2014 increase heating by +1.5\u00b0C (to {suggested:.0f}\u00b0C)"
-                )
-        return f"{zone_name} [{transition}]: Ventilate 15 min or increase heating by +1.5\u00b0C"
-
+        return _mold_high_recommendation(zone_name, humidity, margin, current_temp, target_temp)
     if risk_level == "Medium":
-        # Target: move to Low (margin >= 7)
-        transition = "Medium\u2192Low"
-        if humidity and humidity > MOLD_HUMIDITY_MEDIUM:
-            delta_h = round(humidity - 55)
-            return (
-                f"{zone_name} [{transition}]: Humidity {humidity:.0f}% "
-                f"(reduce by {delta_h}% to 55%) \u2014 ventilate 10 min after cooking/showering"
-            )
-        if margin is not None and margin < MOLD_MARGIN_MEDIUM:
-            needed = round(7 - margin, 1)
-            return (
-                f"{zone_name} [{transition}]: Surface {margin:.1f}\u00b0C above dew point "
-                f"(need +{needed}\u00b0C margin) \u2014 ensure adequate ventilation"
-            )
-        return f"{zone_name} [{transition}]: Moderate risk \u2014 ventilate daily 10 min"
-
+        return _mold_medium_recommendation(zone_name, humidity, margin)
     return ""
 
 
-def calculate_comfort_recommendation(  # noqa: C901, PLR0913, PLR0911, PLR0912
+def _comfort_cold_recommendation(
+    zone_name: str,
+    current_temp: float | None,
+    target_temp: float | None,
+    hvac_mode: str | None,
+    hvac_action: str | None,
+) -> str:
+    """Build comfort recommendation for cold states."""
+    if current_temp is not None and target_temp is not None:
+        diff = round(target_temp - current_temp, 1)
+        if diff > 0:
+            if hvac_mode == "off":
+                return f"{zone_name}: {current_temp:.1f}\u00b0C, target {target_temp:.0f}\u00b0C \u2014 turn on heating"
+            if hvac_action == "heating":
+                return (
+                    f"{zone_name}: Heating in progress \u2014 "
+                    f"{current_temp:.1f}\u00b0C, {diff:.1f}\u00b0C below target. "
+                    f"Allow 15\u201330 min to reach {target_temp:.0f}\u00b0C"
+                )
+            if hvac_action in ("idle", "off"):
+                suggested = min(target_temp + 1, 25)  # noqa: PLR2004
+                return (
+                    f"{zone_name}: {current_temp:.1f}\u00b0C, "
+                    f"{diff:.1f}\u00b0C below target but heating idle \u2014 "
+                    f"increase setpoint to {suggested:.0f}\u00b0C"
+                )
+            suggested = min(target_temp + 1, 25)  # noqa: PLR2004
+            return (
+                f"{zone_name}: {current_temp:.1f}\u00b0C, "
+                f"{diff:.1f}\u00b0C below target \u2014 "
+                f"increase setpoint to {suggested:.0f}\u00b0C if not warming up"
+            )
+        suggested = current_temp + 2  # noqa: PLR2004
+        return f"{zone_name}: {current_temp:.1f}\u00b0C feels cold \u2014 set heating to {suggested:.0f}\u00b0C"
+    return f"{zone_name}: Room too cold \u2014 increase heating setpoint by 2\u00b0C"
+
+
+def _comfort_hot_recommendation(
+    zone_name: str,
+    current_temp: float | None,
+    target_temp: float | None,
+    heat_index: float | None,
+    heat_risk_level: str | None,
+) -> str:
+    """Build comfort recommendation for hot states."""
+    hi_suffix = ""
+    if heat_index is not None and heat_risk_level is not None and heat_risk_level != "None":
+        hi_suffix = f" (feels like {heat_index:.1f}°C — {heat_risk_level})"
+
+    if current_temp is not None:
+        if target_temp is not None and current_temp > target_temp:
+            over = round(current_temp - target_temp, 1)
+            rec = (
+                f"{zone_name}: {current_temp:.1f}°C, "
+                f"{over:.1f}°C above target \u2014 open window or reduce heating{hi_suffix}"
+            )
+        else:
+            suggested = max(current_temp - 2, 18)  # noqa: PLR2004
+            rec = (
+                f"{zone_name}: {current_temp:.1f}°C too warm \u2014 "
+                f"reduce setpoint to {suggested:.0f}°C or open window{hi_suffix}"
+            )
+    else:
+        rec = f"{zone_name}: Room too hot \u2014 reduce heating setpoint by 2°C or open window{hi_suffix}"
+
+    if heat_risk_level in ("Danger", "Extreme Danger"):
+        rec = f"⚠️ {zone_name}: Heat risk {heat_risk_level} — {rec[len(zone_name) + 2:]}"
+    return rec
+
+
+def calculate_comfort_recommendation(
     comfort_state: str,
     zone_name: str,
     current_temp: float | None = None,
@@ -149,95 +210,15 @@ def calculate_comfort_recommendation(  # noqa: C901, PLR0913, PLR0911, PLR0912
     heat_index: float | None = None,
     heat_risk_level: str | None = None,
 ) -> str:
-    """Calculate SMART recommendation for comfort level with time frame.
-
-    Added hvac_action parameter to differentiate between
-    "heating in progress" vs "heating not reaching target".
-
-    Args:
-        comfort_state: Current comfort state (Comfortable, Cold, Cool, etc.)
-        zone_name: Name of the zone
-        current_temp: Current room temperature
-        target_temp: Target/setpoint temperature
-        humidity: Current humidity percentage
-        hvac_mode: Current HVAC mode (heat, cool, off, auto)
-        hvac_action: Current HVAC action (heating, idle, off)
-        heat_index: Calculated Heat Index in °C, or None.
-        heat_risk_level: NOAA risk level string, or None.
-
-    Returns:
-        SMART recommendation string (empty if comfortable)
-    """
+    """Calculate SMART recommendation for comfort level with time frame."""
     if comfort_state == "Comfortable":
         return ""
 
-    # Cold/Cool states
     if comfort_state in ("Too Cold", "Cold", "Cool", "Freezing"):
-        if current_temp is not None and target_temp is not None:
-            diff = round(target_temp - current_temp, 1)
-            if diff > 0:
-                if hvac_mode == "off":
-                    return (
-                        f"{zone_name}: {current_temp:.1f}\u00b0C, "
-                        f"target {target_temp:.0f}\u00b0C \u2014 turn on heating"
-                    )
-                # Differentiate based on hvac_action
-                if hvac_action == "heating":
-                    return (
-                        f"{zone_name}: Heating in progress \u2014 "
-                        f"{current_temp:.1f}\u00b0C, {diff:.1f}\u00b0C below target. "
-                        f"Allow 15\u201330 min to reach {target_temp:.0f}\u00b0C"
-                    )
-                if hvac_action in ("idle", "off"):
-                    suggested = min(target_temp + 1, 25)
-                    return (
-                        f"{zone_name}: {current_temp:.1f}\u00b0C, "
-                        f"{diff:.1f}\u00b0C below target but heating idle \u2014 "
-                        f"increase setpoint to {suggested:.0f}\u00b0C"
-                    )
-                # Unknown hvac_action - generic
-                suggested = min(target_temp + 1, 25)
-                return (
-                    f"{zone_name}: {current_temp:.1f}\u00b0C, "
-                    f"{diff:.1f}\u00b0C below target \u2014 "
-                    f"increase setpoint to {suggested:.0f}\u00b0C if not warming up"
-                )
-            # Remove min() cap that could suggest
-            # temp <= current_temp. Use current_temp + 2 directly.
-            suggested = current_temp + 2
-            return f"{zone_name}: {current_temp:.1f}\u00b0C feels cold \u2014 set heating to {suggested:.0f}\u00b0C"
-        return f"{zone_name}: Room too cold \u2014 increase heating setpoint by 2\u00b0C"
+        return _comfort_cold_recommendation(zone_name, current_temp, target_temp, hvac_mode, hvac_action)
 
-    # Hot states
     if comfort_state in ("Too Hot", "Hot", "Warm", "Sweltering"):
-        # Build heat index suffix
-        hi_suffix = ""
-        if heat_index is not None and heat_risk_level is not None and heat_risk_level != "None":
-            hi_suffix = f" (feels like {heat_index:.1f}°C — {heat_risk_level})"
-
-        if current_temp is not None:
-            if target_temp is not None and current_temp > target_temp:
-                over = round(current_temp - target_temp, 1)
-                rec = (
-                    f"{zone_name}: {current_temp:.1f}°C, "
-                    f"{over:.1f}°C above target \u2014 open window or reduce heating"
-                    f"{hi_suffix}"
-                )
-            else:
-                suggested = max(current_temp - 2, 18)
-                rec = (
-                    f"{zone_name}: {current_temp:.1f}°C too warm \u2014 "
-                    f"reduce setpoint to {suggested:.0f}°C or open window"
-                    f"{hi_suffix}"
-                )
-        else:
-            rec = f"{zone_name}: Room too hot \u2014 reduce heating setpoint by 2°C or open window{hi_suffix}"
-
-        # Prepend urgency for Danger / Extreme Danger
-        if heat_risk_level in ("Danger", "Extreme Danger"):
-            rec = f"⚠️ {zone_name}: Heat risk {heat_risk_level} — {rec[len(zone_name) + 2:]}"
-
-        return rec
+        return _comfort_hot_recommendation(zone_name, current_temp, target_temp, heat_index, heat_risk_level)
 
     if comfort_state == "Too Humid":
         if humidity is not None:
@@ -252,12 +233,12 @@ def calculate_comfort_recommendation(  # noqa: C901, PLR0913, PLR0911, PLR0912
     return ""
 
 
-def calculate_condensation_recommendation(  # noqa: PLR0911
+def calculate_condensation_recommendation(
     risk_level: str,
     zone_name: str,
     margin: float | None = None,
     ac_setpoint: float | None = None,
-    current_temp: float | None = None,  # noqa: ARG001 — reserved for future use
+    current_temp: float | None = None,
 ) -> str:
     """Calculate SMART recommendation for condensation risk (AC zones).
 
@@ -300,11 +281,11 @@ def calculate_condensation_recommendation(  # noqa: PLR0911
     return ""
 
 
-def calculate_heating_condensation_recommendation(  # noqa: PLR0913
+def calculate_heating_condensation_recommendation(
     risk_level: str,
     zone_name: str,
     margin: float | None = None,
-    humidity: float | None = None,  # noqa: ARG001 — reserved for future use
+    humidity: float | None = None,
     surface_temp: float | None = None,
     dew_point: float | None = None,
 ) -> str:

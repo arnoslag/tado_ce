@@ -55,8 +55,6 @@ class WindowPredictedResult:
 
 # Window detection
 WINDOW_MIN_READINGS = 2
-WINDOW_HIGH_CONFIDENCE_COUNT = 3
-WINDOW_HIGH_CONFIDENCE_CHANGE = 1.5  # °C
 
 # Window predicted sensitivity presets — threshold mappings per sensitivity level
 WINDOW_SENSITIVITY_PRESETS: dict[str, dict[str, int | float]] = {
@@ -161,9 +159,6 @@ PREHEAT_LONG_MINUTES = 30
 
 # Summary text max length
 SUMMARY_MAX_LENGTH = 300
-
-# Schedule deviation
-SCHEDULE_DEVIATION_MIN_DAYS = 3
 
 # Cross-zone thresholds
 CROSS_ZONE_MOLD_MIN_ZONES = 3

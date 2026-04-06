@@ -150,7 +150,7 @@ class HeatingCycleAnalyzer:
         # Consistency confidence from coefficient of variation (0.0-0.4)
         consistency_confidence = 0.0
 
-        if len(inertia_times) >= 2:
+        if len(inertia_times) >= 2:  # noqa: PLR2004 — need at least 2 for CV
             # Calculate coefficient of variation for inertia times
             mean_inertia = sum(inertia_times) / len(inertia_times)
             if mean_inertia > 0:
@@ -161,7 +161,7 @@ class HeatingCycleAnalyzer:
                 # Lower CV = higher confidence (CV < 0.2 = good, CV > 0.5 = poor)
                 consistency_confidence += max(0.0, 0.2 - cv_inertia * 0.4)
 
-        if len(heating_rates) >= 2:
+        if len(heating_rates) >= 2:  # noqa: PLR2004 — need at least 2 for CV
             # Calculate coefficient of variation for heating rates
             mean_rate = sum(heating_rates) / len(heating_rates)
             if mean_rate > 0:

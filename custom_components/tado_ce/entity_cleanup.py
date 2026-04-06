@@ -1,4 +1,4 @@
-"""Entity lifecycle cleanup for disabled feature toggles.
+"""Entity lifecycle cleanup for disabled feature toggles.  # cleanup matching needs all params
 
 Handles removal of entities from the HA entity registry when users
 disable feature toggles via the Options Flow UI.
@@ -206,7 +206,7 @@ def suffix_to_pattern(suffix: str) -> re.Pattern[str]:
     return re.compile(f".*{escaped}$")
 
 
-def match_entity_for_cleanup(  # noqa: PLR0913 — cleanup matching needs all params
+def match_entity_for_cleanup(
     unique_id: str,
     patterns: frozenset[re.Pattern[str]],
     match_mode: str,

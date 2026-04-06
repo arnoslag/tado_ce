@@ -11,12 +11,11 @@ from datetime import datetime
 import logging
 from typing import TYPE_CHECKING, Any
 
-from homeassistant.util import dt as dt_util
-
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.const import EntityCategory
 from homeassistant.core import callback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.util import dt as dt_util
 
 from .bridge_discovery import (
     BridgeCapabilities,

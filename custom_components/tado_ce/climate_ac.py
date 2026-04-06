@@ -1,5 +1,5 @@
-"""Tado CE Air Conditioning Climate Entity — AC mode, fan speed, swing control."""
-
+"""Tado CE Air Conditioning Climate Entity — AC mode, fan speed, swing control."""  # zone config values are heterogeneous
+  # HA entity interface
 from __future__ import annotations
 
 import asyncio
@@ -19,6 +19,7 @@ from homeassistant.components.climate.const import (
 )
 from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
 from homeassistant.core import CALLBACK_TYPE, Event, EventStateChangedData, callback
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -28,6 +29,7 @@ from .climate_helpers import (
     subscribe_external_sensors,
     unsubscribe_external_sensors,
 )
+from .const import DOMAIN
 from .device_manager import get_zone_device_info
 from .entity_registry import ENTITY_REGISTRY
 from .format_helpers import (
@@ -41,13 +43,13 @@ from .helpers import (
     build_timer_termination,
     get_zone_overlay_termination,
 )
-from .ratelimit import async_check_bootstrap_reserve_or_raise as _check_bootstrap_reserve_or_raise
 from .optimistic_helpers import (
     OptimisticUpdateResult,
     clear_optimistic_state,
     resolve_optimistic_update,
     set_optimistic_fields,
 )
+from .ratelimit import async_check_bootstrap_reserve_or_raise as _check_bootstrap_reserve_or_raise
 from .schedule_helpers import get_current_schedule_target
 from .write_optimizer import ActionGuard
 
@@ -111,39 +113,34 @@ _TADO_FAN_ORDER = [
 ]
 
 
+def _assign_fan_bucket(index: int, low_end: int, high_start: int) -> str:
+    """Assign a fan level index to a low/medium/high HA bucket."""
+    if index < low_end:
+        return FAN_LOW
+    if index >= high_start:
+        return FAN_HIGH
+    return FAN_MEDIUM
+
+
 def build_fan_mapping(fan_levels: set[Any]) -> tuple[dict[str, Any], dict[str, Any]]:
     """Build bidirectional fan level mapping from actual AC capabilities.
-
-    Dynamic mapping to fix #142 (Mitsubishi/Fujitsu HIGH fan speed).
-
-    Different AC brands use different fan level names:
-      - Mitsubishi/Fujitsu: ONE, TWO, THREE, FOUR, AUTO
-      - Newer Tado:         LEVEL1, LEVEL2, LEVEL3, LEVEL4, LEVEL5, AUTO
-      - Legacy:             LOW, MIDDLE, HIGH, AUTO
-      - Silent variants:    SILENT, ONE, TWO, THREE, FOUR, AUTO
 
     Strategy:
       1. AUTO always maps to FAN_AUTO
       2. SILENT always maps to FAN_LOW (quietest)
       3. Remaining levels sorted and divided evenly into low/medium/high buckets
-      4. ha→tado picks the HIGHEST tado level in each bucket (best match for user intent)
-
-    Returns:
-        (tado_to_ha, ha_to_tado) mapping dicts
+      4. ha→tado picks the HIGHEST tado level in each bucket
     """
     tado_to_ha: dict[str, str] = {}
     ha_to_tado: dict[str, str] = {}
 
-    # AUTO always maps to FAN_AUTO
     if "AUTO" in fan_levels:
         tado_to_ha["AUTO"] = FAN_AUTO
         ha_to_tado[FAN_AUTO] = "AUTO"
 
-    # SILENT is always the quietest → FAN_LOW
     if "SILENT" in fan_levels:
         tado_to_ha["SILENT"] = FAN_LOW
 
-    # Sort remaining non-AUTO, non-SILENT levels by known order
     other_levels = sorted(
         [f for f in fan_levels if f not in ("AUTO", "SILENT")],
         key=lambda x: _TADO_FAN_ORDER.index(x) if x in _TADO_FAN_ORDER else 99,
@@ -155,41 +152,110 @@ def build_fan_mapping(fan_levels: set[Any]) -> tuple[dict[str, Any], dict[str, A
             ha_to_tado[FAN_LOW] = "SILENT"
         return tado_to_ha, ha_to_tado
 
-    # Divide into 3 buckets: low / medium / high
-    # n=1 → [low]
-    # n=2 → [low, high]
-    # n=3 → [low, medium, high]
-    # n=4 → [low, low, medium, high]
-    # n=5 → [low, low, medium, high, high]
     low_end = max(1, n // 3)
     high_start = n - max(1, n // 3)
 
     for i, level in enumerate(other_levels):
-        if i < low_end:
-            ha_mode = FAN_LOW
-        elif i >= high_start:
-            ha_mode = FAN_HIGH
-        else:
-            ha_mode = FAN_MEDIUM
-        tado_to_ha[level] = ha_mode
+        tado_to_ha[level] = _assign_fan_bucket(i, low_end, high_start)
 
-    # ha→tado: pick the HIGHEST tado level in each bucket
     for ha_mode in [FAN_LOW, FAN_MEDIUM, FAN_HIGH]:
         candidates = [lvl for lvl, ha in tado_to_ha.items() if ha == ha_mode and lvl not in ("AUTO", "SILENT")]
         if candidates:
             ha_to_tado[ha_mode] = candidates[-1]
 
-    # Fallback: if FAN_LOW not mapped yet, use SILENT
     if FAN_LOW not in ha_to_tado and "SILENT" in fan_levels:
         ha_to_tado[FAN_LOW] = "SILENT"
 
     return tado_to_ha, ha_to_tado
 
 
+def _build_fan_modes(
+    ac_caps: dict[str, Any], zone_id: str,
+) -> tuple[dict[str, Any], dict[str, Any], list[str]]:
+    """Build fan mode mappings from AC capabilities.
+
+    Returns (tado_to_ha, ha_to_tado, fan_modes_list).
+    """
+    fan_levels: set[str] = set()
+    for mode_caps in ac_caps.values():
+        if isinstance(mode_caps, dict):
+            if "fanLevel" in mode_caps:
+                fan_levels.update(mode_caps["fanLevel"])
+            elif "fanSpeeds" in mode_caps:
+                fan_levels.update(mode_caps["fanSpeeds"])
+
+    if fan_levels:
+        tado_to_ha, ha_to_tado = build_fan_mapping(fan_levels)
+        fan_modes = list(dict.fromkeys(tado_to_ha.values()))
+        _LOGGER.debug(
+            "AC zone %s fan modes: %s (from %s), ha→tado: %s",
+            zone_id, fan_modes, fan_levels, ha_to_tado,
+        )
+        return tado_to_ha, ha_to_tado, fan_modes
+
+    return dict(TADO_TO_HA_FAN), dict(HA_TO_TADO_FAN), [FAN_AUTO, FAN_LOW, FAN_MEDIUM, FAN_HIGH]
+
+
+def _build_swing_modes(ac_caps: dict[str, Any], zone_id: str) -> list[str]:
+    """Build swing mode list from AC capabilities."""
+    all_v_swings: set[str] = set()
+    all_h_swings: set[str] = set()
+    for mode in ("COOL", "HEAT", "DRY", "FAN", "AUTO"):
+        mode_caps = ac_caps.get(mode) or {}
+        if "verticalSwing" in mode_caps:
+            all_v_swings.update(mode_caps["verticalSwing"])
+        if "horizontalSwing" in mode_caps:
+            all_h_swings.update(mode_caps["horizontalSwing"])
+
+    swing_modes: list[str] = []
+    has_v_off = "OFF" in all_v_swings
+    has_h_off = "OFF" in all_h_swings
+    has_v_on = any(v != "OFF" for v in all_v_swings)
+    has_h_on = any(h != "OFF" for h in all_h_swings)
+
+    if has_v_off or has_h_off or (not all_v_swings and not all_h_swings):
+        swing_modes.append("off")
+    if has_v_on:
+        swing_modes.append("vertical")
+    if has_h_on:
+        swing_modes.append("horizontal")
+    if has_v_on and has_h_on:
+        swing_modes.append("both")
+
+    result = swing_modes or ["off"]
+    _LOGGER.debug(
+        "AC zone %s swing modes: %s (v_swings=%s, h_swings=%s)",
+        zone_id, result, all_v_swings, all_h_swings,
+    )
+    return result
+
+
 class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity, RestoreEntity):
     """Tado CE Air Conditioning Climate Entity."""
 
     _attr_has_entity_name = True
+
+    @staticmethod
+    def _build_hvac_modes(ac_caps: dict[str, Any]) -> list[HVACMode]:
+        """Build HVAC modes list from AC capabilities."""
+        modes: list[HVACMode] = [HVACMode.OFF]
+        for tado_mode in ["COOL", "HEAT", "DRY", "FAN"]:
+            if tado_mode in ac_caps:
+                ha_mode = TADO_TO_HA_HVAC_MODE.get(tado_mode)
+                if ha_mode and ha_mode not in modes:
+                    modes.append(ha_mode)
+        if "AUTO" in ac_caps and HVACMode.HEAT_COOL not in modes:
+            modes.append(HVACMode.HEAT_COOL)
+        return modes
+
+    @staticmethod
+    def _extract_temp_range(ac_caps: dict[str, Any]) -> tuple[float, float, float]:
+        """Extract min/max/step temperature from AC capabilities."""
+        for mode in ["COOL", "HEAT", "AUTO", "DRY"]:
+            if mode in ac_caps and "temperatures" in ac_caps[mode]:
+                temp_caps = ac_caps[mode]["temperatures"].get("celsius") or {}
+                return temp_caps.get("min", 16), temp_caps.get("max", 30), temp_caps.get("step", 1)
+        return 16, 30, 1
 
     def __init__(
         self,
@@ -215,161 +281,38 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
         self._attr_temperature_unit = UnitOfTemperature.CELSIUS
         self._attr_device_info = get_zone_device_info(zone_id, zone_name, "AIR_CONDITIONING", home_id)
 
-        # Get AC capabilities from dedicated API endpoint
-        # Format: {"COOL": {...}, "HEAT": {...}, "DRY": {...}, "FAN": {...}, "AUTO": {...}}  # noqa: ERA001
-        # Use 'or {}' pattern for null safety
         ac_caps = capabilities.get("ac_capabilities") or {}
 
-        # Build supported features based on capabilities
+        # Build supported features
         features = (
             ClimateEntityFeature.TARGET_TEMPERATURE | ClimateEntityFeature.TURN_OFF | ClimateEntityFeature.TURN_ON
         )
-
-        # Check if any mode has fan levels (fanLevel = newer firmware, fanSpeeds = older firmware)
         has_fan = any(
             (ac_caps.get(mode) or {}).get("fanLevel") or (ac_caps.get(mode) or {}).get("fanSpeeds")
             for mode in ["COOL", "HEAT", "DRY", "FAN", "AUTO"]
         )
         if has_fan:
             features |= ClimateEntityFeature.FAN_MODE
-
-        # Check if any mode has swing options
         has_swing = any(
             (ac_caps.get(mode) or {}).get("verticalSwing") or (ac_caps.get(mode) or {}).get("horizontalSwing")
             for mode in ["COOL", "HEAT", "DRY", "FAN", "AUTO"]
         )
         if has_swing:
             features |= ClimateEntityFeature.SWING_MODE
-
         self._attr_supported_features = features
 
-        # Build HVAC modes based on capabilities
-        # Removed HVACMode.AUTO from AC to avoid confusion
-        # - HVACMode.AUTO in HA means "follow schedule" (delete overlay)
-        # - Users confused it with Tado's AUTO mode (heat/cool as needed)
-        # - Tado's AUTO = HA's HEAT_COOL
-        # - AC users can still delete overlay via Resume Schedule button
-        self._attr_hvac_modes = [HVACMode.OFF]
-
-        # Add modes that exist in capabilities
-        for tado_mode in ["COOL", "HEAT", "DRY", "FAN"]:
-            if tado_mode in ac_caps:
-                ha_mode = TADO_TO_HA_HVAC_MODE.get(tado_mode)
-                if ha_mode and ha_mode not in self._attr_hvac_modes:
-                    self._attr_hvac_modes.append(ha_mode)
-
-        # If AUTO mode exists in capabilities, add HEAT_COOL
-        # Tado's AUTO = HA's HEAT_COOL (heat or cool as needed)
-        if "AUTO" in ac_caps:
-            if HVACMode.HEAT_COOL not in self._attr_hvac_modes:
-                self._attr_hvac_modes.append(HVACMode.HEAT_COOL)
-
+        self._attr_hvac_modes = self._build_hvac_modes(ac_caps)
         _LOGGER.debug("AC zone %s HVAC modes: %s", zone_id, self._attr_hvac_modes)
 
-        # Fan modes - collect from all modes that have fanLevel or fanSpeeds (legacy firmware)
-        fan_levels = set()
-        for mode_caps in ac_caps.values():
-            if isinstance(mode_caps, dict):
-                if "fanLevel" in mode_caps:
-                    fan_levels.update(mode_caps["fanLevel"])
-                elif "fanSpeeds" in mode_caps:
-                    fan_levels.update(mode_caps["fanSpeeds"])
+        self._tado_to_ha_fan, self._ha_to_tado_fan, self._attr_fan_modes = _build_fan_modes(ac_caps, zone_id)
+        self._attr_swing_modes = _build_swing_modes(ac_caps, zone_id) if has_swing else None
 
-        if fan_levels:
-            # Dynamic per-zone fan mapping
-            # Build bidirectional mapping from actual capabilities instead of static lookup.
-            # Different AC brands use different fan level names:
-            #   Mitsubishi: ONE, TWO, THREE, FOUR, AUTO
-            #   Fujitsu:    ONE, TWO, THREE, FOUR, AUTO
-            #   Older units: LEVEL1, LEVEL2, LEVEL3, LEVEL4, LEVEL5, AUTO
-            #   Legacy:      LOW, MIDDLE, HIGH, AUTO
-            # Strategy: sort non-AUTO levels, divide evenly into low/medium/high buckets.
-            self._tado_to_ha_fan, self._ha_to_tado_fan = build_fan_mapping(fan_levels)
-            self._attr_fan_modes = list(dict.fromkeys(self._tado_to_ha_fan.values()))  # dedupe
-            _LOGGER.debug(
-                "AC zone %s fan modes: %s (from %s), ha→tado: %s",
-                zone_id,
-                self._attr_fan_modes,
-                fan_levels,
-                self._ha_to_tado_fan,
-            )
-        else:
-            self._tado_to_ha_fan = dict(TADO_TO_HA_FAN)
-            self._ha_to_tado_fan = dict(HA_TO_TADO_FAN)
-            self._attr_fan_modes = [FAN_AUTO, FAN_LOW, FAN_MEDIUM, FAN_HIGH]
-
-        # Swing modes - dynamically built from capabilities
-        # Don't hardcode swing options - different AC units have different supported values
-        # Some units (e.g., Mitsubishi) don't support "OFF" as a swing value
-        if has_swing:
-            # Collect all supported swing values across all modes
-            all_v_swings = set()
-            all_h_swings = set()
-            for mode in ["COOL", "HEAT", "DRY", "FAN", "AUTO"]:
-                mode_caps = ac_caps.get(mode) or {}
-                if "verticalSwing" in mode_caps:
-                    all_v_swings.update(mode_caps["verticalSwing"])
-                if "horizontalSwing" in mode_caps:
-                    all_h_swings.update(mode_caps["horizontalSwing"])
-
-            # Build swing_modes based on actual capabilities
-            swing_modes = []
-            has_v_off = "OFF" in all_v_swings
-            has_h_off = "OFF" in all_h_swings
-            has_v_on = any(v != "OFF" for v in all_v_swings)
-            has_h_on = any(h != "OFF" for h in all_h_swings)
-
-            # "off" option - only if at least one swing type supports OFF
-            if has_v_off or has_h_off or (not all_v_swings and not all_h_swings):
-                swing_modes.append("off")
-
-            # "vertical" option - only if vertical swing has non-OFF values
-            if has_v_on:
-                swing_modes.append("vertical")
-
-            # "horizontal" option - only if horizontal swing has non-OFF values
-            if has_h_on:
-                swing_modes.append("horizontal")
-
-            # "both" option - only if both have non-OFF values
-            if has_v_on and has_h_on:
-                swing_modes.append("both")
-
-            self._attr_swing_modes = swing_modes or ["off"]
-            _LOGGER.debug(
-                "AC zone %s swing modes: %s (v_swings=%s, h_swings=%s)",
-                zone_id,
-                self._attr_swing_modes,
-                all_v_swings,
-                all_h_swings,
-            )
-        else:
-            self._attr_swing_modes = None
-
-        # Temperature range from capabilities
-        # Get from any mode that has temperatures (COOL is most common)
-        temp_caps = None
-        for mode in ["COOL", "HEAT", "AUTO", "DRY"]:
-            if mode in ac_caps and "temperatures" in ac_caps[mode]:
-                # Use 'or {}' pattern for null safety
-                temp_caps = ac_caps[mode]["temperatures"].get("celsius") or {}
-                break
-
-        if temp_caps:
-            self._attr_min_temp = temp_caps.get("min", 16)
-            self._attr_max_temp = temp_caps.get("max", 30)
-            self._attr_target_temperature_step = temp_caps.get("step", 1)
-        else:
-            self._attr_min_temp = 16
-            self._attr_max_temp = 30
-            self._attr_target_temperature_step = 1
+        self._attr_min_temp, self._attr_max_temp, self._attr_target_temperature_step = self._extract_temp_range(ac_caps)
 
         self._attr_current_temperature = None
         self._attr_target_temperature = None
         self._attr_hvac_mode = None
         self._attr_hvac_action = None
-        # Set default fan/swing modes to suppress HA startup validation warnings
-        # HA validates that current mode is in the modes list, so we set valid defaults
         self._attr_fan_mode = self._attr_fan_modes[0] if self._attr_fan_modes else None
         self._attr_swing_mode = self._attr_swing_modes[0] if self._attr_swing_modes else None
         self._attr_available = False
@@ -378,13 +321,11 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
         self._overlay_type = None
         self._ac_power_percentage = None
 
-        # External sensor override tracking
         self._temperature_source = "tado"
         self._humidity_source = "tado"
         self._external_temp_sensor = ""
         self._external_humidity_sensor = ""
 
-        # Optimistic state tracking with sequence numbers
         self._optimistic_set_at: float | None = None
         self._optimistic_sequence: int | None = None
         self._optimistic_preserved: dict[str, Any] | None = None
@@ -491,7 +432,7 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
         if zone_config_manager:
 
             @callback
-            def _handle_zone_config_change(zone_id: str, key: str, value: Any) -> None:  # noqa: ANN401 — zone config values are heterogeneous
+            def _handle_zone_config_change(zone_id: str, key: str, value: Any) -> None:
                 """Handle zone config change."""
                 if zone_id == self._zone_id and key in ("min_temp", "max_temp"):
                     self._update_temp_limits()
@@ -649,10 +590,122 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
         self.update()
         self.async_write_ha_state()
 
+    def _extract_ac_power_state(
+        self,
+        setting: dict[str, Any],
+        zone_data: dict[str, Any],
+        ac_power_value: str | None,
+    ) -> None:
+        """Extract AC power-on state from zone data into entity attributes."""
+        # Temperature
+        temp = (setting.get("temperature") or {}).get("celsius")
+        self._attr_target_temperature = temp
+
+        # Mode
+        tado_mode = setting.get("mode")
+        self._attr_hvac_mode = TADO_TO_HA_HVAC_MODE.get(tado_mode, HVACMode.AUTO)  # type: ignore[arg-type]
+
+        # Fan - API returns fanLevel (newer firmware) or fanSpeed (older firmware)
+        fan_level = setting.get("fanLevel") or setting.get("fanSpeed")
+        self._attr_fan_mode = self._tado_to_ha_fan.get(fan_level) or TADO_TO_HA_FAN.get(fan_level, FAN_AUTO)  # type: ignore[arg-type]
+
+        # Swing - map to unified swing mode: off/vertical/horizontal/both
+        vertical_swing = setting.get("verticalSwing")
+        horizontal_swing = setting.get("horizontalSwing")
+        v_on = vertical_swing is not None and vertical_swing != "OFF"
+        h_on = horizontal_swing is not None and horizontal_swing != "OFF"
+
+        if v_on and h_on:
+            self._attr_swing_mode = "both"
+        elif v_on:
+            self._attr_swing_mode = "vertical"
+        elif h_on:
+            self._attr_swing_mode = "horizontal"
+        else:
+            self._attr_swing_mode = self._attr_swing_modes[0] if self._attr_swing_modes else "off"
+
+        self._overlay_type = zone_data.get("overlayType")
+
+        # HVAC action
+        ac_power_on = ac_power_value == "ON"
+        api_hvac_action = self._calculate_hvac_action(hvac_mode=self._attr_hvac_mode, ac_power_on=ac_power_on)
+
+        # Sequence-based optimistic state handling
+        result = resolve_optimistic_update(
+            self,
+            api_values={"hvac_mode": self._attr_hvac_mode, "hvac_action": api_hvac_action},
+            entry_id=self._entry_id,
+        )
+
+        if result == OptimisticUpdateResult.PRESERVE_OPTIMISTIC:
+            self._attr_hvac_mode = self._expected_hvac_mode
+            self._attr_hvac_action = self._expected_hvac_action
+            if self._optimistic_preserved:
+                if self._optimistic_preserved.get("fan_mode") is not None:
+                    self._attr_fan_mode = self._optimistic_preserved["fan_mode"]
+                if self._optimistic_preserved.get("swing_mode") is not None:
+                    self._attr_swing_mode = self._optimistic_preserved["swing_mode"]
+            _LOGGER.debug(
+                "AC %s: Using optimistic state: mode=%s, action=%s",
+                self._zone_name,
+                self._attr_hvac_mode,
+                self._attr_hvac_action,
+            )
+        else:
+            self._attr_hvac_action = api_hvac_action
+
+    def _handle_ac_off_state(self) -> None:
+        """Handle AC power-off state with optimistic state resolution."""
+        if self._optimistic_sequence is not None:
+            result = resolve_optimistic_update(
+                self,
+                api_values={"hvac_mode": HVACMode.OFF, "hvac_action": HVACAction.OFF},
+                entry_id=self._entry_id,
+            )
+            if result == OptimisticUpdateResult.PRESERVE_OPTIMISTIC:
+                _LOGGER.debug(
+                    "AC %s: Preserving optimistic state (expected=%s, API shows OFF)",
+                    self._zone_name,
+                    self._expected_hvac_mode,
+                )
+                self._attr_hvac_mode = self._expected_hvac_mode
+                self._attr_hvac_action = self._expected_hvac_action
+            else:
+                self._attr_hvac_mode = HVACMode.OFF
+                self._attr_hvac_action = HVACAction.OFF
+        else:
+            self._attr_hvac_mode = HVACMode.OFF
+            self._attr_hvac_action = HVACAction.OFF
+
+    def _update_ac_sensor_data(self, zone_data: dict) -> None:
+        """Extract sensor data and apply external sensor overrides for AC."""
+        sensor_data = zone_data.get("sensorDataPoints") or {}
+        self._attr_current_temperature = (sensor_data.get("insideTemperature") or {}).get("celsius")
+        self._attr_current_humidity = (sensor_data.get("humidity") or {}).get("percentage")
+
+        zcm = self.coordinator.zone_config_manager
+        ext_temp = read_external_sensor(self.hass, zcm, self._zone_id, "external_temp_sensor")
+        if ext_temp is not None:
+            self._attr_current_temperature = ext_temp
+            self._temperature_source = "external"
+        else:
+            self._temperature_source = "tado"
+
+        ext_hum = read_external_sensor(self.hass, zcm, self._zone_id, "external_humidity_sensor")
+        if ext_hum is not None:
+            self._attr_current_humidity = ext_hum
+            self._humidity_source = "external"
+        else:
+            self._humidity_source = "tado"
+
+        if zcm:
+            zc = zcm.get_zone_config(self._zone_id)
+            self._external_temp_sensor = zc.get("external_temp_sensor", "")
+            self._external_humidity_sensor = zc.get("external_humidity_sensor", "")
+
     @callback
     def update(self) -> None:
         """Update AC climate state from JSON file."""
-        # This prevents unnecessary file I/O and processing when entity has recent API call
         if self.coordinator.is_entity_fresh(self.entity_id):
             _LOGGER.debug("AC %s: Skipping update (entity is fresh)", self._zone_name)
             return
@@ -664,225 +717,94 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
                 self._home_id = config.get("home_id")
 
             data = coord_data.get("zones")
-            if data:
-                # Use 'or {}' pattern for null safety
-                zone_states = data.get("zoneStates") or {}
-                zone_data = zone_states.get(self._zone_id)
-            else:
-                zone_data = None
+            zone_data = (data.get("zoneStates") or {}).get(self._zone_id) if data else None
 
             if not zone_data:
                 self._attr_available = False
                 return
 
-            # Current temperature (use 'or {}' pattern for null safety)
-            sensor_data = zone_data.get("sensorDataPoints") or {}
-            self._attr_current_temperature = (sensor_data.get("insideTemperature") or {}).get("celsius")
+            self._update_ac_sensor_data(zone_data)
 
-            # Current humidity
-            self._attr_current_humidity = (sensor_data.get("humidity") or {}).get("percentage")
-
-            # External sensor overrides (fallback to Tado API values above)
-            zcm = self.coordinator.zone_config_manager
-            ext_temp = read_external_sensor(self.hass, zcm, self._zone_id, "external_temp_sensor")
-            if ext_temp is not None:
-                self._attr_current_temperature = ext_temp
-                self._temperature_source = "external"
-            else:
-                self._temperature_source = "tado"
-
-            ext_hum = read_external_sensor(self.hass, zcm, self._zone_id, "external_humidity_sensor")
-            if ext_hum is not None:
-                self._attr_current_humidity = ext_hum
-                self._humidity_source = "external"
-            else:
-                self._humidity_source = "tado"
-
-            # Track configured entity_ids for extra_state_attributes
-            if zcm:
-                zc = zcm.get_zone_config(self._zone_id)
-                self._external_temp_sensor = zc.get("external_temp_sensor", "")
-                self._external_humidity_sensor = zc.get("external_humidity_sensor", "")
-
-            # AC power state - API returns {'value': 'ON'/'OFF'} not percentage
             activity_data = zone_data.get("activityDataPoints") or {}
             ac_power = activity_data.get("acPower") or {}
-            ac_power_value = ac_power.get("value")  # 'ON' or 'OFF'
-            # Keep percentage for backwards compatibility attribute
+            ac_power_value = ac_power.get("value")
             self._ac_power_percentage = ac_power.get("percentage")
 
-            # Setting
             setting = zone_data.get("setting") or {}
             power = setting.get("power")
-            self._overlay_type = zone_data.get("overlayType")
 
             if power == "ON":
-                # Temperature
-                temp = (setting.get("temperature") or {}).get("celsius")
-                self._attr_target_temperature = temp
-
-                # Mode
-                tado_mode = setting.get("mode")
-                self._attr_hvac_mode = TADO_TO_HA_HVAC_MODE.get(tado_mode, HVACMode.AUTO)  # type: ignore[arg-type]
-
-                # Fan - API returns fanLevel (newer firmware) or fanSpeed (older firmware)
-                # Use per-zone dynamic mapping instead of static global
-                fan_level = setting.get("fanLevel") or setting.get("fanSpeed")
-                self._attr_fan_mode = self._tado_to_ha_fan.get(fan_level) or TADO_TO_HA_FAN.get(fan_level, FAN_AUTO)  # type: ignore[arg-type]
-
-                # Swing - API returns verticalSwing/horizontalSwing (not swing)
-                # Don't assume "OFF" is valid - check capabilities
-                # Map to unified swing mode: off/vertical/horizontal/both
-                vertical_swing = setting.get("verticalSwing")  # None if not present
-                horizontal_swing = setting.get("horizontalSwing")  # None if not present
-
-                # Determine if swing is "on" - any value that's not OFF or None
-                v_on = vertical_swing is not None and vertical_swing != "OFF"
-                h_on = horizontal_swing is not None and horizontal_swing != "OFF"
-
-                if v_on and h_on:
-                    self._attr_swing_mode = "both"
-                elif v_on:
-                    self._attr_swing_mode = "vertical"
-                elif h_on:
-                    self._attr_swing_mode = "horizontal"
-                else:
-                    # Default to first available swing mode (may not be "off" for some units)
-                    self._attr_swing_mode = self._attr_swing_modes[0] if self._attr_swing_modes else "off"
-
-                # HVAC action - based on acPower.value ('ON'/'OFF')
-                ac_power_on = ac_power_value == "ON"
-                api_hvac_action = self._calculate_hvac_action(hvac_mode=self._attr_hvac_mode, ac_power_on=ac_power_on)
-
-                # Sequence-based optimistic state handling
-                # Delegates to shared resolve_optimistic_update()
-                result = resolve_optimistic_update(
-                    self,
-                    api_values={"hvac_mode": self._attr_hvac_mode, "hvac_action": api_hvac_action},
-                    entry_id=self._entry_id,
-                )
-
-                # Apply state based on preservation decision
-                if result == OptimisticUpdateResult.PRESERVE_OPTIMISTIC:
-                    # Keep optimistic mode and action until API confirms
-                    self._attr_hvac_mode = self._expected_hvac_mode
-                    self._attr_hvac_action = self._expected_hvac_action
-                    # Also restore fan/swing from preserved attrs (HIGH-1)
-                    if self._optimistic_preserved:
-                        if self._optimistic_preserved.get("fan_mode") is not None:
-                            self._attr_fan_mode = self._optimistic_preserved["fan_mode"]
-                        if self._optimistic_preserved.get("swing_mode") is not None:
-                            self._attr_swing_mode = self._optimistic_preserved["swing_mode"]
-                    _LOGGER.debug(
-                        "AC %s: Using optimistic state: mode=%s, action=%s",
-                        self._zone_name,
-                        self._attr_hvac_mode,
-                        self._attr_hvac_action,
-                    )
-                else:
-                    self._attr_hvac_action = api_hvac_action
-            # Power is OFF - keep last temperature for reference
-            # Sequence-based optimistic state handling for AC OFF
-            elif self._optimistic_sequence is not None:
-                result = resolve_optimistic_update(
-                    self,
-                    api_values={"hvac_mode": HVACMode.OFF, "hvac_action": HVACAction.OFF},
-                    entry_id=self._entry_id,
-                )
-                if result == OptimisticUpdateResult.PRESERVE_OPTIMISTIC:
-                    # We expected a different mode but API shows OFF — preserve
-                    _LOGGER.debug(
-                        "AC %s: Preserving optimistic state (expected=%s, API shows OFF)",
-                        self._zone_name,
-                        self._expected_hvac_mode,
-                    )
-                    self._attr_hvac_mode = self._expected_hvac_mode
-                    self._attr_hvac_action = self._expected_hvac_action
-                else:
-                    self._attr_hvac_mode = HVACMode.OFF
-                    self._attr_hvac_action = HVACAction.OFF
+                self._extract_ac_power_state(setting, zone_data, ac_power_value)
             else:
-                # No optimistic state - trust API
-                self._attr_hvac_mode = HVACMode.OFF
-                self._attr_hvac_action = HVACAction.OFF
+                self._handle_ac_off_state()
 
             self._attr_available = True
 
-            # Record temperature for Smart Comfort analytics
             _scm = self.coordinator.smart_comfort_manager
             if _scm and _scm.is_enabled and self._attr_current_temperature is not None:
                 try:
                     _scm.record_temperature(
-                        zone_id=self._zone_id,
-                        zone_name=self._zone_name,
+                        zone_id=self._zone_id, zone_name=self._zone_name,
                         temperature=self._attr_current_temperature,
                         is_heating=(ac_power_value == "ON"),
                         target_temperature=self._attr_target_temperature,
                     )
-                except Exception as e:
+                except (KeyError, TypeError, ValueError) as e:
                     _LOGGER.debug("Failed to record smart comfort data for %s: %s", self._zone_name, e)
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — HA entity update pattern
             _LOGGER.warning("Failed to update %s: %s", self.name, e)
             self._attr_available = False
 
-    async def async_set_temperature(self, **kwargs: Any) -> None:  # noqa: ANN401 — HA entity interface
+    def _resolve_ac_mode_for_temp_change(
+        self, hvac_mode: HVACMode | None, temperature: float,
+    ) -> HVACMode:
+        """Resolve the HVAC mode when setting temperature on an AC that may be OFF.
+
+        Smart mode selection (#182): pick COOL/HEAT based on current vs target temp.
+        """
+        if hvac_mode is not None:
+            return hvac_mode
+        if (
+            self._attr_current_temperature is not None
+            and HVACMode.HEAT in self._attr_hvac_modes
+            and temperature > self._attr_current_temperature
+        ):
+            return HVACMode.HEAT
+        return HVACMode.COOL
+
+    async def async_set_temperature(self, **kwargs: Any) -> None:
         """Set new target temperature.
 
         Optimized to use single API call when both temperature and hvac_mode are provided.
-        This saves 1 API call (1% of 100-call limit) compared to calling set_hvac_mode first.
-
-        Changed from fire-and-forget to await pattern to fix grey loading state issue.
-        Service call now awaits API completion (with timeout) for proper HA Frontend state sync.
-
-        Added bootstrap reserve check - blocks action when quota critically low.
-        Added Action Guard + Smart Actions debounce for write optimization.
         """
         temperature = kwargs.get(ATTR_TEMPERATURE)
         hvac_mode = kwargs.get(ATTR_HVAC_MODE)
 
-        # Handle hvac_mode without temperature (delegate to set_hvac_mode)
+        # Delegate mode-only changes
         if hvac_mode is not None and temperature is None:
             await self.async_set_hvac_mode(hvac_mode)
             return
-
-        # Handle OFF mode specially (no temperature needed)
-        if hvac_mode == HVACMode.OFF:
-            await self.async_set_hvac_mode(HVACMode.OFF)
+        if hvac_mode in (HVACMode.OFF, HVACMode.AUTO):
+            await self.async_set_hvac_mode(hvac_mode)
             return
-
-        # Handle AUTO mode specially (delete overlay, no temperature)
-        # Note: For AC, HVACMode.AUTO means "follow schedule" (delete overlay)
-        if hvac_mode == HVACMode.AUTO:
-            await self.async_set_hvac_mode(HVACMode.AUTO)
-            return
-
         if temperature is None:
             return
 
-        # Action Guard — skip if temp + mode already match current state
-        # Skip guard when AC is OFF (smart mode selection will change mode)
+        # Action Guard — skip when AC is ON and already at target
         if self._attr_hvac_mode != HVACMode.OFF and ActionGuard.should_skip_temperature(
             temperature, self._attr_target_temperature,
             hvac_mode or self._attr_hvac_mode, self._attr_hvac_mode,
         ):
-            _LOGGER.debug(
-                "Action Guard: skip AC %s set_temperature (already %s°C)",
-                self._zone_name, temperature,
-            )
+            _LOGGER.debug("Action Guard: skip AC %s set_temperature (already %s°C)", self._zone_name, temperature)
             return
 
         await _check_bootstrap_reserve_or_raise(self.hass, f"AC {self._zone_name}", coordinator=self.coordinator)
+        await self.coordinator.async_capture_state(self._zone_id, self._entity_type, "set_temperature")
 
-        # Capture current state before overlay (state restoration)
-        await self.coordinator.async_capture_state(
-            self._zone_id, self._entity_type, "set_temperature",
-        )
-
-        # Convert hvac_mode to Tado mode for the overlay
         tado_mode = HA_TO_TADO_HVAC_MODE.get(hvac_mode) if hvac_mode else None
 
-        # Optimistic update BEFORE API call
+        # Optimistic update
         old_temp = self._attr_target_temperature
         old_mode = self._attr_hvac_mode
         old_action = self._attr_hvac_action
@@ -890,89 +812,70 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
         self._attr_target_temperature = temperature
         if hvac_mode is not None:
             self._attr_hvac_mode = hvac_mode
-
-        # If AC is OFF, setting temperature will turn it ON
-        # Smart mode selection (#182): pick COOL/HEAT based on current vs target temp
         if old_mode == HVACMode.OFF:
-            if hvac_mode is not None:
-                self._attr_hvac_mode = hvac_mode
-            elif (
-                self._attr_current_temperature is not None
-                and temperature is not None
-                and HVACMode.HEAT in self._attr_hvac_modes
-                and temperature > self._attr_current_temperature
-            ):
-                self._attr_hvac_mode = HVACMode.HEAT
-            else:
-                self._attr_hvac_mode = HVACMode.COOL
+            self._attr_hvac_mode = self._resolve_ac_mode_for_temp_change(hvac_mode, temperature)
 
         new_hvac_action = self._calculate_hvac_action()
         self._attr_hvac_action = new_hvac_action
-
         self._overlay_type = "MANUAL"  # type: ignore[assignment]
-        # Use new optimistic state tracking with sequence numbers
         await set_optimistic_fields(
             self, self.coordinator,
             expected={"hvac_mode": self._attr_hvac_mode, "hvac_action": new_hvac_action},
             preserved_attrs={"fan_mode": self._attr_fan_mode, "swing_mode": self._attr_swing_mode},
         )
-        _LOGGER.debug(
-            "AC Optimistic update: %s target_temp=%s, hvac_action=%s",
-            self._zone_name,
-            temperature,
-            new_hvac_action,
-        )
         self.async_write_ha_state()
 
-        # Smart Actions debounce — wrap API call in closure
         debounce_window = self.coordinator.config_manager.get_smart_actions_debounce_seconds()
+
+        async def _execute_api_call() -> None:
+            """Execute the AC temperature API call."""
+            await self._execute_ac_temp_api(
+                temperature, tado_mode, old_temp, old_mode, old_action,
+                raise_on_failure=(debounce_window <= 0),
+            )
+
         if debounce_window > 0:
-            async def _execute_api_call() -> None:
-                """Execute the debounced API call."""
-                api_success = False
-                try:
-                    async with asyncio.timeout(10):
-                        api_success = await self._async_set_ac_overlay(temperature=temperature, mode=tado_mode)
-                except TimeoutError:
-                    _LOGGER.warning("AC TIMEOUT: %s temperature change timed out", self._zone_name)
-                except Exception as e:
-                    _LOGGER.warning("AC ERROR: %s temperature change failed (%s)", self._zone_name, e)
-
-                if api_success:
-                    _LOGGER.info("AC Set %s to %s°C", self._zone_name, temperature)
-                    await async_trigger_immediate_refresh(self.hass, self.entity_id, "temperature_change")
-                else:
-                    _LOGGER.warning("AC ROLLBACK: %s temperature change failed", self._zone_name)
-                    self._attr_target_temperature = old_temp
-                    self._attr_hvac_mode = old_mode
-                    self._attr_hvac_action = old_action
-                    clear_optimistic_state(self)
-                    self.async_write_ha_state()
-
             await self.coordinator.action_debouncer.debounce(
                 self._zone_id, _execute_api_call, window=float(debounce_window),
             )
         else:
-            # No debounce — execute immediately (existing behavior)
-            api_success = False
-            try:
-                async with asyncio.timeout(10):
-                    api_success = await self._async_set_ac_overlay(temperature=temperature, mode=tado_mode)
-            except TimeoutError:
-                _LOGGER.warning("AC TIMEOUT: %s temperature change timed out", self._zone_name)
-            except Exception as e:
-                _LOGGER.warning("AC ERROR: %s temperature change failed (%s)", self._zone_name, e)
+            await _execute_api_call()
 
-            if api_success:
-                _LOGGER.info("AC Set %s to %s°C", self._zone_name, temperature)
-                await async_trigger_immediate_refresh(self.hass, self.entity_id, "temperature_change")
-            else:
-                _LOGGER.warning("AC ROLLBACK: %s temperature change failed", self._zone_name)
-                self._attr_target_temperature = old_temp
-                self._attr_hvac_mode = old_mode
-                self._attr_hvac_action = old_action
-                clear_optimistic_state(self)
-                self.async_write_ha_state()
+    async def _execute_ac_temp_api(
+        self,
+        temperature: float,
+        tado_mode: str | None,
+        old_temp: float | None,
+        old_mode: HVACMode | None,
+        old_action: HVACAction | None,
+        *,
+        raise_on_failure: bool = False,
+    ) -> None:
+        """Execute AC set_temperature API call with rollback on failure."""
+        api_success = False
+        try:
+            async with asyncio.timeout(10):
+                api_success = await self._async_set_ac_overlay(temperature=temperature, mode=tado_mode)
+        except TimeoutError:
+            _LOGGER.warning("AC TIMEOUT: %s temperature change timed out", self._zone_name)
+        except Exception as e:  # noqa: BLE001 — HA entity action pattern
+            _LOGGER.warning("AC ERROR: %s temperature change failed (%s)", self._zone_name, e)
+
+        if api_success:
+            _LOGGER.info("AC Set %s to %s°C", self._zone_name, temperature)
+            await async_trigger_immediate_refresh(self.hass, self.entity_id, "temperature_change")
+        else:
+            _LOGGER.warning("AC ROLLBACK: %s temperature change failed", self._zone_name)
+            self._attr_target_temperature = old_temp
+            self._attr_hvac_mode = old_mode
+            self._attr_hvac_action = old_action
+            clear_optimistic_state(self)
+            self.async_write_ha_state()
+            if raise_on_failure:
+                raise HomeAssistantError(
+                    f"AC {self._zone_name}: Set temperature failed",
+                    translation_domain=DOMAIN,
+                )
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set new HVAC mode.
@@ -1075,7 +978,7 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
                     api_success = await self._async_set_ac_overlay(mode=tado_mode)
             except TimeoutError:
                 _LOGGER.warning("AC TIMEOUT: %s %s mode API call timed out", self._zone_name, hvac_mode)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 — HA entity action pattern
                 _LOGGER.warning("AC ERROR: %s %s mode API call failed (%s)", self._zone_name, hvac_mode, e)
 
             if api_success:
@@ -1090,6 +993,10 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
                 self._attr_hvac_action = old_action
                 clear_optimistic_state(self)
                 self.async_write_ha_state()
+                raise HomeAssistantError(
+                    f"AC {self._zone_name}: Set {hvac_mode} mode failed",
+                    translation_domain=DOMAIN,
+                )
 
     async def async_set_fan_mode(self, fan_mode: str) -> None:
         """Set new fan mode.
@@ -1147,7 +1054,7 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
                 api_success = await self._async_set_ac_overlay(fan_level=tado_fan)
         except TimeoutError:
             _LOGGER.warning("AC TIMEOUT: %s fan mode change timed out", self._zone_name)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — HA entity action pattern
             _LOGGER.warning("AC ERROR: %s fan mode change failed (%s)", self._zone_name, e)
 
         if api_success:
@@ -1160,6 +1067,10 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
             self._attr_hvac_action = old_action
             clear_optimistic_state(self)
             self.async_write_ha_state()
+            raise HomeAssistantError(
+                f"AC {self._zone_name}: Set fan mode failed",
+                translation_domain=DOMAIN,
+            )
 
     async def async_set_swing_mode(self, swing_mode: str) -> None:
         """Set new swing mode.
@@ -1231,7 +1142,7 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
                 api_success = await self._async_set_ac_overlay(vertical_swing=v_swing, horizontal_swing=h_swing)
         except TimeoutError:
             _LOGGER.warning("AC TIMEOUT: %s swing mode change timed out", self._zone_name)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — HA entity action pattern
             _LOGGER.warning("AC ERROR: %s swing mode change failed (%s)", self._zone_name, e)
 
         if api_success:
@@ -1244,6 +1155,127 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
             self._attr_hvac_action = old_action
             clear_optimistic_state(self)
             self.async_write_ha_state()
+            raise HomeAssistantError(
+                f"AC {self._zone_name}: Set swing mode failed",
+                translation_domain=DOMAIN,
+            )
+
+    def _resolve_fan_level(
+        self,
+        mode_caps: dict[str, Any],
+        fan_level: str | None,
+    ) -> tuple[str | None, str | None]:
+        """Resolve fan level setting from capabilities.
+
+        Returns (fan_key, fan_value) or (None, None) if not supported.
+        """
+        fan_key = "fanLevel" if "fanLevel" in mode_caps else ("fanSpeeds" if "fanSpeeds" in mode_caps else None)
+        if not fan_key:
+            return None, None
+
+        supported = mode_caps.get(fan_key) or []
+        if fan_level:
+            if fan_level in supported:
+                return fan_key, fan_level
+            if supported:
+                fallback = "AUTO" if "AUTO" in supported else supported[0]
+                _LOGGER.warning("AC %s: fan level %s not supported, using %s", self._zone_name, fan_level, fallback)
+                return fan_key, fallback
+        elif self._attr_fan_mode:
+            tado_fan = self._ha_to_tado_fan.get(self._attr_fan_mode) or HA_TO_TADO_FAN.get(
+                self._attr_fan_mode, "AUTO",
+            )
+            if tado_fan in supported:
+                return fan_key, tado_fan
+            if supported:
+                fallback = "AUTO" if "AUTO" in supported else supported[-1]
+                _LOGGER.debug(
+                    "AC %s: mapped fan %s→%s not in %s, using %s",
+                    self._zone_name, self._attr_fan_mode, tado_fan, supported, fallback,
+                )
+                return fan_key, fallback
+        elif "AUTO" in supported:
+            return fan_key, "AUTO"
+        elif supported:
+            return fan_key, supported[0]
+        return None, None
+
+    @staticmethod
+    def _resolve_swing_value(
+        supported: list[str],
+        explicit: str | None,
+        swing_mode: str | None,
+        swing_direction: str,
+    ) -> str | None:
+        """Resolve a single swing axis value from capabilities.
+
+        Args:
+            supported: List of supported swing values for this axis.
+            explicit: Explicitly requested value (from caller), or None.
+            swing_mode: Current HA swing mode (vertical/horizontal/both/off).
+            swing_direction: Which direction this axis represents (vertical/horizontal).
+
+        Returns the resolved value, or None if field should not be sent.
+        """
+        if explicit is not None:
+            return explicit if explicit in supported else None
+        if swing_mode in (swing_direction, "both"):
+            if "ON" in supported:
+                return "ON"
+            return supported[0] if supported else None
+        if "OFF" in supported:
+            return "OFF"
+        return None
+
+    def _resolve_ac_mode(self, mode: str | None) -> str:
+        """Resolve the Tado AC mode string for the overlay."""
+        if mode:
+            return mode
+        if self._attr_hvac_mode and self._attr_hvac_mode not in (HVACMode.OFF, HVACMode.AUTO):
+            return HA_TO_TADO_HVAC_MODE.get(self._attr_hvac_mode, "COOL")
+        return "COOL"
+
+    def _build_ac_setting(
+        self,
+        temperature: float | None,
+        mode: str | None,
+        fan_level: str | None,
+        vertical_swing: str | None,
+        horizontal_swing: str | None,
+    ) -> dict[str, Any]:
+        """Build the AC overlay setting dict from current state + changes."""
+        setting: dict[str, Any] = {"type": "AIR_CONDITIONING", "power": "ON"}
+        current_mode = self._resolve_ac_mode(mode)
+        setting["mode"] = current_mode
+
+        ac_caps = self._capabilities.get("ac_capabilities") or {}
+        mode_caps = ac_caps.get(current_mode) or {}
+
+        # Temperature
+        if current_mode != "FAN" and "temperatures" in mode_caps:
+            if temperature:
+                setting["temperature"] = {"celsius": temperature}
+            elif self._attr_target_temperature:
+                setting["temperature"] = {"celsius": self._attr_target_temperature}
+            else:
+                setting["temperature"] = {"celsius": (self._attr_min_temp + self._attr_max_temp) / 2}
+
+        # Fan level
+        fan_key, fan_value = self._resolve_fan_level(mode_caps, fan_level)
+        if fan_key and fan_value:
+            setting[fan_key] = fan_value
+
+        # Swing
+        for swing_dir, swing_explicit in [("verticalSwing", vertical_swing), ("horizontalSwing", horizontal_swing)]:
+            if swing_dir in mode_caps:
+                value = self._resolve_swing_value(
+                    mode_caps.get(swing_dir) or [], swing_explicit,
+                    self._attr_swing_mode, swing_dir.replace("Swing", "").lower(),
+                )
+                if value is not None:
+                    setting[swing_dir] = value
+
+        return setting
 
     async def _async_set_ac_overlay(
         self,
@@ -1255,134 +1287,13 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
         duration_minutes: int | None = None,
         overlay: str | None = None,
     ) -> bool:
-        """Set AC overlay with optional parameters.
-
-        Uses Tado API v2 format with fanLevel, verticalSwing, horizontalSwing.
-        Only sends fields that are supported by the current mode (per capabilities).
-
-        Added overlay parameter for explicit termination control.
-        """
+        """Set AC overlay with optional parameters."""
         client = self.coordinator.api_client
+        setting = self._build_ac_setting(temperature, mode, fan_level, vertical_swing, horizontal_swing)
 
-        # Build setting from current state + changes
-        setting = {
-            "type": "AIR_CONDITIONING",
-            "power": "ON",
-        }
-
-        # Mode
-        if mode:
-            setting["mode"] = mode
-        elif self._attr_hvac_mode and self._attr_hvac_mode not in (HVACMode.OFF, HVACMode.AUTO):
-            setting["mode"] = HA_TO_TADO_HVAC_MODE.get(self._attr_hvac_mode, "COOL")
-        else:
-            setting["mode"] = "COOL"
-
-        current_mode = setting["mode"]
-
-        # Get capabilities for current mode to check what fields are supported
-        ac_caps = self._capabilities.get("ac_capabilities") or {}
-        mode_caps = ac_caps.get(current_mode) or {}
-
-        # Temperature - only send if mode supports it (check capabilities)
-        # Some AC units require temperature for DRY mode, others don't
-        mode_has_temp = "temperatures" in mode_caps
-        if current_mode != "FAN" and mode_has_temp:
-            if temperature:
-                setting["temperature"] = {"celsius": temperature}  # type: ignore[assignment]
-            elif self._attr_target_temperature:
-                setting["temperature"] = {"celsius": self._attr_target_temperature}  # type: ignore[assignment]
-            else:
-                # Use midpoint of capabilities range instead of hardcoded 24°C
-                setting["temperature"] = {"celsius": (self._attr_min_temp + self._attr_max_temp) / 2}  # type: ignore[assignment]
-
-        # Fan level - only send if mode supports it AND value is in supported list
-        # Use per-zone dynamic mapping
-        # Validate fan level against capabilities
-        # Support both fanLevel (newer firmware) and fanSpeeds (legacy firmware)
-        fan_key = "fanLevel" if "fanLevel" in mode_caps else ("fanSpeeds" if "fanSpeeds" in mode_caps else None)
-        if fan_key:
-            supported_fan_levels = mode_caps.get(fan_key) or []
-            if fan_level:
-                # Explicit value passed - validate it
-                if fan_level in supported_fan_levels:
-                    setting[fan_key] = fan_level
-                elif supported_fan_levels:
-                    fallback = "AUTO" if "AUTO" in supported_fan_levels else supported_fan_levels[0]
-                    setting[fan_key] = fallback
-                    _LOGGER.warning("AC %s: fan level %s not supported, using %s", self._zone_name, fan_level, fallback)
-            elif self._attr_fan_mode:
-                # Use per-zone mapping first, fall back to global static
-                tado_fan = self._ha_to_tado_fan.get(self._attr_fan_mode) or HA_TO_TADO_FAN.get(
-                    self._attr_fan_mode, "AUTO",
-                )
-                if tado_fan in supported_fan_levels:
-                    setting[fan_key] = tado_fan
-                elif supported_fan_levels:
-                    # Try to find the closest supported level
-                    fallback = "AUTO" if "AUTO" in supported_fan_levels else supported_fan_levels[-1]
-                    setting[fan_key] = fallback
-                    _LOGGER.debug(
-                        "AC %s: mapped fan %s→%s not in %s, using %s",
-                        self._zone_name,
-                        self._attr_fan_mode,
-                        tado_fan,
-                        supported_fan_levels,
-                        fallback,
-                    )
-            elif "AUTO" in supported_fan_levels:
-                setting[fan_key] = "AUTO"
-            elif supported_fan_levels:
-                setting[fan_key] = supported_fan_levels[0]
-
-        # Swing - only send if mode supports it AND value is in supported list
-        # Validate swing values against capabilities
-        # Some AC units (e.g., Mitsubishi) don't support "OFF" as a swing value
-        if "verticalSwing" in mode_caps:
-            supported_v_swings = mode_caps.get("verticalSwing") or []
-            if vertical_swing is not None:
-                # Explicit value passed - validate it
-                if vertical_swing in supported_v_swings:
-                    setting["verticalSwing"] = vertical_swing
-                # else: don't send unsupported value  # noqa: ERA001
-            elif self._attr_swing_mode in ("vertical", "both"):
-                if "ON" in supported_v_swings:
-                    setting["verticalSwing"] = "ON"
-                elif supported_v_swings:
-                    # Fallback to first supported value
-                    setting["verticalSwing"] = supported_v_swings[0]
-            # User wants swing off - only send if "OFF" is supported
-            elif "OFF" in supported_v_swings:
-                setting["verticalSwing"] = "OFF"
-                # else: don't send verticalSwing field at all  # noqa: ERA001
-
-        if "horizontalSwing" in mode_caps:
-            supported_h_swings = mode_caps.get("horizontalSwing") or []
-            if horizontal_swing is not None:
-                # Explicit value passed - validate it
-                if horizontal_swing in supported_h_swings:
-                    setting["horizontalSwing"] = horizontal_swing
-                # else: don't send unsupported value  # noqa: ERA001
-            elif self._attr_swing_mode in ("horizontal", "both"):
-                if "ON" in supported_h_swings:
-                    setting["horizontalSwing"] = "ON"
-                elif supported_h_swings:
-                    # Fallback to first supported value
-                    setting["horizontalSwing"] = supported_h_swings[0]
-            # User wants swing off - only send if "OFF" is supported
-            elif "OFF" in supported_h_swings:
-                setting["horizontalSwing"] = "OFF"
-                # else: don't send horizontalSwing field at all  # noqa: ERA001
-
-        # Termination
-        # Use per-zone overlay mode
-        # DRY — use shared build_timer_termination
         termination = build_timer_termination(
-            duration_minutes=duration_minutes,
-            overlay=overlay,
-            hass=self.hass,
-            zone_id=self._zone_id,
-            entry_id=self._entry_id,
+            duration_minutes=duration_minutes, overlay=overlay,
+            hass=self.hass, zone_id=self._zone_id, entry_id=self._entry_id,
         )
 
         _LOGGER.debug("AC overlay payload: setting=%s, termination=%s", setting, termination)
@@ -1422,7 +1333,7 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
                 )
         except TimeoutError:
             _LOGGER.warning("AC TIMEOUT: %s set_timer API call timed out", self._zone_name)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — HA entity action pattern
             _LOGGER.warning("AC ERROR: %s set_timer API call failed (%s)", self._zone_name, e)
 
         return api_success

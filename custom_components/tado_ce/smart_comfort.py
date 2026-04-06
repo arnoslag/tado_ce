@@ -45,6 +45,23 @@ MIN_DATA_POINTS = 3  # Minimum points needed for rate calculation
 MIN_TIME_SPAN_MINUTES = 15  # Minimum time span for meaningful rate
 CACHE_SAVE_INTERVAL_MINUTES = 15  # Save cache every 15 minutes
 
+# Smart Comfort thresholds
+TEMP_EPSILON = 0.05  # °C — minimum temperature difference to consider meaningful
+TEMP_NEAR_TARGET = 0.1  # °C — close enough to target temperature
+DEVIATION_NORMAL_THRESHOLD = 0.3  # °C — deviation below this is "Normal"
+MIN_RATE_THRESHOLD = 0.01  # °C/h — minimum meaningful heating/cooling rate
+DEDUP_TIME_WINDOW = 300  # seconds (5 min) — skip duplicate readings within this window
+SEGMENT_MAX_GAP_HOURS = 2  # hours — max gap between readings for continuous segment
+SEGMENT_MIN_TEMP_RISE = 0.05  # °C — minimum rise to count as heating
+SEGMENT_MIN_TIME_HOURS = 0.01  # hours — minimum time for rate calculation
+RATE_MIN_VALID = 0.1  # °C/h — minimum valid heating rate
+RATE_MAX_VALID = 10.0  # °C/h — maximum valid heating rate (TRV can be 5-8°C/h)
+REGRESSION_DENOMINATOR_EPSILON = 0.0001  # minimum denominator for linear regression
+MIDNIGHT_WRAPAROUND_MINUTES = 720  # 12 hours — threshold for midnight wraparound
+CONFIDENCE_HIGH_READINGS = 10  # readings needed for high confidence
+CONFIDENCE_MEDIUM_READINGS = 5  # readings needed for medium confidence
+BASELINE_CHANGE_THRESHOLD = 0.05  # °C/h — minimum change for baseline calculation
+
 # WEATHER_COMPENSATION_PRESETS imported from const.py
 
 from .schedule_helpers import _get_day_blocks
@@ -67,6 +84,46 @@ class NextScheduleBlock:
             "is_heating_on": self.is_heating_on,
             "block_end_time": self.block_end_time.isoformat(),
         }
+
+
+def _find_next_block_in_day(
+    day_blocks: list[dict[str, Any]],
+    current_time_str: str,
+    check_date: datetime,
+) -> NextScheduleBlock | None:
+    """Find the next schedule block in a given day's blocks."""
+    for block in day_blocks:
+        block_start = block.get("start", "00:00")
+        if block_start <= current_time_str:
+            continue
+
+        setting = block.get("setting") or {}
+        power = setting.get("power", "OFF")
+        temp_data = setting.get("temperature")
+        block_end = block.get("end", "00:00")
+
+        # Parse start time into datetime
+        start_hour, start_min = map(int, block_start.split(":"))
+        start_datetime = check_date.replace(hour=start_hour, minute=start_min, second=0, microsecond=0)
+
+        # Parse end time
+        end_hour, end_min = map(int, block_end.split(":"))
+        if block_end == "00:00":
+            end_datetime = (check_date + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        else:
+            end_datetime = check_date.replace(hour=end_hour, minute=end_min, second=0, microsecond=0)
+
+        target_temp = None
+        if power == "ON" and temp_data:
+            target_temp = temp_data.get("celsius")
+
+        return NextScheduleBlock(
+            start_time=start_datetime,
+            target_temp=target_temp,
+            is_heating_on=(power == "ON"),
+            block_end_time=end_datetime,
+        )
+    return None
 
 
 def get_next_schedule_change(
@@ -92,10 +149,7 @@ def get_next_schedule_change(
     Returns:
         NextScheduleBlock with next change info, or None if no schedule/no upcoming change
     """
-    if data_loader is not None:
-        schedule = data_loader.get_zone_schedule(zone_id)
-    else:
-        schedule = None
+    schedule = data_loader.get_zone_schedule(zone_id) if data_loader is not None else None
 
     if current_time is None:
         try:
@@ -107,61 +161,19 @@ def get_next_schedule_change(
         _LOGGER.debug("No schedule found for zone %s", zone_id)
         return None
 
-    # Tado API may return null for existing keys; 'or {}' handles None correctly
     blocks = schedule.get("blocks") or {}
     schedule_type = schedule.get("type", "ONE_DAY")
 
-    # Look through today and upcoming days
     for day_offset in range(look_ahead_days):
         check_date = current_time + timedelta(days=day_offset)
-        check_weekday = check_date.weekday()
-
-        day_blocks = _get_day_blocks(blocks, schedule_type, check_weekday)
-
+        day_blocks = _get_day_blocks(blocks, schedule_type, check_date.weekday())
         if not day_blocks:
             continue
 
-        # For today, skip blocks that have already started
-        # For future days, consider all blocks
-        if day_offset == 0:
-            current_time_str = current_time.strftime("%H:%M")
-        else:
-            current_time_str = "00:00"  # Consider all blocks for future days
-
-        for block in day_blocks:
-            block_start = block.get("start", "00:00")
-            block_end = block.get("end", "00:00")
-            setting = block.get("setting") or {}
-            power = setting.get("power", "OFF")
-            temp_data = setting.get("temperature")
-
-            # Skip if block has already started (only for today)
-            if block_start <= current_time_str:
-                continue
-
-            # Parse start time into datetime
-            start_hour, start_min = map(int, block_start.split(":"))
-            start_datetime = check_date.replace(hour=start_hour, minute=start_min, second=0, microsecond=0)
-
-            # Parse end time
-            end_hour, end_min = map(int, block_end.split(":"))
-            if block_end == "00:00":
-                # Midnight means end of day
-                end_datetime = (check_date + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
-            else:
-                end_datetime = check_date.replace(hour=end_hour, minute=end_min, second=0, microsecond=0)
-
-            # Get target temperature
-            target_temp = None
-            if power == "ON" and temp_data:
-                target_temp = temp_data.get("celsius")
-
-            return NextScheduleBlock(
-                start_time=start_datetime,
-                target_temp=target_temp,
-                is_heating_on=(power == "ON"),
-                block_end_time=end_datetime,
-            )
+        time_str = current_time.strftime("%H:%M") if day_offset == 0 else "00:00"
+        result = _find_next_block_in_day(day_blocks, time_str, check_date)
+        if result:
+            return result
 
     _LOGGER.debug("No schedule blocks found for zone %s in next %s days", zone_id, look_ahead_days)
     return None
@@ -181,7 +193,7 @@ class HistoricalComparison:
 
     def to_summary(self) -> str:
         """Generate human-readable summary."""
-        if abs(self.difference) < 0.3:
+        if abs(self.difference) < DEVIATION_NORMAL_THRESHOLD:
             return f"Normal (avg {self.historical_avg:.1f}°C)"
         if self.difference > 0:
             return f"{self.difference:+.1f}°C warmer than usual"
@@ -256,9 +268,9 @@ class ZoneHistory:
                 time_diff = (reading.timestamp - last.timestamp).total_seconds()
                 # Skip duplicate: same temp, same heating state, < 5 min
                 if (
-                    abs(reading.temperature - last.temperature) < 0.05
+                    abs(reading.temperature - last.temperature) < TEMP_EPSILON
                     and reading.is_heating == last.is_heating
-                    and time_diff < 300
+                    and time_diff < DEDUP_TIME_WINDOW
                 ):
                     continue
             deduplicated.append(reading)
@@ -285,9 +297,9 @@ class ZoneHistory:
 
             # Skip if same temp and heating state, and less than 5 minutes
             if (
-                abs(reading.temperature - last.temperature) < 0.05
+                abs(reading.temperature - last.temperature) < TEMP_EPSILON
                 and reading.is_heating == last.is_heating
-                and time_diff < 300
+                and time_diff < DEDUP_TIME_WINDOW
             ):  # 5 minutes
                 return
 
@@ -318,7 +330,7 @@ class ZoneHistory:
         heating_readings = [r for r in self.readings if r.is_heating]
         rate = self._calculate_heating_rate_segments(heating_readings)
 
-        if rate is not None and rate > 0.01:
+        if rate is not None and rate > MIN_RATE_THRESHOLD:
             self._last_heating_rate = rate
             self._rate_updated_at = dt_util.utcnow()
             return rate
@@ -328,7 +340,7 @@ class ZoneHistory:
         # and is_heating flag may always be False
         if len(heating_readings) == 0 and len(self.readings) >= MIN_DATA_POINTS:
             rate = self._calculate_heating_rate_segments(self.readings)
-            if rate is not None and rate > 0.01:
+            if rate is not None and rate > MIN_RATE_THRESHOLD:
                 self._last_heating_rate = rate
                 self._rate_updated_at = dt_util.utcnow()
                 return rate
@@ -409,15 +421,15 @@ class ZoneHistory:
             temp_diff = curr.temperature - prev.temperature
 
             # Skip if time gap is too large (> 2 hours) - not continuous
-            if time_diff_hours > 2:
+            if time_diff_hours > SEGMENT_MAX_GAP_HOURS:
                 continue
 
             # Check if temperature is rising
-            if temp_diff > 0.05 and time_diff_hours > 0.01:  # At least 0.05°C rise
+            if temp_diff > SEGMENT_MIN_TEMP_RISE and time_diff_hours > SEGMENT_MIN_TIME_HOURS:  # At least 0.05°C rise
                 rate = temp_diff / time_diff_hours
                 # Sanity check: rate should be between 0.1 and 10.0 °C/hour
                 # TRV heating can be quite fast (5-8°C/h) when starting from cold
-                if 0.1 <= rate <= 10.0:
+                if RATE_MIN_VALID <= rate <= RATE_MAX_VALID:
                     segment_rates.append(rate)
 
         if not segment_rates:
@@ -446,7 +458,7 @@ class ZoneHistory:
 
         # Simple linear regression: y = mx + b
         # x = time in hours from first reading
-        # y = temperature  # noqa: ERA001
+        # y = temperature
         n = len(readings)
         base_time = readings[0].timestamp
 
@@ -465,7 +477,7 @@ class ZoneHistory:
 
         # Calculate slope (rate)
         denominator = n * sum_x2 - sum_x * sum_x
-        if abs(denominator) < 0.0001:
+        if abs(denominator) < REGRESSION_DENOMINATOR_EPSILON:
             return None
 
         slope = (n * sum_xy - sum_x * sum_y) / denominator
@@ -486,7 +498,7 @@ class ZoneHistory:
         """
         diff = target_temp - current_temp
 
-        if abs(diff) < 0.1:
+        if abs(diff) < TEMP_NEAR_TARGET:
             return 0  # Already at target
 
         # For HEATING zones: only calculate if we need to heat up (current < target)
@@ -502,10 +514,10 @@ class ZoneHistory:
                 return 0
             rate = self.get_cooling_rate()
 
-        if rate is None or abs(rate) < 0.01:
+        if rate is None or abs(rate) < MIN_RATE_THRESHOLD:
             return None
 
-        # Time = distance / speed  # noqa: ERA001
+        # Time = distance / speed
         hours = abs(diff) / abs(rate)
         minutes = int(hours * 60)
 
@@ -535,7 +547,7 @@ class ZoneHistory:
 
         try:
             now = dt_util.now()
-        except Exception:
+        except (ValueError, TypeError):
             now = datetime.now(UTC)
         current_time_minutes = now.hour * 60 + now.minute
 
@@ -557,13 +569,13 @@ class ZoneHistory:
             time_diff = abs(reading_time_minutes - current_time_minutes)
 
             # Handle midnight wraparound
-            if time_diff > 720:  # More than 12 hours
+            if time_diff > MIDNIGHT_WRAPAROUND_MINUTES:  # More than 12 hours
                 time_diff = 1440 - time_diff
 
             if time_diff <= comparison_window_minutes:
                 historical_temps.append(reading.temperature)
 
-        if len(historical_temps) < 2:
+        if len(historical_temps) < 2:  # noqa: PLR2004 — need at least 2 points for comparison
             return None
 
         historical_avg = sum(historical_temps) / len(historical_temps)
@@ -625,15 +637,15 @@ class ZoneHistory:
                 confidence = "low"
             else:
                 return None
-        elif len(heating_readings) >= 10:
+        elif len(heating_readings) >= CONFIDENCE_HIGH_READINGS:
             confidence = "high"
-        elif len(heating_readings) >= 5:
+        elif len(heating_readings) >= CONFIDENCE_MEDIUM_READINGS:
             confidence = "medium"
         else:
             confidence = "low"
 
         # Avoid division by zero
-        if heating_rate <= 0.01:
+        if heating_rate <= MIN_RATE_THRESHOLD:
             return None
 
         # Calculate duration needed
@@ -727,7 +739,7 @@ class SmartComfortManager:
             )
             return True
 
-        except Exception as e:
+        except (OSError, ValueError) as e:
             _LOGGER.warning("Smart Comfort: Failed to save cache: %s", e)
             return False
 
@@ -771,7 +783,7 @@ class SmartComfortManager:
             )
             return total_readings
 
-        except Exception as e:
+        except (OSError, ValueError) as e:
             _LOGGER.warning("Smart Comfort: Failed to load cache: %s", e)
             return 0
 
@@ -1008,6 +1020,49 @@ class SmartComfortManager:
         return round(compensated, 2)
 
 
+def _process_entity_history(
+    history: list[Any],
+    zone: ZoneHistory,
+) -> int:
+    """Process history states for a single entity and add readings to zone.
+
+    Returns:
+        Number of data points added.
+    """
+    points_added = 0
+    for state in history:
+        try:
+            if state.state in ("unavailable", "unknown"):
+                continue
+
+            attrs = state.attributes
+            current_temp = attrs.get("current_temperature")
+            if current_temp is None:
+                continue
+
+            hvac_action = attrs.get("hvac_action", "idle")
+            is_heating = hvac_action in ("heating", "cooling")
+            target_temp = attrs.get("temperature")
+
+            timestamp = state.last_changed
+            if timestamp.tzinfo is None:
+                timestamp = timestamp.replace(tzinfo=dt_util.UTC)
+
+            reading = SmartComfortReading(
+                timestamp=timestamp,
+                temperature=float(current_temp),
+                is_heating=is_heating,
+                target_temperature=float(target_temp) if target_temp else None,
+            )
+            zone.readings.append(reading)
+            points_added += 1
+
+        except (ValueError, TypeError, AttributeError) as e:
+            _LOGGER.debug("Smart Comfort: Skipping invalid history state: %s", e)
+            continue
+    return points_added
+
+
 async def async_load_history_from_recorder(
     hass: HomeAssistant,
     manager: SmartComfortManager,
@@ -1045,13 +1100,9 @@ async def async_load_history_from_recorder(
             len(climate_entity_ids),
         )
 
-        # Query history from recorder (runs in executor to avoid blocking)
         def _get_history() -> list[dict[str, Any]]:
             return get_significant_states(  # type: ignore[return-value]
-                hass,
-                start_time,
-                end_time,
-                climate_entity_ids,
+                hass, start_time, end_time, climate_entity_ids,
                 significant_changes_only=False,
             )
 
@@ -1067,10 +1118,7 @@ async def async_load_history_from_recorder(
             if not history:
                 continue
 
-            # Extract entity name from entity_id (e.g., climate.master -> master)
             entity_name = entity_id.replace("climate.", "")
-
-            # Get numeric zone_id from mapping
             zone_id = entity_to_zone_id.get(entity_name)
             if not zone_id:
                 _LOGGER.debug("Smart Comfort: No zone_id mapping for %s", entity_name)
@@ -1078,58 +1126,15 @@ async def async_load_history_from_recorder(
 
             zone_name = entity_name.replace("_", " ").title()
             zone = manager.get_zone(zone_id, zone_name)
-            points_added = 0
+            points_added = _process_entity_history(history, zone)
 
-            for state in history:
-                try:
-                    # Skip unavailable/unknown states
-                    if state.state in ("unavailable", "unknown"):
-                        continue
-
-                    attrs = state.attributes
-                    current_temp = attrs.get("current_temperature")
-
-                    if current_temp is None:
-                        continue
-
-                    # Determine if heating was active from hvac_action
-                    hvac_action = attrs.get("hvac_action", "idle")
-                    is_heating = hvac_action in ("heating", "cooling")
-
-                    # Get target temperature
-                    target_temp = attrs.get("temperature")
-
-                    # Get timestamp (ensure UTC)
-                    timestamp = state.last_changed
-                    if timestamp.tzinfo is None:
-                        timestamp = timestamp.replace(tzinfo=dt_util.UTC)
-
-                    # Store as UTC aware datetime for consistency with live readings
-                    reading = SmartComfortReading(
-                        timestamp=timestamp,
-                        temperature=float(current_temp),
-                        is_heating=is_heating,
-                        target_temperature=float(target_temp) if target_temp else None,
-                    )
-
-                    # Add directly to readings list (bypass add_reading to avoid pruning)
-                    zone.readings.append(reading)
-                    points_added += 1
-
-                except (ValueError, TypeError, AttributeError) as e:
-                    _LOGGER.debug("Smart Comfort: Skipping invalid history state: %s", e)
-                    continue
-
-            # Sort readings by timestamp and prune old ones
             zone.readings.sort(key=lambda r: r.timestamp)
             zone._prune_old_readings()
 
             if points_added > 0:
                 _LOGGER.info(
                     "Smart Comfort: Loaded %s history points for %s, %s after pruning",
-                    points_added,
-                    zone_name,
-                    len(zone.readings),
+                    points_added, zone_name, len(zone.readings),
                 )
                 total_points += len(zone.readings)
 
@@ -1139,9 +1144,45 @@ async def async_load_history_from_recorder(
     except ImportError:
         _LOGGER.debug("Smart Comfort: Recorder component not available")
         return 0
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 — HA entity update pattern
         _LOGGER.warning("Smart Comfort: Failed to load history from recorder: %s", e)
         return 0
+
+
+def _calculate_zone_baseline(
+    sensor_stats: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    """Calculate baseline heating/cooling rates from hourly statistics for one zone.
+
+    Returns:
+        Dict with baseline rates and metadata, or None if insufficient data.
+    """
+    if len(sensor_stats) < 24:  # noqa: PLR2004 — minimum 24 hours of data
+        return None
+
+    temp_changes = []
+    for i in range(1, len(sensor_stats)):
+        prev_mean = sensor_stats[i - 1].get("mean")
+        curr_mean = sensor_stats[i].get("mean")
+        if prev_mean is not None and curr_mean is not None:
+            temp_changes.append(curr_mean - prev_mean)
+
+    if not temp_changes:
+        return None
+
+    heating_changes = sorted(c for c in temp_changes if c > BASELINE_CHANGE_THRESHOLD)
+    cooling_changes = sorted(c for c in temp_changes if c < -BASELINE_CHANGE_THRESHOLD)
+
+    baseline_heating = round(heating_changes[len(heating_changes) // 2], 2) if heating_changes else None
+    baseline_cooling = round(cooling_changes[len(cooling_changes) // 2], 2) if cooling_changes else None
+
+    return {
+        "baseline_heating_rate": baseline_heating,
+        "baseline_cooling_rate": baseline_cooling,
+        "data_points": len(sensor_stats),
+        "heating_samples": len(heating_changes),
+        "cooling_samples": len(cooling_changes),
+    }
 
 
 async def async_load_baseline_from_statistics(
@@ -1175,20 +1216,15 @@ async def async_load_baseline_from_statistics(
         from homeassistant.components.recorder import get_instance  # type: ignore[attr-defined]
         from homeassistant.components.recorder.statistics import statistics_during_period
 
-        # Get last 7 days of hourly statistics
         end_time = dt_util.utcnow()
         start_time = end_time - timedelta(days=7)
-
         statistic_ids = list(zone_sensor_mapping.values())
 
         _LOGGER.info("Smart Comfort: Loading 7-day statistics for %s sensors", len(statistic_ids))
 
-        # Query statistics (runs in executor)
         def _get_statistics() -> dict[str, Any]:
             return statistics_during_period(
-                hass,
-                start_time,
-                end_time,
+                hass, start_time, end_time,
                 statistic_ids=statistic_ids,  # type: ignore[arg-type]
                 period="hour",
                 units={"temperature": "°C"},
@@ -1208,63 +1244,24 @@ async def async_load_baseline_from_statistics(
                 continue
 
             sensor_stats = stats[sensor_id]
-            if len(sensor_stats) < 24:  # Need at least 24 hours
-                _LOGGER.debug("Smart Comfort: Not enough statistics for %s (%s points)", zone_id, len(sensor_stats))
+            baseline = _calculate_zone_baseline(sensor_stats)
+            if baseline is None:
+                _LOGGER.debug(
+                    "Smart Comfort: Not enough statistics for %s (%s points)",
+                    zone_id, len(sensor_stats),
+                )
                 continue
 
-            # Calculate hourly temperature changes
-            temp_changes = []
-            for i in range(1, len(sensor_stats)):
-                prev = sensor_stats[i - 1]
-                curr = sensor_stats[i]
+            results[zone_id] = baseline
 
-                prev_mean = prev.get("mean")
-                curr_mean = curr.get("mean")
-
-                if prev_mean is not None and curr_mean is not None:
-                    change = curr_mean - prev_mean
-                    temp_changes.append(change)
-
-            if not temp_changes:
-                continue
-
-            # Separate positive (heating) and negative (cooling) changes
-            heating_changes = [c for c in temp_changes if c > 0.05]
-            cooling_changes = [c for c in temp_changes if c < -0.05]
-
-            baseline_heating = None
-            baseline_cooling = None
-
-            if heating_changes:
-                # Use median to avoid outliers
-                heating_changes.sort()
-                mid = len(heating_changes) // 2
-                baseline_heating = round(heating_changes[mid], 2)
-
-            if cooling_changes:
-                cooling_changes.sort()
-                mid = len(cooling_changes) // 2
-                baseline_cooling = round(cooling_changes[mid], 2)
-
-            results[zone_id] = {
-                "baseline_heating_rate": baseline_heating,
-                "baseline_cooling_rate": baseline_cooling,
-                "data_points": len(sensor_stats),
-                "heating_samples": len(heating_changes),
-                "cooling_samples": len(cooling_changes),
-            }
-
-            # Store baseline in zone history for fallback
             zone = manager.get_zone(zone_id)
-            zone._baseline_heating_rate = baseline_heating
-            zone._baseline_cooling_rate = baseline_cooling
+            zone._baseline_heating_rate = baseline["baseline_heating_rate"]
+            zone._baseline_cooling_rate = baseline["baseline_cooling_rate"]
 
             _LOGGER.info(
                 "Smart Comfort: %s baseline rates from %s hours: heating=%s°C/h, cooling=%s°C/h",
-                zone_id,
-                len(sensor_stats),
-                baseline_heating,
-                baseline_cooling,
+                zone_id, baseline["data_points"],
+                baseline["baseline_heating_rate"], baseline["baseline_cooling_rate"],
             )
 
         return results
@@ -1272,6 +1269,6 @@ async def async_load_baseline_from_statistics(
     except ImportError as e:
         _LOGGER.debug("Smart Comfort: Statistics API not available: %s", e)
         return {}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 — HA entity update pattern
         _LOGGER.warning("Smart Comfort: Failed to load statistics: %s", e)
         return {}

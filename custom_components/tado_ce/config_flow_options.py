@@ -26,6 +26,7 @@ import voluptuous as vol
 from .const import (
     HEATING_TYPE_OPTIONS,
     HEATING_TYPE_RADIATOR,
+    MAX_CUSTOM_INTERVAL,
     OVERLAY_MODE_DEFAULT,
     OVERLAY_MODE_MAP,
     OVERLAY_MODE_OPTIONS,
@@ -478,6 +479,35 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
             errors=errors,
         )
 
+    def _process_advanced_settings_input(
+        self, user_input: dict[str, Any], errors: dict[str, str],
+    ) -> dict[str, Any]:
+        """Process advanced settings form input into flat key-value pairs."""
+        processed_input: dict[str, Any] = {}
+
+        self._process_smart_comfort(user_input, processed_input)
+        self._process_polling_api(user_input, processed_input, errors)
+
+        # Flatten thermal_analytics section
+        if "thermal_analytics" in user_input:
+            section = user_input["thermal_analytics"]
+            for key in (
+                "thermal_analytics_zones",
+                "heating_cycle_history_days",
+                "heating_cycle_min_cycles",
+                "heating_cycle_inertia_threshold",
+            ):
+                if key in section:
+                    processed_input[key] = section[key]
+
+        # Flatten mobile_tracking section
+        if "mobile_tracking" in user_input:
+            section = user_input["mobile_tracking"]
+            if "mobile_devices_frequent_sync" in section:
+                processed_input["mobile_devices_frequent_sync"] = section["mobile_devices_frequent_sync"]
+
+        return processed_input
+
     async def async_step_advanced_settings(
         self, user_input: dict[str, Any] | None = None,
     ) -> ConfigFlowResult:
@@ -495,30 +525,8 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
         ])
 
         if user_input is not None:
-            processed_input: dict[str, Any] = {}
-
-            # Reuse existing section processors
-            self._process_smart_comfort(user_input, processed_input)
-            self._process_polling_api(user_input, processed_input, errors)
+            processed_input = self._process_advanced_settings_input(user_input, errors)
             await self._process_flow_temperature_control(user_input, processed_input, errors)
-
-            # Flatten thermal_analytics section
-            if "thermal_analytics" in user_input:
-                section = user_input["thermal_analytics"]
-                for key in (
-                    "thermal_analytics_zones",
-                    "heating_cycle_history_days",
-                    "heating_cycle_min_cycles",
-                    "heating_cycle_inertia_threshold",
-                ):
-                    if key in section:
-                        processed_input[key] = section[key]
-
-            # Flatten mobile_tracking section
-            if "mobile_tracking" in user_input:
-                section = user_input["mobile_tracking"]
-                if "mobile_devices_frequent_sync" in section:
-                    processed_input["mobile_devices_frequent_sync"] = section["mobile_devices_frequent_sync"]
 
             if not errors:
                 # Preserve toggle states from current options
@@ -529,7 +537,6 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                 return self.async_create_entry(title="", data=processed_input)
 
         if not has_tunable:
-            # Show empty form with message
             return self.async_show_form(
                 step_id="advanced_settings",
                 data_schema=vol.Schema({}),
@@ -738,13 +745,13 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
 
         # Validate custom day interval
         day_interval = processed.get("custom_day_interval")
-        if day_interval is not None and (day_interval < 1 or day_interval > 1440):
+        if day_interval is not None and (day_interval < 1 or day_interval > MAX_CUSTOM_INTERVAL):
             errors["custom_day_interval"] = "interval_out_of_range"
             processed["custom_day_interval"] = None
 
         # Validate custom night interval
         night_interval = processed.get("custom_night_interval")
-        if night_interval is not None and (night_interval < 1 or night_interval > 1440):
+        if night_interval is not None and (night_interval < 1 or night_interval > MAX_CUSTOM_INTERVAL):
             errors["custom_night_interval"] = "interval_out_of_range"
             processed["custom_night_interval"] = None
 
@@ -867,6 +874,55 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
             ),
         )
 
+    def _process_zone_sensor_input(self, user_input: dict[str, Any]) -> dict[str, Any]:
+        """Flatten and process zone sensor config form sections into key-value pairs."""
+        all_values: dict[str, Any] = {}
+
+        if "heating_section" in user_input:
+            s = user_input["heating_section"]
+            all_values["heating_type"] = s.get(
+                "heating_type", HEATING_TYPE_RADIATOR,
+            ).lower()
+            all_values["ufh_buffer_minutes"] = int(s.get("ufh_buffer_minutes", 30))
+            all_values["adaptive_preheat"] = s.get("adaptive_preheat", "off")
+
+        if "comfort_section" in user_input:
+            s = user_input["comfort_section"]
+            raw_mode = s.get("smart_comfort_mode", "None")
+            all_values["smart_comfort_mode"] = raw_mode.lower() if raw_mode != "None" else "none"
+            all_values["window_type"] = s.get("window_type", "double_pane")
+            all_values["window_predicted_mode"] = WINDOW_DETECTION_MODE_MAP.get(
+                s.get("window_predicted_mode", "auto"), WINDOW_DETECTION_MODE_DEFAULT,
+            )
+            all_values["window_predicted_sensitivity"] = WINDOW_SENSITIVITY_MAP.get(
+                s.get("window_predicted_sensitivity", "Medium"), "medium",
+            )
+
+        if "sensor_section" in user_input:
+            s = user_input["sensor_section"]
+            all_values["external_temp_sensor"] = (
+                s.get("external_temp_sensor", "") if s.get("use_external_temp", False) else ""
+            )
+            all_values["external_humidity_sensor"] = (
+                s.get("external_humidity_sensor", "") if s.get("use_external_humidity", False) else ""
+            )
+
+        if "overlay_section" in user_input:
+            s = user_input["overlay_section"]
+            all_values["overlay_mode"] = OVERLAY_MODE_MAP.get(
+                s.get("overlay_mode", "Tado Default"), OVERLAY_MODE_DEFAULT,
+            )
+            all_values["timer_duration"] = int(s.get("timer_duration", str(TIMER_DURATION_DEFAULT)))
+
+        if "temperature_section" in user_input:
+            s = user_input["temperature_section"]
+            all_values["min_temp"] = float(s.get("min_temp", 5.0))
+            all_values["max_temp"] = float(s.get("max_temp", 25.0))
+            all_values["temp_offset"] = float(s.get("temp_offset", 0.0))
+            all_values["surface_temp_offset"] = float(s.get("surface_temp_offset", 0.0))
+
+        return all_values
+
     async def async_step_zone_sensor_config(
         self, user_input: dict[str, Any] | None = None,
     ) -> ConfigFlowResult:
@@ -879,54 +935,7 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
         zone_config_manager = coordinator.zone_config_manager
 
         if user_input is not None:
-            # Flatten sections and save each key to zone_config.json
-            all_values: dict[str, Any] = {}
-
-            if "heating_section" in user_input:
-                s = user_input["heating_section"]
-                all_values["heating_type"] = s.get(
-                    "heating_type", HEATING_TYPE_RADIATOR,
-                ).lower()
-                all_values["ufh_buffer_minutes"] = int(s.get("ufh_buffer_minutes", 30))
-                all_values["adaptive_preheat"] = s.get("adaptive_preheat", "off")
-
-            if "comfort_section" in user_input:
-                s = user_input["comfort_section"]
-                raw_mode = s.get("smart_comfort_mode", "None")
-                all_values["smart_comfort_mode"] = raw_mode.lower() if raw_mode != "None" else "none"
-                raw_wt = s.get("window_type", "double_pane")
-                all_values["window_type"] = raw_wt
-                raw_det_mode = s.get("window_predicted_mode", "auto")
-                all_values["window_predicted_mode"] = WINDOW_DETECTION_MODE_MAP.get(
-                    raw_det_mode, WINDOW_DETECTION_MODE_DEFAULT,
-                )
-                raw_sens = s.get("window_predicted_sensitivity", "Medium")
-                all_values["window_predicted_sensitivity"] = WINDOW_SENSITIVITY_MAP.get(raw_sens, "medium")
-
-            if "sensor_section" in user_input:
-                s = user_input["sensor_section"]
-                # Boolean toggle controls whether EntitySelector value is used
-                if s.get("use_external_temp", False):
-                    all_values["external_temp_sensor"] = s.get("external_temp_sensor", "")
-                else:
-                    all_values["external_temp_sensor"] = ""
-                if s.get("use_external_humidity", False):
-                    all_values["external_humidity_sensor"] = s.get("external_humidity_sensor", "")
-                else:
-                    all_values["external_humidity_sensor"] = ""
-
-            if "overlay_section" in user_input:
-                s = user_input["overlay_section"]
-                raw_overlay = s.get("overlay_mode", "Tado Default")
-                all_values["overlay_mode"] = OVERLAY_MODE_MAP.get(raw_overlay, OVERLAY_MODE_DEFAULT)
-                all_values["timer_duration"] = int(s.get("timer_duration", str(TIMER_DURATION_DEFAULT)))
-
-            if "temperature_section" in user_input:
-                s = user_input["temperature_section"]
-                all_values["min_temp"] = float(s.get("min_temp", 5.0))
-                all_values["max_temp"] = float(s.get("max_temp", 25.0))
-                all_values["temp_offset"] = float(s.get("temp_offset", 0.0))
-                all_values["surface_temp_offset"] = float(s.get("surface_temp_offset", 0.0))
+            all_values = self._process_zone_sensor_input(user_input)
 
             for key, value in all_values.items():
                 await zone_config_manager.async_set_zone_value(zone_id, key, value)

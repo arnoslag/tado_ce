@@ -51,7 +51,7 @@ class TadoZoneSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], SensorEntit
                 zone_states = (data.get("zones") or {}).get("zoneStates") or {}
                 return zone_states.get(self._zone_id)
             return None
-        except Exception:
+        except Exception:  # noqa: BLE001 — defensive helper for entity update path
             _LOGGER.debug("Failed to get zone data for zone %s", self._zone_id)
             return None
 
@@ -271,7 +271,7 @@ class TadoBoilerFlowTemperatureSensor(CoordinatorEntity["TadoDataUpdateCoordinat
             self._attr_native_value = None
             self._source_zone = None
             self._attr_available = False
-        except Exception:
+        except Exception:  # noqa: BLE001 — HA entity update pattern
             _LOGGER.debug("Failed to update boiler flow temperature sensor")
             self._attr_available = False
         self.async_write_ha_state()

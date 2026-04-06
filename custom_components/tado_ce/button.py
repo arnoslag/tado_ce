@@ -9,12 +9,12 @@ from typing import TYPE_CHECKING, Any
 from homeassistant.components.button import ButtonEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .ratelimit import async_check_bootstrap_reserve_or_raise as _check_bootstrap_reserve_or_raise
 from .const import DOMAIN
 from .coordinator import TadoDataUpdateCoordinator
 from .device_manager import get_hub_device_info, get_zone_device_info
 from .entity_registry import ENTITY_REGISTRY, get_entity_category
 from .helpers import async_trigger_immediate_refresh, build_timer_termination
+from .ratelimit import async_check_bootstrap_reserve_or_raise as _check_bootstrap_reserve_or_raise
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -23,6 +23,8 @@ if TYPE_CHECKING:
     from .coordinator import TadoConfigEntry
 
 _LOGGER = logging.getLogger(__name__)
+
+_MIN_BOOST_HEATING_RATE = 0.1  # °C/h — minimum meaningful rate for smart boost calculation
 
 PARALLEL_UPDATES = 1
 
@@ -391,6 +393,9 @@ class TadoRefreshScheduleButton(CoordinatorEntity[TadoDataUpdateCoordinator], Bu
 
             await self.hass.async_add_executor_job(_save_schedules)
 
+            # Write-through: update DataLoader cache
+            self.coordinator.data_loader.update_cache("schedules", schedules)
+
             _LOGGER.info("Schedule refreshed for %s", self._zone_name)
 
             # Fire event to notify calendar entity to update
@@ -526,7 +531,7 @@ class TadoSmartBoostButton(CoordinatorEntity[TadoDataUpdateCoordinator], ButtonE
             if zone_data and zone_data.get("heating_rate") is not None:
                 # HeatingCycleCoordinator rate is already in °C/h
                 rate = zone_data.get("heating_rate")
-                if rate > 0.1:  # type: ignore[operator]
+                if rate > _MIN_BOOST_HEATING_RATE:  # type: ignore[operator]
                     _LOGGER.debug("Smart Boost: Using HeatingCycleCoordinator rate %.2f°C/h", rate)
                     return rate  # type: ignore[return-value]
 
@@ -534,7 +539,7 @@ class TadoSmartBoostButton(CoordinatorEntity[TadoDataUpdateCoordinator], ButtonE
         smart_comfort_manager = self.coordinator.smart_comfort_manager
         if smart_comfort_manager:
             rate = smart_comfort_manager.get_heating_rate(self._zone_id)
-            if rate is not None and rate > 0.1:
+            if rate is not None and rate > _MIN_BOOST_HEATING_RATE:
                 _LOGGER.debug("Smart Boost: Using SmartComfort rate %.2f°C/h", rate)
                 return rate
 

@@ -1,4 +1,4 @@
-"""Tado CE Select Platform — Presence Mode, Overlay Mode, Timer Duration."""
+"""Tado CE Select Platform — Presence Mode, Overlay Mode, Timer Duration."""  # HA entity pattern
 
 from __future__ import annotations
 
@@ -7,10 +7,11 @@ from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.select import SelectEntity
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .ratelimit import async_check_bootstrap_reserve_or_raise as _check_bootstrap_reserve_or_raise
 from .const import (
+    DOMAIN,
     OVERLAY_MODE_DEFAULT,
     OVERLAY_MODE_DEFAULT_DISPLAY,
     OVERLAY_MODE_MAP,
@@ -28,6 +29,7 @@ from .optimistic_helpers import (
     resolve_optimistic_update,
     set_optimistic_fields,
 )
+from .ratelimit import async_check_bootstrap_reserve_or_raise as _check_bootstrap_reserve_or_raise
 
 if TYPE_CHECKING:
     from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
@@ -85,7 +87,7 @@ class TadoPresenceModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sel
     Uses 1 API call per change.
     """
 
-    _attr_options: list[str] = ["auto", "home", "away"]  # noqa: RUF012 — HA entity pattern
+    _attr_options: list[str] = ["auto", "home", "away"]
     _attr_translation_key = "presence_mode"
 
     def __init__(self, coordinator: TadoDataUpdateCoordinator, home_id: str) -> None:
@@ -236,6 +238,10 @@ class TadoPresenceModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sel
             self._presence_locked = old_locked
             clear_optimistic_state(self)
             self.async_write_ha_state()
+            raise HomeAssistantError(
+                f"Set presence mode to {option} failed",
+                translation_domain=DOMAIN,
+            )
 
 
 class TadoOverlayModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], SelectEntity):

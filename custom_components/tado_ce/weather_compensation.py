@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 # ---------------------------------------------------------------------------
-# Presets: (slope, max_flow, min_flow)  # noqa: ERA001
+# Heating system presets
 # ---------------------------------------------------------------------------
 
 HEATING_PRESETS: dict[str, tuple[float, float, float]] = {
@@ -388,6 +388,94 @@ def evaluate(
 # ---------------------------------------------------------------------------
 
 
+def _build_wc_config(cm: object) -> WeatherCompensationConfig:
+    """Build WeatherCompensationConfig from config manager options."""
+    preset = cm.get_wc_heating_system_preset()  # type: ignore[union-attr]
+    max_flow = cm.get_wc_max_flow_temp()  # type: ignore[union-attr]
+    min_flow = cm.get_wc_min_flow_temp()  # type: ignore[union-attr]
+    shutoff = cm.get_wc_shutoff_temp()  # type: ignore[union-attr]
+    design = cm.get_wc_design_outdoor_temp()  # type: ignore[union-attr]
+
+    if preset == "custom":
+        slope = cm.get_wc_slope()  # type: ignore[union-attr]
+    else:
+        slope = calculate_auto_slope(max_flow, min_flow, shutoff, design)
+
+    return WeatherCompensationConfig(
+        enabled=True,
+        heating_system_preset=preset,
+        slope=slope,
+        design_outdoor_temp=design,
+        max_flow_temp=max_flow,
+        min_flow_temp=min_flow,
+        shutoff_temp=shutoff,
+        smoothing_method=cm.get_wc_smoothing_method(),  # type: ignore[union-attr]
+        smoothing_window_minutes=cm.get_wc_smoothing_window(),  # type: ignore[union-attr]
+        room_compensation_enabled=cm.get_wc_room_compensation_enabled(),  # type: ignore[union-attr]
+        room_compensation_factor=cm.get_wc_room_compensation_factor(),  # type: ignore[union-attr]
+        step_size=cm.get_wc_step_size(),  # type: ignore[union-attr]
+        hysteresis=cm.get_wc_hysteresis(),  # type: ignore[union-attr]
+    )
+
+
+def _resolve_outdoor_temp(
+    hass: object,
+    cm: object,
+    weather_data: dict | None,
+) -> float | None:
+    """Resolve outdoor temperature from external sensor or weather data."""
+    from .sensor_helpers import get_outdoor_temperature
+
+    outdoor_entity = cm.get_outdoor_temp_entity()  # type: ignore[union-attr]
+    outdoor_temp: float | None = None
+    if outdoor_entity:
+        outdoor_temp = get_outdoor_temperature(
+            hass, outdoor_entity, cm.get_use_feels_like(),  # type: ignore[arg-type, union-attr]
+        )
+    if outdoor_temp is None and weather_data:
+        outside = weather_data.get("outsideTemperature")
+        if isinstance(outside, dict):
+            raw = outside.get("celsius")
+            if raw is not None:
+                outdoor_temp = float(raw)
+    return outdoor_temp
+
+
+def _resolve_indoor_temps(
+    zone_data: dict | None,
+) -> tuple[float | None, float | None]:
+    """Resolve average indoor temp and target temp from actively heating zones."""
+    if not zone_data:
+        return None, None
+    zone_states = zone_data.get("zoneStates") or {}
+    temps: list[float] = []
+    targets: list[float] = []
+    for zdata in zone_states.values():
+        activity = zdata.get("activityDataPoints") or {}
+        hp = activity.get("heatingPower")
+        if hp is None:
+            continue
+        hp_val = hp.get("percentage") if isinstance(hp, dict) else hp
+        if hp_val is None:
+            continue
+        try:
+            if float(hp_val) <= 0:
+                continue
+        except (TypeError, ValueError):
+            continue
+        sensor_pts = zdata.get("sensorDataPoints") or {}
+        inside = (sensor_pts.get("insideTemperature") or {}).get("celsius")
+        setting = (zdata.get("setting") or {}).get("temperature") or {}
+        tgt = setting.get("celsius")
+        if inside is not None:
+            temps.append(float(inside))
+        if tgt is not None:
+            targets.append(float(tgt))
+    indoor_temp = sum(temps) / len(temps) if temps else None
+    target_temp = sum(targets) / len(targets) if targets else None
+    return indoor_temp, target_temp
+
+
 async def async_run_wc_cycle(
     *,
     config_manager: object,
@@ -416,84 +504,14 @@ async def async_run_wc_cycle(
     _LOGGER = logging.getLogger(__name__)
 
     try:
-        cm = config_manager  # type: ignore[assignment]
-
-        # --- Build config from options ---
-        preset = cm.get_wc_heating_system_preset()
-        max_flow = cm.get_wc_max_flow_temp()
-        min_flow = cm.get_wc_min_flow_temp()
-        shutoff = cm.get_wc_shutoff_temp()
-        design = cm.get_wc_design_outdoor_temp()
-
-        if preset == "custom":
-            slope = cm.get_wc_slope()
-        else:
-            slope = calculate_auto_slope(max_flow, min_flow, shutoff, design)
-
-        config = WeatherCompensationConfig(
-            enabled=True,
-            heating_system_preset=preset,
-            slope=slope,
-            design_outdoor_temp=design,
-            max_flow_temp=max_flow,
-            min_flow_temp=min_flow,
-            shutoff_temp=shutoff,
-            smoothing_method=cm.get_wc_smoothing_method(),
-            smoothing_window_minutes=cm.get_wc_smoothing_window(),
-            room_compensation_enabled=cm.get_wc_room_compensation_enabled(),
-            room_compensation_factor=cm.get_wc_room_compensation_factor(),
-            step_size=cm.get_wc_step_size(),
-            hysteresis=cm.get_wc_hysteresis(),
-        )
-
-        # --- Resolve outdoor temperature ---
-        from .sensor_helpers import get_outdoor_temperature
-
-        outdoor_entity = cm.get_outdoor_temp_entity()
-        outdoor_temp: float | None = None
-        if outdoor_entity:
-            outdoor_temp = get_outdoor_temperature(
-                hass, outdoor_entity, cm.get_use_feels_like(),  # type: ignore[arg-type]
-            )
-        if outdoor_temp is None and weather_data:
-            outside = weather_data.get("outsideTemperature")
-            if isinstance(outside, dict):
-                raw = outside.get("celsius")
-                if raw is not None:
-                    outdoor_temp = float(raw)
+        config = _build_wc_config(config_manager)
+        outdoor_temp = _resolve_outdoor_temp(hass, config_manager, weather_data)
 
         # --- Resolve indoor temp + target (room compensation) ---
         indoor_temp: float | None = None
         target_temp: float | None = None
-        if config.room_compensation_enabled and zone_data:
-            zone_states = zone_data.get("zoneStates") or {}
-            temps: list[float] = []
-            targets: list[float] = []
-            for zdata in zone_states.values():
-                activity = zdata.get("activityDataPoints") or {}
-                hp = activity.get("heatingPower")
-                if hp is None:
-                    continue
-                hp_val = hp.get("percentage") if isinstance(hp, dict) else hp
-                if hp_val is None:
-                    continue
-                try:
-                    if float(hp_val) <= 0:
-                        continue
-                except (TypeError, ValueError):
-                    continue
-                sensor_pts = zdata.get("sensorDataPoints") or {}
-                inside = (sensor_pts.get("insideTemperature") or {}).get("celsius")
-                setting = (zdata.get("setting") or {}).get("temperature") or {}
-                tgt = setting.get("celsius")
-                if inside is not None:
-                    temps.append(float(inside))
-                if tgt is not None:
-                    targets.append(float(tgt))
-            if temps:
-                indoor_temp = sum(temps) / len(temps)
-            if targets:
-                target_temp = sum(targets) / len(targets)
+        if config.room_compensation_enabled:
+            indoor_temp, target_temp = _resolve_indoor_temps(zone_data)
 
         # --- Current flow temp from bridge ---
         current_flow: float | None = None
@@ -532,7 +550,7 @@ async def async_run_wc_cycle(
                     result.smoothed_outdoor_temp or 0.0,
                     result.heating_system_preset,
                 )
-            except Exception:
+            except Exception:  # noqa: BLE001 — HA entity update pattern
                 _LOGGER.warning(
                     "Weather compensation: Bridge API call failed — will retry next cycle",
                 )
@@ -550,7 +568,7 @@ async def async_run_wc_cycle(
             "heating_system_preset": result.heating_system_preset,
             "should_send": result.should_send,
         }
-    except Exception:
+    except Exception:  # noqa: BLE001 — HA entity update pattern
         _LOGGER.debug(
             "Weather compensation evaluation failed — main update unaffected",
             exc_info=True,

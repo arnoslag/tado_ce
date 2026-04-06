@@ -1,5 +1,5 @@
-"""Tado CE second-order thermal dynamics analyzer — heating acceleration and approach behavior.
-
+"""Tado CE second-order thermal dynamics analyzer — heating acceleration and approach behavior.  # readability: named result
+  # readability: named result
 Heating acceleration and approach behavior analysis for improved preheat estimation.
 """
 
@@ -16,6 +16,16 @@ _LOGGER = logging.getLogger(__name__)
 # Thermal analysis thresholds
 _MIN_READINGS_PER_HALF = 3
 _MIN_RATE_THRESHOLD = 0.001
+_MIN_READINGS_FOR_ANALYSIS = 6  # minimum readings for rate/approach analysis
+_MIN_READINGS_FOR_REGRESSION = 2  # minimum readings for linear regression
+_MIN_READINGS_FOR_EXPONENTIAL = 20  # minimum readings for exponential curve fitting
+_MIN_DURATION_HOURS = 0.1  # minimum cycle duration (6 minutes)
+_MIN_TEMP_DELTA = 0.5  # °C — minimum temperature change for approach factor
+_REGRESSION_EPSILON = 0.001  # minimum denominator for regression
+_SLOPE_EPSILON = -0.001  # slope must be more negative than this for heating
+_LOG_DIFF_EPSILON = 0.05  # minimum diff for log calculation
+_APPROACH_VALIDATION_DIFF = 0.3  # significant difference between methods
+_MIN_READINGS_FOR_POINT_BASED = 2  # minimum readings at each temperature point
 
 
 class ThermalAnalyzer:
@@ -102,7 +112,7 @@ class ThermalAnalyzer:
         """
         readings = cycle.temperature_readings
 
-        if len(readings) < 6:
+        if len(readings) < _MIN_READINGS_FOR_ANALYSIS:
             return None
 
         # Split readings into thirds
@@ -116,7 +126,7 @@ class ThermalAnalyzer:
         # Filter out readings that are at or above target
         final_readings = [r for r in readings[2 * third :] if r.temp < cycle.target_temp - 0.1]
 
-        if len(final_readings) < 2:
+        if len(final_readings) < _MIN_READINGS_FOR_REGRESSION:
             # Use all readings from last third if filtering removed too many
             final_readings = readings[2 * third :]
 
@@ -131,17 +141,17 @@ class ThermalAnalyzer:
 
         duration_hours = (readings[-1].time - readings[0].time).total_seconds() / 3600
 
-        if duration_hours < 0.1:  # Less than 6 minutes
+        if duration_hours < _MIN_DURATION_HOURS:  # Less than 6 minutes
             return None
 
-        # Acceleration = (final_rate - initial_rate) / duration  # noqa: ERA001
+        # Acceleration = (final_rate - initial_rate) / duration
         # Convert rates from °C/min to °C/h for consistency
         initial_rate_h = initial_rate * 60
         final_rate_h = final_rate * 60
 
         acceleration = (final_rate_h - initial_rate_h) / duration_hours
 
-        return acceleration  # noqa: RET504 — readability: named result
+        return acceleration
 
     def _calculate_rate_from_readings(
         self,
@@ -152,7 +162,7 @@ class ThermalAnalyzer:
         Returns:
             Rate in °C/min, or None if cannot calculate
         """
-        if len(readings) < 2:
+        if len(readings) < _MIN_READINGS_FOR_REGRESSION:
             return None
 
         # Use linear regression for more stable rate calculation
@@ -167,13 +177,13 @@ class ThermalAnalyzer:
 
         denominator = n * sum_t2 - sum_t * sum_t
 
-        if abs(denominator) < 0.001:
+        if abs(denominator) < _REGRESSION_EPSILON:
             return None
 
         # Slope = rate in °C/min
         rate = (n * sum_t_temp - sum_t * sum_temp) / denominator
 
-        return rate  # noqa: RET504 — readability: named result
+        return rate
 
     def calculate_approach_factor(
         self,
@@ -251,7 +261,7 @@ class ThermalAnalyzer:
         """
         readings = cycle.temperature_readings
 
-        if len(readings) < 6 or cycle.start_temp is None:
+        if len(readings) < _MIN_READINGS_FOR_ANALYSIS or cycle.start_temp is None:
             _LOGGER.debug(
                 "Approach factor skip: insufficient readings (%d) or no start_temp",
                 len(readings),
@@ -260,7 +270,7 @@ class ThermalAnalyzer:
 
         temp_delta = cycle.target_temp - cycle.start_temp
 
-        if temp_delta < 0.5:  # Less than 0.5°C change
+        if temp_delta < _MIN_TEMP_DELTA:  # Less than 0.5°C change
             _LOGGER.debug(
                 "Approach factor skip: temp_delta %.2f°C < 0.5°C threshold",
                 temp_delta,
@@ -272,7 +282,7 @@ class ThermalAnalyzer:
 
         if factor is not None:
             # Validation: If we have high quality data, validate with exponential fit
-            if len(readings) >= 20:
+            if len(readings) >= _MIN_READINGS_FOR_EXPONENTIAL:
                 exp_factor = self._calculate_approach_factor_exponential(
                     cycle,
                     readings,
@@ -281,7 +291,7 @@ class ThermalAnalyzer:
                 if exp_factor is not None:
                     # If exponential validation differs significantly, log warning
                     diff = abs(factor - exp_factor)
-                    if diff > 0.3:
+                    if diff > _APPROACH_VALIDATION_DIFF:
                         _LOGGER.debug(
                             "Approach factor validation: rate_ratio=%.2f, exponential=%.2f, diff=%.2f",
                             factor,
@@ -354,7 +364,7 @@ class ThermalAnalyzer:
         if rate_second is None:
             rate_second = 0.0
 
-        # Factor = rate_second / rate_first  # noqa: ERA001
+        # Factor = rate_second / rate_first
         factor = rate_second / rate_first
 
         # Clamp to reasonable range
@@ -383,7 +393,7 @@ class ThermalAnalyzer:
         Returns:
             Rate in °C/min, or None if cannot calculate
         """
-        if len(readings) < 2:
+        if len(readings) < _MIN_READINGS_FOR_REGRESSION:
             return None
 
         # Total temperature change / total time
@@ -394,6 +404,50 @@ class ThermalAnalyzer:
             return None
 
         return temp_change / time_change
+
+    def _linearize_approach_data(
+        self,
+        valid_data: list[tuple[float, float]],
+        target: float,
+    ) -> float | None:
+        """Linearize temperature approach data using Newton's Law of Cooling.
+
+        For T(t) = T_target - A * exp(-t/τ), linearize as:
+        ln(T_target - T) = ln(A) - t/τ, where slope = -1/τ.
+
+        Returns:
+            Time constant τ in minutes, or None if cannot calculate.
+        """
+        import math
+
+        log_diffs = []
+        log_times = []
+        for t, temp in valid_data:
+            diff = target - temp
+            if diff > _LOG_DIFF_EPSILON:  # Avoid log of very small numbers
+                log_diffs.append(math.log(diff))
+                log_times.append(t)
+
+        if len(log_diffs) < 10:  # noqa: PLR2004 — minimum data points for regression
+            return None
+
+        # Linear regression on log data
+        n = len(log_diffs)
+        sum_t = sum(log_times)
+        sum_log = sum(log_diffs)
+        sum_t_log = sum(t * log for t, log in zip(log_times, log_diffs, strict=True))
+        sum_t2 = sum(t * t for t in log_times)
+
+        denominator = n * sum_t2 - sum_t * sum_t
+        if abs(denominator) < _REGRESSION_EPSILON:
+            return None
+
+        slope = (n * sum_t_log - sum_t * sum_log) / denominator
+
+        if slope >= _SLOPE_EPSILON:  # slope should be negative for heating
+            return None
+
+        return -1.0 / slope  # time constant in minutes
 
     def _calculate_approach_factor_exponential(
         self,
@@ -417,98 +471,45 @@ class ThermalAnalyzer:
         Returns:
             Factor between 0.0 and 2.0, or None if cannot calculate
         """
-        # Need sufficient data for curve fitting
-        if len(readings) < 20:
+        if len(readings) < _MIN_READINGS_FOR_EXPONENTIAL:
             return None
 
-        # Sort readings by time
         sorted_readings = sorted(readings, key=lambda r: r.time)
 
-        # Prepare data for fitting
         base_time = sorted_readings[0].time
-        times = [(r.time - base_time).total_seconds() / 60 for r in sorted_readings]  # minutes
+        times = [(r.time - base_time).total_seconds() / 60 for r in sorted_readings]
         temps = [r.temp for r in sorted_readings]
 
-        # Check for sufficient temperature variation
         temp_range = max(temps) - min(temps)
-        if temp_range < 0.5:
+        if temp_range < _MIN_TEMP_DELTA:
             return None
-
-        # Estimate time constant using linearization
-        # For T(t) = T_target - A * exp(-t/τ), we can linearize:
-        # ln(T_target - T) = ln(A) - t/τ
-        # Slope = -1/τ  # noqa: ERA001
 
         target = cycle.target_temp
 
-        # Filter readings that are below target (for valid log)
         valid_data = [
             (t, temp)
             for t, temp in zip(times, temps, strict=True)
-            if temp < target - 0.1  # Need some margin
+            if temp < target - 0.1
         ]
 
-        if len(valid_data) < 10:
+        if len(valid_data) < 10:  # noqa: PLR2004 — minimum data points
             return None
 
-        # Calculate ln(target - temp) for linearization
-        import math
-
         try:
-            log_diffs = []
-            log_times = []
-            for t, temp in valid_data:
-                diff = target - temp
-                if diff > 0.05:  # Avoid log of very small numbers
-                    log_diffs.append(math.log(diff))
-                    log_times.append(t)
-
-            if len(log_diffs) < 10:
+            tau = self._linearize_approach_data(valid_data, target)
+            if tau is None or tau <= 0:
                 return None
 
-            # Linear regression on log data
-            n = len(log_diffs)
-            sum_t = sum(log_times)
-            sum_log = sum(log_diffs)
-            sum_t_log = sum(t * log for t, log in zip(log_times, log_diffs, strict=True))
-            sum_t2 = sum(t * t for t in log_times)
-
-            denominator = n * sum_t2 - sum_t * sum_t
-            if abs(denominator) < 0.001:
-                return None
-
-            slope = (n * sum_t_log - sum_t * sum_log) / denominator
-
-            # slope = -1/τ, so τ = -1/slope
-            if slope >= -0.001:  # slope should be negative for heating
-                return None
-
-            tau = -1.0 / slope  # time constant in minutes
-
-            # Convert tau to approach factor
-            # Expected tau for "normal" heating is roughly cycle_duration / 3
             cycle_duration = times[-1] - times[0]
             if cycle_duration <= 0:
                 return None
 
             expected_tau = cycle_duration / 3
-
-            # Factor = expected_tau / actual_tau  # noqa: ERA001
-            # If actual tau < expected, heating is faster = higher factor
-            # If actual tau > expected, heating is slower = lower factor
-            if tau <= 0:
-                return None
-
-            factor = expected_tau / tau
-
-            # Clamp to reasonable range
-            factor = max(0.0, min(2.0, factor))
+            factor = max(0.0, min(2.0, expected_tau / tau))
 
             _LOGGER.debug(
                 "Exponential method: tau=%.1f min, expected_tau=%.1f min, factor=%.2f",
-                tau,
-                expected_tau,
-                factor,
+                tau, expected_tau, factor,
             )
 
             return factor
@@ -543,7 +544,7 @@ class ThermalAnalyzer:
         readings_50 = self._get_readings_near_temp(readings, temp_50, tolerance=0.3)
         readings_90 = self._get_readings_near_temp(readings, temp_90, tolerance=0.3)
 
-        if len(readings_50) < 2 or len(readings_90) < 2:
+        if len(readings_50) < _MIN_READINGS_FOR_POINT_BASED or len(readings_90) < _MIN_READINGS_FOR_POINT_BASED:
             _LOGGER.debug(
                 "Point-based skip: insufficient readings at 50%% (%d) or 90%% (%d)",
                 len(readings_50),
@@ -576,7 +577,7 @@ class ThermalAnalyzer:
             )
             return None
 
-        # Factor = rate_90 / rate_50  # noqa: ERA001
+        # Factor = rate_90 / rate_50
         factor = rate_90 / rate_50
 
         # Clamp to reasonable range

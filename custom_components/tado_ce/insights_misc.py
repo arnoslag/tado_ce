@@ -18,7 +18,6 @@ from .insights_models import (
     InsightPriority,
 )
 
-
 # ── Presence insights ────────────────────────────────────────────────
 
 
@@ -60,7 +59,7 @@ def calculate_away_heating_active_insight(
 
 def calculate_home_all_off_insight(
     presence: str | None = None,
-    all_zones_off: bool = True,  # noqa: FBT001, FBT002
+    all_zones_off: bool = True,
     coldest_zone_name: str | None = None,
     coldest_zone_temp: float | None = None,
     coldest_zone_target: float | None = None,

@@ -7,12 +7,15 @@ OAuth-based cloud API — errors here never affect cloud data or trigger reauth.
 
 from __future__ import annotations
 
+import asyncio
 from http import HTTPStatus
 import logging
 
 import aiohttp
 
+from .const import MAX_RETRY_ATTEMPTS
 from .exceptions import TadoBridgeApiError
+from .helpers import retry_delay
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -60,43 +63,59 @@ class TadoBridgeApiClient:
         url = f"{self._base_url}/boilerWiringInstallationState"
         params = {"authKey": self._auth_key}
         _LOGGER.debug("Bridge API GET request - URL: %s", url.replace(self._auth_key, "[AUTH_KEY]"))
-        try:
-            async with self._session.get(url, params=params, timeout=_BRIDGE_API_TIMEOUT) as resp:
-                _LOGGER.debug("Bridge API response status: %s", resp.status)
-                if resp.status != HTTPStatus.OK:
-                    msg = "Bridge API GET wiring state failed: HTTP %s"
-                    raise TadoBridgeApiError(msg % resp.status)
-                result = await resp.json()
-                _LOGGER.debug("Bridge API full response: %s", result)
-                return result  # type: ignore[no-any-return]
-        except TadoBridgeApiError:
-            raise
-        except aiohttp.ClientError as err:
-            msg = "Bridge API network error: %s"
-            raise TadoBridgeApiError(msg % err) from err
+        for attempt in range(1, MAX_RETRY_ATTEMPTS + 1):
+            try:
+                async with self._session.get(url, params=params, timeout=_BRIDGE_API_TIMEOUT) as resp:
+                    _LOGGER.debug("Bridge API response status: %s", resp.status)
+                    if resp.status != HTTPStatus.OK:
+                        msg = "Bridge API GET wiring state failed: HTTP %s"
+                        raise TadoBridgeApiError(msg % resp.status)
+                    result = await resp.json()
+                    _LOGGER.debug("Bridge API full response: %s", result)
+                    return result  # type: ignore[no-any-return]
+            except TadoBridgeApiError:
+                raise
+            except aiohttp.ClientError as err:
+                if attempt < MAX_RETRY_ATTEMPTS:
+                    delay = retry_delay(attempt)
+                    _LOGGER.debug("Bridge API network error, retry %s/%s in %.1fs", attempt, MAX_RETRY_ATTEMPTS, delay)
+                    await asyncio.sleep(delay)
+                    continue
+                msg = "Bridge API network error: %s"
+                raise TadoBridgeApiError(msg % err) from err
+        msg = "Bridge API GET wiring state failed after retries"  # unreachable
+        raise TadoBridgeApiError(msg)
 
     async def async_set_max_output_temperature(self, celsius: float) -> bool:
         """Set boiler max output temperature via Bridge API.
 
         Validates range 25.0-80.0°C with 0.5 step, then PUTs to the API.
+        Idempotent PUT — safe to retry on network errors.
         Returns True on success. Raises TadoBridgeApiError on failure.
         """
         snapped = validate_flow_temperature(celsius)
         url = f"{self._base_url}/boilerMaxOutputTemperature"
         params = {"authKey": self._auth_key}
         payload = {"boilerMaxOutputTemperatureInCelsius": snapped}
-        try:
-            async with self._session.put(url, params=params, json=payload, timeout=_BRIDGE_API_TIMEOUT) as resp:
-                if resp.status not in (HTTPStatus.OK, HTTPStatus.NO_CONTENT):
-                    msg = "Bridge API PUT max temp failed: HTTP %s"
-                    raise TadoBridgeApiError(msg % resp.status)
-                return True
-        except TadoBridgeApiError:
-            raise
-        except aiohttp.ClientError as err:
-            msg = "Bridge API network error: %s"
-            _LOGGER.debug(msg, err)
-            raise TadoBridgeApiError(msg % err) from err
+        for attempt in range(1, MAX_RETRY_ATTEMPTS + 1):
+            try:
+                async with self._session.put(url, params=params, json=payload, timeout=_BRIDGE_API_TIMEOUT) as resp:
+                    if resp.status not in (HTTPStatus.OK, HTTPStatus.NO_CONTENT):
+                        msg = "Bridge API PUT max temp failed: HTTP %s"
+                        raise TadoBridgeApiError(msg % resp.status)
+                    return True
+            except TadoBridgeApiError:
+                raise
+            except aiohttp.ClientError as err:
+                if attempt < MAX_RETRY_ATTEMPTS:
+                    delay = retry_delay(attempt)
+                    _LOGGER.debug("Bridge API network error, retry %s/%s in %.1fs", attempt, MAX_RETRY_ATTEMPTS, delay)
+                    await asyncio.sleep(delay)
+                    continue
+                msg = "Bridge API network error: %s"
+                _LOGGER.debug(msg, err)
+                raise TadoBridgeApiError(msg % err) from err
+        return False  # unreachable but satisfies type checker
 
     async def async_validate_credentials(self) -> bool:
         """Validate bridge credentials by making a test API call.

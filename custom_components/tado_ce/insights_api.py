@@ -1,5 +1,5 @@
-"""API insights — status, quota planning, usage spike, call rate.
-
+"""API insights — status, quota planning, usage spike, call rate.  # used in caller context
+  # reserved for future use
 Provides insight functions for API-related conditions.
 """
 
@@ -22,41 +22,26 @@ from .insights_models import (
 )
 
 
-def calculate_api_status_recommendation(  # noqa: C901, PLR0911
-    remaining_calls: int | None,
-    total_calls: int | None,
-    reset_time_human: str | None = None,
-    current_interval_minutes: int | None = None,
+def _suggest_polling_interval(
+    current_interval_minutes: int | None, usage_percent: float,
+) -> int | None:
+    """Calculate suggested polling interval based on API usage."""
+    if not current_interval_minutes:
+        return None
+    if usage_percent >= API_USAGE_HIGH:
+        return max(current_interval_minutes * 2, 60)  # noqa: PLR2004
+    if usage_percent >= API_USAGE_WARNING:
+        return max(current_interval_minutes + 15, 30)  # noqa: PLR2004
+    return None
+
+
+def _api_status_message(
+    usage_percent: float,
+    remaining_calls: int,
+    reset_info: str,
+    suggested_interval: int | None,
 ) -> str:
-    """Calculate SMART recommendation for API status.
-
-    Args:
-        remaining_calls: Remaining API calls
-        total_calls: Total API calls allowed
-        reset_time_human: Human-readable reset time (e.g., "3h 20m")
-        current_interval_minutes: Current polling interval in minutes
-
-    Returns:
-        SMART recommendation string (empty if API usage is healthy)
-    """
-    if remaining_calls is None or total_calls is None:
-        return ""
-
-    usage_percent = ((total_calls - remaining_calls) / total_calls) * 100
-
-    if usage_percent < API_USAGE_NOTICE:
-        return ""
-
-    # Calculate suggested interval based on remaining calls and time
-    suggested_interval = None
-    if current_interval_minutes:
-        if usage_percent >= API_USAGE_HIGH:
-            suggested_interval = max(current_interval_minutes * 2, 60)
-        elif usage_percent >= API_USAGE_WARNING:
-            suggested_interval = max(current_interval_minutes + 15, 30)
-
-    reset_info = f" (resets in {reset_time_human})" if reset_time_human else ""
-
+    """Build API status recommendation message for a given usage level."""
     if usage_percent >= API_USAGE_CRITICAL:
         return f"API CRITICAL: Only {remaining_calls} calls remaining{reset_info} \u2014 pause automations until reset"
 
@@ -77,18 +62,36 @@ def calculate_api_status_recommendation(  # noqa: C901, PLR0911
             )
         return f"API usage at {usage_percent:.0f}%{reset_info} \u2014 monitor usage"
 
-    if usage_percent >= API_USAGE_NOTICE:
-        return f"API usage at {usage_percent:.0f}%{reset_info}"
+    return f"API usage at {usage_percent:.0f}%{reset_info}"
 
-    return ""
+
+def calculate_api_status_recommendation(
+    remaining_calls: int | None,
+    total_calls: int | None,
+    reset_time_human: str | None = None,
+    current_interval_minutes: int | None = None,
+) -> str:
+    """Calculate SMART recommendation for API status."""
+    if remaining_calls is None or total_calls is None:
+        return ""
+
+    usage_percent = ((total_calls - remaining_calls) / total_calls) * 100
+
+    if usage_percent < API_USAGE_NOTICE:
+        return ""
+
+    suggested_interval = _suggest_polling_interval(current_interval_minutes, usage_percent)
+    reset_info = f" (resets in {reset_time_human})" if reset_time_human else ""
+
+    return _api_status_message(usage_percent, remaining_calls, reset_info, suggested_interval)
 
 
 def calculate_api_quota_planning_insight(
     remaining_calls: int | None = None,
-    total_calls: int | None = None,  # noqa: ARG001 — used in caller context
+    total_calls: int | None = None,
     calls_per_hour: float | None = None,
     hours_until_reset: float | None = None,
-    current_interval_minutes: float | None = None,  # noqa: ARG001 — reserved for future use
+    current_interval_minutes: float | None = None,
 ) -> Insight | None:
     """Calculate API quota planning insight.
 
