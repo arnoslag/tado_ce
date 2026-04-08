@@ -1,4 +1,4 @@
-"""Tado CE Configuration Manager — config entry settings access and persistence.  # generic config store, values are heterogeneous
+"""Tado CE Configuration Manager — config entry settings access and persistence.
 
 Manages user configuration settings stored in Home Assistant config entry.
 """

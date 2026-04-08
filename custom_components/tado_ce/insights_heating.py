@@ -1,4 +1,4 @@
-"""Heating insights — anomaly, preheat, boiler flow, efficiency.  # used in recommendation text
+"""Heating insights — anomaly, preheat, boiler flow, efficiency.
 
 Provides insight functions for heating-related conditions.
 """

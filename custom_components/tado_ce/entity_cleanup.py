@@ -1,4 +1,4 @@
-"""Entity lifecycle cleanup for disabled feature toggles.  # cleanup matching needs all params
+"""Entity lifecycle cleanup for disabled feature toggles.
 
 Handles removal of entities from the HA entity registry when users
 disable feature toggles via the Options Flow UI.

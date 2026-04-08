@@ -2,6 +2,20 @@
 
 All notable changes to Tado CE will be documented in this file.
 
+## [3.5.3] - 2026-04-08
+
+### Improvements
+- **Overlay sensor now shows timer end time** ([#217](https://github.com/hiall-fyi/tado_ce/issues/217)) — When a Timer overlay is active, the `next_change` attribute now shows when the timer expires instead of the next schedule change. Two new attributes are also available: `overlay_expiry` (the exact end time) and `overlay_remaining_seconds` (countdown). Manual and Tado Mode overlays continue to show the next schedule change as before.
+- **Smarter rate limit handling** — When the API quota is exhausted, the integration now tells HA exactly how long to wait before the next poll (using the known reset time) instead of using a fixed 15-minute retry. This means polling resumes faster after a quota reset.
+- **Retry delay capped** — Exponential backoff delay is now capped at 30 seconds to prevent excessively long waits on repeated failures.
+
+### Internal
+- Minimum Home Assistant version is now **2025.11** (required for smarter rate limit handling).
+- Documented which API operations are not safe to retry (meter readings, device identify, open window toggle).
+- Device authorization now waits 5 seconds between checks instead of 2, matching the OAuth standard recommendation.
+
+---
+
 ## [3.5.2] - 2026-04-06
 
 ### Bug Fixes

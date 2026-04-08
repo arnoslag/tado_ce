@@ -21,7 +21,6 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
 from .climate_helpers import (
     api_call_with_rollback,
     read_external_sensor,
@@ -30,6 +29,7 @@ from .climate_helpers import (
     update_offset,
     update_preset_mode,
 )
+from .const import DOMAIN
 from .device_manager import get_zone_device_info
 from .entity_registry import ENTITY_REGISTRY
 from .format_helpers import (

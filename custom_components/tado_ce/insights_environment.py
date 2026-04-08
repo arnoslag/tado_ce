@@ -1,5 +1,5 @@
-"""Environment insights — mold risk, comfort, condensation, humidity trend.  # reserved for future use
-  # reserved for future use
+"""Environment insights — mold risk, comfort, condensation, humidity trend.
+
 Provides recommendation functions for environment-related conditions
 including mold risk, comfort levels, condensation, and humidity trends.
 """

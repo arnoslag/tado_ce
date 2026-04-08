@@ -21,6 +21,10 @@ Thank you to everyone who supported the project through [Buy Me a Coffee](https:
 
 Community contributors who helped shape each release through bug reports, feature requests, testing, and feedback.
 
+### v3.5.3
+
+- **[@jeverley](https://github.com/jeverley)** — Reported that overlay sensors don't show timer end time, and provided the full API response confirming the `termination.expiry` field for Timer overlays ([#217](https://github.com/hiall-fyi/tado_ce/issues/217))
+
 ### v3.5.2
 
 - **[@driagi](https://github.com/driagi)** — Reported DNS failure causing token refresh to give up without retrying, with full traceback that pinpointed the missing network error retry path ([#214](https://github.com/hiall-fyi/tado_ce/issues/214))

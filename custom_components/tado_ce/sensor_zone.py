@@ -325,19 +325,25 @@ class TadoOverlaySensor(TadoZoneSensor):
         self._attr_entity_category = get_entity_category(_meta)
         self._next_change = None
         self._next_temp = None
+        self._overlay_expiry: str | None = None
+        self._overlay_remaining: int | None = None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
         """Return extra state attributes."""
-        return {
+        attrs: dict[str, Any] = {
             "next_change": self._next_change,
             "next_temperature": self._next_temp,
         }
+        if self._overlay_expiry is not None:
+            attrs["overlay_expiry"] = self._overlay_expiry
+        if self._overlay_remaining is not None:
+            attrs["overlay_remaining_seconds"] = self._overlay_remaining
+        return attrs
 
     @callback
     def _update_from_zone_data(self, zone_data: dict[str, Any]) -> None:
         overlay_type = zone_data.get("overlayType")
-        # Use 'or {}' pattern for null safety
         setting = zone_data.get("setting") or {}
         power = setting.get("power")
 
@@ -348,19 +354,33 @@ class TadoOverlaySensor(TadoZoneSensor):
         else:
             self._attr_native_value = "Schedule"
 
-        # Next schedule change
-        next_change = zone_data.get("nextScheduleChange")
-        if next_change:
-            self._next_change = next_change.get("start")
-            next_setting = next_change.get("setting")
-            if next_setting:
-                temp = next_setting.get("temperature")
-                self._next_temp = temp.get("celsius") if temp else None
-            else:
-                self._next_temp = None
+        # Extract overlay timer expiry if present
+        overlay = zone_data.get("overlay") or {}
+        termination = overlay.get("termination") or {}
+        if termination.get("type") == "TIMER":
+            self._overlay_expiry = termination.get("expiry") or termination.get("projectedExpiry")
+            self._overlay_remaining = termination.get("remainingTimeInSeconds")
         else:
-            self._next_change = None
-            self._next_temp = None
+            self._overlay_expiry = None
+            self._overlay_remaining = None
+
+        # Next change: use overlay expiry for Timer overlays, otherwise next schedule change
+        if self._overlay_expiry:
+            self._next_change = self._overlay_expiry
+            self._next_temp = None  # timer returns to schedule — no specific temp
+        else:
+            next_change = zone_data.get("nextScheduleChange")
+            if next_change:
+                self._next_change = next_change.get("start")
+                next_setting = next_change.get("setting")
+                if next_setting:
+                    temp = next_setting.get("temperature")
+                    self._next_temp = temp.get("celsius") if temp else None
+                else:
+                    self._next_temp = None
+            else:
+                self._next_change = None
+                self._next_temp = None
 
 
 class TadoHotWaterPowerSensor(TadoZoneSensor):

@@ -1,5 +1,5 @@
-"""API insights — status, quota planning, usage spike, call rate.  # used in caller context
-  # reserved for future use
+"""API insights — status, quota planning, usage spike, call rate.
+
 Provides insight functions for API-related conditions.
 """
 

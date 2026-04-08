@@ -8,6 +8,14 @@ For completed features, see [CHANGELOG.md](CHANGELOG.md).
 
 ## Up Next
 
+**Entity Type Corrections** ([#160](https://github.com/hiall-fyi/tado_ce/issues/160))
+
+Connection and Hot Water Power sensors are currently regular `sensor` entities, but their states are boolean (`Online`/`Offline`, `ON`/`OFF`). They should be `binary_sensor` with `CONNECTIVITY` and `POWER` device classes for proper HA integration (grouping, device class icons, automations). Battery stays as `sensor` since Tado reports three states (`Normal`/`Low`/`Critical`).
+
+This is a breaking change — entity IDs move from `sensor.*` to `binary_sensor.*`. Will ship as part of v4.0.0 with automatic migration.
+
+---
+
 **Local API / HomeKit Hybrid** ([Discussion #29](https://github.com/hiall-fyi/tado_ce/discussions/29))
 
 The goal: reduce or eliminate dependency on Tado's cloud API for day-to-day control.

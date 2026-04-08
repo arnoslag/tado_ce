@@ -29,6 +29,7 @@ from .const import (
 from .exceptions import TadoAuthError, TadoBridgeApiError, TadoSyncError
 from .insight_history import InsightHistoryTracker
 from .polling import get_polling_interval, should_pause_polling
+from .ratelimit import _sanitize_retry_after
 from .weather_compensation import (
     WeatherCompensationState,
 )
@@ -332,7 +333,11 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if should_pause:
                 _LOGGER.warning("Tado CE: %s", reason)
                 self.update_interval = timedelta(minutes=15)
-                raise UpdateFailed(reason)
+                # Use retry_after to let HA defer next refresh precisely
+                reset_seconds = self._cached_ratelimit.get("reset_seconds")
+                retry_after = _sanitize_retry_after(reset_seconds)
+                _LOGGER.info("Tado CE: Rate limited, deferring refresh %ds", retry_after)
+                raise UpdateFailed(reason, retry_after=retry_after)
 
         # 2. Set adaptive interval for NEXT poll
         new_interval = get_polling_interval(self.config_manager, self._cached_ratelimit)

@@ -8,7 +8,14 @@ from typing import TYPE_CHECKING, Any
 
 from homeassistant.util import dt as dt_util
 
-from .const import DOMAIN, QUOTA_BOOTSTRAP_CALLS, get_data_file
+from .const import (
+    _RATE_LIMIT_DEFAULT_S,
+    _RATE_LIMIT_MAX_S,
+    _RATE_LIMIT_MIN_S,
+    DOMAIN,
+    QUOTA_BOOTSTRAP_CALLS,
+    get_data_file,
+)
 from .helpers import parse_iso_datetime
 from .storage import async_load_json, async_save_json
 
@@ -20,6 +27,20 @@ if TYPE_CHECKING:
     from .data_loader import DataLoader
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _sanitize_retry_after(value: float | None) -> int:
+    """Clamp retry-after to a safe range.
+
+    Args:
+        value: Seconds to wait, or None if unknown.
+
+    Returns:
+        Clamped integer in [_RATE_LIMIT_MIN_S, _RATE_LIMIT_MAX_S].
+    """
+    if value is None or value <= 0:
+        return _RATE_LIMIT_DEFAULT_S
+    return int(min(max(value, _RATE_LIMIT_MIN_S), _RATE_LIMIT_MAX_S))
 
 
 def calculate_seconds_until_reset(last_reset_utc: str | None) -> int | None:

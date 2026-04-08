@@ -10,7 +10,7 @@ import logging
 import random
 from typing import TYPE_CHECKING, Any
 
-from .const import OVERLAY_MODE_DEFAULT, RETRY_BASE_DELAY, TIMER_DURATION_DEFAULT
+from .const import MAX_RETRY_DELAY, OVERLAY_MODE_DEFAULT, RETRY_BASE_DELAY, TIMER_DURATION_DEFAULT
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -35,7 +35,7 @@ def retry_delay(attempt: int, base_delay: float = RETRY_BASE_DELAY) -> float:
 
     Uses full jitter pattern: uniform random between 0 and base_delay^attempt.
     """
-    return random.uniform(0, base_delay**attempt)  # noqa: S311 — not crypto
+    return random.uniform(0, min(MAX_RETRY_DELAY, base_delay**attempt))  # noqa: S311 — not crypto
 
 
 def _get_coordinator(hass: HomeAssistant, entry_id: str) -> TadoDataUpdateCoordinator:

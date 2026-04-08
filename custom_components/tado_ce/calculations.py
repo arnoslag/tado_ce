@@ -1,4 +1,4 @@
-"""Tado CE centralized physics calculations — dew point, surface temp, risk classifiers, comfort models.  # readability: named result
+"""Tado CE centralized physics calculations — dew point, surface temp, risk classifiers, comfort models.
 
 Single source of truth for all thermodynamic formulas, risk classification,
 and comfort calculations. All functions return exact (unrounded) values;

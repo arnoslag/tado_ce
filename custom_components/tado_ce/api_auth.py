@@ -1,4 +1,4 @@
-"""Tado CE API Auth Mixin — token management and config I/O.  # used in Protocol class body annotation
+"""Tado CE API Auth Mixin — token management and config I/O.
 
 Provides OAuth token refresh, config file loading/saving, and token
 caching logic. Designed as a mixin class for TadoApiClient.

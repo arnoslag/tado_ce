@@ -328,4 +328,13 @@ DEVICE_SYNC_QUEUE_MAX_DEPTH = 20
 
 MAX_RETRY_ATTEMPTS: Final = 3
 RETRY_BASE_DELAY: Final = 2  # seconds — exponential: 2s, 4s, 8s
+MAX_RETRY_DELAY: Final = 30  # seconds — cap to prevent runaway delays
+
+# =============================================================================
+# Rate Limit Retry-After Constants (UpdateFailed(retry_after=N))
+# =============================================================================
+
+_RATE_LIMIT_MIN_S: Final = 10      # minimum wait (seconds)
+_RATE_LIMIT_MAX_S: Final = 300     # maximum wait (5 minutes)
+_RATE_LIMIT_DEFAULT_S: Final = 60  # default when no signal available
 

@@ -1229,6 +1229,8 @@ class TadoApiClient(TadoAuthMixin):
     async def add_meter_reading(self, reading: int, date: str | None = None) -> bool:
         """Add energy meter reading.
 
+        Non-idempotent — no retry.
+
         Args:
             reading: Meter reading value
             date: Date string in YYYY-MM-DD format (defaults to today)
@@ -1255,6 +1257,8 @@ class TadoApiClient(TadoAuthMixin):
 
     async def identify_device(self, device_serial: str) -> bool:
         """Make a device flash its LED to identify it.
+
+        Non-idempotent — no retry.
 
         Args:
             device_serial: Device serial number
@@ -1330,6 +1334,8 @@ class TadoApiClient(TadoAuthMixin):
     async def activate_open_window(self, zone_id: str) -> bool:
         """Activate open window mode for a zone.
 
+        Non-idempotent — no retry.
+
         Calls POST .../zones/{zone_id}/state/openWindow/activate
 
         Args:
@@ -1346,6 +1352,8 @@ class TadoApiClient(TadoAuthMixin):
 
     async def deactivate_open_window(self, zone_id: str) -> bool:
         """Deactivate open window mode for a zone.
+
+        Non-idempotent — no retry.
 
         Calls DELETE .../zones/{zone_id}/state/openWindow
 

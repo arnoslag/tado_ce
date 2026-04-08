@@ -10,8 +10,6 @@ from .helpers import parse_iso_datetime
 from .models import HeatingCycleReading
 
 
-
-
 @dataclass
 class HeatingCycle:
     """Represents a complete heating cycle."""

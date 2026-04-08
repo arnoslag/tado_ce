@@ -1,5 +1,5 @@
-"""Tado CE second-order thermal dynamics analyzer — heating acceleration and approach behavior.  # readability: named result
-  # readability: named result
+"""Tado CE second-order thermal dynamics analyzer — heating acceleration and approach behavior.
+
 Heating acceleration and approach behavior analysis for improved preheat estimation.
 """
 

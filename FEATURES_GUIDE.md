@@ -1684,4 +1684,4 @@ Look for `Bridge API full response` in logs to verify the API is returning data.
 
 ---
 
-**Last Updated:** v3.5.1 (2026-04-06)
+**Last Updated:** v3.5.3 (2026-04-08)

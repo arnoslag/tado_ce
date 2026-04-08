@@ -1,6 +1,6 @@
-"""Tado CE display formatting helpers — internal-to-display value conversions.  # generic lookup accepts any hashable value
-  # accepts list[Insight] without importing Insight
-All internal-to-display value conversions live here.  # HA attribute dict
+"""Tado CE display formatting helpers — internal-to-display value conversions.
+
+All internal-to-display value conversions live here.
 """
 
 from __future__ import annotations

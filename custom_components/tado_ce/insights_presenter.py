@@ -1,4 +1,4 @@
-"""Tado CE Insights Presenter — correlation, aggregation, and formatting.  # kept for interface consistency
+"""Tado CE Insights Presenter — correlation, aggregation, and formatting.
 
 Handles all presentation-layer logic: correlating related insights,
 aggregating home-level summaries, building smart summaries, calculating

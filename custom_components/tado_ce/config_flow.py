@@ -228,8 +228,8 @@ class TadoCEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     if error == "authorization_pending":
                         return "pending"
                     if error == "slow_down":
-                        # Wait a bit before allowing next check
-                        await asyncio.sleep(2)
+                        # Wait before allowing next check (RFC 8628 §3.5)
+                        await asyncio.sleep(5)
                         return "pending"
                     if error == "expired_token":
                         return "expired"

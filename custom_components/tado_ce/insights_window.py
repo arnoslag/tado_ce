@@ -1,5 +1,5 @@
-"""Window detection insights — active and passive open-window detection.  # backward compat
-  # backward compat
+"""Window detection insights — active and passive open-window detection.
+
 Provides detect_window_predicted (active HVAC mode) and
 detect_window_passive (rate-based multi-signal scoring) functions.
 """
