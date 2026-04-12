@@ -18,8 +18,10 @@ This document lists all 87 entity types in Tado CE, organised by function.
 | CE? | ✓ = CE Exclusive (not in official Tado integration) |
 | v2.3.1 Name | Friendly name in v2.3.1 |
 | v3.0 Name | Friendly name in v3.0.0 (all users, immediate) |
+| v4.0 Name | Friendly name in v4.0.0 (new entities only) |
 | v2.3.1 entity_id | Entity ID in v2.3.1 (preserved for migrated users) |
 | v3.0 entity_id (fresh) | Entity ID for fresh v3.0.0 installs |
+| v4.0 entity_id (fresh) | Entity ID for fresh v4.0.0 installs (new entities only) |
 
 **Markers:**
 
@@ -155,10 +157,10 @@ This document lists all 87 entity types in Tado CE, organised by function.
 
 ### Friendly Names
 
-| # | Function | CE? | v2.3.1 Name | v3.0 Name |
-|---|----------|-----|-------------|-----------|
-| 38 | Home/Away status | ✓ | Home | Home |
-| 84 | HomeKit connection status | ✓ | — | HomeKit Connected |
+| # | Function | CE? | v2.3.1 Name | v3.0 Name | v4.0 Name |
+|---|----------|-----|-------------|-----------|-----------|
+| 38 | Home/Away status | ✓ | Home | Home | Home |
+| 84 | HomeKit connection status | ✓ | — | — | HomeKit Connected |
 
 > HomeKit Connected (#84) only appears when HomeKit local control is enabled. Attributes include uptime, reconnect count, and mapped/unmapped zone counts.
 >
@@ -168,10 +170,10 @@ This document lists all 87 entity types in Tado CE, organised by function.
 
 ### Entity IDs
 
-| # | v2.3.1 entity_id | v3.0 entity_id (fresh) |
-|---|-------------------|------------------------|
-| 38 | `binary_sensor.tado_ce_home` | `binary_sensor.tado_ce_hub_ce_home` |
-| 84 | — | `binary_sensor.tado_ce_hub_ce_homekit_connected` |
+| # | v2.3.1 entity_id | v3.0 entity_id (fresh) | v4.0 entity_id (fresh) |
+|---|-------------------|------------------------|------------------------|
+| 38 | `binary_sensor.tado_ce_home` | `binary_sensor.tado_ce_hub_ce_home` | — |
+| 84 | — | — | `binary_sensor.tado_ce_hub_ce_homekit_connected` |
 
 ---
 
