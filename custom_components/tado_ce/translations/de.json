@@ -79,7 +79,76 @@
         }
       },
       "bridge_connected": {
-        "name": "Brücke Verbunden"
+        "name": "Brücke"
+      },
+      "connection": {
+        "name": "Verbindung",
+        "state_attributes": {
+          "device_serial": {
+            "name": "Gerät seriell"
+          },
+          "device_type": {
+            "name": "Gerätetyp"
+          },
+          "firmware_version": {
+            "name": "Firmware-Version"
+          },
+          "last_seen": {
+            "name": "Zuletzt gesehen"
+          },
+          "offline_minutes": {
+            "name": "Offline-Minuten"
+          },
+          "recommendation": {
+            "name": "Empfehlung"
+          }
+        }
+      },
+      "connection_suffixed": {
+        "name": "Verbindung{Gerät_suffix}",
+        "state_attributes": {
+          "device_serial": {
+            "name": "Gerät seriell"
+          },
+          "device_type": {
+            "name": "Gerätetyp"
+          },
+          "firmware_version": {
+            "name": "Firmware-Version"
+          },
+          "last_seen": {
+            "name": "Zuletzt gesehen"
+          },
+          "offline_minutes": {
+            "name": "Offline-Minuten"
+          },
+          "recommendation": {
+            "name": "Empfehlung"
+          }
+        }
+      },
+      "power": {
+        "name": "Strom"
+      },
+      "homekit_connected": {
+        "name": "HomeKit",
+        "state_attributes": {
+          "last_connected": {
+            "name": "Zuletzt verbunden"
+          },
+          "last_disconnected": {
+            "name": "Zuletzt unterbrochene Verbindung"
+          },
+          "reconnect_count": {
+            "name": "Anzahl der Verbindungen wiederherstellen"
+          },
+          "uptime": {
+            "name": "Betriebszeit"
+          },
+          "status": {
+            "name": "Status"
+          }
+        }
       }
     },
     "button": {
@@ -138,30 +207,6 @@
         }
       }
     },
-    "device_tracker": {
-      "mobile_device": {
-        "state_attributes": {
-          "device_id": {
-            "name": "Geräte-ID"
-          },
-          "platform": {
-            "name": "Plattform"
-          },
-          "os_version": {
-            "name": "OS-Version"
-          },
-          "model": {
-            "name": "Modell"
-          },
-          "bearing": {
-            "name": "Lager"
-          },
-          "relative_distance": {
-            "name": "Relative Entfernung"
-          }
-        }
-      }
-    },
     "sensor": {
       "temperature": {
         "name": "Temperatur"
@@ -196,9 +241,6 @@
             "name": "Quellgebiet"
           }
         }
-      },
-      "power": {
-        "name": "Strom"
       },
       "outside_temp": {
         "name": "Außentemperatur",
@@ -267,46 +309,6 @@
           },
           "connection_timestamp": {
             "name": "Zeitstempel der Verbindung"
-          },
-          "recommendation": {
-            "name": "Empfehlung"
-          }
-        }
-      },
-      "connection": {
-        "name": "Verbindung",
-        "state_attributes": {
-          "device_serial": {
-            "name": "Gerät seriell"
-          },
-          "device_type": {
-            "name": "Gerätetyp"
-          },
-          "firmware_version": {
-            "name": "Firmware-Version"
-          },
-          "last_seen": {
-            "name": "Zuletzt gesehen"
-          },
-          "recommendation": {
-            "name": "Empfehlung"
-          }
-        }
-      },
-      "connection_suffixed": {
-        "name": "Anschluss{device_suffix}",
-        "state_attributes": {
-          "device_serial": {
-            "name": "Gerät seriell"
-          },
-          "device_type": {
-            "name": "Gerätetyp"
-          },
-          "firmware_version": {
-            "name": "Firmware-Version"
-          },
-          "last_seen": {
-            "name": "Zuletzt gesehen"
           },
           "recommendation": {
             "name": "Empfehlung"
@@ -581,7 +583,7 @@
         }
       },
       "next_sched_temp": {
-        "name": "Nächster Terminplan Temp",
+        "name": "Nächster Zeitplan Temperatur",
         "state_attributes": {
           "schedule_time": {
             "name": "Zeit einplanen"
@@ -724,7 +726,7 @@
         }
       },
       "heat_accel": {
-        "name": "Wärmebeschleuniger"
+        "name": "Heizung Beschleunigung"
       },
       "approach_factor": {
         "name": "Annäherungsfaktor",
@@ -812,7 +814,7 @@
         }
       },
       "condensation_risk": {
-        "name": "Kondenswasser",
+        "name": "Kondensationsrisiko",
         "state_attributes": {
           "room_temperature": {
             "name": "Raumtemperatur"
@@ -926,19 +928,6 @@
             "name": "Empfehlung"
           }
         }
-      },
-      "boiler_wiring_state": {
-        "name": "Zustand der Verkabelung des Heizkessels",
-        "state": {
-          "ready": "Bereit",
-          "installed": "Installiert",
-          "not_installed": "Nicht installiert",
-          "installing": "Installiert",
-          "failed": "Fehlgeschlagen"
-        }
-      },
-      "boiler_output_temperature": {
-        "name": "Ausgangstemperatur des Heizkessels"
       },
       "bridge_wiring_state": {
         "name": "Zustand der Brückenverdrahtung"
@@ -1104,8 +1093,8 @@
       }
     },
     "number": {
-      "boiler_max_output_temperature": {
-        "name": "Maximale Ausgangstemperatur des Heizkessels"
+      "boiler_max_output_temp": {
+        "name": "Maximale Vorlauftemperatur"
       }
     }
   },
@@ -1297,7 +1286,8 @@
         "weather_compensation": "Wetterkompensation",
         "bridge": "Internet-Brücke",
         "mobile_tracking": "Verfolgung von Mobilgeräten",
-        "polling_api": "Abfrage & API"
+        "polling_api": "Abfrage & API",
+        "homekit": "HomeKit"
       }
     }
   },
@@ -1438,7 +1428,8 @@
           "zone_config": "Zone Konfiguration",
           "general_settings": "Allgemeine Einstellungen",
           "advanced_settings": "Erweiterte Einstellungen",
-          "reset_to_defaults": "Auf Standardwerte zurücksetzen"
+          "reset_to_defaults": "Auf Standardwerte zurücksetzen",
+          "homekit_unpair": "HomeKit entkoppeln"
         }
       },
       "zone_config": {
@@ -1691,7 +1682,8 @@
               "api_history_retention_days": "Aufbewahrung der API-Historie (Tage)",
               "quota_reserve_enabled": "Schutz der Quotenreserve",
               "smart_actions_debounce_seconds": "Temperatur Schieberegler Verzögerung",
-              "device_sync_delay_seconds": "Geräte-Synchronisationsverzögerung"
+              "device_sync_delay_seconds": "Geräte-Synchronisationsverzögerung",
+              "mobile_devices_frequent_sync": "Häufige mobile Synchronisierung"
             },
             "data_description": {
               "day_start_hour": "Wann der Abruf am Tag beginnt (0-23, Standard: 7)",
@@ -1702,7 +1694,21 @@
               "api_history_retention_days": "Wie viele Tage des API-Aufrufverlaufs für das Nutzungsdiagramm aufbewahrt werden sollen (0 = für immer)",
               "quota_reserve_enabled": "Pausieren Sie die Abfrage automatisch, wenn Ihr API-Kontingent zur Neige geht. Nur deaktivieren, wenn Sie wissen, was Sie tun.",
               "smart_actions_debounce_seconds": "Warten Sie beim Ziehen des Temperaturreglers so lange, bevor Sie den endgültigen Wert senden (0 = sofort senden)",
-              "device_sync_delay_seconds": "Pause zwischen aufeinanderfolgenden Geräteoperationen wie Kindersicherung oder Offsetänderungen"
+              "device_sync_delay_seconds": "Pause zwischen aufeinanderfolgenden Geräteoperationen wie Kindersicherung oder Offsetänderungen",
+              "mobile_devices_frequent_sync": "Aktualisieren Sie die Gerätestandorte bei jedem Abfragezyklus. Ohne diese Option werden die Standorte nur bei einem HA-Neustart aktualisiert (+1 API-Aufruf pro Poll)."
+            }
+          },
+          "homekit": {
+            "name": "HomeKit",
+            "data": {
+              "homekit_status": "Verbindungsstatus",
+              "homekit_cloud_sync_minutes": "Cloud Data Refresh",
+              "homekit_unpair": "HomeKit entkoppeln"
+            },
+            "data_description": {
+              "homekit_status": "Ob die lokale HomeKit-Verbindung zu Ihrer Tado-Bridge aktiv ist",
+              "homekit_cloud_sync_minutes": "Wie oft die Tado-Server auf Heizleistung, Overlay-Status und andere lokal nicht verfügbare Daten überprüft werden sollen (5-120 min)",
+              "homekit_unpair": "Trennen Sie die lokale HomeKit-Verbindung und entfernen Sie die Pairing-Anmeldedaten"
             }
           }
         }
@@ -1737,8 +1743,22 @@
         }
       },
       "reset_confirm": {
-        "description": "Sind Sie sicher? Das kann nicht rückgängig gemacht werden.",
+        "description": "Dadurch werden alle Einstellungen auf ihre Standardwerte zurückgesetzt. Ihr Tado-Konto, die Bridge-Verbindung und die HomeKit-Kopplung werden beibehalten - Sie müssen diese nicht erneut einrichten.",
         "title": "Bestätigen Sie Reset"
+      },
+      "homekit_pairing": {
+        "title": "HomeKit-Kopplung",
+        "description": "Geben Sie die 8-stellige HomeKit-PIN Ihrer Tado-Bridge ein (Format: XXX-XX-XXX). Sie finden sie auf dem Etikett der Bridge oder in der Tado-App. Wenn Ihre Bridge bereits mit Apple Home gekoppelt ist, müssen Sie sie zuerst entkoppeln. Über die HA HomeKit Bridge-Integration können Sie die Klimaeinheiten erneut für Apple Home freigeben.",
+        "data": {
+          "homekit_pin": "HomeKit-PIN"
+        },
+        "data_description": {
+          "homekit_pin": "8-stelliger Code von Ihrer Tado Internet Bridge (z.B. 123-45-678)"
+        }
+      },
+      "homekit_unpair": {
+        "title": "HomeKit entkoppeln",
+        "description": "Dadurch wird die lokale HomeKit-Verbindung getrennt und die Anmeldeinformationen für die Kopplung werden entfernt. Sie können das Pairing später in den Verbindungseinstellungen erneut durchführen."
       }
     },
     "abort": {
@@ -1749,7 +1769,12 @@
       "invalid_number": "Bitte geben Sie eine gültige Nummer ein",
       "bridge_auth_failed": "Ungültige Bridge-Seriennummer oder ungültiger Authentifizierungscode - bitte prüfen und erneut versuchen",
       "wc_min_exceeds_max": "Die minimale Vorlauftemperatur kann die maximale Vorlauftemperatur nicht überschreiten.",
-      "bridge_serial_invalid": "Nur v3+ Internet Bridges (Seriennummern, die mit IB beginnen) unterstützen die lokale API. Ihre Seriennummer deutet auf eine v2-Brücke (GW-Präfix) hin, die nicht über eine lokale API verfügt. Die Wetterkompensation kann auch ohne Brücke über Cloud-Daten genutzt werden."
+      "bridge_serial_invalid": "Nur v3+ Internet Bridges (Seriennummern, die mit IB beginnen) unterstützen die lokale API. Ihre Seriennummer deutet auf eine v2-Brücke (GW-Präfix) hin, die nicht über eine lokale API verfügt. Die Wetterkompensation kann auch ohne Brücke über Cloud-Daten genutzt werden.",
+      "homekit_wrong_pin": "Falsche HomeKit-PIN - überprüfen Sie den Code auf Ihrer Bridge oder in der Tado-App",
+      "homekit_already_paired": "Die Bridge ist bereits mit einem anderen Controller gekoppelt. Heben Sie das Pairing mit Apple Home auf und versuchen Sie es dann erneut",
+      "homekit_network_error": "Die Bridge in Ihrem Netzwerk konnte nicht erreicht werden. Prüfen Sie, ob sie eingeschaltet und verbunden ist",
+      "homekit_timeout": "Zeitüberschreitung beim Pairing - die Brücke hat nicht rechtzeitig geantwortet",
+      "homekit_pairing_failed": "Pairing fehlgeschlagen - bitte versuchen Sie es erneut"
     }
   }
 }

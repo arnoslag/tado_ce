@@ -1,7 +1,4 @@
-"""Tado CE second-order thermal dynamics analyzer — heating acceleration and approach behavior.
-
-Heating acceleration and approach behavior analysis for improved preheat estimation.
-"""
+"""Tado CE second-order thermal dynamics analyzer — heating acceleration and approach behavior."""
 
 from __future__ import annotations
 
@@ -428,7 +425,7 @@ class ThermalAnalyzer:
                 log_diffs.append(math.log(diff))
                 log_times.append(t)
 
-        if len(log_diffs) < 10:  # noqa: PLR2004 — minimum data points for regression
+        if len(log_diffs) < 10:
             return None
 
         # Linear regression on log data
@@ -492,7 +489,7 @@ class ThermalAnalyzer:
             if temp < target - 0.1
         ]
 
-        if len(valid_data) < 10:  # noqa: PLR2004 — minimum data points
+        if len(valid_data) < 10:
             return None
 
         try:

@@ -1,4 +1,4 @@
-"""Tado CE Button Platform — manual refresh, schedule reload."""
+"""Tado CE Button Platform — resume schedule, refresh, timer, boost."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from .const import DOMAIN
 from .coordinator import TadoDataUpdateCoordinator
 from .device_manager import get_hub_device_info, get_zone_device_info
 from .entity_registry import ENTITY_REGISTRY, get_entity_category
-from .helpers import async_trigger_immediate_refresh, build_timer_termination
+from .helpers import async_trigger_immediate_refresh, build_timer_termination, get_zone_states
 from .ratelimit import async_check_bootstrap_reserve_or_raise as _check_bootstrap_reserve_or_raise
 
 if TYPE_CHECKING:
@@ -116,7 +116,6 @@ class TadoResumeAllSchedulesButton(CoordinatorEntity[TadoDataUpdateCoordinator],
     async def async_press(self) -> None:
         """Handle button press - resume schedules for all zones.
 
-        Added bootstrap reserve check - blocks action when quota critically low.
         DRY refactor - uses shared async_trigger_immediate_refresh().
         """
         await _check_bootstrap_reserve_or_raise(self.hass, "Immediate Refresh", coordinator=self.coordinator)
@@ -304,7 +303,7 @@ class TadoWaterHeaterTimerButton(CoordinatorEntity[TadoDataUpdateCoordinator], B
                 blocking=True,
             )
 
-            _LOGGER.info("Timer set successfully - %s for %s minutes", self._zone_name, self._duration)
+            _LOGGER.debug("Timer set successfully - %s for %s minutes", self._zone_name, self._duration)
 
         except HomeAssistantError:
             # Re-raise HomeAssistantError as-is (already has good error message)
@@ -396,7 +395,7 @@ class TadoRefreshScheduleButton(CoordinatorEntity[TadoDataUpdateCoordinator], Bu
             # Write-through: update DataLoader cache
             self.coordinator.data_loader.update_cache("schedules", schedules)
 
-            _LOGGER.info("Schedule refreshed for %s", self._zone_name)
+            _LOGGER.debug("Schedule refreshed for %s", self._zone_name)
 
             # Fire event to notify calendar entity to update
             self.hass.bus.async_fire(
@@ -445,7 +444,6 @@ class TadoBoostButton(CoordinatorEntity[TadoDataUpdateCoordinator], ButtonEntity
     async def async_press(self) -> None:
         """Handle button press - boost heating to max for 30 minutes.
 
-        Added bootstrap reserve check - blocks action when quota critically low.
         DRY refactor - uses shared async_trigger_immediate_refresh().
         """
         await _check_bootstrap_reserve_or_raise(self.hass, f"Boost {self._zone_name}", coordinator=self.coordinator)
@@ -471,9 +469,9 @@ class TadoBoostButton(CoordinatorEntity[TadoDataUpdateCoordinator], ButtonEntity
             async with asyncio.timeout(10):
                 api_success = await client.set_zone_overlay(self._zone_id, setting, termination)
         except TimeoutError:
-            _LOGGER.warning("Boost TIMEOUT: %s API call timed out", self._zone_name)
+            _LOGGER.warning("Boost timeout: %s API call timed out", self._zone_name)
         except Exception:
-            _LOGGER.exception("Boost ERROR: %s API call failed ", self._zone_name)
+            _LOGGER.exception("Boost error: %s API call failed ", self._zone_name)
 
         if api_success:
             _LOGGER.info(
@@ -550,7 +548,6 @@ class TadoSmartBoostButton(CoordinatorEntity[TadoDataUpdateCoordinator], ButtonE
     async def async_press(self) -> None:
         """Handle button press - smart boost with calculated duration.
 
-        Added bootstrap reserve check - blocks action when quota critically low.
         DRY refactor - uses shared async_trigger_immediate_refresh().
         """
         await _check_bootstrap_reserve_or_raise(self.hass, f"Smart Boost {self._zone_name}", coordinator=self.coordinator)
@@ -563,8 +560,7 @@ class TadoSmartBoostButton(CoordinatorEntity[TadoDataUpdateCoordinator], ButtonE
         )
 
         coord_data = self.coordinator.data or {}
-        zones_data = coord_data.get("zones") or {}
-        zone_states = zones_data.get("zoneStates") or {}
+        zone_states = get_zone_states(coord_data)
         zone_data = zone_states.get(self._zone_id) or zone_states.get(str(self._zone_id))
 
         if not zone_data:
@@ -624,9 +620,9 @@ class TadoSmartBoostButton(CoordinatorEntity[TadoDataUpdateCoordinator], ButtonE
             async with asyncio.timeout(10):
                 api_success = await client.set_zone_overlay(self._zone_id, setting, termination)
         except TimeoutError:
-            _LOGGER.warning("Smart Boost TIMEOUT: %s API call timed out", self._zone_name)
+            _LOGGER.warning("Smart Boost timeout: %s API call timed out", self._zone_name)
         except Exception:
-            _LOGGER.exception("Smart Boost ERROR: %s API call failed ", self._zone_name)
+            _LOGGER.exception("Smart Boost error: %s API call failed ", self._zone_name)
 
         if api_success:
             _LOGGER.info(

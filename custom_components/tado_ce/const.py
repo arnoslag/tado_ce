@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 import os
 from pathlib import Path
-from typing import Final
+from typing import Any, Final
 
 DOMAIN = "tado_ce"
 MANUFACTURER = "Joe Yiu (@hiall-fyi)"
@@ -34,6 +35,8 @@ PER_HOME_FILES = [
     "ac_capabilities",
     "schedules",
     "home_details",
+    "homekit_pairing",
+    "homekit_device_map",
 ]
 
 
@@ -193,7 +196,7 @@ QUOTA_BOOTSTRAP_CALLS = 3  # Hard limit - never use these calls
 LOW_QUOTA_THRESHOLD = 100  # Trigger Smart Day/Night for low-quota users
 
 # Canonical window type to U-value mapping (W/m²K). Single source of truth for all
-# mold risk calculations. Previously duplicated as WINDOW_TYPE_U_VALUES (now removed).
+# mold risk calculations.
 WINDOW_U_VALUES = {
     "single_pane": 5.0,  # Single glazing (old buildings)
     "double_pane": 2.7,  # Double glazing (most common, default)
@@ -302,10 +305,16 @@ WINDOW_DETECTION_MODE_MAP = {
 WINDOW_DETECTION_MODE_REVERSE_MAP = {v: k for k, v in WINDOW_DETECTION_MODE_MAP.items()}
 WINDOW_DETECTION_MODE_DEFAULT = "auto"
 
-# Temperature offset limits (per-zone)
+# Temperature offset limits (per-zone UI config)
 TEMP_OFFSET_MIN = -3.0
 TEMP_OFFSET_MAX = 3.0
 TEMP_OFFSET_STEP = 0.5
+
+# Device offset sanity bounds — reject values outside this range.
+# Tado devices support roughly -10 to +10°C offsets; anything beyond
+# that is almost certainly a bad API response or automation feedback loop.
+DEVICE_OFFSET_MIN: float = -10.0
+DEVICE_OFFSET_MAX: float = 10.0
 
 # =============================================================================
 # API Write Optimization Constants
@@ -337,4 +346,48 @@ MAX_RETRY_DELAY: Final = 30  # seconds — cap to prevent runaway delays
 _RATE_LIMIT_MIN_S: Final = 10      # minimum wait (seconds)
 _RATE_LIMIT_MAX_S: Final = 300     # maximum wait (5 minutes)
 _RATE_LIMIT_DEFAULT_S: Final = 60  # default when no signal available
+
+# =============================================================================
+# HomeKit Timing Constants
+# =============================================================================
+
+# HomeKit cache older than this falls back to cloud
+HOMEKIT_STALENESS_THRESHOLD: Final[timedelta] = timedelta(minutes=5)
+
+# Periodic poll to keep cache fresh — must be < staleness threshold
+HOMEKIT_CACHE_REFRESH_SECONDS: Final[float] = HOMEKIT_STALENESS_THRESHOLD.total_seconds() * 0.4  # 120s (2 min)
+
+# Cloud sync interval when HomeKit is connected (user-configurable)
+DEFAULT_HOMEKIT_CLOUD_SYNC_MINUTES: Final[int] = 30
+MIN_HOMEKIT_CLOUD_SYNC_MINUTES: Final[int] = 5
+MAX_HOMEKIT_CLOUD_SYNC_MINUTES: Final[int] = 120
+
+# HomeKit write timeout — fallback to cloud if local write exceeds this
+HOMEKIT_WRITE_TIMEOUT_SECONDS: Final[float] = 3.0
+
+# Write-side circuit breaker — skip HomeKit writes after consecutive failures
+WRITE_FAILURE_THRESHOLD: Final[int] = 3
+WRITE_CIRCUIT_OPEN_SECONDS: Final[float] = 300.0  # 5 minutes cooldown
+
+# Cache refresh failure threshold — trigger reconnect after consecutive failures
+CACHE_REFRESH_FAILURE_THRESHOLD: Final[int] = 3
+
+# =============================================================================
+# Climate Zone Type Helper
+# =============================================================================
+
+CLIMATE_ZONE_TYPES: Final[frozenset[str]] = frozenset({"HEATING", "AIR_CONDITIONING"})
+
+# Outdoor temperature history — 14 days × 24 hourly readings
+OUTDOOR_TEMP_HISTORY_MAX: Final = 336
+
+
+def is_climate_zone(zone_type: str) -> bool:
+    """Return True if zone_type is a climate-controlled zone (heating or AC)."""
+    return zone_type in CLIMATE_ZONE_TYPES
+
+
+def get_climate_zone_ids(zones_info: list[dict[str, Any]]) -> set[str]:
+    """Build a set of zone IDs for climate zones only."""
+    return {str(z.get("id")) for z in zones_info if z.get("type") in CLIMATE_ZONE_TYPES}
 

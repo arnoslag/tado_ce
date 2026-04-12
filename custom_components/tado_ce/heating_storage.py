@@ -94,8 +94,7 @@ class HeatingCycleStorage:
         # Remove "version" key — Store manages version externally
         if isinstance(old_data, dict):
             old_data.pop("version", None)
-
-        await self._store.async_save(old_data)
+            await self._store.async_save(old_data)
 
         migrated_path = self._old_storage_path.with_suffix(".json.migrated")
         await self._hass.async_add_executor_job(

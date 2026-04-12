@@ -1,5 +1,5 @@
-"""Tado CE zone configuration manager — per-zone settings storage and listener pattern."""  # generic config store, values are heterogeneous
-  # generic config store, values are heterogeneous
+"""Tado CE zone configuration manager — per-zone settings storage and listener pattern."""
+
 from __future__ import annotations
 
 from contextlib import suppress

@@ -2,6 +2,43 @@
 
 All notable changes to Tado CE will be documented in this file.
 
+## [4.0.0-beta.1] - 2026-04-12
+
+**HomeKit Local Control**
+
+### ⚠️ Breaking Changes
+- **Connection sensors are now binary sensors** ([#160](https://github.com/hiall-fyi/tado_ce/issues/160) - @Thilas, @jeverley) — Device connection sensors (`sensor.tado_ce_*_connection`) have been converted to proper binary sensors (`binary_sensor.tado_ce_*_connection`) with the Connectivity device class. The migration happens automatically, but if you have automations or dashboard cards referencing the old `sensor.*_connection` entities, you'll need to update them to use the new `binary_sensor.*_connection` entities.
+- **Hot water power sensor is now a binary sensor** ([#160](https://github.com/hiall-fyi/tado_ce/issues/160) - @jeverley) — The hot water power sensor (`sensor.tado_ce_*_power`) has been converted to a binary sensor (`binary_sensor.tado_ce_*_power`) with the Power device class. Same as above — automations referencing the old entity will need updating.
+
+### Features
+- **HomeKit local control for Tado Internet Bridge** — Pair your Tado bridge via HomeKit to control heating and AC directly on your local network. What you get:
+  - **Faster controls** — Temperature and mode changes go through the bridge on your LAN instead of the Tado cloud, with a 3-second timeout so a slow bridge never freezes your UI.
+  - **Real-time sensor updates** — Temperature and humidity push instantly via HomeKit events instead of waiting for the next cloud poll.
+  - **Fewer API calls** — Cloud polling is reduced when HomeKit is connected. The integration tracks how many API calls HomeKit saves, and the counters survive HA restarts. You can configure how often to check the cloud for non-sensor data (default every 30 minutes) in **Settings → Tado CE → Configure → Advanced Settings → HomeKit**.
+  - **Automatic fallback** — If HomeKit becomes unavailable, the integration seamlessly switches to the cloud API. After repeated failures it pauses HomeKit attempts for 5 minutes, then automatically tests recovery.
+  - **Zero-config reconnect** — If the bridge connection drops, the integration reconnects in the background and restores real-time event subscriptions automatically.
+  - Set up in **Settings → Tado CE → Configure → General Settings** (enable HomeKit) → follow the pairing flow.
+- **HomeKit performance tracking** — The HomeKit Connected sensor now shows write attempts, successes, cloud fallbacks, and average response time as attributes. Check your HomeKit Connected entity's attributes to see how your local network is performing.
+- **HomeKit unpair** — You can disconnect your HomeKit pairing from **Settings → Tado CE → Configure → Advanced Settings → HomeKit → Unpair** without removing the integration.
+
+### Improvements
+- **Smarter polling when HomeKit is connected** — When HomeKit is providing live temperature and humidity data, the integration skips redundant cloud data fetches and stretches the polling interval further. Weather data is also fetched less often (every 30 minutes instead of every poll). This means fewer API calls and more headroom in your daily quota.
+- **Cloud outages no longer make entities unavailable when HomeKit is connected** — If the Tado cloud is temporarily unreachable but HomeKit is still working, your entities stay available using local data instead of going unavailable.
+- **Climate entities now show where their data comes from** — The `temperature_source` and `humidity_source` attributes now show `cloud`, `homekit`, or `external` instead of the old `tado` label, so you can tell at a glance which path your readings are taking. A new `last_write_source` attribute shows whether the most recent temperature or mode change went through HomeKit or the cloud.
+- **Mobile Device Tracking moved to Polling & API** — The "Frequent Sync" toggle for mobile device tracking has moved from its own section into the Polling & API section in Advanced Settings, keeping all polling-related options in one place.
+- **Cleaner logs** — Log messages now use plain language and routine messages are moved to debug level so your logs stay readable.
+
+### Bug Fixes
+- **Fixed empty Advanced Settings page** ([#220](https://github.com/hiall-fyi/tado_ce/issues/220) - @dragorex71) — The Advanced Settings page showed a blank form when no optional features were enabled. The Polling & API section now always appears regardless of which features you've turned on.
+- **Fixed temperature offset showing raw Fahrenheit value** ([#221](https://github.com/hiall-fyi/tado_ce/issues/221) - @simonotter) — The `offset_celsius` attribute could show a nonsensical value (e.g. 75.9 instead of -0.1) if an automation read the offset and wrote it back, creating a feedback loop. The integration now reads back the actual offset from the device after every write, and rejects any value outside the valid ±10°C range on all paths — write, sync, and read.
+
+### Internal
+- Code quality pass across all source files — stricter types, cleaner lint, consistent logging.
+- Reduced code duplication and consolidated several smaller files into their parent modules.
+- Connection and hot water power entities migrate automatically on upgrade — no manual steps needed.
+
+---
+
 ## [3.5.3] - 2026-04-08
 
 ### Improvements

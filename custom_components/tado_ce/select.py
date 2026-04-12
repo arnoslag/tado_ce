@@ -1,4 +1,4 @@
-"""Tado CE Select Platform — Presence Mode, Overlay Mode, Timer Duration."""  # HA entity pattern
+"""Tado CE Select Platform — Presence Mode, Overlay Mode, Timer Duration."""
 
 from __future__ import annotations
 
@@ -106,7 +106,7 @@ class TadoPresenceModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sel
         self._presence = "HOME"
         self._presence_locked = False
 
-        # 3-layer defense (parity with climate/water_heater)
+        # Optimistic update tracking
         self._optimistic_set_at: float | None = None
         self._optimistic_sequence: int | None = None
         self._expected_mode: str | None = None
@@ -232,7 +232,7 @@ class TadoPresenceModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sel
             )
         else:
             # Rollback on failure
-            _LOGGER.warning("ROLLBACK: Presence mode %s failed", option)
+            _LOGGER.warning("Presence mode %s change failed, reverted", option)
             self._attr_current_option = old_mode
             self._presence = old_presence
             self._presence_locked = old_locked
@@ -344,8 +344,6 @@ class TadoTimerDurationSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Se
 
     Controls how long Timer overlay mode lasts.
     Only relevant when Overlay Mode = Timer.
-
-    Added for consistency with per-zone config.
     """
 
     _attr_options = TIMER_DURATION_OPTIONS

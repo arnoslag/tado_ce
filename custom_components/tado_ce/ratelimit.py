@@ -80,7 +80,6 @@ def should_block_manual_action(
     Simplified - reads directly from ratelimit_data which already contains
     simulated values when Test Mode is ON.
 
-    Added quota_reserve_enabled check - allows users to disable protection.
 
     Args:
         ratelimit_data: Rate limit data with 'remaining', 'used', 'reset_seconds'
@@ -187,7 +186,7 @@ async def async_check_bootstrap_reserve(
             return False, ""
 
         return should_block_manual_action(ratelimit_data, config_manager)
-    except Exception as e:  # noqa: BLE001 — defensive bootstrap check, must not block service call
+    except Exception as e:
         _LOGGER.debug("Failed to check bootstrap reserve: %s", e)
         return False, ""
 
@@ -262,10 +261,10 @@ def _find_reset_in_history(history: list[Any]) -> datetime | None:
             state_time = state.last_changed
 
             # Detect reset: value dropped significantly (>50% drop or to <10)
-            if prev_value is not None and prev_value > 50:  # noqa: PLR2004 — threshold for meaningful usage
-                if value < prev_value * 0.2 or value < 10:  # noqa: PLR2004 — reset detection threshold
+            if prev_value is not None and prev_value > 50:
+                if value < prev_value * 0.2 or value < 10:
                     _LOGGER.debug(
-                        "HA History Detection: Reset detected! %s -> %s at %s",
+                        "Rate limit history: Reset detected! %s -> %s at %s",
                         prev_value, value, state_time,
                     )
                     return state_time.replace(tzinfo=UTC) if state_time.tzinfo is None else state_time  # type: ignore[no-any-return]
@@ -280,11 +279,11 @@ def _find_reset_in_history(history: list[Any]) -> datetime | None:
             continue
 
     # If no clear reset detected, use minimum value time
-    if min_time and min_value < 20:  # noqa: PLR2004 — low usage threshold
-        _LOGGER.debug("HA History Detection: Using minimum value as reset: %s at %s", min_value, min_time)
+    if min_time and min_value < 20:
+        _LOGGER.debug("Rate limit history: Using minimum value as reset: %s at %s", min_value, min_time)
         return min_time.replace(tzinfo=UTC) if min_time.tzinfo is None else min_time  # type: ignore[no-any-return]
 
-    _LOGGER.debug("HA History Detection: Could not detect reset (min_value=%s)", min_value)
+    _LOGGER.debug("Rate limit history: Could not detect reset (min_value=%s)", min_value)
     return None
 
 
@@ -297,11 +296,11 @@ def _resolve_api_usage_entity_id(hass: HomeAssistant, home_id: str | None) -> st
         registry = er.async_get(hass)
         entry = registry.async_get_entity_id("sensor", "tado_ce", target_uid)
         if entry:
-            _LOGGER.debug("HA History Detection: Found entity via registry: %s (uid=%s)", entry, target_uid)
+            _LOGGER.debug("Rate limit history: Found entity via registry: %s (uid=%s)", entry, target_uid)
             return entry
-        _LOGGER.debug("HA History Detection: Registry miss for uid=%s", target_uid)
+        _LOGGER.debug("Rate limit history: Registry miss for uid=%s", target_uid)
 
-    _LOGGER.debug("HA History Detection: Using fallback entity_id: sensor.tado_ce_api_usage")
+    _LOGGER.debug("Rate limit history: Using fallback entity_id: sensor.tado_ce_api_usage")
     return "sensor.tado_ce_api_usage"
 
 
@@ -339,14 +338,14 @@ async def async_detect_reset_from_history(hass: HomeAssistant, home_id: str | No
         if not states or entity_id not in states:
             available_keys = list(states.keys()) if states else []
             _LOGGER.debug(
-                "HA History Detection: No history for %s (available keys: %s)",
+                "Rate limit history: No history for %s (available keys: %s)",
                 entity_id, available_keys[:5] if available_keys else "none",
             )
             return None
 
         history = states[entity_id]
-        if len(history) < 10:  # noqa: PLR2004 — minimum history points
-            _LOGGER.debug("HA History Detection: Not enough history points (%s) for %s", len(history), entity_id)
+        if len(history) < 10:
+            _LOGGER.debug("Rate limit history: Not enough history points (%s) for %s", len(history), entity_id)
             return None
 
         return _find_reset_in_history(history)
@@ -354,7 +353,7 @@ async def async_detect_reset_from_history(hass: HomeAssistant, home_id: str | No
     except ImportError:
         _LOGGER.debug("Recorder component not available")
         return None
-    except Exception as e:  # noqa: BLE001 — HA entity update pattern
+    except Exception as e:
         _LOGGER.debug("Failed to detect reset from history: %s", e)
         return None
 

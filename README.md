@@ -6,7 +6,7 @@
 ![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2025.11%2B-blue?style=for-the-badge&logo=home-assistant) ![Python](https://img.shields.io/badge/Python-3.13%2B-blue?style=for-the-badge&logo=python&logoColor=white) ![Tado](https://img.shields.io/badge/Tado-V2%2FV3%2FV3%2B-orange?style=for-the-badge) ![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg?style=for-the-badge)
 
 <!-- Status Badges -->
-![Version](https://img.shields.io/badge/Version-3.5.3-purple?style=for-the-badge) ![License](https://img.shields.io/badge/License-AGPL--3.0-blue?style=for-the-badge) ![Maintained](https://img.shields.io/badge/Maintained-Yes-green.svg?style=for-the-badge) ![Coverage](https://img.shields.io/badge/Coverage-98%25-brightgreen?style=for-the-badge)
+![Version](https://img.shields.io/badge/Version-4.0.0--beta.1-purple?style=for-the-badge) ![License](https://img.shields.io/badge/License-AGPL--3.0-blue?style=for-the-badge) ![Maintained](https://img.shields.io/badge/Maintained-Yes-green.svg?style=for-the-badge) ![Coverage](https://img.shields.io/badge/Coverage-98%25-brightgreen?style=for-the-badge)
 
 <!-- Community Badges -->
 ![GitHub stars](https://img.shields.io/github/stars/hiall-fyi/tado_ce?style=for-the-badge&logo=github) ![GitHub forks](https://img.shields.io/github/forks/hiall-fyi/tado_ce?style=for-the-badge&logo=github) ![GitHub issues](https://img.shields.io/github/issues/hiall-fyi/tado_ce?style=for-the-badge&logo=github) ![GitHub Release Date](https://img.shields.io/github/release-date/hiall-fyi/tado_ce?style=for-the-badge&logo=github)
@@ -14,7 +14,7 @@
 <!-- Support -->
 [![Buy Me A Coffee](https://img.shields.io/badge/Support-Buy%20Me%20A%20Coffee-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/hiallfyi)
 
-**⭐ Community-driven Tado integration with advanced analytics, smart automation, and features you won't find anywhere else.**
+**⭐ Community-driven Tado integration with local control, smart analytics, and features you won't find anywhere else.**
 
 **Built by the community, for the community — join thousands of users taking control of their smart climate.**
 
@@ -26,11 +26,13 @@
 
 ## Why Tado CE?
 
-Tado CE was born from the community's response to Tado's 2025 API rate limits (100-20,000 calls/day depending on plan). The official Home Assistant integration doesn't show your actual API usage, leaving users unaware until they get blocked.
+Tado CE turns your Tado system into a truly local smart climate platform. By pairing your Tado Internet Bridge via HomeKit, temperature and humidity updates arrive in real time over your local network — no cloud round-trip needed. Your heating keeps working even when Tado's servers are down, and local commands don't count against your API quota.
 
-**What started as a community solution has grown into the most advanced Tado integration available** — actionable insights that tell you what's wrong and what to do about it, thermal analytics that learn how your rooms heat, preheat advisors that prevent temperature drops before they happen, mold risk monitoring, multi-home support, and enhanced controls the official integration doesn't offer.
+In real-world testing with 9 heating zones, HomeKit local control reduced daily API usage by over 80% (from ~394 calls/day to under 80) while delivering fresher data — temperature changes appear in about 1 second instead of waiting up to 5 minutes for the next cloud poll. During a simulated cloud outage, all 9 zones continued reporting live data with zero interruption.
 
-**Join thousands of users who've taken control of their smart climate with Tado CE.**
+If Tado ever drops the API limit to 100 calls/day, HomeKit users barely notice — temperatures stay real-time and you've got plenty of API budget left for cloud-only data like schedules and geofencing. Without HomeKit, 100 calls means your dashboard shows temperatures that could be 15–20 minutes old.
+
+Beyond local control, Tado CE provides actionable insights that tell you what's wrong and what to do about it, thermal analytics that learn how your rooms heat, preheat advisors that prevent temperature drops before they happen, mold risk monitoring, multi-home support, and enhanced controls the official integration doesn't offer.
 
 ---
 
@@ -89,6 +91,7 @@ Full climate, AC, and hot water control with timer support, geofencing, presence
 
 Tado CE provides comprehensive smart climate control with features developed by and for the community:
 
+- **Local Control (HomeKit)** — Pair your v3+ bridge via HomeKit for local temperature reads and writes over your LAN. Your heating keeps working when Tado's cloud is down, local commands don't count against your API quota, and temperature updates arrive in ~1 second instead of waiting for the next cloud poll. Everything falls back to cloud automatically if the local connection drops.
 - **Multi-Home Support** — Multiple Tado accounts/homes in a single HA instance with full data isolation
 - **Actionable Insights** — Per-zone and home-wide intelligent recommendations with priority escalation, correlation/deduplication, history tracking, health score, and 21+ insight types across 7 categories
 - **API Management** — Real-time rate limit tracking, reset time detection, call history, test mode, sync monitoring
@@ -116,8 +119,8 @@ Access via **Settings > Devices & Services > Tado CE > gear icon**.
 
 Settings are organised into four sections:
 
-- **General Settings** — Feature toggles (Weather, Mobile Tracking, Smart Comfort, Schedule Calendar, Zone Features, Bridge, Weather Compensation)
-- **Advanced Settings** — Tuning parameters for enabled features only (polling intervals, debounce windows, comfort modes, heating curves)
+- **General Settings** — Feature toggles (Weather, Mobile Tracking, Smart Comfort, Schedule Calendar, Zone Features, Bridge, Weather Compensation, Local Control)
+- **Advanced Settings** — Tuning parameters for enabled features only (polling intervals, debounce windows, comfort modes, heating curves, HomeKit cloud sync frequency)
 - **Zone Configuration** — Per-zone overlay mode, temperature limits, heating type, external sensors, window detection, preheat mode
 - **Reset to Defaults** — Reset settings per feature or everything at once, without losing your Tado account or bridge pairing
 
@@ -129,7 +132,7 @@ See [FEATURES_GUIDE.md](FEATURES_GUIDE.md) for detailed configuration guides and
 
 ## Entities
 
-Quick overview of entities created by Tado CE (86 entity types — see [ENTITIES.md](ENTITIES.md) for full reference):
+Quick overview of entities created by Tado CE (87 entity types — see [ENTITIES.md](ENTITIES.md) for full reference):
 
 - **Hub**: API usage/reset/sync sensors, weather sensors, home insights, presence mode, overlay mode, resume all button
 - **Per Zone**: Climate control, temperature/humidity, heating power, overlay status, battery, connection
@@ -193,6 +196,7 @@ All services available in **Developer Tools > Services** with full parameter doc
 
 ### Optional Features Impact
 
+- **Local Control (HomeKit)**: When connected, temperature and humidity come from your local network — the integration checks the cloud less often for data that's already available locally
 - **Weather sensors**: Automatically accounts for extra API call
 - **Mobile device tracking**: Automatically adjusts for additional calls
 - **Smart Comfort**: No impact (local computation only)
@@ -214,15 +218,15 @@ New sensors let you monitor polling behavior:
 
 ## Supported Devices
 
-| Device | Type | Support |
-|--------|------|---------|
-| Smart Thermostat V2 | HEATING | Full (community verified) |
-| Smart Thermostat V3/V3+ | HEATING | Full |
-| Smart Radiator Thermostat (SRT/VA02) | HEATING | Full |
-| Smart AC Control V3/V3+ | AIR_CONDITIONING | Full |
-| Wireless Temperature Sensor | HEATING | Full |
-| Internet Bridge V3 | Infrastructure | N/A |
-| **Tado X Series** | Matter/Thread | Not Supported |
+| Device | Type | Support | HomeKit Local |
+|--------|------|---------|---------------|
+| Smart Thermostat V2 | HEATING | Full (community verified) | ❌ (V2 bridge) |
+| Smart Thermostat V3/V3+ | HEATING | Full | ✅ |
+| Smart Radiator Thermostat (SRT/VA02) | HEATING | Full | ✅ |
+| Smart AC Control V3/V3+ | AIR_CONDITIONING | Full | ✅ (temp only) |
+| Wireless Temperature Sensor | HEATING | Full | ❌ (not a HomeKit accessory) |
+| Internet Bridge V3+ | Infrastructure | N/A | Required for local control |
+| **Tado X Series** | Matter/Thread | Not Supported | — |
 
 Tado X devices use Matter over Thread - use the [Home Assistant Matter integration](https://community.home-assistant.io/t/using-tado-smart-thermostat-x-through-matter/736576) instead.
 
@@ -232,7 +236,9 @@ Tado X devices use Matter over Thread - use the [Home Assistant Matter integrati
 
 | Limitation | Description |
 |------------|-------------|
-| Cloud-Only | All control goes through Tado's cloud servers |
+| Cloud for some data | Heating power, battery, schedules, hot water, and geofencing are only available from Tado's cloud. With HomeKit enabled, temperature and humidity come from your local network. |
+| Wireless Temp Sensors | Standalone temperature sensors (ST01) don't appear as HomeKit accessories — their data always comes from the cloud |
+| Single HomeKit pairing | Your bridge can only be paired with one HomeKit controller at a time. If you're using Apple Home, you'll need to unpair it first. You can re-expose climate entities to Apple Home via the HA HomeKit Bridge integration. |
 | No GPS | Device trackers only show home/not_home status |
 | Rotating Tokens | If token expires, re-authentication required |
 | No Schedule Management | Use Tado app for schedule changes |

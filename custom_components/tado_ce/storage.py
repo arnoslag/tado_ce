@@ -1,10 +1,4 @@
-"""Tado CE storage — atomic JSON persistence primitives.
-
-Thin wrappers around Home Assistant's native JSON helpers
-(``homeassistant.helpers.json.save_json`` / ``homeassistant.util.json.load_json``)
-that accept :class:`~pathlib.Path` objects, auto-create parent directories,
-and normalise file-not-found to ``None``.
-"""
+"""Tado CE storage — atomic JSON persistence primitives."""
 
 from __future__ import annotations
 

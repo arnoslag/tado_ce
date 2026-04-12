@@ -28,6 +28,20 @@
           "on": "mdi:window-open-variant",
           "off": "mdi:window-closed-variant"
         }
+      },
+      "bridge_connected": {
+        "default": "mdi:lan-connect",
+        "state": {
+          "on": "mdi:lan-connect",
+          "off": "mdi:lan-disconnect"
+        }
+      },
+      "homekit_connected": {
+        "default": "mdi:home-assistant",
+        "state": {
+          "on": "mdi:home-assistant",
+          "off": "mdi:home-remove"
+        }
       }
     },
     "button": {
@@ -67,6 +81,9 @@
       },
       "ufh_buffer": {
         "default": "mdi:radiator"
+      },
+      "boiler_max_output_temp": {
+        "default": "mdi:thermometer-water"
       }
     },
     "select": {
@@ -113,23 +130,20 @@
       "weather": {
         "default": "mdi:weather-partly-cloudy"
       },
-      "heating": {
+      "heating_power": {
         "default": "mdi:radiator"
       },
-      "ac": {
+      "ac_power": {
         "default": "mdi:air-conditioner"
       },
       "boiler_flow_temp": {
         "default": "mdi:water-boiler"
       },
-      "target_temp": {
+      "target": {
         "default": "mdi:thermometer-check"
       },
       "overlay": {
         "default": "mdi:calendar-clock"
-      },
-      "power": {
-        "default": "mdi:power"
       },
       "thermal_inertia": {
         "default": "mdi:timer-sand"
@@ -152,8 +166,8 @@
       "battery": {
         "default": "mdi:battery"
       },
-      "connection": {
-        "default": "mdi:wifi"
+      "battery_suffixed": {
+        "default": "mdi:battery"
       },
       "home_id": {
         "default": "mdi:home"
@@ -229,6 +243,27 @@
       },
       "comfort_target": {
         "default": "mdi:thermometer-check"
+      },
+      "heating_power": {
+        "default": "mdi:radiator"
+      },
+      "ac_power": {
+        "default": "mdi:air-conditioner"
+      },
+      "target": {
+        "default": "mdi:thermometer-check"
+      },
+      "bridge_capabilities": {
+        "default": "mdi:information-outline"
+      },
+      "bridge_schema_version": {
+        "default": "mdi:file-tree"
+      },
+      "wc_target_flow_temp": {
+        "default": "mdi:thermometer-auto"
+      },
+      "wc_status": {
+        "default": "mdi:thermostat-auto"
       }
     },
     "switch": {
@@ -244,6 +279,20 @@
         "state": {
           "on": "mdi:lock",
           "off": "mdi:lock-open"
+        }
+      },
+      "test_mode": {
+        "default": "mdi:test-tube",
+        "state": {
+          "on": "mdi:test-tube",
+          "off": "mdi:test-tube-off"
+        }
+      },
+      "quota_reserve": {
+        "default": "mdi:shield-check",
+        "state": {
+          "on": "mdi:shield-check",
+          "off": "mdi:shield-off"
         }
       }
     }

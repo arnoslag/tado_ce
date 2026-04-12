@@ -1,7 +1,4 @@
-"""Tado CE Configuration Manager — config entry settings access and persistence.
-
-Manages user configuration settings stored in Home Assistant config entry.
-"""
+"""Tado CE Configuration Manager — config entry settings access and persistence."""
 
 from __future__ import annotations
 
@@ -304,7 +301,7 @@ class ConfigurationManager:
                 _LOGGER.warning("Invalid %s: %s, ignoring", key, interval)
                 return None
 
-        if not isinstance(interval, int) or interval < 1 or interval > 1440:  # noqa: PLR2004 — 1440 min = 24h max interval
+        if not isinstance(interval, int) or interval < 1 or interval > 1440:
             _LOGGER.warning("Invalid %s: %s, ignoring", key, interval)
             return None
         return interval
@@ -706,6 +703,33 @@ class ConfigurationManager:
             DEVICE_SYNC_DELAY_DEFAULT,
             DEVICE_SYNC_DELAY_MIN,
             DEVICE_SYNC_DELAY_MAX,
+        )
+
+    def get_homekit_enabled(self) -> bool:
+        """Check if HomeKit local control is enabled.
+
+        Returns:
+            True if HomeKit local control should be active
+        """
+        return self._get_option("homekit_enabled", False)  # type: ignore[no-any-return]
+
+    def get_homekit_cloud_sync_minutes(self) -> int:
+        """Get how often to check Tado's servers for cloud-only data when HomeKit is connected.
+
+        Returns:
+            Interval in minutes (5-120, default 30)
+        """
+        from .const import (
+            DEFAULT_HOMEKIT_CLOUD_SYNC_MINUTES,
+            MAX_HOMEKIT_CLOUD_SYNC_MINUTES,
+            MIN_HOMEKIT_CLOUD_SYNC_MINUTES,
+        )
+
+        return self._get_int_option(
+            "homekit_cloud_sync_minutes",
+            DEFAULT_HOMEKIT_CLOUD_SYNC_MINUTES,
+            MIN_HOMEKIT_CLOUD_SYNC_MINUTES,
+            MAX_HOMEKIT_CLOUD_SYNC_MINUTES,
         )
 
     def get_all_config(self) -> dict[str, Any]:

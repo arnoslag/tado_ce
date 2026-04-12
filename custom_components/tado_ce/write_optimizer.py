@@ -1,12 +1,14 @@
-"""Tado CE API write optimization — debounce, guard, queue, coalesce."""  # fire-and-forget by design
-  # fail-forward: log and continue (AC-4.4)
-from __future__ import annotations  # fire-and-forget by design
+"""Tado CE API write optimization — debounce, guard, queue, coalesce."""
+
+from __future__ import annotations
 
 import asyncio
 import contextlib
 from dataclasses import dataclass
 import logging
 from typing import TYPE_CHECKING
+
+from .helpers import get_zone_state
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -36,7 +38,7 @@ class ActionGuard:
     ) -> bool:
         """Return True if temperature change is redundant.
 
-        Only skips when ALL requested attributes match current state (AC-2.9).
+        Only skips when ALL requested attributes match current state.
         If either temp or mode differs, the call proceeds.
         """
         if requested_temp is None:
@@ -182,7 +184,7 @@ class DeviceSyncQueue:
     async def enqueue(self, operation: DeviceOperation) -> bool:
         """Add operation to queue.
 
-        Returns False if queue is full (AC-4.5).
+        Returns False if queue is full.
         """
         try:
             self._queue.put_nowait(operation)
@@ -211,7 +213,7 @@ class DeviceSyncQueue:
         return True
 
     async def _process_queue(self) -> None:
-        """Process operations sequentially with delay between each (CP-4 FIFO, CP-5 fail-forward)."""
+        """Process operations sequentially with delay between each (FIFO order, fail-forward)."""
         self._is_processing = True
         is_first = True
         try:
@@ -230,7 +232,7 @@ class DeviceSyncQueue:
                         operation.operation_name,
                         operation.entity_id,
                     )
-                except Exception:  # noqa: BLE001 — HA entity update pattern
+                except Exception:
                     _LOGGER.warning(
                         "Device Sync failed %s for %s",
                         operation.operation_name,
@@ -300,7 +302,7 @@ class RefreshCoalescer:
         is enabled), the refresh is skipped entirely — the next scheduled poll
         will naturally sync the state.
         """
-        # Conditional Refresh Skip (CP-8)
+        # Conditional Refresh Skip
         if (
             entity_id
             and self._skip_when_fresh
@@ -360,8 +362,6 @@ class ResumeGuard:
         Uses coordinator's cached zone state — no additional API call needed.
         """
         coord_data = coordinator.data or {}
-        zones = coord_data.get("zones") or {}
-        zone_states = zones.get("zoneStates") or {}
-        zone_data = zone_states.get(zone_id) or {}
+        zone_data = get_zone_state(coord_data, zone_id) or {}
         overlay_type = zone_data.get("overlayType")
         return overlay_type is None

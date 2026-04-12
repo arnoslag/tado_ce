@@ -1,10 +1,4 @@
-"""Tado CE Climate Platform — heating and AC zones.
-
-Sub-modules:
-- climate_maps.py: HVAC mode maps, fan maps
-- climate_heating.py: TadoClimate (heating zones)
-- climate_ac.py: TadoACClimate (AC zones)
-"""
+"""Tado CE Climate Platform — heating and AC zones."""
 
 from __future__ import annotations
 
@@ -13,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 from .climate_ac import TadoACClimate
 from .climate_heating import TadoClimate
+from .helpers import get_zone_states
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -51,19 +46,16 @@ async def async_setup_entry(
 
     climates = []
     try:
-        zones_data = coordinator.data.get("zones") or {}
-        if zones_data:
-            # Use 'or {}' pattern for null safety
-            zone_states = zones_data.get("zoneStates") or {}
-            for zone_id in zone_states:
-                zone_type = zone_types.get(zone_id, "HEATING")
-                zone_name = zone_names.get(zone_id, f"Zone {zone_id}")
-                caps = zone_caps.get(zone_id, {})
+        zone_states = get_zone_states(coordinator.data)
+        for zone_id in zone_states:
+            zone_type = zone_types.get(zone_id, "HEATING")
+            zone_name = zone_names.get(zone_id, f"Zone {zone_id}")
+            caps = zone_caps.get(zone_id, {})
 
-                if zone_type == "HEATING":
-                    climates.append(TadoClimate(coordinator, zone_id, zone_name, home_id))
-                elif zone_type == "AIR_CONDITIONING":
-                    climates.append(TadoACClimate(coordinator, zone_id, zone_name, caps, home_id))  # type: ignore[arg-type]
+            if zone_type == "HEATING":
+                climates.append(TadoClimate(coordinator, zone_id, zone_name, home_id))
+            elif zone_type == "AIR_CONDITIONING":
+                climates.append(TadoACClimate(coordinator, zone_id, zone_name, caps, home_id))  # type: ignore[arg-type]
     except (KeyError, TypeError, AttributeError):
         _LOGGER.exception("Failed to load zones for climate")
 

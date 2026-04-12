@@ -1,10 +1,4 @@
-"""Manage state capture and restoration for zone overlays.
-
-Follows the existing manager pattern (SmartComfortManager, AdaptivePreheatManager):
-a coordinator-owned manager class that encapsulates all state capture/restore logic.
-
-Design doc: .kiro/specs/state-restoration-enhancement/design.md
-"""
+"""Manage state capture and restoration for zone overlays."""
 
 from __future__ import annotations
 
@@ -18,7 +12,7 @@ from typing import TYPE_CHECKING, Any
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
-from .helpers import parse_iso_datetime
+from .helpers import get_zone_states, parse_iso_datetime
 from .storage import load_json_sync
 
 if TYPE_CHECKING:
@@ -199,7 +193,8 @@ class StateRestoreManager:
         if old_data is None:
             return None
 
-        await self._store.async_save(old_data)
+        if isinstance(old_data, dict):
+            await self._store.async_save(old_data)
 
         migrated_path = self._old_storage_path.with_suffix(".json.migrated")
         await self._hass.async_add_executor_job(
@@ -259,11 +254,11 @@ class StateRestoreManager:
                 return False
 
             if not self._coordinator:
-                _LOGGER.warning("State Restore: No coordinator — cannot capture for %s", key)
+                _LOGGER.warning("State Restore: not available — cannot capture for %s", key)
                 return False
 
             coord_data = self._coordinator.data or {}
-            zone_states = (coord_data.get("zones") or {}).get("zoneStates") or {}
+            zone_states = get_zone_states(coord_data)
             zone_data = zone_states.get(zone_id) or zone_states.get(str(zone_id))
 
             if not zone_data:
@@ -335,7 +330,7 @@ class StateRestoreManager:
         Called from coordinator._async_update_data after each poll.
         Compares overlay states between polls to detect overlay disappearance.
         """
-        zone_states = (coordinator_data.get("zones") or {}).get("zoneStates") or {}
+        zone_states = get_zone_states(coordinator_data)
 
         for key, captured in list(self._captured.items()):
             zone_id = captured.zone_id

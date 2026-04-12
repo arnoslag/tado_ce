@@ -97,7 +97,7 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) ->
         return False
 
     if initial_version == _V11_VERSION:
-        _LOGGER.info("Migrating config entry from v11 to v12")
+        _LOGGER.info("Migrating configuration from v11 to v12")
         await async_migrate_config_json(hass, config_entry)
         hass.config_entries.async_update_entry(config_entry, version=12)
         _LOGGER.info("Migration v11 → v12 complete")
@@ -142,12 +142,12 @@ async def async_handle_test_mode_transition(
         client = entry_data.api_client if entry_data else None
 
         if client is None:
-            _LOGGER.warning("No API client available for entry %s", entry.entry_id)
+            _LOGGER.warning("API client not ready for %s", entry.entry_id)
         else:
             try:
                 await client.get_me()
                 _LOGGER.info("Tado CE: API refresh completed - rate limit data updated with real values")
-            except Exception as e:  # noqa: BLE001 — HA entity update pattern
+            except Exception as e:
                 _LOGGER.warning("Tado CE: API refresh failed (will use backup): %s", e)
 
 
@@ -191,7 +191,7 @@ async def async_deduplicate_entries(
         )
 
         keeper_entry_id = entries_by_version[0].entry_id
-        _LOGGER.info("  Keeper entry: %s", keeper_entry_id)
+        _LOGGER.info("  Keeping integration: %s", keeper_entry_id)
 
         # If current entry is NOT the one to keep, abort this setup
         if entry.entry_id != keeper_entry_id:
@@ -225,7 +225,7 @@ async def async_deduplicate_entries(
                 )
                 try:
                     await hass.config_entries.async_remove(old_entry.entry_id)
-                    _LOGGER.info("Successfully removed duplicate entry %s", old_entry.entry_id)
+                    _LOGGER.info("Removed duplicate integration %s", old_entry.entry_id)
                 except Exception:
                     _LOGGER.exception("Failed to remove duplicate entry %s", old_entry.entry_id)
 
@@ -242,3 +242,60 @@ async def async_deduplicate_entries(
         )
 
     return True
+
+
+async def async_migrate_entity_platforms(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+) -> None:
+    """One-time migration: move connection and power entities from sensor to binary_sensor.
+
+    Connection sensors (device_{serial}_connection) → binary_sensor with CONNECTIVITY class.
+    Hot water power sensors (zone_{zone_id}_power) → binary_sensor with POWER class.
+
+    Uses entity_registry.async_update_entity to change platform, preserving
+    user customizations (name, icon, area, enabled state).
+    No config entry version bump needed — this is entity-level migration.
+    """
+    from homeassistant.helpers import entity_registry as er
+
+    registry = er.async_get(hass)
+    removed = 0
+
+    for entity_entry in list(registry.entities.values()):
+        if entity_entry.config_entry_id != entry.entry_id:
+            continue
+        if entity_entry.platform != DOMAIN:
+            continue
+        if entity_entry.domain != "sensor":
+            continue
+
+        uid = entity_entry.unique_id
+        old_eid = entity_entry.entity_id
+
+        # Connection sensor → binary_sensor
+        # unique_id pattern: tado_ce_{home_id}_device_{serial}_connection
+        should_remove = False
+        if "_connection" in uid and "device_" in uid:
+            should_remove = True
+
+        # Hot water power sensor → binary_sensor
+        # unique_id pattern: tado_ce_{home_id}_zone_{zone_id}_power
+        elif (
+            "_power" in uid
+            and "zone_" in uid
+            and "heating" not in uid
+            and "ac" not in uid
+        ):
+            should_remove = True
+
+        if should_remove:
+            _LOGGER.info(
+                "Entity platform migration: removing old %s (will be recreated as binary_sensor)",
+                old_eid,
+            )
+            registry.async_remove(old_eid)
+            removed += 1
+
+    if removed:
+        _LOGGER.info("Entity platform migration: removed %d old sensor entities", removed)

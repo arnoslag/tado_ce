@@ -1,4 +1,4 @@
-"""Tado CE sensor helper functions — outdoor temperature, effective temperature, surface RH."""
+"""Tado CE sensor helper functions — outdoor temperature, effective temperature, surface temperature estimation."""
 
 from __future__ import annotations
 
@@ -58,7 +58,7 @@ def get_outdoor_temperature(hass: HomeAssistant, entity_id: str, use_feels_like:
             return float(state.state)
     except (ValueError, TypeError):
         pass
-    except Exception as e:  # noqa: BLE001 — defensive helper, external state access may raise any error
+    except Exception as e:
         _LOGGER.debug("Error getting outdoor temperature from %s: %s", entity_id, e)
 
     return None
@@ -121,7 +121,7 @@ def get_effective_temperature(
 
         return (surface_temp, outdoor_temp, surface_temp, source, surface_offset)
 
-    except Exception as e:  # noqa: BLE001 — defensive helper for entity update path
+    except Exception as e:
         _LOGGER.debug("Error determining temperature source for zone %s: %s", zone_id, e)
         return fallback
 

@@ -1,4 +1,4 @@
-"""Tado CE Switch Platform — child lock and early start."""
+"""Tado CE Switch Platform — early start, child lock, hub toggles."""
 from __future__ import annotations
 
 import logging
@@ -44,8 +44,6 @@ async def async_setup_entry(
     config_manager = coordinator.config_manager
 
     switches: list[SwitchEntity] = []
-
-    # Away Mode switch removed - replaced by select.tado_ce_presence_mode
 
     # Device controls (Early Start, Child Lock) controlled by feature toggle
     if config_manager.get_device_controls_enabled() and zones_info:
@@ -107,11 +105,6 @@ async def async_setup_entry(
     async_add_entities(hub_switches, True)
 
 
-
-# TadoAwayModeSwitch class REMOVED
-# Replaced by TadoPresenceModeSelect in select.py
-
-
 class TadoEarlyStartSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], SwitchEntity):
     """TadoEarlyStartSwitch."""
 
@@ -144,7 +137,7 @@ class TadoEarlyStartSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switc
         self._attr_available = True
         self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type, home_id)
 
-        # Optimistic update tracking (parity with climate entities)
+        # Optimistic update tracking
         self._optimistic_set_at: float | None = None
 
     @property
@@ -189,12 +182,7 @@ class TadoEarlyStartSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switc
         # Early start state is not in the cached files, so we keep the last known state
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        """Turn on early start - async.
-
-        Added optimistic tracking and proper rollback (parity with climate entities).
-        Added bootstrap reserve check - blocks action when quota critically low.
-        Routed through DeviceSyncQueue for sequential device operations.
-        """
+        """Turn on early start - async."""
         await _check_bootstrap_reserve_or_raise(self.hass, f"Early Start {self._zone_name}", coordinator=self.coordinator)
 
         old_is_on = self._attr_is_on
@@ -228,12 +216,7 @@ class TadoEarlyStartSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switc
             )
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        """Turn off early start - async.
-
-        Added optimistic tracking and proper rollback (parity with climate entities).
-        Added bootstrap reserve check - blocks action when quota critically low.
-        Routed through DeviceSyncQueue for sequential device operations.
-        """
+        """Turn off early start - async."""
         await _check_bootstrap_reserve_or_raise(self.hass, f"Early Start {self._zone_name}", coordinator=self.coordinator)
 
         old_is_on = self._attr_is_on
@@ -323,7 +306,7 @@ class TadoChildLockSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switch
         self._attr_available = True
         self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type, home_id)
 
-        # Optimistic update tracking (parity with climate entities)
+        # Optimistic update tracking
         self._optimistic_set_at: float | None = None
 
     @property
@@ -381,16 +364,11 @@ class TadoChildLockSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switch
                                 return
 
             self._attr_available = False
-        except Exception:  # noqa: BLE001 — HA entity update pattern
+        except Exception:
             self._attr_available = False
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        """Turn on child lock - async.
-
-        Added optimistic tracking and proper rollback (parity with climate entities).
-        Added bootstrap reserve check - blocks action when quota critically low.
-        Routed through DeviceSyncQueue for sequential device operations.
-        """
+        """Turn on child lock - async."""
         await _check_bootstrap_reserve_or_raise(self.hass, f"Child Lock {self._zone_name}", coordinator=self.coordinator)
 
         old_is_on = self._attr_is_on
@@ -424,12 +402,7 @@ class TadoChildLockSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switch
             )
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        """Turn off child lock - async.
-
-        Added optimistic tracking and proper rollback (parity with climate entities).
-        Added bootstrap reserve check - blocks action when quota critically low.
-        Routed through DeviceSyncQueue for sequential device operations.
-        """
+        """Turn off child lock - async."""
         await _check_bootstrap_reserve_or_raise(self.hass, f"Child Lock {self._zone_name}", coordinator=self.coordinator)
 
         old_is_on = self._attr_is_on
@@ -539,5 +512,5 @@ class TadoHubToggleSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switch
 
             try:
                 await async_handle_test_mode_transition(self.hass, entry)
-            except Exception as exc:  # noqa: BLE001 — transition handling must not block switch toggle
+            except Exception as exc:
                 _LOGGER.debug("Tado CE: Test mode transition handling: %s", exc)

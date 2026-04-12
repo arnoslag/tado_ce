@@ -1,8 +1,4 @@
-"""Tado CE API Auth Mixin — token management and config I/O.
-
-Provides OAuth token refresh, config file loading/saving, and token
-caching logic. Designed as a mixin class for TadoApiClient.
-"""
+"""Tado CE API Auth Mixin — token management and config I/O."""
 
 from __future__ import annotations
 
@@ -210,7 +206,7 @@ class TadoAuthMixin:
         ) as resp:
             if resp.status == HTTPStatus.OK:
                 data = await resp.json()
-                return await self._handle_successful_token_response(data, config, refresh_token)
+                return await self._handle_successful_token_response(data, config, refresh_token)  # type: ignore[attr-defined, no-any-return]  # mixin cross-method call
 
             error_text = await resp.text()
 
@@ -236,10 +232,9 @@ class TadoAuthMixin:
     async def _refresh_token(self: _AuthHost) -> str | None:
         """Refresh access token with retry for transient 403 and network errors.
 
-        OAuth2 refresh token requests are idempotent — safe to retry with
-        the same refresh_token. Transient errors (403 CDN/WAF block, DNS
-        failures, connection timeouts) are retried; 401 / invalid_grant
-        are real auth failures and never retried.
+        OAuth2 refresh token requests are idempotent — safe to retry.
+        Transient errors (403 CDN/WAF block, DNS failures, connection
+        timeouts) are retried; 401 / invalid_grant are never retried.
         """
         config = await self._load_config()
         refresh_token = config.get("refresh_token")
@@ -252,9 +247,9 @@ class TadoAuthMixin:
 
         for attempt in range(1, MAX_RETRY_ATTEMPTS + 1):
             try:
-                result = await self._attempt_token_refresh(config, refresh_token, attempt)
+                result = await self._attempt_token_refresh(config, refresh_token, attempt)  # type: ignore[attr-defined]  # mixin cross-method call
                 if result is not None:
-                    return result
+                    return result  # type: ignore[no-any-return]  # mixin return type
                 # None = transient (403), retry after backoff
             except TadoAuthError:
                 raise

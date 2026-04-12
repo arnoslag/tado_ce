@@ -55,7 +55,6 @@ class TadoCEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Handle the initial step - show auth method menu.
 
         Note: unique_id is set later in _create_entry() after we know the home_id.
-        This allows for multi-home support in future versions.
         """
         # Don't set unique_id here - we don't know home_id yet
         # unique_id will be set in _create_entry() as tado_ce_{home_id}

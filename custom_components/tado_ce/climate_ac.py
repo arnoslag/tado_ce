@@ -1,5 +1,5 @@
-"""Tado CE Air Conditioning Climate Entity — AC mode, fan speed, swing control."""  # zone config values are heterogeneous
-  # HA entity interface
+"""Tado CE Air Conditioning Climate Entity — AC mode, fan speed, swing control."""
+
 from __future__ import annotations
 
 import asyncio
@@ -42,6 +42,7 @@ from .helpers import (
     async_trigger_immediate_refresh,
     build_timer_termination,
     get_zone_overlay_termination,
+    get_zone_state,
 )
 from .optimistic_helpers import (
     OptimisticUpdateResult,
@@ -59,7 +60,7 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# AC HVAC / Fan mode mappings (inlined from climate_maps.py)
+# AC HVAC / Fan mode mappings
 # ---------------------------------------------------------------------------
 
 TADO_TO_HA_HVAC_MODE = {
@@ -321,10 +322,11 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
         self._overlay_type = None
         self._ac_power_percentage = None
 
-        self._temperature_source = "tado"
-        self._humidity_source = "tado"
+        self._temperature_source = "cloud"
+        self._humidity_source = "cloud"
         self._external_temp_sensor = ""
         self._external_humidity_sensor = ""
+        self._last_write_source = ""
 
         self._optimistic_set_at: float | None = None
         self._optimistic_sequence: int | None = None
@@ -549,6 +551,7 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
             "humidity_source": self._humidity_source,
             "external_temp_sensor": self._external_temp_sensor,
             "external_humidity_sensor": self._external_humidity_sensor,
+            "last_write_source": self._last_write_source,
         }
         # Schedule Preview — show current schedule target temperature
         scheduled_temp = get_current_schedule_target(
@@ -677,7 +680,7 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
             self._attr_hvac_mode = HVACMode.OFF
             self._attr_hvac_action = HVACAction.OFF
 
-    def _update_ac_sensor_data(self, zone_data: dict) -> None:
+    def _update_ac_sensor_data(self, zone_data: dict[str, Any]) -> None:
         """Extract sensor data and apply external sensor overrides for AC."""
         sensor_data = zone_data.get("sensorDataPoints") or {}
         self._attr_current_temperature = (sensor_data.get("insideTemperature") or {}).get("celsius")
@@ -689,14 +692,17 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
             self._attr_current_temperature = ext_temp
             self._temperature_source = "external"
         else:
-            self._temperature_source = "tado"
+            # Use coordinator data source (homekit/cloud) if available
+            sources = self.coordinator.data_sources.get(self._zone_id, {})
+            self._temperature_source = sources.get("temperature", "cloud")
 
         ext_hum = read_external_sensor(self.hass, zcm, self._zone_id, "external_humidity_sensor")
         if ext_hum is not None:
             self._attr_current_humidity = ext_hum
             self._humidity_source = "external"
         else:
-            self._humidity_source = "tado"
+            sources = self.coordinator.data_sources.get(self._zone_id, {})
+            self._humidity_source = sources.get("humidity", "cloud")
 
         if zcm:
             zc = zcm.get_zone_config(self._zone_id)
@@ -716,8 +722,7 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
             if config:
                 self._home_id = config.get("home_id")
 
-            data = coord_data.get("zones")
-            zone_data = (data.get("zoneStates") or {}).get(self._zone_id) if data else None
+            zone_data = get_zone_state(coord_data, self._zone_id)
 
             if not zone_data:
                 self._attr_available = False
@@ -752,7 +757,7 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
                 except (KeyError, TypeError, ValueError) as e:
                     _LOGGER.debug("Failed to record smart comfort data for %s: %s", self._zone_name, e)
 
-        except Exception as e:  # noqa: BLE001 — HA entity update pattern
+        except Exception as e:
             _LOGGER.warning("Failed to update %s: %s", self.name, e)
             self._attr_available = False
 
@@ -852,20 +857,62 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
         raise_on_failure: bool = False,
     ) -> None:
         """Execute AC set_temperature API call with rollback on failure."""
+        # Local-first: try HomeKit for simple temp-only writes (no mode change)
+        local_success = False
+        is_simple_temp_write = (
+            tado_mode is None
+            and self._attr_hvac_mode not in (HVACMode.OFF, HVACMode.AUTO)
+        )
+        write_tracker = self.coordinator.write_health_tracker
+        if (
+            is_simple_temp_write
+            and self.coordinator.homekit_provider
+            and self.coordinator.homekit_provider.is_connected
+            and write_tracker is not None
+            and write_tracker.should_try_homekit()
+        ):
+            import time as _time
+
+            self.coordinator._homekit_write_attempts += 1
+            t0 = _time.monotonic()
+            try:
+                local_success = await self.coordinator.homekit_provider.set_temperature(
+                    self._zone_id, temperature,
+                )
+            except Exception:
+                _LOGGER.debug("AC HomeKit write failed for %s", self._zone_name, exc_info=True)
+            elapsed_ms = (_time.monotonic() - t0) * 1000
+            self.coordinator._homekit_write_latency_sum += elapsed_ms
+            self.coordinator._homekit_write_latency_count += 1
+            if local_success:
+                write_tracker.record_success()
+                self.coordinator._homekit_write_successes += 1
+            else:
+                write_tracker.record_failure()
+                self.coordinator._homekit_write_fallbacks += 1
+
+        if local_success:
+            self.coordinator.record_homekit_write_saved(self._zone_id)
+            self._last_write_source = "homekit"
+            _LOGGER.debug("AC Set %s to %s°C via homekit", self._zone_name, temperature)
+            return
+
+        # Cloud fallback
         api_success = False
         try:
             async with asyncio.timeout(10):
                 api_success = await self._async_set_ac_overlay(temperature=temperature, mode=tado_mode)
         except TimeoutError:
-            _LOGGER.warning("AC TIMEOUT: %s temperature change timed out", self._zone_name)
-        except Exception as e:  # noqa: BLE001 — HA entity action pattern
-            _LOGGER.warning("AC ERROR: %s temperature change failed (%s)", self._zone_name, e)
+            _LOGGER.warning("AC timeout: %s temperature change timed out", self._zone_name)
+        except Exception as e:
+            _LOGGER.warning("AC error: %s temperature change failed (%s)", self._zone_name, e)
 
         if api_success:
+            self._last_write_source = "cloud"
             _LOGGER.info("AC Set %s to %s°C", self._zone_name, temperature)
             await async_trigger_immediate_refresh(self.hass, self.entity_id, "temperature_change")
         else:
-            _LOGGER.warning("AC ROLLBACK: %s temperature change failed", self._zone_name)
+            _LOGGER.warning("AC %s: temperature change failed, reverted", self._zone_name)
             self._attr_target_temperature = old_temp
             self._attr_hvac_mode = old_mode
             self._attr_hvac_action = old_action
@@ -878,14 +925,7 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
                 )
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
-        """Set new HVAC mode.
-
-        Changed from fire-and-forget to await pattern to fix grey loading state issue.
-        Service call now awaits API completion (with timeout) for proper HA Frontend state sync.
-
-        Added bootstrap reserve check - blocks action when quota critically low.
-        Added Action Guard for write optimization.
-        """
+        """Set new HVAC mode."""
         # Action Guard — skip if mode already matches current state
         if ActionGuard.should_skip_hvac_mode(hvac_mode, self._attr_hvac_mode):
             _LOGGER.debug(
@@ -916,6 +956,7 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
                 hvac_action=HVACAction.OFF,
                 reason="AC Set OFF mode",
             )
+            self._last_write_source = "cloud"
 
         elif hvac_mode == HVACMode.AUTO:
             await api_call_with_rollback(
@@ -926,6 +967,7 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
                 overlay_type=None,
                 reason="AC Set AUTO mode (deleted overlay)",
             )
+            self._last_write_source = "cloud"
         else:
             # Capture current state before overlay (state restoration)
             await self.coordinator.async_capture_state(
@@ -977,15 +1019,16 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
                 async with asyncio.timeout(10):
                     api_success = await self._async_set_ac_overlay(mode=tado_mode)
             except TimeoutError:
-                _LOGGER.warning("AC TIMEOUT: %s %s mode API call timed out", self._zone_name, hvac_mode)
-            except Exception as e:  # noqa: BLE001 — HA entity action pattern
-                _LOGGER.warning("AC ERROR: %s %s mode API call failed (%s)", self._zone_name, hvac_mode, e)
+                _LOGGER.warning("AC timeout: %s %s mode API call timed out", self._zone_name, hvac_mode)
+            except Exception as e:
+                _LOGGER.warning("AC error: %s %s mode API call failed (%s)", self._zone_name, hvac_mode, e)
 
             if api_success:
+                self._last_write_source = "cloud"
                 _LOGGER.info("AC Set %s to %s mode", self._zone_name, hvac_mode)
                 await async_trigger_immediate_refresh(self.hass, self.entity_id, "hvac_mode_change")
             else:
-                _LOGGER.warning("AC ROLLBACK: %s %s mode failed", self._zone_name, hvac_mode)
+                _LOGGER.warning("AC %s: %s mode change failed, reverted", self._zone_name, hvac_mode)
                 self._attr_hvac_mode = old_mode
                 self._attr_target_temperature = old_temp
                 self._attr_fan_mode = old_fan
@@ -999,14 +1042,7 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
                 )
 
     async def async_set_fan_mode(self, fan_mode: str) -> None:
-        """Set new fan mode.
-
-        Changed from fire-and-forget to await pattern to fix grey loading state issue.
-        Service call now awaits API completion (with timeout) for proper HA Frontend state sync.
-
-        Added bootstrap reserve check - blocks action when quota critically low.
-        Added Action Guard for write optimization.
-        """
+        """Set new fan mode."""
         # Action Guard — skip if fan mode already matches current state
         if ActionGuard.should_skip_fan_mode(fan_mode, self._attr_fan_mode):
             _LOGGER.debug(
@@ -1053,15 +1089,15 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
             async with asyncio.timeout(10):
                 api_success = await self._async_set_ac_overlay(fan_level=tado_fan)
         except TimeoutError:
-            _LOGGER.warning("AC TIMEOUT: %s fan mode change timed out", self._zone_name)
-        except Exception as e:  # noqa: BLE001 — HA entity action pattern
-            _LOGGER.warning("AC ERROR: %s fan mode change failed (%s)", self._zone_name, e)
+            _LOGGER.warning("AC timeout: %s fan mode change timed out", self._zone_name)
+        except Exception as e:
+            _LOGGER.warning("AC error: %s fan mode change failed (%s)", self._zone_name, e)
 
         if api_success:
             _LOGGER.info("AC Set %s fan mode to %s", self._zone_name, fan_mode)
             await async_trigger_immediate_refresh(self.hass, self.entity_id, "fan_mode_change")
         else:
-            _LOGGER.warning("AC ROLLBACK: %s fan mode change failed", self._zone_name)
+            _LOGGER.warning("AC %s: fan mode change failed, reverted", self._zone_name)
             self._attr_fan_mode = old_fan
             self._attr_hvac_mode = old_mode
             self._attr_hvac_action = old_action
@@ -1081,11 +1117,7 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
         - horizontal: verticalSwing=OFF, horizontalSwing=ON
         - both: verticalSwing=ON, horizontalSwing=ON
 
-        Changed from fire-and-forget to await pattern to fix grey loading state issue.
-        Service call now awaits API completion (with timeout) for proper HA Frontend state sync.
 
-        Added bootstrap reserve check - blocks action when quota critically low.
-        Added Action Guard for write optimization.
         """
         # Action Guard — skip if swing mode already matches current state
         if ActionGuard.should_skip_swing_mode(swing_mode, self._attr_swing_mode):
@@ -1141,15 +1173,15 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
             async with asyncio.timeout(10):
                 api_success = await self._async_set_ac_overlay(vertical_swing=v_swing, horizontal_swing=h_swing)
         except TimeoutError:
-            _LOGGER.warning("AC TIMEOUT: %s swing mode change timed out", self._zone_name)
-        except Exception as e:  # noqa: BLE001 — HA entity action pattern
-            _LOGGER.warning("AC ERROR: %s swing mode change failed (%s)", self._zone_name, e)
+            _LOGGER.warning("AC timeout: %s swing mode change timed out", self._zone_name)
+        except Exception as e:
+            _LOGGER.warning("AC error: %s swing mode change failed (%s)", self._zone_name, e)
 
         if api_success:
             _LOGGER.info("AC Set %s swing mode to %s", self._zone_name, swing_mode)
             await async_trigger_immediate_refresh(self.hass, self.entity_id, "swing_mode_change")
         else:
-            _LOGGER.warning("AC ROLLBACK: %s swing mode change failed", self._zone_name)
+            _LOGGER.warning("AC %s: swing mode change failed, reverted", self._zone_name)
             self._attr_swing_mode = old_swing
             self._attr_hvac_mode = old_mode
             self._attr_hvac_action = old_action
@@ -1308,11 +1340,9 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
     ) -> bool:
         """Set AC with timer or overlay type.
 
-        Added overlay parameter for parity with TadoClimate.
         When overlay='next_time_block', uses TADO_MODE termination (no timer needed).
         When overlay='manual', uses MANUAL termination.
 
-        Added timeout protection for consistency.
         Simplified — delegates to _async_set_ac_overlay with overlay param.
         """
         await _check_bootstrap_reserve_or_raise(self.hass, f"AC {self._zone_name}", coordinator=self.coordinator)
@@ -1332,8 +1362,8 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
                     overlay=overlay,
                 )
         except TimeoutError:
-            _LOGGER.warning("AC TIMEOUT: %s set_timer API call timed out", self._zone_name)
-        except Exception as e:  # noqa: BLE001 — HA entity action pattern
-            _LOGGER.warning("AC ERROR: %s set_timer API call failed (%s)", self._zone_name, e)
+            _LOGGER.warning("AC timeout: %s set_timer API call timed out", self._zone_name)
+        except Exception as e:
+            _LOGGER.warning("AC error: %s set_timer API call failed (%s)", self._zone_name, e)
 
         return api_success

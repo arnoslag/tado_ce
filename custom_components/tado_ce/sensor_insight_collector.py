@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any
 from homeassistant.util import dt as dt_util
 
 from .calculations import classify_comfort_level, classify_mold_risk_level
-from .helpers import parse_iso_datetime
+from .helpers import get_zone_states, parse_iso_datetime
 from .insights_api import (
     calculate_api_quota_planning_insight,
     calculate_api_usage_spike_insight,
@@ -342,12 +342,11 @@ def collect_zone_insights(
     try:
         ctx = InsightContext.from_coordinator(coordinator)
         coord_data = coordinator.data or {}
-        zones_data = coord_data.get("zones")
         zones_info = coord_data.get("zones_info")
-        if not zones_data:
+        zone_states = get_zone_states(coord_data)
+        if not zone_states:
             return zone_insights
 
-        zone_states = zones_data.get("zoneStates") or {}
         schedules = coord_data.get("schedules")
 
         zone_name_map: dict[str, str] = {}
@@ -372,7 +371,7 @@ def collect_zone_insights(
             if insights:
                 zone_insights[zone_name] = insights
 
-    except Exception as e:  # noqa: BLE001 — insight collection must not crash sensor
+    except Exception as e:
         _LOGGER.debug("Failed to collect zone insights: %s", e)
 
     return zone_insights
@@ -794,7 +793,6 @@ def get_cross_zone_insights(
 
     try:
         coord_data = coordinator.data or {}
-        zones_data = coord_data.get("zones")
         zones_info = coord_data.get("zones_info")
 
         zone_name_map: dict[str, str] = {}
@@ -802,11 +800,11 @@ def get_cross_zone_insights(
             for z in zones_info:
                 zone_name_map[str(z.get("id"))] = z.get("name", f"Zone {z.get('id')}")
 
-        zone_states = (zones_data.get("zoneStates") or {}) if zones_data else {}
+        zone_states = get_zone_states(coord_data)
 
         return _collect_all_cross_zone(ctx, coordinator, zone_states, zone_name_map, zones_info)
 
-    except Exception as e:  # noqa: BLE001 — insight collection must not crash sensor
+    except Exception as e:
         _LOGGER.debug("Failed to collect cross-zone insights: %s", e)
 
     return []
@@ -928,7 +926,7 @@ def get_hub_insights(
         # --- API usage spike (always relevant) ---
         _collect_api_spike_insight(coord_data, hub_insights)
 
-    except Exception as e:  # noqa: BLE001 — insight collection must not crash sensor
+    except Exception as e:
         _LOGGER.debug("Failed to collect hub insights: %s", e)
 
     return hub_insights
@@ -981,12 +979,11 @@ def _collect_presence_insights(
         return
 
     presence = home_state_data.get("presence")
-    zones_data = coord_data.get("zones")
     zones_info = coord_data.get("zones_info")
-    if not zones_data or not zones_info:
+    zone_states = get_zone_states(coord_data)
+    if not zone_states or not zones_info:
         return
 
-    zone_states = zones_data.get("zoneStates") or {}
     zone_name_map: dict[str, str] = {}
     for z in zones_info:
         zone_name_map[str(z.get("id"))] = z.get("name", f"Zone {z.get('id')}")

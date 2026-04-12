@@ -1,6 +1,6 @@
-# Tado CE — Entity Reference (v3.5.3)
+# Tado CE — Entity Reference (v4.0.0-beta.1)
 
-This document lists all 86 entity types in Tado CE, organised by function.
+This document lists all 87 entity types in Tado CE, organised by function.
 
 > **v3.1.0 change:** Per-zone configuration (overlay mode, timer, min/max temp, temp offset, heating type, window type, sensitivity, external sensors, etc.) moved from 11 HA entities per zone to a centralised Options Flow menu. Zero config entities are created — settings live in **Settings → Tado CE → Configure → Zone Configuration**.
 
@@ -151,19 +151,27 @@ This document lists all 86 entity types in Tado CE, organised by function.
 
 ---
 
-## Hub Binary Sensor (1 entity)
+## Hub Binary Sensors (2 entities, +1 optional)
 
 ### Friendly Names
 
 | # | Function | CE? | v2.3.1 Name | v3.0 Name |
 |---|----------|-----|-------------|-----------|
 | 38 | Home/Away status | ✓ | Home | Home |
+| 84 | HomeKit connection status | ✓ | — | HomeKit Connected |
+
+> HomeKit Connected (#84) only appears when HomeKit local control is enabled. Attributes include uptime, reconnect count, and mapped/unmapped zone counts.
+>
+> **Savings counters** (`reads_saved_today`, `writes_saved_today`) — survive HA restarts so your daily total stays accurate. Reset when your API quota resets.
+>
+> **Write performance metrics** (`write_attempts`, `write_successes`, `write_fallbacks`, `write_avg_latency_ms`) — reset on every HA restart, API quota reset, and HomeKit reconnect. These reflect current network conditions, not historical data. All zeros means no writes have happened since the last restart.
 
 ### Entity IDs
 
 | # | v2.3.1 entity_id | v3.0 entity_id (fresh) |
 |---|-------------------|------------------------|
 | 38 | `binary_sensor.tado_ce_home` | `binary_sensor.tado_ce_hub_ce_home` |
+| 84 | — | `binary_sensor.tado_ce_hub_ce_homekit_connected` |
 
 ---
 
@@ -197,7 +205,6 @@ This document lists all 86 entity types in Tado CE, organised by function.
 | 44 | AC power % | | Lounge AC Power | Lounge AC |
 | 45 | Target temperature | ✓ | Lounge Target | Lounge Target |
 | 46 | Overlay status | ✓ | Lounge Mode | Lounge Overlay |
-| 47 | Hot water power | ✓ | Lounge Power | Lounge Power |
 
 > **Note:** Boiler Flow Temp (#4 in Hub Sensors) is defined in `sensor_zone.py` but attached to the hub device, not a zone device.
 
@@ -307,7 +314,7 @@ This document lists all 86 entity types in Tado CE, organised by function.
 
 ---
 
-## Zone Binary Sensors (3 entities per zone)
+## Zone Binary Sensors (3 entities per zone + 1 per HOT_WATER zone)
 
 ### Friendly Names
 
@@ -316,6 +323,7 @@ This document lists all 86 entity types in Tado CE, organised by function.
 | 66 | Open window detected | | Lounge Window | Lounge Window |
 | 67 | Preheat trigger | ✓ | Lounge Preheat Now | Lounge Preheat Now |
 | 68 | Window predicted | ✓ | Lounge Window Predicted | Lounge Window Predicted |
+| 47 | Hot water power (on/off) | ✓ | — | Lounge Power |
 
 ### Entity IDs
 
@@ -324,27 +332,28 @@ This document lists all 86 entity types in Tado CE, organised by function.
 | 66 | `binary_sensor.lounge_open_window` | `binary_sensor.lounge_window` |
 | 67 | `binary_sensor.lounge_preheat_now` | `binary_sensor.lounge_ce_preheat_now` |
 | 68 | `binary_sensor.lounge_window_predicted` | `binary_sensor.lounge_ce_window_predicted` |
+| 47 | `sensor.lounge_power` (migrated) | `binary_sensor.lounge_power` |
 
 ---
 
-## Device Sensors (2 entities per device)
+## Device Sensors (1 sensor + 1 binary sensor per device)
 
 ### Friendly Names
 
 | # | Function | CE? | v2.3.1 Name | v3.0 Name |
 |---|----------|-----|-------------|-----------|
-| 69 | Battery status | ⬆ | Lounge SU1234 Battery | Lounge Battery |
-| 70 | Connection status | ⬆ | Lounge SU1234 Connection | Lounge Connection |
+| 69 | Battery status | | Lounge SU1234 Battery | Lounge Battery |
+| 70 | Connection status (connected/disconnected) | | Lounge SU1234 Connection | Lounge Connection |
 
-> ⬆ HA official exposes battery/connection as binary sensors (on/off).
-> CE provides detailed sensor entities with state attributes (firmware, device type, recommendations).
+> Connection is now a `binary_sensor` with `CONNECTIVITY` device class.
+> Battery remains a `sensor` (Tado reports NORMAL/LOW/CRITICAL — not boolean).
 
 ### Entity IDs
 
 | # | v2.3.1 entity_id | v3.0 entity_id (fresh) |
 |---|-------------------|------------------------|
 | 69 | `sensor.lounge_su1234_battery` | `sensor.lounge_battery` |
-| 70 | `sensor.lounge_su1234_connection` | `sensor.lounge_connection` |
+| 70 | `sensor.lounge_su1234_connection` (migrated) | `binary_sensor.lounge_connection` |
 
 ---
 
@@ -480,15 +489,15 @@ This document lists all 86 entity types in Tado CE, organised by function.
 | Hub Sensors | 17 | 14 | 0 | 3 |
 | Bridge API — Dynamic Discovery | up to 15 | 15 | 0 | 0 |
 | Hub Controls | 5 | 5 | 0 | 0 |
-| Hub Binary Sensor | 1 | 1 | 0 | 0 |
+| Hub Binary Sensors | 2 (+1 optional) | 2 | 0 | 0 |
 | Hub Config Switches | 2 | 2 | 0 | 0 |
 | Zone Sensors — Core | 7 /zone | 3 | 0 | 4 |
 | Zone Sensors — Smart Comfort | 5 /zone | 5 | 0 | 0 |
 | Zone Sensors — Environment | 6 /zone | 6 | 0 | 0 |
 | Zone Sensors — Thermal Analytics | 6 /zone | 6 | 0 | 0 |
 | Zone Sensors — Insights | 1 /zone | 1 | 0 | 0 |
-| Zone Binary Sensors | 3 /zone | 2 | 0 | 1 |
-| Device Sensors | 2 /device | 0 | 2 | 0 |
+| Zone Binary Sensors | 3 /zone (+1 per HOT_WATER) | 2 | 0 | 1 |
+| Device Sensors | 1 sensor + 1 binary /device | 0 | 0 | 2 |
 | Climate / Water Heater | 3 /zone | 0 | 0 | 3 |
 | Zone Switches | 2 /zone | 0 | 1 | 1 |
 | Zone Buttons | 4 /zone | 2 | 1 | 0 |
@@ -496,4 +505,4 @@ This document lists all 86 entity types in Tado CE, organised by function.
 | Zone Config | ~~11 /zone~~ 0 (Options Flow) | — | — | — |
 | Device Tracker | 1 /device | 1 | 0 | 0 |
 | Weather Compensation | 2 | 2 | 0 | 0 |
-| **Total unique types** | **86** | **~68** | **4** | **~12** |
+| **Total unique types** | **87** | **~69** | **4** | **~12** |

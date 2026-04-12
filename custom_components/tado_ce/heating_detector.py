@@ -136,7 +136,7 @@ class HeatingCycleDetector:
             )
 
         # Add temperature reading (with limit to prevent memory leak)
-        if len(self._active_cycle.temperature_readings) < 100:  # noqa: PLR2004 — max readings per cycle to prevent memory leak
+        if len(self._active_cycle.temperature_readings) < 100:
             self._active_cycle.temperature_readings.append(
                 HeatingCycleReading(time=timestamp, temp=temp),
             )

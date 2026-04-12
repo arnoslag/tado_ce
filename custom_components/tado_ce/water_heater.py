@@ -1,4 +1,4 @@
-"""Tado CE Water Heater Platform — hot water control and scheduling."""  # HA entity interface
+"""Tado CE Water Heater Platform — hot water control and scheduling."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from .const import DOMAIN, MAX_RETRY_ATTEMPTS
 from .device_manager import get_zone_device_info
 from .entity_registry import ENTITY_REGISTRY
 from .format_helpers import format_overlay_type as _format_overlay_type
-from .helpers import async_trigger_immediate_refresh, build_timer_termination, retry_delay
+from .helpers import async_retry_with_backoff, async_trigger_immediate_refresh, build_timer_termination, get_zone_state
 from .optimistic_helpers import (
     OptimisticUpdateResult,
     clear_optimistic_state,
@@ -50,7 +50,7 @@ async def async_setup_entry(
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up Tado CE water heater from a config entry."""
-    _LOGGER.debug("Tado CE water_heater: Setting up...")
+    _LOGGER.debug("Tado CE: Setting up...")
     coordinator = entry.runtime_data
     data_loader = coordinator.data_loader
     home_id = coordinator.home_id
@@ -59,14 +59,14 @@ async def async_setup_entry(
     water_heaters = []
 
     if zones_info:
-        _LOGGER.debug("Tado CE water_heater: Found %s zones", len(zones_info))
+        _LOGGER.debug("Tado CE: Found %s zones", len(zones_info))
         for zone in zones_info:
             zone_id = str(zone.get("id"))
             zone_name = zone.get("name", f"Zone {zone_id}")
             zone_type = zone.get("type")
 
             if zone_type == "HOT_WATER":
-                _LOGGER.debug("Tado CE water_heater: Creating entity for zone %s (%s)", zone_id, zone_name)
+                _LOGGER.debug("Tado CE: Creating entity for zone %s (%s)", zone_id, zone_name)
                 water_heaters.append(TadoWaterHeater(coordinator, zone_id, zone_name, home_id))
 
     if water_heaters:
@@ -143,13 +143,7 @@ class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeate
             Zone data dict if available and online, None otherwise.
         """
         coord_data = self.coordinator.data or {}
-        data = coord_data.get("zones")
-        if not data:
-            _LOGGER.debug("No zones data for %s (zone %s)", self._zone_name, self._zone_id)
-            return None
-
-        zone_states = data.get("zoneStates") or {}
-        zone_data = zone_states.get(self._zone_id)
+        zone_data: dict[str, Any] | None = get_zone_state(coord_data, self._zone_id)
         if not zone_data:
             _LOGGER.debug("No zone data for %s (zone %s)", self._zone_name, self._zone_id)
             return None
@@ -312,18 +306,20 @@ class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeate
         self.async_write_ha_state()
 
         success = False
-        for attempt in range(1, MAX_RETRY_ATTEMPTS + 1):
-            success = await self._execute_operation_mode(operation_mode)
-            if success:
-                break
+        try:
+            async def _try_set_mode() -> bool:
+                result = await self._execute_operation_mode(operation_mode)
+                if not result:
+                    msg = "Operation mode set returned False"
+                    raise HomeAssistantError(msg)
+                return result
 
-            if attempt < MAX_RETRY_ATTEMPTS:
-                delay = retry_delay(attempt)
-                _LOGGER.warning(
-                    "Failed to set operation mode to %s (attempt %s/%s), retrying in %.1fs",
-                    operation_mode, attempt, MAX_RETRY_ATTEMPTS, delay,
-                )
-                await asyncio.sleep(delay)
+            success = await async_retry_with_backoff(
+                _try_set_mode,
+                retryable_exceptions=(HomeAssistantError,),
+            )
+        except HomeAssistantError:
+            success = False
 
         if not success:
             _LOGGER.error(
@@ -374,7 +370,7 @@ class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeate
         client = self.coordinator.api_client
 
         setting = {"type": "HOT_WATER", "power": "OFF"}
-        termination = {"type": "MANUAL"}
+        termination = build_timer_termination(overlay="manual")
 
         success = await client.set_zone_overlay(self._zone_id, setting, termination)
         if success:
@@ -473,22 +469,22 @@ class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeate
             "power": "ON",
             "temperature": {"celsius": temperature},
         }
-        termination = {"type": "MANUAL"}
+        termination = build_timer_termination(overlay="manual")
 
         api_success = False
         try:
             async with asyncio.timeout(10):
                 api_success = await client.set_zone_overlay(self._zone_id, setting, termination)
         except TimeoutError:
-            _LOGGER.warning("TIMEOUT: %s temperature API call timed out", self._zone_name)
-        except Exception as e:  # noqa: BLE001 — HA entity action pattern
-            _LOGGER.warning("ERROR: %s temperature API call failed (%s)", self._zone_name, e)
+            _LOGGER.warning("Timeout: %s temperature API call timed out", self._zone_name)
+        except Exception as e:
+            _LOGGER.warning("Error: %s temperature API call failed (%s)", self._zone_name, e)
 
         if api_success:
             _LOGGER.info("Set %s temperature to %s°C", self._zone_name, temperature)
             await async_trigger_immediate_refresh(self.hass, self.entity_id, "hot_water_temperature")
         else:
-            _LOGGER.warning("ROLLBACK: %s temperature change failed", self._zone_name)
+            _LOGGER.warning("%s: temperature change failed, reverted", self._zone_name)
             self._attr_target_temperature = old_temp
             self._attr_current_operation = old_operation
             self._overlay_type = old_overlay

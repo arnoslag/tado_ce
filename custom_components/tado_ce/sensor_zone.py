@@ -16,6 +16,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .device_manager import get_hub_device_info, get_zone_device_info
 from .entity_registry import ENTITY_REGISTRY, get_entity_category
+from .helpers import get_zone_state, get_zone_states
 
 if TYPE_CHECKING:
     from .coordinator import TadoDataUpdateCoordinator
@@ -46,12 +47,8 @@ class TadoZoneSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], SensorEntit
     def _get_zone_data(self) -> dict[str, Any] | None:
         """Get zone data from coordinator data."""
         try:
-            data = self.coordinator.data
-            if data:
-                zone_states = (data.get("zones") or {}).get("zoneStates") or {}
-                return zone_states.get(self._zone_id)
-            return None
-        except Exception:  # noqa: BLE001 — defensive helper for entity update path
+            return get_zone_state(self.coordinator.data, self._zone_id)
+        except Exception:
             _LOGGER.debug("Failed to get zone data for zone %s", self._zone_id)
             return None
 
@@ -238,7 +235,7 @@ class TadoBoilerFlowTemperatureSensor(CoordinatorEntity["TadoDataUpdateCoordinat
         self._attr_device_info = get_hub_device_info(coordinator.home_id)
         self._attr_available = False
         self._attr_native_value = None
-        self._source_zone = None
+        self._source_zone: str | None = None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
@@ -257,7 +254,7 @@ class TadoBoilerFlowTemperatureSensor(CoordinatorEntity["TadoDataUpdateCoordinat
                 self.async_write_ha_state()
                 return
 
-            zone_states = (data.get("zones") or {}).get("zoneStates") or {}
+            zone_states = get_zone_states(data)
             for zone_id, zone_data in zone_states.items():
                 activity_data = zone_data.get("activityDataPoints") or {}
                 flow_temp = (activity_data.get("boilerFlowTemperature") or {}).get("celsius")
@@ -271,7 +268,7 @@ class TadoBoilerFlowTemperatureSensor(CoordinatorEntity["TadoDataUpdateCoordinat
             self._attr_native_value = None
             self._source_zone = None
             self._attr_available = False
-        except Exception:  # noqa: BLE001 — HA entity update pattern
+        except Exception:
             _LOGGER.debug("Failed to update boiler flow temperature sensor")
             self._attr_available = False
         self.async_write_ha_state()
@@ -382,27 +379,3 @@ class TadoOverlaySensor(TadoZoneSensor):
                 self._next_change = None
                 self._next_temp = None
 
-
-class TadoHotWaterPowerSensor(TadoZoneSensor):
-    """Represent a Tado hot water power state sensor."""
-
-    _attr_has_entity_name = True
-
-    """Hot water power sensor (ON/OFF)."""
-
-    def __init__(
-        self, coordinator: TadoDataUpdateCoordinator, zone_id: str, zone_name: str, zone_type: str = "HOT_WATER",
-    ) -> None:
-        """Initialize the Hot Water Power Sensor."""
-        super().__init__(coordinator, zone_id, zone_name, zone_type)
-        _meta = ENTITY_REGISTRY["sensor_power"]
-        self._attr_translation_key = _meta.translation_key
-        self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix.format(zone_id=zone_id)}"
-        self._attr_icon = _meta.icon
-        self._attr_entity_category = get_entity_category(_meta)
-
-    @callback
-    def _update_from_zone_data(self, zone_data: dict[str, Any]) -> None:
-        setting = zone_data.get("setting") or {}
-        power = setting.get("power")
-        self._attr_native_value = power or "Unknown"

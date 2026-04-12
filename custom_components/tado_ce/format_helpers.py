@@ -1,7 +1,4 @@
-"""Tado CE display formatting helpers — internal-to-display value conversions.
-
-All internal-to-display value conversions live here.
-"""
+"""Tado CE display formatting helpers — internal-to-display value conversions."""
 
 from __future__ import annotations
 
@@ -221,13 +218,13 @@ def format_health_score(score: int) -> str:
 
     Bands: 90-100 Excellent, 70-89 Good, 50-69 Fair, 25-49 Poor, 0-24 Critical.
     """
-    if score >= 90:  # noqa: PLR2004 — efficiency score band thresholds
+    if score >= 90:
         return f"🟢 {score} — Excellent"
-    if score >= 70:  # noqa: PLR2004 — efficiency score band thresholds
+    if score >= 70:
         return f"🟢 {score} — Good"
-    if score >= 50:  # noqa: PLR2004 — efficiency score band thresholds
+    if score >= 50:
         return f"🟡 {score} — Fair"
-    if score >= 25:  # noqa: PLR2004 — efficiency score band thresholds
+    if score >= 25:
         return f"🟠 {score} — Poor"
     return f"🔴 {score} — Critical"
 

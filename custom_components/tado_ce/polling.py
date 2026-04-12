@@ -1,4 +1,4 @@
-"""Tado CE adaptive polling interval management — burst mode, cooldown, quota-aware."""
+"""Tado CE adaptive polling interval management — day/night, quota-aware, low-quota protection."""
 
 from __future__ import annotations
 
@@ -49,18 +49,23 @@ class _PollingContext:
     day_duration: int
 
 
-def _get_calls_per_sync(config_manager: ConfigurationManager) -> int:
+def _get_calls_per_sync(
+    config_manager: ConfigurationManager,
+    homekit_connected: bool = False,
+) -> int:
     """Calculate API calls per sync based on enabled features.
 
     Helper for adaptive polling calculation.
 
     Args:
         config_manager: Configuration manager with feature settings
+        homekit_connected: If True, skip zoneStates base call (local data available)
 
     Returns:
         Number of API calls per sync cycle
     """
-    calls = 1  # Base: zoneStates API call
+    # Base: zoneStates API call (skip if HomeKit provides temperature/humidity)
+    calls = 0 if homekit_connected else 1
 
     if config_manager.get_weather_enabled():
         calls += 1  # weather API call
@@ -68,12 +73,16 @@ def _get_calls_per_sync(config_manager: ConfigurationManager) -> int:
     if config_manager.get_mobile_devices_enabled() and config_manager.get_mobile_devices_frequent_sync():
         calls += 1  # mobileDevices API call
 
+    if config_manager.get_home_state_sync_enabled():
+        calls += 1  # home state API call
+
     return calls
 
 
 def _build_polling_context(
     ratelimit_data: dict[str, Any],
     config_manager: ConfigurationManager,
+    homekit_connected: bool = False,
 ) -> _PollingContext:
     """Compute all derived polling values from ratelimit data and config.
 
@@ -81,10 +90,11 @@ def _build_polling_context(
     day/night detection, and quota budgeting into a single immutable context
     consumed by the mode-specific helpers.
     """
-    remaining: int = ratelimit_data.get("remaining") if ratelimit_data.get("remaining") is not None else 100
+    _remaining = ratelimit_data.get("remaining")
+    remaining: int = int(_remaining) if _remaining is not None else 100
     test_mode: bool = ratelimit_data.get("test_mode", False)
     _reset_sec = ratelimit_data.get("reset_seconds")
-    reset_seconds: int = _reset_sec if _reset_sec is not None else 86400
+    reset_seconds: int = int(_reset_sec) if _reset_sec is not None else 86400
     last_reset_utc = ratelimit_data.get("last_reset_utc")
 
     # Recalculate reset_seconds from last_reset_utc in LIVE mode only
@@ -100,7 +110,7 @@ def _build_polling_context(
     if test_mode:
         _LOGGER.debug("Tado CE: Test Mode - using simulated remaining=%s from ratelimit.json", remaining)
 
-    calls_per_sync = _get_calls_per_sync(config_manager)
+    calls_per_sync = max(1, _get_calls_per_sync(config_manager, homekit_connected=homekit_connected))
     effective_remaining = remaining / calls_per_sync
     usable_quota = effective_remaining * POLLING_SAFETY_BUFFER - QUOTA_RESERVE_CALLS
 
@@ -344,12 +354,13 @@ def _calculate_day_night_interval(
 def _calculate_adaptive_interval(
     ratelimit_data: dict[str, Any],
     config_manager: ConfigurationManager,
+    homekit_connected: bool = False,
 ) -> int | None:
     """Calculate adaptive polling interval — thin orchestrator.
 
     Delegates to mode-specific helpers based on quota level and Day/Night config.
     """
-    ctx = _build_polling_context(ratelimit_data, config_manager)
+    ctx = _build_polling_context(ratelimit_data, config_manager, homekit_connected=homekit_connected)
 
     # No remaining quota — use max interval
     if ctx.effective_remaining <= 0:
@@ -420,7 +431,7 @@ def should_pause_polling(ratelimit_data: dict[str, Any], config_manager: Configu
     else:
         # No reset time known (fresh install / stale data) — allow polling
         # so we can bootstrap ratelimit data from API response headers.
-        _LOGGER.info(
+        _LOGGER.debug(
             "Tado CE: No reset time known (fresh install). Allowing polling to bootstrap rate limit data.",
         )
         return False, ""
@@ -504,7 +515,11 @@ def is_daytime(config_manager: ConfigurationManager) -> bool:
     return hour >= day_start or hour < night_start
 
 
-def get_polling_interval(config_manager: ConfigurationManager, cached_ratelimit: dict[str, Any] | None = None) -> int:
+def get_polling_interval(
+    config_manager: ConfigurationManager,
+    cached_ratelimit: dict[str, Any] | None = None,
+    homekit_connected: bool = False,
+) -> int:
     """Get polling interval based on configuration and API rate limit.
 
     Uses adaptive polling based on remaining quota and time until reset.
@@ -515,6 +530,7 @@ def get_polling_interval(config_manager: ConfigurationManager, cached_ratelimit:
     Args:
         config_manager: Configuration manager with polling settings
         cached_ratelimit: Pre-loaded ratelimit data (to avoid blocking I/O in async context)
+        homekit_connected: If True, HomeKit is providing local data (fewer API calls needed)
 
     Returns:
         Polling interval in minutes
@@ -545,7 +561,9 @@ def get_polling_interval(config_manager: ConfigurationManager, cached_ratelimit:
             ratelimit_data = cached_ratelimit
 
         if ratelimit_data:
-            adaptive_interval = _calculate_adaptive_interval(ratelimit_data, config_manager)
+            adaptive_interval = _calculate_adaptive_interval(
+                ratelimit_data, config_manager, homekit_connected=homekit_connected,
+            )
 
     except (ValueError, TypeError, AttributeError) as e:
         _LOGGER.debug("Could not calculate adaptive polling interval, using default: %s", e)
@@ -569,7 +587,7 @@ def get_polling_interval(config_manager: ConfigurationManager, cached_ratelimit:
                 )
                 return adaptive_interval
         # Custom interval is safe (or no ratelimit data), use it
-        _LOGGER.info(
+        _LOGGER.debug(
             "Tado CE: Using custom %s interval: %s min",
             "day" if daytime else "night",
             custom_interval,

@@ -161,8 +161,6 @@ def _expand_group_entity_ids(
 ) -> list[Any]:
     """Expand group entity IDs to individual entity IDs.
 
-    Added to support climate groups in custom services.
-
     Args:
         hass: Home Assistant instance
         entity_ids: List of entity IDs (may include group.* entities)
@@ -432,7 +430,7 @@ def _parse_time_period(time_period: Any) -> int:
     return duration_minutes
 
 
-async def _check_bootstrap_reserve(hass: HomeAssistant, entity_ids: list[str]) -> object | None:
+async def _check_bootstrap_reserve(hass: HomeAssistant, entity_ids: list[str]) -> TadoDataUpdateCoordinator | None:
     """Check bootstrap reserve for the first entity's coordinator. Returns coordinator."""
     if not entity_ids:
         return None
@@ -448,7 +446,7 @@ async def _check_bootstrap_reserve(hass: HomeAssistant, entity_ids: list[str]) -
         return _coord
     except HomeAssistantError:
         raise
-    except Exception as err:  # noqa: BLE001 — bootstrap check must not block service call
+    except Exception as err:
         _LOGGER.debug("Suppressed exception in bootstrap check: %s", err)
     return None
 
@@ -488,7 +486,7 @@ def _validate_timer_params(
 
 async def _execute_timer_on_entity(
     hass: HomeAssistant,
-    coord: object,
+    coord: TadoDataUpdateCoordinator | None,
     entity_id: str,
     domain: str,
     temperature: float,
@@ -503,7 +501,7 @@ async def _execute_timer_on_entity(
         zone_id: str | None = getattr(ent, "_zone_id", None)
         entity_type: str = getattr(ent, "_entity_type", f"{domain}_heating")
         if zone_id and coord:
-            await coord.async_capture_state(zone_id, entity_type, "set_timer")  # type: ignore[union-attr]
+            await coord.async_capture_state(zone_id, entity_type, "set_timer")
         await ent.async_set_timer(temperature, duration_minutes, overlay)
         if duration_minutes:
             _LOGGER.info("Set timer for %s: %s°C for %smin", entity_id, temperature, duration_minutes)
@@ -594,12 +592,7 @@ async def handle_set_water_heater_timer(hass: HomeAssistant, call: ServiceCall) 
 
 
 async def handle_resume_schedule(hass: HomeAssistant, call: ServiceCall) -> None:
-    """Handle resume_schedule service call.
-
-    Added bootstrap reserve check - blocks action when quota critically low.
-    Added group expansion support.
-    Per-entry API client routing.
-    """
+    """Handle resume_schedule service call."""
     entity_ids = call.data.get("entity_id", [])
     if isinstance(entity_ids, str):
         entity_ids = [entity_ids]
@@ -636,7 +629,6 @@ async def handle_set_temp_offset(hass: HomeAssistant, call: ServiceCall) -> None
     """Handle set_temperature_offset service call.
 
     Sets temperature offset for ALL devices in a zone (supports multi-TRV rooms).
-    Added bootstrap reserve check - blocks action when quota critically low.
     Per-entry API client and data_loader routing.
     """
     entity_id = call.data.get("entity_id")
@@ -670,22 +662,34 @@ async def handle_set_temp_offset(hass: HomeAssistant, call: ServiceCall) -> None
                     await _coord.api_client.set_device_offset(serial, offset)  # type: ignore[arg-type]
                 _LOGGER.info("Set offset %s°C for %s (%s device(s))", offset, entity_id, len(serials))
 
-                # Update local offsets cache so entities reflect the new value
-                # without waiting for the next full sync (which only runs on HA restart)
-                cached_offsets = _coord.data_loader.get_cached("offsets")
-                if cached_offsets is None:
-                    cached_offsets = {}
-                cached_offsets[zone_id] = offset
-                _coord.data_loader.update_cache("offsets", cached_offsets)
-                _coord.data_loader.save_auxiliary("offsets", cached_offsets)
+                # Read back the actual offset from the API (ground truth)
+                # instead of caching the user-supplied value (#221).
+                # This prevents automation feedback loops where offset_celsius
+                # reflects the automation's last write rather than the device's
+                # actual state.
+                readback = await _coord.api_client.get_device_offset(serials[0])
+                cache_value: float | None = readback if readback is not None else offset  # type: ignore[assignment]
 
-                # Also update coordinator.data directly so update_offset() sees
-                # the new value immediately (it reads from coordinator.data, not
-                # data_loader._cache)
-                if _coord.data and isinstance(_coord.data, dict):
-                    _coord.data["offsets"] = cached_offsets
+                # Sanity check before caching (#221)
+                from .const import DEVICE_OFFSET_MAX, DEVICE_OFFSET_MIN
 
-                _LOGGER.debug("Updated offsets cache for zone %s: %s°C", zone_id, offset)
+                if cache_value is None or not (DEVICE_OFFSET_MIN <= cache_value <= DEVICE_OFFSET_MAX):
+                    _LOGGER.warning(
+                        "Offset readback for zone %s rejected: %s°C outside valid range",
+                        zone_id, cache_value,
+                    )
+                else:
+                    cached_offsets = _coord.data_loader.get_cached("offsets")
+                    if cached_offsets is None:
+                        cached_offsets = {}
+                    cached_offsets[zone_id] = cache_value
+                    _coord.data_loader.update_cache("offsets", cached_offsets)
+                    _coord.data_loader.save_auxiliary("offsets", cached_offsets)
+
+                    if _coord.data and isinstance(_coord.data, dict):
+                        _coord.data["offsets"] = cached_offsets
+
+                    _LOGGER.debug("Updated offsets cache for zone %s: %s°C (readback)", zone_id, cache_value)
 
                 # Trigger a coordinator refresh so entities pick up the change
                 await _coord.async_request_refresh()
@@ -696,7 +700,6 @@ async def handle_set_temp_offset(hass: HomeAssistant, call: ServiceCall) -> None
 async def handle_add_meter_reading(hass: HomeAssistant, call: ServiceCall) -> None:
     """Handle add_meter_reading service call (fully async).
 
-    Added bootstrap reserve check - blocks action when quota critically low.
     Per-entry routing via _resolve_single_coordinator.
     """
     # Resolve entry — no entity_id, use single-entry implicit routing
@@ -722,7 +725,6 @@ async def handle_add_meter_reading(hass: HomeAssistant, call: ServiceCall) -> No
 async def handle_identify_device(hass: HomeAssistant, call: ServiceCall) -> None:
     """Handle identify_device service call (fully async).
 
-    Added bootstrap reserve check - blocks action when quota critically low.
     Per-entry routing via _resolve_coordinator_for_device.
     """
     device_serial = call.data.get("device_serial")
@@ -745,11 +747,7 @@ async def handle_identify_device(hass: HomeAssistant, call: ServiceCall) -> None
 
 
 async def handle_set_away_config(hass: HomeAssistant, call: ServiceCall) -> None:
-    """Handle set_away_configuration service call (fully async).
-
-    Added bootstrap reserve check - blocks action when quota critically low.
-    Per-entry API client routing.
-    """
+    """Handle set_away_configuration service call (fully async)."""
     entity_id = call.data.get("entity_id")
     mode = call.data.get("mode")
     temperature = call.data.get("temperature")
@@ -785,8 +783,6 @@ async def handle_activate_open_window(hass: HomeAssistant, call: ServiceCall) ->
     """Handle activate_open_window service call.
 
     Activates open window mode on climate zones (same as tapping the icon in the Tado app).
-    Added bootstrap reserve check and group expansion support.
-    Per-entry API client routing.
     """
     entity_ids = call.data.get("entity_id", [])
     if isinstance(entity_ids, str):
@@ -825,8 +821,6 @@ async def handle_deactivate_open_window(hass: HomeAssistant, call: ServiceCall) 
     """Handle deactivate_open_window service call.
 
     Deactivates open window mode on climate zones, resuming normal heating/cooling.
-    Added bootstrap reserve check and group expansion support.
-    Per-entry API client routing.
     """
     entity_ids = call.data.get("entity_id", [])
     if isinstance(entity_ids, str):
@@ -862,25 +856,25 @@ async def handle_deactivate_open_window(hass: HomeAssistant, call: ServiceCall) 
 
 
 def _resolve_open_window_timeout(
-    coord: object, zone_id: str, user_duration: int | None,
+    coord: TadoDataUpdateCoordinator, zone_id: str, user_duration: int | None,
 ) -> int:
     """Resolve open window timeout: user param > zone setting > default."""
     if user_duration is not None:
         return user_duration
-    zones_info = coord.data.get("zones_info") or []  # type: ignore[union-attr]
+    zones_info = coord.data.get("zones_info") or []
     for zone in zones_info:
         if str(zone.get("id")) == zone_id:
             owd = zone.get("openWindowDetection") or {}
             timeout = owd.get("timeoutInSeconds")
             if timeout is not None:
-                return timeout  # type: ignore[return-value]
+                return int(timeout)
             break
     return OPEN_WINDOW_DEFAULT_TIMEOUT
 
 
 def _build_open_window_overlay(
     zone_type: str, timeout: int,
-) -> tuple[dict, dict, str]:
+) -> tuple[dict[str, Any], dict[str, Any], str]:
     """Build setting and termination for open window overlay. Returns (setting, termination, desc)."""
     setting: dict[str, str | dict[str, float]] = (
         {"type": "AIR_CONDITIONING", "power": "OFF"}
@@ -889,7 +883,7 @@ def _build_open_window_overlay(
     )
 
     if timeout == 0:
-        termination: dict[str, str | int] = {"type": "MANUAL"}
+        termination: dict[str, str | int] = build_timer_termination(overlay="manual")
         duration_desc = "indefinite"
     else:
         termination = build_timer_termination(duration_minutes=int(timeout) // 60)
@@ -1006,21 +1000,21 @@ async def handle_restore_previous_state(hass: HomeAssistant, call: ServiceCall) 
         try:
             _coord = _resolve_coordinator(hass, entity_id)
         except HomeAssistantError:
-            _LOGGER.exception("restore_previous_state: failed to resolve coordinator for %s", entity_id)
+            _LOGGER.exception("State Restore: failed to resolve coordinator for %s", entity_id)
             continue
 
         # Resolve entity to get zone_id and entity_type
         domain = entity_id.split(".")[0]
         ent = _find_entity_by_id(hass, domain, entity_id)
         if ent is None:
-            _LOGGER.warning("restore_previous_state: entity not found: %s", entity_id)
+            _LOGGER.warning("State Restore: entity not found: %s", entity_id)
             continue
 
         zone_id: str | None = getattr(ent, "_zone_id", None)
         entity_type: str | None = getattr(ent, "_entity_type", None)
         if not zone_id or not entity_type:
             _LOGGER.warning(
-                "restore_previous_state: missing zone_id or entity_type for %s",
+                "State Restore: missing zone_id or entity_type for %s",
                 entity_id,
             )
             continue
@@ -1031,19 +1025,19 @@ async def handle_restore_previous_state(hass: HomeAssistant, call: ServiceCall) 
         if captured is None:
             # Fallback: resume schedule (delete overlay)
             await _coord.api_client.delete_zone_overlay(zone_id)
-            _LOGGER.info("restore_previous_state: no captured state for %s, resumed schedule", entity_id)
+            _LOGGER.info("State Restore: no captured state for %s, resumed schedule", entity_id)
             continue
 
         if captured.overlay_type is None:
             # Was on schedule — resume schedule
             await _coord.api_client.delete_zone_overlay(zone_id)
-            _LOGGER.info("restore_previous_state: restored schedule for %s", entity_id)
+            _LOGGER.info("State Restore: restored schedule for %s", entity_id)
         else:
             # Was on overlay — rebuild and re-apply
             setting, termination = _build_setting_from_captured(captured)
             await _coord.api_client.set_zone_overlay(zone_id, setting, termination)
             _LOGGER.info(
-                "restore_previous_state: restored overlay for %s (type=%s, temp=%s)",
+                "State Restore: restored overlay for %s (type=%s, temp=%s)",
                 entity_id,
                 captured.overlay_type,
                 captured.temperature,

@@ -89,7 +89,7 @@ class InsightHistoryTracker:
             if data is None:
                 _LOGGER.debug("No insight history file found, starting fresh")
                 return 0
-            self._entries = data.get("entries", {})  # type: ignore[union-attr]
+            self._entries = data.get("entries", {})
             _LOGGER.debug(
                 "Loaded insight history: %d entries",
                 len(self._entries),

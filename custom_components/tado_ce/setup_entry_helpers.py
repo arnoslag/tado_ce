@@ -35,7 +35,7 @@ async def async_log_file_system_state(hass: HomeAssistant) -> None:
         }
 
     fs_state = await hass.async_add_executor_job(_check)
-    _LOGGER.info(
+    _LOGGER.debug(
         "=== Setup File System State ===\n"
         "  DATA_DIR: %s (exists: %s)\n  CONFIG_FILE: %s (exists: %s)\n"
         "  ZONES_FILE: %s (exists: %s)\n  ZONES_INFO_FILE: %s (exists: %s)",

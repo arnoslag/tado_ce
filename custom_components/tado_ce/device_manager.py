@@ -1,8 +1,4 @@
-"""Tado CE Device Manager — DeviceInfo generation for hub and zone devices.
-
-Generates DeviceInfo for hub and zone devices.
-load_version() performs blocking I/O — call via hass.async_add_executor_job().
-"""
+"""Tado CE Device Manager — DeviceInfo generation for hub and zone devices."""
 
 from __future__ import annotations
 

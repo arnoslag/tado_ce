@@ -1,4 +1,4 @@
-"""Tado CE Thermal Analysis Sensors — inertia, heating rate, preheat time, etc."""  # readability: named result
+"""Tado CE Thermal Analysis Sensors — inertia, heating rate, preheat time, etc."""
 
 from __future__ import annotations
 

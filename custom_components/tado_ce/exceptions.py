@@ -2,9 +2,6 @@
 
 - TadoAuthError → ConfigEntryAuthFailed (triggers HA reauth flow)
 - TadoSyncError → UpdateFailed (coordinator retries on next poll)
-
-Both inherit from HomeAssistantError so they support HA's translation
-framework if ever surfaced directly to users.
 """
 
 from __future__ import annotations

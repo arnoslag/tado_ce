@@ -1,14 +1,17 @@
-"""Weather compensation (heating curve) engine for Tado CE.
-
-Pure calculation module with no Home Assistant dependencies.
-Automatically adjusts boiler max output (flow) temperature based on
-outdoor temperature using a linear heating curve, with optional
-EMA / rolling-average smoothing and indoor temperature feedback.
-"""
+"""Weather compensation (heating curve) engine for Tado CE."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from datetime import timedelta
+
+    from homeassistant.core import HomeAssistant
+
+    from .bridge_api import TadoBridgeApiClient
+    from .config_manager import ConfigurationManager
 
 # ---------------------------------------------------------------------------
 # Heating system presets
@@ -153,7 +156,7 @@ def calculate_base_flow_temp(
 
     Formula: max_flow - slope * (outdoor_temp - design_outdoor_temp)
 
-    Satisfies CP-1 (monotonicity) and CP-5 (design point).
+    Ensures monotonicity and design-point accuracy.
     """
     return config.max_flow_temp - config.slope * (
         outdoor_temp - config.design_outdoor_temp
@@ -168,7 +171,7 @@ def calculate_room_offset(
     """Calculate room compensation offset.
 
     Positive when rooms are cold (boost), negative when warm (reduce).
-    Satisfies CP-10 (symmetry): factor * (target - indoor).
+    Symmetric: factor × (target − indoor).
     """
     return compensation_factor * (target_temp - indoor_temp)
 
@@ -176,7 +179,7 @@ def calculate_room_offset(
 def snap_to_step(value: float, step: float = 0.5) -> float:
     """Snap a value to the nearest step increment.
 
-    Satisfies CP-3 (step precision): result is always a multiple of *step*.
+    Result is always a multiple of *step*.
     """
     return round(value / step) * step
 
@@ -188,7 +191,7 @@ def clamp_flow_temp(
 ) -> float:
     """Clamp flow temperature to user range AND Bridge API hard limits.
 
-    Satisfies CP-2 (bounds): result always in
+    Bounds-checked: result always in
     [max(min_flow, 25.0), min(max_flow, 80.0)].
     """
     effective_min = max(min_flow, _API_MIN_FLOW)
@@ -206,7 +209,7 @@ def update_ema(
 
     Alpha = 2 / (N + 1) where N = window_minutes / poll_interval_minutes.
     First call (current is None) seeds with *new_value*.
-    Satisfies CP-9 (stability): converges to constant input.
+    Converges to constant input.
     """
     if current is None:
         return new_value
@@ -224,7 +227,7 @@ def update_rolling_avg(
 
     Appends *new_value*, trims oldest when buffer exceeds *max_size*.
     Returns the mean of the buffer.
-    Satisfies CP-9 (stability): full buffer of identical values → exact match.
+    Full buffer of identical values → exact match.
     """
     buffer.append(new_value)
     if max_size > 0 and len(buffer) > max_size:
@@ -284,7 +287,7 @@ def evaluate(
     Mutates *state* in-place. Returns a result indicating the target
     flow temperature and whether the Bridge API should be called.
 
-    Satisfies CP-4 (shutoff), CP-6 (idempotency), CP-7 (independence
+    Handles shutoff, idempotency, and independence
     is enforced by the caller wrapping this in try/except).
     """
     base = WeatherCompensationResult(
@@ -326,7 +329,7 @@ def evaluate(
     smoothed = smooth_outdoor_temp(config, state, outdoor_temp_raw, poll_interval_minutes)
     base.smoothed_outdoor_temp = smoothed
 
-    # --- Step 4: shutoff check (CP-4) ---
+    # --- Step 4: shutoff check ---
     step = config.step_size
     if smoothed >= config.shutoff_temp:
         target = clamp_flow_temp(
@@ -366,7 +369,7 @@ def evaluate(
     ):
         return base
 
-    # --- Step 7: idempotency check with hysteresis (CP-6) ---
+    # --- Step 7: idempotency check with hysteresis ---
     # Use <= so that a difference exactly equal to hysteresis does NOT
     # trigger a send.  This prevents boundary oscillation when step_size
     # equals hysteresis (both default to 1.0 °C).
@@ -384,20 +387,20 @@ def evaluate(
 
 
 # ---------------------------------------------------------------------------
-# Coordinator-level orchestration (extracted from coordinator.py)
+# Coordinator-level orchestration
 # ---------------------------------------------------------------------------
 
 
-def _build_wc_config(cm: object) -> WeatherCompensationConfig:
+def _build_wc_config(cm: ConfigurationManager) -> WeatherCompensationConfig:
     """Build WeatherCompensationConfig from config manager options."""
-    preset = cm.get_wc_heating_system_preset()  # type: ignore[union-attr]
-    max_flow = cm.get_wc_max_flow_temp()  # type: ignore[union-attr]
-    min_flow = cm.get_wc_min_flow_temp()  # type: ignore[union-attr]
-    shutoff = cm.get_wc_shutoff_temp()  # type: ignore[union-attr]
-    design = cm.get_wc_design_outdoor_temp()  # type: ignore[union-attr]
+    preset = cm.get_wc_heating_system_preset()
+    max_flow = cm.get_wc_max_flow_temp()
+    min_flow = cm.get_wc_min_flow_temp()
+    shutoff = cm.get_wc_shutoff_temp()
+    design = cm.get_wc_design_outdoor_temp()
 
     if preset == "custom":
-        slope = cm.get_wc_slope()  # type: ignore[union-attr]
+        slope = cm.get_wc_slope()
     else:
         slope = calculate_auto_slope(max_flow, min_flow, shutoff, design)
 
@@ -409,28 +412,28 @@ def _build_wc_config(cm: object) -> WeatherCompensationConfig:
         max_flow_temp=max_flow,
         min_flow_temp=min_flow,
         shutoff_temp=shutoff,
-        smoothing_method=cm.get_wc_smoothing_method(),  # type: ignore[union-attr]
-        smoothing_window_minutes=cm.get_wc_smoothing_window(),  # type: ignore[union-attr]
-        room_compensation_enabled=cm.get_wc_room_compensation_enabled(),  # type: ignore[union-attr]
-        room_compensation_factor=cm.get_wc_room_compensation_factor(),  # type: ignore[union-attr]
-        step_size=cm.get_wc_step_size(),  # type: ignore[union-attr]
-        hysteresis=cm.get_wc_hysteresis(),  # type: ignore[union-attr]
+        smoothing_method=cm.get_wc_smoothing_method(),
+        smoothing_window_minutes=cm.get_wc_smoothing_window(),
+        room_compensation_enabled=cm.get_wc_room_compensation_enabled(),
+        room_compensation_factor=cm.get_wc_room_compensation_factor(),
+        step_size=cm.get_wc_step_size(),
+        hysteresis=cm.get_wc_hysteresis(),
     )
 
 
 def _resolve_outdoor_temp(
-    hass: object,
-    cm: object,
-    weather_data: dict | None,
+    hass: HomeAssistant,
+    cm: ConfigurationManager,
+    weather_data: dict[str, Any] | None,
 ) -> float | None:
     """Resolve outdoor temperature from external sensor or weather data."""
     from .sensor_helpers import get_outdoor_temperature
 
-    outdoor_entity = cm.get_outdoor_temp_entity()  # type: ignore[union-attr]
+    outdoor_entity = cm.get_outdoor_temp_entity()
     outdoor_temp: float | None = None
     if outdoor_entity:
         outdoor_temp = get_outdoor_temperature(
-            hass, outdoor_entity, cm.get_use_feels_like(),  # type: ignore[arg-type, union-attr]
+            hass, outdoor_entity, cm.get_use_feels_like(),
         )
     if outdoor_temp is None and weather_data:
         outside = weather_data.get("outsideTemperature")
@@ -442,7 +445,7 @@ def _resolve_outdoor_temp(
 
 
 def _resolve_indoor_temps(
-    zone_data: dict | None,
+    zone_data: dict[str, Any] | None,
 ) -> tuple[float | None, float | None]:
     """Resolve average indoor temp and target temp from actively heating zones."""
     if not zone_data:
@@ -478,15 +481,15 @@ def _resolve_indoor_temps(
 
 async def async_run_wc_cycle(
     *,
-    config_manager: object,
-    bridge_api_client: object,
+    config_manager: ConfigurationManager,
+    bridge_api_client: TadoBridgeApiClient,
     wc_state: WeatherCompensationState,
-    hass: object,
-    weather_data: dict | None,
-    zone_data: dict | None,
-    update_interval: object | None,
-    bridge_data: dict | None = None,
-) -> dict | None:
+    hass: HomeAssistant,
+    weather_data: dict[str, Any] | None,
+    zone_data: dict[str, Any] | None,
+    update_interval: timedelta | None,
+    bridge_data: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
     """Run one weather compensation evaluation cycle.
 
     Resolve outdoor/indoor temps, call the pure engine, and send the
@@ -494,9 +497,6 @@ async def async_run_wc_cycle(
 
     Returns a dict suitable for ``coordinator.data["weather_compensation"]``
     or *None* when the feature is disabled / unavailable.
-
-    This function was extracted from ``coordinator.py`` to keep the
-    coordinator thin and the WC domain logic co-located.
     """
     import logging
     import time
@@ -518,12 +518,12 @@ async def async_run_wc_cycle(
         if bridge_data:
             raw_flow = bridge_data.get("boilerMaxOutputTemperatureInCelsius")
             if raw_flow is not None:
-                current_flow = float(raw_flow)  # type: ignore[arg-type]
+                current_flow = float(raw_flow)
 
         # --- Poll interval (minutes) ---
         poll_min = 5.0
         if update_interval is not None:
-            poll_min = update_interval.total_seconds() / 60.0  # type: ignore[union-attr]
+            poll_min = update_interval.total_seconds() / 60.0
 
         # --- Evaluate ---
         result = evaluate(
@@ -540,7 +540,7 @@ async def async_run_wc_cycle(
         # --- Send to Bridge API if needed ---
         if result.should_send and result.target_flow_temp is not None:
             try:
-                await bridge_api_client.async_set_max_output_temperature(  # type: ignore[union-attr]
+                await bridge_api_client.async_set_max_output_temperature(
                     result.target_flow_temp,
                 )
                 _LOGGER.info(
@@ -550,7 +550,7 @@ async def async_run_wc_cycle(
                     result.smoothed_outdoor_temp or 0.0,
                     result.heating_system_preset,
                 )
-            except Exception:  # noqa: BLE001 — HA entity update pattern
+            except Exception:
                 _LOGGER.warning(
                     "Weather compensation: Bridge API call failed — will retry next cycle",
                 )
@@ -568,7 +568,7 @@ async def async_run_wc_cycle(
             "heating_system_preset": result.heating_system_preset,
             "should_send": result.should_send,
         }
-    except Exception:  # noqa: BLE001 — HA entity update pattern
+    except Exception:
         _LOGGER.debug(
             "Weather compensation evaluation failed — main update unaffected",
             exc_info=True,

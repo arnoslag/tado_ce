@@ -1,5 +1,5 @@
-"""Tado CE climate helper functions — offset and preset mode updates."""  # accepts any HA entity type (ClimateEntity, WaterHeaterEntity, etc.)
-  # accepts any HA entity with .hass and .coordinator
+"""Tado CE climate helper functions — offset and preset mode updates."""
+
 from __future__ import annotations
 
 import logging
@@ -50,9 +50,19 @@ def update_offset(
 
         offsets = (coordinator.data or {}).get("offsets")
         if offsets:
-            return offsets.get(zone_id)  # type: ignore[no-any-return]
+            value = offsets.get(zone_id)
+            if value is not None:
+                from .const import DEVICE_OFFSET_MAX, DEVICE_OFFSET_MIN
+
+                if not (DEVICE_OFFSET_MIN <= value <= DEVICE_OFFSET_MAX):
+                    _LOGGER.warning(
+                        "Offset for zone %s rejected on read: %s°C outside valid range",
+                        zone_id, value,
+                    )
+                    return None
+            return value  # type: ignore[no-any-return]
         return None
-    except Exception:  # noqa: BLE001 — defensive helper for entity update path
+    except Exception:
         # Keep existing offset value on error — caller handles fallback
         return None
 
@@ -78,7 +88,7 @@ def update_preset_mode(coordinator: TadoDataUpdateCoordinator) -> str | None:
         if home_state:
             presence = home_state.get("presence", "HOME")
             return PRESET_HOME if presence == "HOME" else PRESET_AWAY
-    except Exception:  # noqa: BLE001 — defensive helper, property access may raise any error
+    except Exception:
         # Keep last known preset mode — caller handles fallback
         _LOGGER.debug("Failed to determine preset mode from home state")
     return None
@@ -186,15 +196,15 @@ async def api_call_with_rollback(
         async with asyncio.timeout(10):
             api_success = await api_coro
     except TimeoutError:
-        _LOGGER.warning("TIMEOUT: %s %s timed out", entity._zone_name, reason)
-    except Exception as e:  # noqa: BLE001 — HA entity action pattern
-        _LOGGER.warning("ERROR: %s %s failed (%s)", entity._zone_name, reason, e)
+        _LOGGER.warning("Timeout: %s %s timed out", entity._zone_name, reason)
+    except Exception as e:
+        _LOGGER.warning("Error: %s %s failed (%s)", entity._zone_name, reason, e)
 
     if api_success:
         _LOGGER.info("%s: %s", entity._zone_name, reason)
         await async_trigger_immediate_refresh(entity.hass, entity.entity_id, "hvac_mode_change")
     else:
-        _LOGGER.warning("ROLLBACK: %s %s failed", entity._zone_name, reason)
+        _LOGGER.warning("%s: %s failed, reverted", entity._zone_name, reason)
         entity._attr_hvac_mode = old_mode
         entity._attr_hvac_action = old_action
         entity._overlay_type = old_overlay

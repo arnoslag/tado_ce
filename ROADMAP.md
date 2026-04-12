@@ -8,24 +8,13 @@ For completed features, see [CHANGELOG.md](CHANGELOG.md).
 
 ## Up Next
 
-**Entity Type Corrections** ([#160](https://github.com/hiall-fyi/tado_ce/issues/160))
+**HomeKit Local Control — Stabilisation & GA**
 
-Connection and Hot Water Power sensors are currently regular `sensor` entities, but their states are boolean (`Online`/`Offline`, `ON`/`OFF`). They should be `binary_sensor` with `CONNECTIVITY` and `POWER` device classes for proper HA integration (grouping, device class icons, automations). Battery stays as `sensor` since Tado reports three states (`Normal`/`Low`/`Critical`).
+v4.0.0-beta.1 shipped HomeKit local control (reads, writes, real-time events, cloud fallback, polling optimization). Currently in beta testing. Next steps:
 
-This is a breaking change — entity IDs move from `sensor.*` to `binary_sensor.*`. Will ship as part of v4.0.0 with automatic migration.
-
----
-
-**Local API / HomeKit Hybrid** ([Discussion #29](https://github.com/hiall-fyi/tado_ce/discussions/29))
-
-The goal: reduce or eliminate dependency on Tado's cloud API for day-to-day control.
-
-1. **Phase 1** — Internal preparation to support multiple data sources (cloud, local, HomeKit) side by side. No user-facing changes.
-2. **Phase 2** — Entity migration to the new architecture. No user-facing changes.
-3. **Phase 3** — HomeKit local control for temperature, humidity, and HVAC mode. Cloud API still used for data not available locally (heating %, battery, schedules, hot water). Proof of concept already working — see [Discussion #29](https://github.com/hiall-fyi/tado_ce/discussions/29).
-4. **Long-term** — Investigating fully local control via the 868MHz protocol between Bridge and TRVs. Requires specialized hardware and community help.
-
-Target: Q3 2026
+- Collect feedback from testers on different zone counts, AC zones, bridge restarts, and long-term stability
+- Address any issues found during beta
+- Ship v4.0.0 stable once confidence is high
 
 ---
 
@@ -41,6 +30,8 @@ Per-zone indoor air quality monitoring inspired by the Tado app's Air Comfort fe
 
 1. **Air Freshness** — Per-zone freshness level (fresh/fair/stale) calculated from window opening history and AC activity. Uses existing open window detection and AC power data — zero extra API calls.
 2. **Outdoor Air Quality** — Optional external AQI sensor input via Options Flow (same pattern as external temperature/humidity sensors). Users can connect any HA AQI integration (WAQI, OpenWeatherMap, etc.) without Tado CE calling third-party APIs.
-- **Call Priority System** — Different polling frequencies for different data types (e.g., zone states every 10 min, weather every 30 min).
+
+- **Fully Local Control** ([Discussion #29](https://github.com/hiall-fyi/tado_ce/discussions/29)) — Investigating control via the 868MHz protocol between Bridge and TRVs, bypassing both cloud and HomeKit. Requires specialized hardware and community help. Long-term exploration.
+- **Call Priority System** — Different polling frequencies for different data types (e.g., zone states every 10 min, weather every 30 min). Partially addressed by HomeKit polling optimization — cloud-only data already fetches less often when HomeKit is connected.
 - **Quick Actions** — Home-level quick action system (one-tap heating/AC/hot water control). Lower priority — HA scripts and automations provide equivalent functionality.
 - **HACS Default Repository** — Apply for inclusion in the HACS default repository list.

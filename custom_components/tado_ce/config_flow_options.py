@@ -45,6 +45,7 @@ from .const import (
     WINDOW_SENSITIVITY_MAP,
     WINDOW_SENSITIVITY_OPTIONS,
     WINDOW_SENSITIVITY_REVERSE_MAP,
+    is_climate_zone,
 )
 
 if TYPE_CHECKING:
@@ -104,6 +105,9 @@ RESET_DEFAULTS: dict[str, dict[str, Any]] = {
     "mobile_tracking": {
         "mobile_devices_frequent_sync": False,
     },
+    "homekit": {
+        "homekit_cloud_sync_minutes": 30,
+    },
     "polling_api": {
         "day_start_hour": 7,
         "night_start_hour": 23,
@@ -113,6 +117,7 @@ RESET_DEFAULTS: dict[str, dict[str, Any]] = {
         "api_history_retention_days": 14,
         "smart_actions_debounce_seconds": 3,
         "device_sync_delay_seconds": 1.0,
+        "mobile_devices_frequent_sync": False,
     },
 }
 
@@ -123,7 +128,7 @@ _RESET_SCOPE_OPTIONS = [
     "thermal_analytics",
     "weather_compensation",
     "bridge",
-    "mobile_tracking",
+    "homekit",
     "polling_api",
 ]
 
@@ -357,36 +362,58 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                 {"collapsed": True},
             )
 
-        # --- Mobile Device Tracking (if enabled) ---
-        if opt("mobile_devices_enabled", False):
-            sections[vol.Required("mobile_tracking")] = data_entry_flow.section(
-                vol.Schema(
-                    {
-                        vol.Optional("mobile_devices_frequent_sync", default=opt("mobile_devices_frequent_sync", False)): BooleanSelector(),
-                    },
-                ),
+        # --- HomeKit (if enabled) ---
+        if opt("homekit_enabled", False):
+            coordinator = self.config_entry.runtime_data
+            hk_connected = (
+                coordinator.homekit_provider is not None
+                and coordinator.homekit_provider.is_connected
+            )
+            status_text = "Connected" if hk_connected else "Disconnected"
+
+            sections[vol.Required("homekit")] = data_entry_flow.section(
+                vol.Schema({
+                    vol.Optional(
+                        "homekit_status",
+                        description={"suggested_value": status_text},
+                    ): TextSelector(TextSelectorConfig(type=TextSelectorType.TEXT)),
+                    vol.Optional(
+                        "homekit_cloud_sync_minutes",
+                        default=opt("homekit_cloud_sync_minutes", 30),
+                    ): NumberSelector(NumberSelectorConfig(
+                        min=5, max=120, step=1,
+                        mode=NumberSelectorMode.BOX,
+                        unit_of_measurement="min",
+                    )),
+                    vol.Optional("homekit_unpair", default=False): BooleanSelector(),
+                }),
                 {"collapsed": True},
             )
 
         # --- Polling & API (always visible) ---
+        polling_schema_fields: dict[vol.Optional | vol.Required, Any] = {}
+
+        polling_schema_fields[vol.Required("day_start_hour", default=opt("day_start_hour", 7))] = NumberSelector(NumberSelectorConfig(min=0, max=23, step=1, mode=NumberSelectorMode.BOX))
+        polling_schema_fields[vol.Required("night_start_hour", default=opt("night_start_hour", 23))] = NumberSelector(NumberSelectorConfig(min=0, max=23, step=1, mode=NumberSelectorMode.BOX))
+
         custom_day_interval = options.get("custom_day_interval")
         custom_night_interval = options.get("custom_night_interval")
         custom_day_schema = vol.Optional("custom_day_interval", description={"suggested_value": custom_day_interval}) if custom_day_interval is not None else vol.Optional("custom_day_interval")
         custom_night_schema = vol.Optional("custom_night_interval", description={"suggested_value": custom_night_interval}) if custom_night_interval is not None else vol.Optional("custom_night_interval")
 
+        polling_schema_fields[custom_day_schema] = NumberSelector(NumberSelectorConfig(min=1, max=1440, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="min"))
+        polling_schema_fields[custom_night_schema] = NumberSelector(NumberSelectorConfig(min=1, max=1440, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="min"))
+        polling_schema_fields[vol.Optional("refresh_debounce_seconds", default=opt("refresh_debounce_seconds", 15))] = NumberSelector(NumberSelectorConfig(min=1, max=60, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="s"))
+        polling_schema_fields[vol.Optional("api_history_retention_days", default=opt("api_history_retention_days", 14))] = NumberSelector(NumberSelectorConfig(min=0, max=365, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="d"))
+        polling_schema_fields[vol.Optional("smart_actions_debounce_seconds", default=opt("smart_actions_debounce_seconds", 3))] = NumberSelector(NumberSelectorConfig(min=0, max=10, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="s"))
+        polling_schema_fields[vol.Optional("device_sync_delay_seconds", default=opt("device_sync_delay_seconds", 1.0))] = NumberSelector(NumberSelectorConfig(min=0.5, max=5.0, step=0.5, mode=NumberSelectorMode.BOX, unit_of_measurement="s"))
+
+        # Mobile frequent sync in Polling & API (conditional on mobile_devices_enabled)
+        if opt("mobile_devices_enabled", False):
+            polling_schema_fields[vol.Optional("mobile_devices_frequent_sync", default=opt("mobile_devices_frequent_sync", False))] = BooleanSelector()
+
         sections[vol.Required("polling_api")] = data_entry_flow.section(
-            vol.Schema(
-                {
-                    vol.Required("day_start_hour", default=opt("day_start_hour", 7)): NumberSelector(NumberSelectorConfig(min=0, max=23, step=1, mode=NumberSelectorMode.BOX)),
-                    vol.Required("night_start_hour", default=opt("night_start_hour", 23)): NumberSelector(NumberSelectorConfig(min=0, max=23, step=1, mode=NumberSelectorMode.BOX)),
-                    custom_day_schema: NumberSelector(NumberSelectorConfig(min=1, max=1440, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="min")),
-                    custom_night_schema: NumberSelector(NumberSelectorConfig(min=1, max=1440, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="min")),
-                    vol.Optional("refresh_debounce_seconds", default=opt("refresh_debounce_seconds", 15)): NumberSelector(NumberSelectorConfig(min=1, max=60, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="s")),
-                    vol.Optional("api_history_retention_days", default=opt("api_history_retention_days", 14)): NumberSelector(NumberSelectorConfig(min=0, max=365, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="d")),
-                    vol.Optional("smart_actions_debounce_seconds", default=opt("smart_actions_debounce_seconds", 3)): NumberSelector(NumberSelectorConfig(min=0, max=10, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="s")),
-                    vol.Optional("device_sync_delay_seconds", default=opt("device_sync_delay_seconds", 1.0)): NumberSelector(NumberSelectorConfig(min=0.5, max=5.0, step=0.5, mode=NumberSelectorMode.BOX, unit_of_measurement="s")),
-                },
-            ),
+            vol.Schema(polling_schema_fields),
             {"collapsed": True},
         )
 
@@ -458,7 +485,7 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                 redirect = self._detect_first_enable(processed_input)
                 if redirect:
                     self._pending_general_options = processed_input
-                    return await getattr(self, f"async_step_{redirect}")()
+                    return await getattr(self, f"async_step_{redirect}")()  # type: ignore[no-any-return]
 
                 prev_options = self.config_entry.options
 
@@ -500,11 +527,14 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                 if key in section:
                     processed_input[key] = section[key]
 
-        # Flatten mobile_tracking section
-        if "mobile_tracking" in user_input:
-            section = user_input["mobile_tracking"]
-            if "mobile_devices_frequent_sync" in section:
-                processed_input["mobile_devices_frequent_sync"] = section["mobile_devices_frequent_sync"]
+        # Flatten homekit section
+        if "homekit" in user_input:
+            section = user_input["homekit"]
+            if "homekit_cloud_sync_minutes" in section:
+                processed_input["homekit_cloud_sync_minutes"] = section["homekit_cloud_sync_minutes"]
+            # homekit_unpair triggers redirect to existing unpair flow (handled in async_step_advanced_settings)
+            if section.get("homekit_unpair", False):
+                self._homekit_unpair_requested = True
 
         return processed_input
 
@@ -513,20 +543,15 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
     ) -> ConfigFlowResult:
         """Handle Advanced Settings — tuning parameters for enabled features."""
         errors: dict[str, str] = {}
-        opt = self.config_entry.options.get
-
-        # Check if any feature with tuning params is enabled
-        has_tunable = any([
-            opt("smart_comfort_enabled", False),
-            opt("thermal_analytics_enabled", False),
-            opt("wc_enabled", False),
-            bool(opt("bridge_serial", "")) and bool(opt("bridge_auth_key", "")),
-            opt("mobile_devices_enabled", False),
-        ])
 
         if user_input is not None:
             processed_input = self._process_advanced_settings_input(user_input, errors)
             await self._process_flow_temperature_control(user_input, processed_input, errors)
+
+            # Handle HomeKit unpair redirect
+            if getattr(self, "_homekit_unpair_requested", False):
+                self._homekit_unpair_requested = False
+                return await self.async_step_homekit_unpair()
 
             if not errors:
                 # Preserve toggle states from current options
@@ -535,12 +560,6 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                         processed_input[key] = value
 
                 return self.async_create_entry(title="", data=processed_input)
-
-        if not has_tunable:
-            return self.async_show_form(
-                step_id="advanced_settings",
-                data_schema=vol.Schema({}),
-            )
 
         zones_with_heating_power = await self._load_zones_with_heating_power()
         schema = self._build_advanced_schema(zones_with_heating_power)
@@ -595,14 +614,18 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
     async def async_step_homekit_pairing(
         self, user_input: dict[str, Any] | None = None,
     ) -> ConfigFlowResult:
-        """Handle HomeKit PIN input — placeholder for HomeKit spec.
+        """Handle HomeKit pairing sub-step."""
+        from .homekit_client import async_step_homekit_pairing
 
-        Will be implemented by the HomeKit Local Control spec.
-        For now, saves pending options without pairing.
-        """
-        if self._pending_general_options:
-            return self.async_create_entry(title="", data=self._pending_general_options)
-        return await self.async_step_init()
+        return await async_step_homekit_pairing(self, user_input)
+
+    async def async_step_homekit_unpair(
+        self, user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Handle HomeKit unpairing sub-step."""
+        from .homekit_client import async_step_homekit_unpair
+
+        return await async_step_homekit_unpair(self, user_input)
 
     async def async_step_wc_bridge_prompt(
         self, user_input: dict[str, Any] | None = None,
@@ -635,7 +658,7 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                 current[toggle] = False
             for defaults in RESET_DEFAULTS.values():
                 current.update(defaults)
-            # Preserve bridge credentials (AC-4.4)
+            # Preserve bridge credentials
             prev_serial = self.config_entry.options.get("bridge_serial", "")
             prev_auth = self.config_entry.options.get("bridge_auth_key", "")
             if prev_serial:
@@ -706,9 +729,6 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
             "use_feels_like",
             "mold_risk_window_type",
             "smart_comfort_history_days",
-            "heating_cycle_history_days",
-            "heating_cycle_min_cycles",
-            "heating_cycle_inertia_threshold",
         ]:
             if key in section:
                 processed[key] = section[key]
@@ -742,6 +762,10 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
             # Fix persistence bug — explicitly handle custom intervals
             processed["custom_day_interval"] = section.get("custom_day_interval")
             processed["custom_night_interval"] = section.get("custom_night_interval")
+
+            # mobile_devices_frequent_sync (moved from mobile_tracking section)
+            if "mobile_devices_frequent_sync" in section:
+                processed["mobile_devices_frequent_sync"] = section["mobile_devices_frequent_sync"]
 
         # Validate custom day interval
         day_interval = processed.get("custom_day_interval")
@@ -850,7 +874,7 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
         zone_options = [
             {"value": str(z.get("id")), "label": z.get("name", f"Zone {z.get('id')}")}
             for z in zones_info
-            if z.get("type") != "HOT_WATER"
+            if is_climate_zone(z.get("type", ""))
         ]
 
         if not zone_options:

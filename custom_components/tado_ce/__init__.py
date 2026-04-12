@@ -79,7 +79,7 @@ async def _async_init_data_layer(
 
     zone_config_manager = ZoneConfigManager(hass, home_id or "default", data_loader)
     await zone_config_manager.async_load()
-    _LOGGER.info("Zone config manager initialized with %d zones", len(zone_config_manager.zones))
+    _LOGGER.debug("Zone config manager initialized with %d zones", len(zone_config_manager.zones))
 
     overlay_mode = await data_loader.async_load_overlay_mode()
     _LOGGER.debug("Tado CE: Overlay mode loaded: %s", overlay_mode)
@@ -170,6 +170,20 @@ async def _async_wire_and_start_coordinator(
     from .setup_entry_helpers import async_load_insight_history
 
     await async_load_insight_history(coordinator)
+
+    # Load persisted HomeKit savings counters
+    saved = await coordinator.data_loader.async_load_homekit_savings()
+    if saved and isinstance(saved, dict):
+        coordinator._homekit_reads_saved = saved.get("reads_saved", 0)
+        coordinator._homekit_writes_saved = saved.get("writes_saved", 0)
+        _LOGGER.debug(
+            "HomeKit savings loaded: reads=%s, writes=%s",
+            coordinator._homekit_reads_saved,
+            coordinator._homekit_writes_saved,
+        )
+    else:
+        _LOGGER.debug("HomeKit savings: no persisted data (fresh start)")
+
     await coordinator.async_config_entry_first_refresh()
 
     zones_info = coordinator.data.get("zones_info") or []
@@ -179,7 +193,7 @@ async def _async_wire_and_start_coordinator(
         register_bridge_devices(hass, entry.entry_id, zones_info)
 
     entry.runtime_data = coordinator
-    _LOGGER.info("Coordinator stored for entry %s (home_id=%s)", entry.entry_id, home_id)
+    _LOGGER.debug("Coordinator stored for entry %s (home_id=%s)", entry.entry_id, home_id)
 
 
 async def _async_finalize_entry(
@@ -207,10 +221,10 @@ async def _async_finalize_entry(
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Tado CE from a config entry."""
     _LOGGER.info(
-        "=== Tado CE Setup Start ===\n  Entry ID: %s\n  Entry version: %s\n  Entry data: %s",
+        "Tado CE: Setup starting (entry=%s, version=%s, home_id=%s)",
         entry.entry_id,
         entry.version,
-        entry.data,
+        entry.data.get("home_id", "unknown"),
     )
 
     from .setup_entry_helpers import async_log_file_system_state
@@ -224,6 +238,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if not should_continue:
         return False
 
+    # One-time entity platform migration (sensor → binary_sensor for connection/power)
+    from .migration import async_migrate_entity_platforms
+
+    await async_migrate_entity_platforms(hass, entry)
+
     # Ensure data directory exists
     def _ensure_data_dir() -> None:
         try:
@@ -234,14 +253,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await hass.async_add_executor_job(_ensure_data_dir)
 
     config_manager = ConfigurationManager(entry, hass)
-    _LOGGER.info("Configuration loaded: %s", config_manager.get_all_config())
+    _LOGGER.debug("Configuration loaded: %s", config_manager.get_all_config())
 
     home_id = entry.data.get("home_id")
 
     # Cancel old coordinator's polling on reload
     old_coordinator = getattr(entry, "runtime_data", None)
     if isinstance(old_coordinator, TadoDataUpdateCoordinator):
-        _LOGGER.warning("Tado CE: Entry %s already setup, cancelling old coordinator", entry.entry_id)
+        _LOGGER.warning("Tado CE: Integration %s restarting — previous session still active", entry.entry_id)
 
     # Initialize data layer and entry components
     data_loader, zone_config_manager, overlay_mode, timer_duration, components = (
@@ -278,6 +297,35 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         adaptive_preheat_manager=optional["adaptive_preheat_manager"],
         state_restore_manager=optional["state_restore_manager"],
     )
+
+    # Wire HomeKit components to coordinator (if enabled)
+    homekit_client = components.get("homekit_client")
+    if homekit_client is not None:
+        from .homekit_provider import HomeKitLocalProvider
+        from .state_reconciler import StateReconciler
+        from .write_health_tracker import WriteHealthTracker
+
+        coordinator.homekit_client = homekit_client
+        provider = HomeKitLocalProvider(homekit_client)
+        coordinator.homekit_provider = provider
+        coordinator.state_reconciler = StateReconciler()
+        coordinator.write_health_tracker = WriteHealthTracker()
+
+        # Subscribe to events and refresh accessories if connected
+        if homekit_client.is_connected:
+            await provider.async_refresh_accessories()
+            await provider.async_subscribe_events()
+
+        # Register reconnect callback — re-subscribe events + reset circuit breaker
+        async def _on_homekit_reconnect() -> None:
+            await provider.async_refresh_accessories()
+            await provider.async_subscribe_events()
+            if coordinator.write_health_tracker:
+                coordinator.write_health_tracker.reset()
+            coordinator._reset_write_metrics()
+            _LOGGER.info("HomeKit: Post-reconnect setup complete (events re-subscribed)")
+
+        homekit_client.add_reconnect_callback(_on_homekit_reconnect)
 
     await _async_wire_and_start_coordinator(
         hass, entry, coordinator, optional, overlay_mode, timer_duration, home_id,
@@ -369,6 +417,7 @@ async def _async_shutdown_coordinator(coordinator: TadoDataUpdateCoordinator) ->
 
     await coordinator.async_shutdown_state_restore()
     coordinator.save_wc_state_if_loaded()
+    coordinator._save_homekit_savings()
 
     if coordinator.api_tracker:
         await coordinator.api_tracker.async_save_if_dirty()
@@ -397,7 +446,7 @@ def _unregister_all_services(hass: HomeAssistant) -> None:
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
-    _LOGGER.info("Tado CE: Unloading entry %s...", entry.entry_id)
+    _LOGGER.info("Tado CE: Unloading integration %s...", entry.entry_id)
 
     coordinator: TadoDataUpdateCoordinator | None = getattr(entry, "runtime_data", None)
 
@@ -425,7 +474,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     _last_options_snapshot.pop(entry.entry_id, None)
 
-    _LOGGER.info("Tado CE: Entry %s unloaded successfully", entry.entry_id)
+    _LOGGER.info("Tado CE: Integration %s unloaded successfully", entry.entry_id)
     return unload_ok
 
 

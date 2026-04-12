@@ -218,7 +218,7 @@ class TadoZoneScheduleCalendar(CoordinatorEntity["TadoDataUpdateCoordinator"], C
             cached = self.coordinator.data_loader.get_cached("schedules")
             if cached and isinstance(cached, dict) and self._zone_id in cached:
                 self._schedule = cached[self._zone_id]
-                _LOGGER.info("Reloaded schedule for %s (from cache)", self._zone_name)
+                _LOGGER.debug("Reloaded schedule for %s (from cache)", self._zone_name)
                 self.async_write_ha_state()
                 return
 
@@ -232,7 +232,7 @@ class TadoZoneScheduleCalendar(CoordinatorEntity["TadoDataUpdateCoordinator"], C
             schedules = await self.hass.async_add_executor_job(_load)
             if self._zone_id in schedules:
                 self._schedule = schedules[self._zone_id]
-                _LOGGER.info("Reloaded schedule for %s (from disk)", self._zone_name)
+                _LOGGER.debug("Reloaded schedule for %s (from disk)", self._zone_name)
                 self.async_write_ha_state()
         except Exception:
             _LOGGER.exception("Failed to reload schedule for %s", self._zone_name)

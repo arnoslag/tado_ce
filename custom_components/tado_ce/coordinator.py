@@ -1,7 +1,4 @@
-"""Tado CE DataUpdateCoordinator — adaptive polling and entity update propagation.
-
-Adaptive polling and entity update propagation via HA's DataUpdateCoordinator.
-"""
+"""Tado CE DataUpdateCoordinator — adaptive polling and entity update propagation."""
 
 from __future__ import annotations
 
@@ -23,8 +20,10 @@ from homeassistant.util import dt as dt_util
 from .const import (
     DEVICE_SYNC_QUEUE_MAX_DEPTH,
     DOMAIN,
+    OUTDOOR_TEMP_HISTORY_MAX,
     OVERLAY_MODE_DEFAULT,
     TIMER_DURATION_DEFAULT,
+    get_climate_zone_ids,
 )
 from .exceptions import TadoAuthError, TadoBridgeApiError, TadoSyncError
 from .insight_history import InsightHistoryTracker
@@ -33,6 +32,7 @@ from .ratelimit import _sanitize_retry_after
 from .weather_compensation import (
     WeatherCompensationState,
 )
+from .write_health_tracker import WriteHealthTracker
 from .write_optimizer import ActionDebouncer, DeviceSyncQueue, RefreshCoalescer
 
 if TYPE_CHECKING:
@@ -54,9 +54,6 @@ if TYPE_CHECKING:
     from .zone_config_manager import ZoneConfigManager
 
 _LOGGER = logging.getLogger(__name__)
-
-# Outdoor temperature history — 14 days x 24 hourly readings
-_OUTDOOR_TEMP_HISTORY_MAX = 336
 
 
 # HA official pattern — provides type safety for entry.runtime_data
@@ -158,6 +155,34 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Platforms loaded during setup (used by unload to match exactly)
         self.loaded_platforms: frozenset[Platform] = frozenset()
 
+        # HomeKit local control (optional — set by entry_lifecycle when homekit_enabled)
+        self.homekit_client: Any | None = None
+        self.homekit_provider: Any | None = None
+        self.state_reconciler: Any | None = None
+
+        # Per-zone data source tracking — populated by HomeKit merge in _async_post_sync_processing.
+        # Structure: {zone_id: {"temperature": "homekit"|"cloud", "humidity": "homekit"|"cloud"}}
+        # Entities read this to set temperature_source / humidity_source attributes.
+        self.data_sources: dict[str, dict[str, str]] = {}
+
+        # HomeKit polling optimization state
+        self._last_cloud_zone_fetch: datetime | None = None
+        self._last_weather_fetch: datetime | None = None
+        self._prev_homekit_connected: bool = False
+        self._homekit_reads_saved: int = 0
+        self._homekit_writes_saved: int = 0
+        self._prev_savings_remaining: int | None = None  # for reset detection
+
+        # HomeKit write metrics (ephemeral — reset on quota reset and reconnect)
+        self._homekit_write_attempts: int = 0
+        self._homekit_write_successes: int = 0
+        self._homekit_write_fallbacks: int = 0
+        self._homekit_write_latency_sum: float = 0.0
+        self._homekit_write_latency_count: int = 0
+
+        # Write-side circuit breaker (initialized when HomeKit is enabled)
+        self.write_health_tracker: WriteHealthTracker | None = None
+
         # Weather compensation mutable runtime state (persists across polls)
         self._wc_state = WeatherCompensationState()
         self._wc_state_loaded: bool = False
@@ -196,6 +221,29 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def refresh_coalescer(self) -> RefreshCoalescer:
         """Return the refresh coalescer instance."""
         return self._refresh_coalescer
+
+    @property
+    def homekit_write_metrics(self) -> dict[str, float]:
+        """Return HomeKit write metrics for sensor exposure."""
+        avg_latency = (
+            self._homekit_write_latency_sum / self._homekit_write_latency_count
+            if self._homekit_write_latency_count > 0
+            else 0.0
+        )
+        return {
+            "write_attempts": self._homekit_write_attempts,
+            "write_successes": self._homekit_write_successes,
+            "write_fallbacks": self._homekit_write_fallbacks,
+            "write_avg_latency_ms": round(avg_latency, 1),
+        }
+
+    def _reset_write_metrics(self) -> None:
+        """Reset HomeKit write metrics counters."""
+        self._homekit_write_attempts = 0
+        self._homekit_write_successes = 0
+        self._homekit_write_fallbacks = 0
+        self._homekit_write_latency_sum = 0.0
+        self._homekit_write_latency_count = 0
 
     def publish_entity_data(self, zone_id: str, key: str, data: dict[str, Any]) -> None:
         """Publish computed entity data for cross-component access.
@@ -259,6 +307,57 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         schedules_data = self.data_loader.get_cached("schedules")
         ac_capabilities = self.data_loader.get_cached("ac_capabilities")
         home_details_data = self.data_loader.get_cached("home_details")
+
+        # HomeKit local data merge — overwrite cloud values with fresh local data
+        if self.homekit_provider and self.homekit_provider.is_connected and self.state_reconciler:
+            self.state_reconciler.local_provider = self.homekit_provider
+            cached_zones = self.data_loader.get_cached("zones")
+            zone_states = (cached_zones or {}).get("zoneStates") or {} if isinstance(cached_zones, dict) else {}
+            # Only merge climate zones (heating/AC) — skip hot water and other types
+            climate_ids = get_climate_zone_ids(zones_info_data if isinstance(zones_info_data, list) else [])
+            for zone_id_str, cloud_zone in zone_states.items():
+                if zone_id_str not in climate_ids:
+                    continue
+                if not self.state_reconciler.should_accept_cloud_value(zone_id_str):
+                    continue
+
+                sensor_data = cloud_zone.get("sensorDataPoints") or {}
+                cloud_temp = (sensor_data.get("insideTemperature") or {}).get("celsius")
+                cloud_humidity = (sensor_data.get("humidity") or {}).get("percentage")
+
+                merged_temp, temp_source = self.state_reconciler.merge_zone_temperature(
+                    zone_id_str, cloud_temp,
+                )
+                merged_humidity, humidity_source = self.state_reconciler.merge_zone_humidity(
+                    zone_id_str, cloud_humidity,
+                )
+
+                # Track data source per zone for entity attributes
+                self.data_sources[zone_id_str] = {
+                    "temperature": temp_source,
+                    "humidity": humidity_source,
+                }
+
+                if merged_temp is not None and temp_source != "cloud":
+                    if "insideTemperature" not in sensor_data:
+                        sensor_data["insideTemperature"] = {}
+                    sensor_data["insideTemperature"]["celsius"] = merged_temp
+                if merged_humidity is not None and humidity_source != "cloud":
+                    if "humidity" not in sensor_data:
+                        sensor_data["humidity"] = {}
+                    sensor_data["humidity"]["percentage"] = merged_humidity
+
+                # Log non-cloud sources
+                local_parts = []
+                if temp_source != "cloud" and merged_temp is not None:
+                    local_parts.append(f"temp={merged_temp:.1f}°C")
+                if humidity_source != "cloud" and merged_humidity is not None:
+                    local_parts.append(f"humidity={merged_humidity:.0f}%")
+                if local_parts:
+                    _LOGGER.debug(
+                        "Zone %s from homekit: %s",
+                        zone_id_str, ", ".join(local_parts),
+                    )
 
         # Accumulate outdoor temp history
         await self._accumulate_outdoor_temp_history(weather_data)
@@ -340,17 +439,51 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 raise UpdateFailed(reason, retry_after=retry_after)
 
         # 2. Set adaptive interval for NEXT poll
-        new_interval = get_polling_interval(self.config_manager, self._cached_ratelimit)
+        homekit_connected = (
+            self.homekit_provider is not None
+            and self.homekit_provider.is_connected
+        )
+        new_interval = get_polling_interval(
+            self.config_manager, self._cached_ratelimit, homekit_connected=homekit_connected,
+        )
         self.update_interval = timedelta(minutes=new_interval)
+
+        # 2b. HomeKit connection transition logging
+        if homekit_connected != self._prev_homekit_connected:
+            if homekit_connected:
+                _LOGGER.info("Tado CE: HomeKit connected — reducing cloud data checks")
+            else:
+                _LOGGER.info("Tado CE: HomeKit disconnected — resuming full cloud polling")
+            self._prev_homekit_connected = homekit_connected
+
+        # 2c. Compute skip_zone_states
+        cm = self.config_manager
+        skip_zone_states = False
+        if homekit_connected and self._last_cloud_zone_fetch is not None:
+            cloud_sync_minutes = cm.get_homekit_cloud_sync_minutes()
+            elapsed = (dt_util.utcnow() - self._last_cloud_zone_fetch).total_seconds() / 60
+            skip_zone_states = elapsed < cloud_sync_minutes
 
         # 3. Execute API sync
         do_full_sync = self._should_do_full_sync()
-        cm = self.config_manager
+
+        # Check if this is a write-triggered refresh (zone data only)
+        zone_only = getattr(self.refresh_handler, "_pending_zone_only", False)
+        if zone_only:
+            self.refresh_handler._pending_zone_only = False
+
+        # Weather fetch frequency reduction when HomeKit connected
+        skip_weather = False
+        if homekit_connected and self._last_weather_fetch is not None:
+            weather_age = (dt_util.utcnow() - self._last_weather_fetch).total_seconds() / 60
+            skip_weather = weather_age < 30
 
         try:
             await self.api_client.async_sync(
                 quick=not do_full_sync,
-                weather_enabled=cm.get_weather_enabled(),
+                skip_zone_states=skip_zone_states,
+                zone_only=zone_only,
+                weather_enabled=cm.get_weather_enabled() and not skip_weather,
                 mobile_devices_enabled=cm.get_mobile_devices_enabled(),
                 mobile_devices_frequent_sync=cm.get_mobile_devices_frequent_sync(),
                 offset_enabled=cm.get_offset_enabled(),
@@ -364,10 +497,48 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "Refresh token expired — user must re-authenticate",
             ) from e
         except TadoSyncError as e:
-            raise UpdateFailed(f"Tado CE sync failed: {e}") from e
+            # If HomeKit is connected, don't raise UpdateFailed — use local data
+            if self.homekit_provider and self.homekit_provider.is_connected:
+                _LOGGER.warning(
+                    "Tado CE: Cloud sync failed but HomeKit connected — using local data: %s", e,
+                )
+            else:
+                raise UpdateFailed(f"Tado CE sync failed: {e}") from e
 
         if do_full_sync:
             self._last_full_sync = dt_util.utcnow()
+
+        # Update cloud zone fetch timestamp when zoneStates was fetched
+        # Reset HomeKit savings counters when API quota resets.
+        # Detection: remaining jumps up significantly (e.g. 100 → 5000).
+        # This mirrors api_client._calculate_live_ratelimit's reset detection.
+        rl_data = self.data_loader.get_cached("ratelimit")
+        if isinstance(rl_data, dict):
+            current_remaining = rl_data.get("remaining")
+            if (
+                current_remaining is not None
+                and self._prev_savings_remaining is not None
+                and current_remaining > self._prev_savings_remaining + max(20, int(rl_data.get("limit", 5000) * 0.05))
+            ):
+                _LOGGER.info(
+                    "HomeKit savings: quota reset detected (remaining %s → %s), zeroing (was reads=%s, writes=%s)",
+                    self._prev_savings_remaining, current_remaining,
+                    self._homekit_reads_saved, self._homekit_writes_saved,
+                )
+                self._homekit_reads_saved = 0
+                self._homekit_writes_saved = 0
+                self._reset_write_metrics()
+                self._save_homekit_savings()
+            self._prev_savings_remaining = current_remaining
+
+        if not skip_zone_states:
+            self._last_cloud_zone_fetch = dt_util.utcnow()
+        else:
+            self.record_homekit_read_saved()
+
+        # Update weather fetch timestamp
+        if not skip_weather and cm.get_weather_enabled() and not zone_only:
+            self._last_weather_fetch = dt_util.utcnow()
 
         if was_failing:
             _LOGGER.info("Tado CE: Connection restored — sync successful after previous failure")
@@ -399,8 +570,8 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         prev_last = self._outdoor_temp_history[-1] if self._outdoor_temp_history else None
 
         self._outdoor_temp_history.append(outdoor_temp)
-        if len(self._outdoor_temp_history) > _OUTDOOR_TEMP_HISTORY_MAX:
-            del self._outdoor_temp_history[: len(self._outdoor_temp_history) - _OUTDOOR_TEMP_HISTORY_MAX]
+        if len(self._outdoor_temp_history) > OUTDOOR_TEMP_HISTORY_MAX:
+            del self._outdoor_temp_history[: len(self._outdoor_temp_history) - OUTDOOR_TEMP_HISTORY_MAX]
 
         # Only schedule Store write when the new reading differs from the previous
         if outdoor_temp != prev_last:
@@ -431,7 +602,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         current_temp,
                     )
             except (KeyError, TypeError, ValueError):
-                _LOGGER.debug("HeatingCycleCoordinator update failed for zone %s", zone_id)
+                _LOGGER.debug("Heating cycle update failed for zone %s", zone_id)
 
     async def _handle_state_restore_updates(
         self,
@@ -517,7 +688,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 from .bridge_discovery import flatten_response
 
                 fields = flatten_response(result)
-                _LOGGER.info(
+                _LOGGER.debug(
                     "Bridge API field inventory (%d fields): %s",
                     len(fields),
                     ", ".join(f.path for f in fields),
@@ -599,7 +770,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Remove expired freshness entries."""
         async with self._freshness_lock:
             now = time.monotonic()
-            expired = [eid for eid, timestamp in self.entity_freshness.items() if now - timestamp > 60]  # noqa: PLR2004 — 60s freshness TTL
+            expired = [eid for eid, timestamp in self.entity_freshness.items() if now - timestamp > 60]
             for eid in expired:
                 del self.entity_freshness[eid]
             if expired:
@@ -612,6 +783,29 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Persist weather compensation state if it was loaded."""
         if self._wc_state_loaded:
             self.data_loader.save_wc_state(self._wc_state.to_dict())
+
+    def _save_homekit_savings(self) -> None:
+        """Persist HomeKit API savings counters (debounced via Store)."""
+        self.data_loader.save_homekit_savings({
+            "reads_saved": self._homekit_reads_saved,
+            "writes_saved": self._homekit_writes_saved,
+        })
+
+    def record_homekit_read_saved(self) -> None:
+        """Record one HomeKit read saving and persist."""
+        self._homekit_reads_saved += 1
+        self._save_homekit_savings()
+
+    def record_homekit_write_saved(self, zone_id: str | None = None) -> None:
+        """Record one HomeKit write saving, update reconciler, and persist.
+
+        Args:
+            zone_id: Zone ID for state reconciler tracking (optional).
+        """
+        self._homekit_writes_saved += 1
+        if zone_id and self.state_reconciler:
+            self.state_reconciler.record_local_write(zone_id)
+        self._save_homekit_savings()
 
     async def async_capture_state(
         self, zone_id: str, entity_type: str, source: str,

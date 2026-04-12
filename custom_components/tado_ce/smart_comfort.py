@@ -1,4 +1,4 @@
-"""Tado CE Smart Comfort Manager — heating analytics, rate calculation, weather compensation."""
+"""Tado CE Smart Comfort Manager — heating analytics, rate calculation, preheat advice."""
 
 from __future__ import annotations
 
@@ -575,7 +575,7 @@ class ZoneHistory:
             if time_diff <= comparison_window_minutes:
                 historical_temps.append(reading.temperature)
 
-        if len(historical_temps) < 2:  # noqa: PLR2004 — need at least 2 points for comparison
+        if len(historical_temps) < 2:
             return None
 
         historical_avg = sum(historical_temps) / len(historical_temps)
@@ -1144,7 +1144,7 @@ async def async_load_history_from_recorder(
     except ImportError:
         _LOGGER.debug("Smart Comfort: Recorder component not available")
         return 0
-    except Exception as e:  # noqa: BLE001 — HA entity update pattern
+    except Exception as e:
         _LOGGER.warning("Smart Comfort: Failed to load history from recorder: %s", e)
         return 0
 
@@ -1157,7 +1157,7 @@ def _calculate_zone_baseline(
     Returns:
         Dict with baseline rates and metadata, or None if insufficient data.
     """
-    if len(sensor_stats) < 24:  # noqa: PLR2004 — minimum 24 hours of data
+    if len(sensor_stats) < 24:
         return None
 
     temp_changes = []
@@ -1269,6 +1269,6 @@ async def async_load_baseline_from_statistics(
     except ImportError as e:
         _LOGGER.debug("Smart Comfort: Statistics API not available: %s", e)
         return {}
-    except Exception as e:  # noqa: BLE001 — HA entity update pattern
+    except Exception as e:
         _LOGGER.warning("Smart Comfort: Failed to load statistics: %s", e)
         return {}

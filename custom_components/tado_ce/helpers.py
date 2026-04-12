@@ -1,16 +1,15 @@
-"""Tado CE helper functions — optimistic update window, overlay termination config.
-
-Optimistic update window calculation and overlay termination configuration.
-"""
+"""Tado CE shared helpers — retry delay, datetime parsing, overlay termination, refresh trigger."""
 
 from __future__ import annotations
 
+import asyncio
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 import logging
 import random
 from typing import TYPE_CHECKING, Any
 
-from .const import MAX_RETRY_DELAY, OVERLAY_MODE_DEFAULT, RETRY_BASE_DELAY, TIMER_DURATION_DEFAULT
+from .const import MAX_RETRY_ATTEMPTS, MAX_RETRY_DELAY, OVERLAY_MODE_DEFAULT, RETRY_BASE_DELAY, TIMER_DURATION_DEFAULT
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -18,6 +17,32 @@ if TYPE_CHECKING:
     from .coordinator import TadoDataUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def get_zone_states(coord_data: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
+    """Extract zone states dict from coordinator data.
+
+    Handles all null-safety: None coord_data, missing "zones" key,
+    missing "zoneStates" key.
+
+    Returns:
+        Dict mapping zone_id -> zone_state_dict, or empty dict.
+    """
+    if not coord_data:
+        return {}
+    zones = coord_data.get("zones")
+    if not isinstance(zones, dict):
+        return {}
+    return zones.get("zoneStates") or {}
+
+
+def get_zone_state(coord_data: dict[str, Any] | None, zone_id: str) -> dict[str, Any] | None:
+    """Get state for a single zone from coordinator data.
+
+    Convenience wrapper: get_zone_states(data).get(zone_id).
+    """
+    return get_zone_states(coord_data).get(zone_id)
+
 
 # Tado API only accepts: MANUAL, TADO_MODE, TIMER
 _OVERLAY_API_MAP: dict[str, str] = {
@@ -35,7 +60,47 @@ def retry_delay(attempt: int, base_delay: float = RETRY_BASE_DELAY) -> float:
 
     Uses full jitter pattern: uniform random between 0 and base_delay^attempt.
     """
-    return random.uniform(0, min(MAX_RETRY_DELAY, base_delay**attempt))  # noqa: S311 — not crypto
+    return random.uniform(0, min(MAX_RETRY_DELAY, base_delay**attempt))
+
+
+async def async_retry_with_backoff[T](
+    callback: Callable[..., Awaitable[T]],
+    *,
+    max_attempts: int = MAX_RETRY_ATTEMPTS,
+    no_retry_exceptions: tuple[type[Exception], ...] = (),
+    retryable_exceptions: tuple[type[Exception], ...] = (Exception,),
+    on_retry: Callable[[int, Exception], Awaitable[None]] | None = None,
+) -> T:
+    """Execute callback with exponential backoff retry.
+
+    Args:
+        callback: Async callable to execute.
+        max_attempts: Maximum number of attempts.
+        no_retry_exceptions: Exception types that should never be retried.
+        retryable_exceptions: Exception types eligible for retry.
+        on_retry: Optional async callback(attempt, error) called before each retry sleep.
+
+    Returns:
+        Result of successful callback execution.
+
+    Raises:
+        The last exception if all attempts exhausted, or any no_retry_exception immediately.
+    """
+    last_error: Exception | None = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return await callback()
+        except no_retry_exceptions:
+            raise
+        except retryable_exceptions as err:
+            last_error = err
+            if attempt >= max_attempts:
+                raise
+            if on_retry:
+                await on_retry(attempt, err)
+            delay = retry_delay(attempt)
+            await asyncio.sleep(delay)
+    raise last_error  # type: ignore[misc]
 
 
 def _get_coordinator(hass: HomeAssistant, entry_id: str) -> TadoDataUpdateCoordinator:

@@ -17,13 +17,14 @@ Complete guide to all Tado CE exclusive features, configurations, and usage scen
 8. [Heating Cycle Detection](#-heating-cycle-detection)
 9. [Enhanced Controls](#-enhanced-controls)
 10. [Bridge API Integration](#-bridge-api-integration)
-11. [Weather Compensation](#-weather-compensation)
-12. [Optional Features](#-optional-features)
-13. [Per-Zone Configuration](#-per-zone-configuration)
-14. [Zone Features Toggles](#-zone-features-toggles)
-15. [Configuration Scenarios](#-configuration-scenarios)
-16. [Actionable Insights](#-actionable-insights)
-17. [Troubleshooting](#-troubleshooting)
+11. [HomeKit Local Control](#-homekit-local-control)
+12. [Weather Compensation](#-weather-compensation)
+13. [Optional Features](#-optional-features)
+14. [Per-Zone Configuration](#-per-zone-configuration)
+15. [Zone Features Toggles](#-zone-features-toggles)
+16. [Configuration Scenarios](#-configuration-scenarios)
+17. [Actionable Insights](#-actionable-insights)
+18. [Troubleshooting](#-troubleshooting)
 
 ---
 
@@ -1057,6 +1058,96 @@ automation:
 
 ---
 
+## 🏠 HomeKit Local Control
+
+**Available:** v4.0.0+ | **Requirement:** Tado Internet Bridge v3+ | **Opt-in Configuration**
+
+Pair your Tado bridge via HomeKit to control heating and AC directly on your local network. Temperature and humidity updates arrive in real time instead of waiting for the next cloud poll, and local commands don't count against your API quota.
+
+### What You Get
+
+| Benefit | Description |
+|---------|-------------|
+| Faster controls | Temperature and mode changes go through your LAN (~1 second) instead of the cloud |
+| Real-time sensor data | Temperature and humidity push instantly via HomeKit events |
+| Fewer API calls | Cloud polling is reduced when HomeKit is connected — the integration tracks savings |
+| Automatic fallback | If HomeKit becomes unavailable, the integration switches to cloud seamlessly |
+| Zero-config reconnect | If the bridge connection drops, it reconnects in the background automatically |
+
+### Setup
+
+1. Go to **Settings → Tado CE → Configure → General Settings**
+2. Enable **HomeKit Local Control**
+3. Follow the pairing flow — you'll need the HomeKit setup code from your bridge
+4. Once paired, the integration connects automatically on every HA restart
+
+> **Note:** Your bridge can only be paired with one HomeKit controller at a time. If you're using Apple Home, you'll need to unpair it first. You can re-expose climate entities to Apple Home via the HA HomeKit Bridge integration.
+
+### Settings
+
+| Setting | Location | Default | Description |
+|---------|----------|---------|-------------|
+| HomeKit Local Control | General Settings | Off | Enable/disable HomeKit pairing |
+| Cloud Sync Interval | Advanced Settings → HomeKit | 30 min | How often to check Tado's servers for cloud-only data (schedules, geofencing, etc.) when HomeKit is connected |
+| Unpair | Advanced Settings → HomeKit | — | Remove the HomeKit pairing without removing the integration |
+
+### Entities
+
+| Entity | Type | Description |
+|--------|------|-------------|
+| HomeKit Connected | `binary_sensor` | Shows whether the HomeKit connection is active. Attributes include uptime, reconnect count, mapped/unmapped zones, and API savings counters |
+
+The HomeKit Connected sensor's attributes fall into two groups — savings counters and write performance metrics — with different persistence behaviour:
+
+**Savings counters** — how many API calls HomeKit saved you:
+
+| Attribute | Description |
+|-----------|-------------|
+| `reads_saved_today` | Cloud data fetches skipped because HomeKit provided the data |
+| `writes_saved_today` | Cloud API writes skipped because HomeKit handled the command locally |
+
+These survive HA restarts (saved to disk) so your daily total stays accurate even if HA reboots mid-day. They reset to zero when your Tado API quota resets (typically once per day).
+
+**Write performance metrics** — how well HomeKit is performing right now:
+
+| Attribute | Description |
+|-----------|-------------|
+| `write_attempts` | HomeKit write attempts since last restart |
+| `write_successes` | Successful HomeKit writes |
+| `write_fallbacks` | Writes that failed locally and fell back to the cloud |
+| `write_avg_latency_ms` | Average round-trip time for HomeKit writes (milliseconds) |
+
+These start at zero after every HA restart, after an API quota reset, and after a HomeKit reconnect. This is intentional — performance metrics need to reflect current conditions, not yesterday's network. If your bridge moved to a different spot or your WiFi changed, stale latency numbers would be misleading. They also update on every temperature or mode change, so persisting them would mean a disk write every time you touch a slider.
+
+> **Seeing all zeros?** That just means no one (and no automation) has changed a temperature or mode since the last restart. The counters only increment when a write actually happens.
+
+### How Data Sources Work
+
+When HomeKit is connected, climate entities show where their readings come from:
+
+| Attribute | Values | Meaning |
+|-----------|--------|---------|
+| `temperature_source` | `cloud`, `homekit`, `external` | Where the current temperature reading comes from |
+| `humidity_source` | `cloud`, `homekit`, `external` | Where the current humidity reading comes from |
+| `last_write_source` | `cloud`, `homekit` | Whether the last temperature/mode change went through HomeKit or the cloud |
+
+Priority: external sensor override > HomeKit (if fresh) > cloud.
+
+### What Stays Cloud-Only
+
+Even with HomeKit connected, some data only comes from Tado's servers:
+
+- Heating power percentage
+- Battery status
+- Schedules and overlays
+- Hot water control
+- Geofencing / presence detection
+- Device firmware info
+
+The integration handles this automatically — it fetches cloud-only data at the configured Cloud Sync Interval while using HomeKit for temperature and humidity.
+
+---
+
 ## 🌡️ Weather Compensation
 
 **Available:** v3.3.0+ | **Requirement:** Bridge API configured OR cloud outdoor temperature | **Opt-in Configuration**
@@ -1677,11 +1768,11 @@ Look for `Bridge API full response` in logs to verify the API is returning data.
 
 ## 📚 Related Documentation
 
-- [ENTITIES.md](ENTITIES.md) — Complete entity reference (86 entities)
+- [ENTITIES.md](ENTITIES.md) — Complete entity reference (87 entities)
 - [README.md](README.md) — Installation and setup
 - [API_REFERENCE.md](API_REFERENCE.md) — Technical API details
 - [ROADMAP.md](ROADMAP.md) — Planned features and ideas
 
 ---
 
-**Last Updated:** v3.5.3 (2026-04-08)
+**Last Updated:** v4.0.0-beta.1 (2026-04-12)

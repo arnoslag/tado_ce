@@ -1,9 +1,4 @@
-"""Tado CE Weather Compensation Sensors — target flow temp and engine status.
-
-Two diagnostic sensors that expose the weather compensation engine state:
-- TadoWeatherCompensationTargetSensor: calculated target flow temperature
-- TadoWeatherCompensationStatusSensor: engine status (active/paused/disabled)
-"""
+"""Tado CE Weather Compensation Sensors — target flow temp and engine status."""
 
 from __future__ import annotations
 

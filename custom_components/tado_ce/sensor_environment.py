@@ -39,6 +39,7 @@ from .format_helpers import (
 from .format_helpers import (
     strip_zone_prefix as _strip_zone_prefix,
 )
+from .helpers import get_zone_states
 from .insights_environment import (
     calculate_comfort_recommendation,
     calculate_condensation_recommendation,
@@ -272,7 +273,7 @@ class TadoMoldRiskSensor(TadoZoneSensor):
 
             self._attr_available = True
 
-        except Exception as e:  # noqa: BLE001 — HA entity update pattern
+        except Exception as e:
             _LOGGER.debug("Failed to update mold risk for zone %s: %s", self._zone_id, e)
             self._attr_available = False
 
@@ -378,7 +379,7 @@ class TadoMoldRiskPercentageSensor(TadoZoneSensor):
             self._attr_native_value = surface_rh
             self._attr_available = True
 
-        except Exception as e:  # noqa: BLE001 — HA entity update pattern
+        except Exception as e:
             _LOGGER.debug("Failed to update mold risk percentage for zone %s: %s", self._zone_id, e)
             self._attr_available = False
 
@@ -544,7 +545,7 @@ class TadoCondensationRiskSensor(TadoZoneSensor):
                 },
             )
 
-        except Exception as e:  # noqa: BLE001 — HA entity update pattern
+        except Exception as e:
             _LOGGER.debug("Failed to update condensation risk for zone %s: %s", self._zone_id, e)
             self._attr_available = False
 
@@ -700,7 +701,7 @@ class TadoCondensationRiskSensor(TadoZoneSensor):
                     except (ValueError, TypeError):
                         pass
 
-        except Exception as e:  # noqa: BLE001 — defensive helper, external state access may raise any error
+        except Exception as e:
             _LOGGER.debug("Error getting outdoor humidity from %s: %s", entity_id, e)
             return None
 
@@ -864,7 +865,7 @@ class TadoSurfaceTemperatureSensor(TadoZoneSensor):
             self._offset_applied = 0.0
             self._attr_available = True
 
-        except Exception as e:  # noqa: BLE001 — HA entity update pattern
+        except Exception as e:
             _LOGGER.debug("Failed to update surface temperature for zone %s: %s", self._zone_id, e)
             self._attr_available = False
 
@@ -945,7 +946,7 @@ class TadoDewPointSensor(TadoZoneSensor):
             self._attr_native_value = round(_calculate_dew_point(self._room_temp, self._humidity), 1)
             self._attr_available = True
 
-        except Exception as e:  # noqa: BLE001 — HA entity update pattern
+        except Exception as e:
             _LOGGER.debug("Failed to update dew point for zone %s: %s", self._zone_id, e)
             self._attr_available = False
 
@@ -1036,7 +1037,7 @@ class TadoComfortLevelSensor(TadoZoneSensor):
     def _get_hvac_mode_from_coordinator(self) -> str | None:
         """Get HVAC mode from coordinator data (no cross-entity hass.states.get)."""
         coord_data = self.coordinator.data or {}
-        zone_states = (coord_data.get("zones") or {}).get("zoneStates") or {}
+        zone_states = get_zone_states(coord_data)
         zone_state = zone_states.get(self._zone_id) or zone_states.get(str(self._zone_id))
         if not zone_state:
             return None
@@ -1114,7 +1115,7 @@ class TadoComfortLevelSensor(TadoZoneSensor):
 
             self._attr_available = True
 
-        except Exception as e:  # noqa: BLE001 — HA entity update pattern
+        except Exception as e:
             _LOGGER.debug("Failed to update air comfort for zone %s: %s", self._zone_id, e)
             self._attr_available = False
 

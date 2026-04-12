@@ -21,6 +21,13 @@ Thank you to everyone who supported the project through [Buy Me a Coffee](https:
 
 Community contributors who helped shape each release through bug reports, feature requests, testing, and feedback.
 
+### v4.0.0-beta.1
+
+- **[@Thilas](https://github.com/Thilas)** — Originally proposed converting battery and connection sensors to binary sensors for better HA grouping support ([#160](https://github.com/hiall-fyi/tado_ce/issues/160))
+- **[@jeverley](https://github.com/jeverley)** — Pushed the entity type correction further by identifying that connection and hot water power are genuinely boolean and should use `CONNECTIVITY` and `POWER` device classes, while battery correctly stays as a sensor ([#160](https://github.com/hiall-fyi/tado_ce/issues/160))
+- **[@dragorex71](https://github.com/dragorex71)** — Reported that the Advanced Settings page showed a blank form when no optional features were enabled ([#220](https://github.com/hiall-fyi/tado_ce/issues/220))
+- **[@simonotter](https://github.com/simonotter)** — Reported `offset_celsius` showing a raw Fahrenheit value instead of the actual offset, with detailed math checks, debug logs, and a working automation workaround that confirmed the feedback loop root cause ([#221](https://github.com/hiall-fyi/tado_ce/issues/221))
+
 ### v3.5.3
 
 - **[@jeverley](https://github.com/jeverley)** — Reported that overlay sensors don't show timer end time, and provided the full API response confirming the `termination.expiry` field for Timer overlays ([#217](https://github.com/hiall-fyi/tado_ce/issues/217))

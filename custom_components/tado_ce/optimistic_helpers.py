@@ -1,12 +1,8 @@
-"""Tado CE optimistic state management helpers — 3-layer stale data defense.
+"""Tado CE optimistic state management — 3-layer stale data defense.
 
-Single source of truth for optimistic state across ALL entity types
-(climate, water_heater, select, switch).
-
-3-layer defense strategy:
-  Layer 1: Time-window freshness (_optimistic_set_at)
-  Layer 2: Sequence numbers (_optimistic_sequence)
-  Layer 3: Expected-state confirmation (_expected_* fields)
+Layer 1: Time-window freshness (_optimistic_set_at)
+Layer 2: Sequence numbers (_optimistic_sequence)
+Layer 3: Expected-state confirmation (_expected_* fields)
 """
 
 from __future__ import annotations
@@ -126,7 +122,7 @@ def is_within_optimistic_window(
     from .helpers import get_optimistic_window
 
     elapsed = time.monotonic() - optimistic_set_at
-    return elapsed < get_optimistic_window(hass, entry_id=entry_id) if hass else elapsed < 17.0  # noqa: PLR2004 — fallback optimistic window seconds
+    return elapsed < get_optimistic_window(hass, entry_id=entry_id) if hass else elapsed < 17.0
 
 
 def resolve_optimistic_update(

@@ -1,7 +1,4 @@
-"""Tado CE API Client — async HTTP with per-entry isolation for multi-home support.
-
-Async HTTP client using aiohttp with per-entry isolation for multi-home support.
-"""
+"""Tado CE API Client — async HTTP with per-entry isolation for multi-home support."""
 
 from __future__ import annotations
 
@@ -27,7 +24,7 @@ from .api_call_tracker import (
     CALL_TYPE_ZONE_STATES,
     CALL_TYPE_ZONES,
 )
-from .const import API_ENDPOINT_DEVICES, MAX_RETRY_ATTEMPTS, TADO_API_BASE
+from .const import API_ENDPOINT_DEVICES, DEVICE_OFFSET_MAX, DEVICE_OFFSET_MIN, MAX_RETRY_ATTEMPTS, TADO_API_BASE, is_climate_zone
 from .exceptions import TadoAuthError, TadoSyncError
 from .helpers import parse_iso_datetime, retry_delay
 from .storage import async_load_json, async_save_json
@@ -454,7 +451,7 @@ class TadoApiClient(TadoAuthMixin):
         return None, last_reset_utc
 
     @staticmethod
-    def _find_first_calls_by_day(all_calls: list[dict]) -> dict[str, Any]:
+    def _find_first_calls_by_day(all_calls: list[dict[str, Any]]) -> dict[str, Any]:
         """Find the earliest API call for each day from call history."""
         first_calls_by_day: dict[str, Any] = {}
         for call in all_calls:
@@ -468,8 +465,8 @@ class TadoApiClient(TadoAuthMixin):
     def _round_to_nearest_hour(dt_val: datetime) -> int:
         """Round a datetime to the nearest hour (0-23)."""
         hour = dt_val.hour
-        if dt_val.minute >= 30:  # noqa: PLR2004
-            hour = (hour + 1) % 24  # noqa: PLR2004
+        if dt_val.minute >= 30:
+            hour = (hour + 1) % 24
         return hour
 
     @staticmethod
@@ -483,15 +480,15 @@ class TadoApiClient(TadoAuthMixin):
         hour_counts: dict[int, int] = {}
         for first_call in first_calls_by_day.values():
             hour = first_call.hour
-            if first_call.minute >= 30:  # noqa: PLR2004
-                hour = (hour + 1) % 24  # noqa: PLR2004
+            if first_call.minute >= 30:
+                hour = (hour + 1) % 24
             hour_counts[hour] = hour_counts.get(hour, 0) + 1
 
         if not hour_counts:
             return None
         most_common_hour = max(hour_counts, key=hour_counts.get)  # type: ignore[arg-type]
         count = hour_counts[most_common_hour]
-        if count < 2:  # noqa: PLR2004
+        if count < 2:
             return None
         return most_common_hour, count
 
@@ -503,10 +500,10 @@ class TadoApiClient(TadoAuthMixin):
         minutes_in_hour = []
         for first_call in first_calls_by_day.values():
             call_hour = first_call.hour
-            if first_call.minute >= 30:  # noqa: PLR2004
-                call_hour = (call_hour + 1) % 24  # noqa: PLR2004
+            if first_call.minute >= 30:
+                call_hour = (call_hour + 1) % 24
             if call_hour == target_hour:
-                minutes_in_hour.append(first_call.hour * 60 + first_call.minute)
+                minutes_in_hour.append(int(first_call.hour * 60 + first_call.minute))
         if not minutes_in_hour:
             return None
         return sum(minutes_in_hour) // len(minutes_in_hour)
@@ -524,7 +521,7 @@ class TadoApiClient(TadoAuthMixin):
             all_calls = tracker.get_call_history(days=14)
             first_calls_by_day = self._find_first_calls_by_day(all_calls)
 
-            if len(first_calls_by_day) < 2:  # noqa: PLR2004
+            if len(first_calls_by_day) < 2:
                 return None
 
             hour_result = self._find_most_common_reset_hour(first_calls_by_day)
@@ -562,7 +559,7 @@ class TadoApiClient(TadoAuthMixin):
     async def save_ratelimit(self, status: str = "ok") -> None:
         """Save current rate limit info to file for sensor updates.
 
-        Includes advanced reset detection from tado_api.py:
+        Includes advanced reset detection:
         - Detects when rate limit resets (remaining increases significantly)
         - Uses multiple strategies to calculate reset time
         - Tracks last known reset time for accurate predictions
@@ -625,7 +622,7 @@ class TadoApiClient(TadoAuthMixin):
         # Update status based on usage
         if remaining == 0:
             status = "rate_limited"
-        elif percentage_used > 80:  # noqa: PLR2004 — API quota warning threshold
+        elif percentage_used > 80:
             status = "warning"
 
         data: dict[str, Any] = {
@@ -662,7 +659,7 @@ class TadoApiClient(TadoAuthMixin):
         try:
             return config_manager.get_test_mode_enabled()
         except (AttributeError, TypeError) as e:
-            _LOGGER.warning("Could not get test_mode from config_manager: %s", e)
+            _LOGGER.warning("Could not read test mode setting: %s", e)
             return False
 
     @staticmethod
@@ -790,11 +787,11 @@ class TadoApiClient(TadoAuthMixin):
         url: str,
         token: str,
         data: dict[str, Any] | None,
-        success_statuses: set,
+        success_statuses: set[int | HTTPStatus],
         parse_ratelimit: bool,
         attempt: int,
-        tracker: object | None,
-        call_type: str | None,
+        tracker: APICallTracker | None,
+        call_type: int | None,
     ) -> tuple[dict[str, Any] | None, bool]:
         """Execute a single API attempt. Returns (result, should_continue).
 
@@ -810,12 +807,12 @@ class TadoApiClient(TadoAuthMixin):
             if parse_ratelimit and attempt == 1:
                 self._parse_ratelimit_headers(dict(resp.headers))
             if tracker and call_type:
-                await tracker.async_record_call(call_type, resp.status)  # type: ignore[union-attr]
+                await tracker.async_record_call(call_type, resp.status)
 
             if resp.status in success_statuses:
                 if resp.status == HTTPStatus.NO_CONTENT or resp.content_length == 0:
                     return {}, False
-                return await resp.json(), False  # type: ignore[return-value]
+                return await resp.json(), False
 
             action = await self._handle_error_status(
                 resp.status, method, url, attempt,
@@ -845,9 +842,9 @@ class TadoApiClient(TadoAuthMixin):
         call_type = _detect_call_type(endpoint)
         tracker = self._api_tracker
 
-        _success = {HTTPStatus.OK, HTTPStatus.CREATED, HTTPStatus.NO_CONTENT}
+        _success: set[int | HTTPStatus] = {HTTPStatus.OK, HTTPStatus.CREATED, HTTPStatus.NO_CONTENT}
         if extra_success_statuses:
-            _success |= extra_success_statuses  # type: ignore[arg-type]
+            _success |= extra_success_statuses
 
         for attempt in range(1, MAX_RETRY_ATTEMPTS + 1):
             token = await self.get_access_token()
@@ -883,10 +880,16 @@ class TadoApiClient(TadoAuthMixin):
         )
         if result is None:
             return None
-        return result.get("celsius")  # type: ignore[no-any-return]
+        return result.get("celsius")
 
     async def set_device_offset(self, serial: str, offset: float) -> bool:
         """Set temperature offset for a specific device."""
+        if not (DEVICE_OFFSET_MIN <= offset <= DEVICE_OFFSET_MAX):
+            _LOGGER.warning(
+                "Offset %s°C for device %s rejected: outside valid range [%s, %s]",
+                offset, serial, DEVICE_OFFSET_MIN, DEVICE_OFFSET_MAX,
+            )
+            return False
         url = f"{API_ENDPOINT_DEVICES}/{serial}/temperatureOffset"
         result = await self.api_call(
             f"devices/{serial}/temperatureOffset",
@@ -1059,13 +1062,15 @@ class TadoApiClient(TadoAuthMixin):
                 _LOGGER.debug("Mobile devices count: %s", len(mobile_data))
 
         if offset_enabled:
-            await self._sync_offsets(zones_info)  # type: ignore[arg-type]
+            await self._sync_offsets(zones_info)
 
-        await self._sync_ac_capabilities(zones_info)  # type: ignore[arg-type]
+        await self._sync_ac_capabilities(zones_info)
 
     async def async_sync(
         self,
         quick: bool = False,
+        skip_zone_states: bool = False,
+        zone_only: bool = False,
         weather_enabled: bool = True,
         mobile_devices_enabled: bool = True,
         mobile_devices_frequent_sync: bool = False,
@@ -1080,28 +1085,34 @@ class TadoApiClient(TadoAuthMixin):
         - TadoSyncError → UpdateFailed (coordinator retries on next poll)
         """
         sync_type = "quick" if quick else "full"
-        _LOGGER.info("Tado CE async sync starting (%s)", sync_type)
+        _LOGGER.debug("Tado CE async sync starting (%s)", sync_type)
         await self._ensure_home_id()
 
         try:
-            # Always fetch zone states (most important)
-            zones_data = await self.api_call("zoneStates")
-            if zones_data is None:
-                _LOGGER.error("Failed to fetch zone states")
-                await self.save_ratelimit("error")
-                raise TadoSyncError("Failed to fetch zone states")
+            if skip_zone_states:
+                _LOGGER.debug(
+                    "Tado CE: Skipping cloud data check — HomeKit providing live data",
+                )
+            else:
+                # Fetch zone states (most important)
+                zones_data = await self.api_call("zoneStates")
+                if zones_data is None:
+                    _LOGGER.error("Failed to fetch zone states")
+                    await self.save_ratelimit("error")
+                    raise TadoSyncError("Failed to fetch zone states")
 
-            await self._save_json_file(self._get_data_file("zones"), zones_data)
-            _LOGGER.debug("Zone states saved (%s zones)", len((zones_data.get("zoneStates") or {}).keys()))
+                await self._save_json_file(self._get_data_file("zones"), zones_data)
+                _LOGGER.debug("Zone states saved (%s zones)", len((zones_data.get("zoneStates") or {}).keys()))
 
-            await self._sync_quick_extras(
-                weather_enabled=weather_enabled,
-                home_state_sync_enabled=home_state_sync_enabled,
-                mobile_devices_enabled=mobile_devices_enabled,
-                mobile_devices_frequent_sync=mobile_devices_frequent_sync,
-            )
+            if not zone_only:
+                await self._sync_quick_extras(
+                    weather_enabled=weather_enabled,
+                    home_state_sync_enabled=home_state_sync_enabled,
+                    mobile_devices_enabled=mobile_devices_enabled,
+                    mobile_devices_frequent_sync=mobile_devices_frequent_sync,
+                )
 
-            if not quick:
+            if not quick and not zone_only:
                 await self._sync_full_extras(
                     mobile_devices_enabled=mobile_devices_enabled,
                     offset_enabled=offset_enabled,
@@ -1111,7 +1122,7 @@ class TadoApiClient(TadoAuthMixin):
 
             rl = self._rate_limit
             used = rl.get("limit", 0) - rl.get("remaining", 0) if rl.get("limit") else 0
-            _LOGGER.info("Tado CE async sync SUCCESS (%s): %s/%s API calls used", sync_type, used, rl.get("limit", "?"))
+            _LOGGER.debug("Tado CE async sync SUCCESS (%s): %s/%s API calls used", sync_type, used, rl.get("limit", "?"))
 
         except TadoAuthError:
             raise
@@ -1160,7 +1171,7 @@ class TadoApiClient(TadoAuthMixin):
             zone_type = zone.get("type")
 
             # Only fetch offsets for heating/AC zones (not hot water)
-            if zone_type not in ("HEATING", "AIR_CONDITIONING"):
+            if not is_climate_zone(zone_type or ""):
                 continue
 
             devices = zone.get("devices") or []
@@ -1170,8 +1181,14 @@ class TadoApiClient(TadoAuthMixin):
                     try:
                         offset = await self.get_device_offset(serial)
                         if offset is not None:
-                            offsets[zone_id] = offset
-                            _LOGGER.debug("Offset for zone %s: %s°C", zone_id, offset)
+                            if not (DEVICE_OFFSET_MIN <= offset <= DEVICE_OFFSET_MAX):
+                                _LOGGER.warning(
+                                    "Offset for zone %s rejected: %s°C outside valid range [%s, %s]",
+                                    zone_id, offset, DEVICE_OFFSET_MIN, DEVICE_OFFSET_MAX,
+                                )
+                            else:
+                                offsets[zone_id] = offset
+                                _LOGGER.debug("Offset for zone %s: %s°C", zone_id, offset)
                         break  # Only need first device per zone
                     except (KeyError, TypeError, ValueError) as e:
                         _LOGGER.warning("Failed to fetch offset for device %s: %s", serial, e)

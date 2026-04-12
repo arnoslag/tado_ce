@@ -1,4 +1,4 @@
-"""Tado CE entry lifecycle — per-entry component creation and cleanup."""  # coordinator attributes are heterogeneous
+"""Tado CE entry lifecycle — per-entry component creation and cleanup."""
 
 from __future__ import annotations
 
@@ -64,9 +64,64 @@ async def async_create_entry_components(
 
     await hass.async_add_executor_job(load_version)
 
+    # Create HomeKit client if enabled
+    homekit_client = None
+    if config_manager.get_homekit_enabled():
+        from .const import get_data_file
+        from .homekit_client import HomeKitClient
+
+        pairing_path = get_data_file("homekit_pairing", home_id)
+        homekit_client = HomeKitClient(hass, home_id or "default", pairing_path)
+        connected = await homekit_client.async_connect()
+        if connected:
+            _LOGGER.info("Tado CE: HomeKit connected to bridge")
+            from .homekit_mapping import build_serial_mapping, load_device_mapping, save_device_mapping
+
+            mapping = await load_device_mapping(hass, home_id or "default")
+            serial_to_zone = mapping.get("serial_to_zone", {}) if mapping else {}
+
+            # Rebuild mapping if empty (first connect after pairing, or stale file)
+            if not serial_to_zone:
+                _LOGGER.info("Tado CE: HomeKit mapping empty — rebuilding from accessories + cloud zones")
+                accessories = await homekit_client.async_list_accessories()
+                # Load zones_info from disk (coordinator not created yet)
+                if data_loader:
+                    zones_info = await hass.async_add_executor_job(data_loader.load_zones_info_file)
+                else:
+                    zones_info = []
+                if accessories and zones_info:
+                    mapping = build_serial_mapping(accessories, zones_info)
+                    await save_device_mapping(hass, home_id or "default", mapping)
+                    serial_to_zone = mapping.get("serial_to_zone", {})
+
+            if serial_to_zone:
+                homekit_client.set_zone_mapping(
+                    mapping.get("serial_to_zone", {}),  # type: ignore[union-attr]
+                    mapping.get("zone_to_aids", {}),  # type: ignore[union-attr]
+                )
+                _LOGGER.info("Tado CE: HomeKit zone mapping loaded (%d zones)", len(serial_to_zone))
+
+                # Log mapped vs unmapped climate zones for diagnostics
+                from .const import get_climate_zone_ids
+
+                if data_loader:
+                    zi = await hass.async_add_executor_job(data_loader.load_zones_info_file)
+                else:
+                    zi = zones_info if "zones_info" in dir() else []
+                all_climate_ids = get_climate_zone_ids(zi or [])
+                mapped_ids = set(serial_to_zone.values())
+                unmapped = all_climate_ids - mapped_ids
+                if unmapped:
+                    _LOGGER.info("HomeKit: Zones without local mapping (using cloud): %s", unmapped)
+            else:
+                _LOGGER.warning("Tado CE: HomeKit connected but no zone mapping — local data unavailable")
+        else:
+            _LOGGER.warning("Tado CE: HomeKit connection failed, using cloud only")
+
     return {
         "api_tracker": api_tracker,
         "api_client": api_client,
+        "homekit_client": homekit_client,
     }
 
 
@@ -129,3 +184,15 @@ async def async_cleanup_entry_components(
     if _attr("data_loader") is not None:
         coordinator.data_loader = None  # type: ignore[assignment]
         _LOGGER.debug("Cleaned up per-entry DataLoader")
+
+    # Clean up HomeKit client
+    hkc = _attr("homekit_client")
+    if hkc is not None:
+        from .homekit_client import HomeKitClient
+
+        if isinstance(hkc, HomeKitClient):
+            await hkc.async_disconnect()
+        coordinator.homekit_client = None
+        coordinator.homekit_provider = None
+        coordinator.state_reconciler = None
+        _LOGGER.debug("Cleaned up HomeKit client")

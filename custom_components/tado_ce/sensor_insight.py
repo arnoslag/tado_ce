@@ -28,6 +28,7 @@ from .format_helpers import (
 from .format_helpers import (
     format_priority as _format_priority,
 )
+from .helpers import get_zone_state
 from .insights_models import Insight
 from .insights_presenter import (
     aggregate_home_insights,
@@ -52,6 +53,7 @@ from .sensor_insight_collector import (
 
 if TYPE_CHECKING:
     from .coordinator import TadoDataUpdateCoordinator
+    from .insight_history import InsightHistoryTracker
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -69,7 +71,7 @@ def _enhance_battery_duration(action: str, days: int, day_label: str) -> str:
             )
         if "TODAY" not in action:
             return f"{action} \u2014 {day_label} overdue, replace now"
-    elif days >= 7:  # noqa: PLR2004
+    elif days >= 7:
         if "within 1-2 weeks" in action:
             return action.replace("within 1-2 weeks", f"soon \u2014 reported {day_label} ago")
     else:
@@ -213,14 +215,14 @@ class TadoHomeInsightsSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], Sen
     @staticmethod
     def _enhance_persistent_insights(
         zone_insights: dict[str, list[Insight]],
-        history: object,
+        history: InsightHistoryTracker,
     ) -> dict[str, list[Insight]]:
         """Append duration text for persistent insights (≥ 24h)."""
         for zone_key in zone_insights:
             for i, insight in enumerate(zone_insights[zone_key]):
-                dur = history.get_duration(insight.insight_type, insight.zone_name)  # type: ignore[union-attr]
-                if dur is not None and dur.total_seconds() >= 86400:  # noqa: PLR2004
-                    days = int(dur.total_seconds() // 86400)  # noqa: PLR2004
+                dur = history.get_duration(insight.insight_type, insight.zone_name)
+                if dur is not None and dur.total_seconds() >= 86400:
+                    days = int(dur.total_seconds() // 86400)
                     enhanced = _enhance_recommendation_with_duration(
                         insight.recommendation, insight.insight_type, days,
                     )
@@ -292,7 +294,7 @@ class TadoHomeInsightsSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], Sen
 
             self._attr_native_value = len(self._aggregated.get("actions_needed", []))
             self._attr_available = True
-        except Exception as e:  # noqa: BLE001 — HA entity update pattern
+        except Exception as e:
             _LOGGER.debug("Failed to update home insights: %s", e)
             self._attr_available = False
 
@@ -364,13 +366,7 @@ class TadoZoneInsightsSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], Sen
         """Collect insights for this zone using shared collector."""
         try:
             coord_data = self.coordinator.data or {}
-            zones_data = coord_data.get("zones")
-            if not zones_data:
-                self._attr_available = False
-                return
-
-            zone_states = zones_data.get("zoneStates") or {}
-            zone_data = zone_states.get(self._zone_id)
+            zone_data = get_zone_state(coord_data, self._zone_id)
             if not zone_data:
                 self._attr_available = False
                 return
@@ -391,8 +387,8 @@ class TadoZoneInsightsSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], Sen
             history = self.coordinator.insight_history
             for i, insight in enumerate(self._insights):
                 dur = history.get_duration(insight.insight_type, insight.zone_name)
-                if dur is not None and dur.total_seconds() >= 86400:  # noqa: PLR2004 — 86400s = 1 day
-                    days = int(dur.total_seconds() // 86400)  # noqa: PLR2004 — 86400s = 1 day
+                if dur is not None and dur.total_seconds() >= 86400:
+                    days = int(dur.total_seconds() // 86400)
                     enhanced = _enhance_recommendation_with_duration(
                         insight.recommendation, insight.insight_type, days,
                     )
@@ -405,6 +401,6 @@ class TadoZoneInsightsSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], Sen
 
             self._attr_native_value = len(self._insights)
             self._attr_available = True
-        except Exception as e:  # noqa: BLE001 — HA entity update pattern
+        except Exception as e:
             _LOGGER.debug("Failed to update zone insights for %s: %s", self._zone_name, e)
             self._attr_available = False

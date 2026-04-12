@@ -1,8 +1,4 @@
-"""Tado CE Adaptive Preheat Manager — local Early Start replacement.
-
-Automatically triggers heating when preheat_now binary sensor turns ON.
-Replaces Tado's cloud-based Early Start with local, user-controlled automation.
-"""
+"""Tado CE Adaptive Preheat Manager — local Early Start replacement."""
 
 from __future__ import annotations
 
@@ -12,6 +8,8 @@ from typing import TYPE_CHECKING, Any
 from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.util import dt as dt_util
+
+from .helpers import build_timer_termination, get_zone_states
 
 if TYPE_CHECKING:
     from .api_client import TadoApiClient
@@ -222,7 +220,7 @@ class AdaptivePreheatManager:
     def _get_zone_state(self, zone_id: str) -> dict[str, Any] | None:
         """Get zone state data from coordinator."""
         coord_data = self._coordinator.data or {}  # type: ignore[union-attr]
-        zone_states = (coord_data.get("zones") or {}).get("zoneStates") or {}
+        zone_states = get_zone_states(coord_data)
         return zone_states.get(zone_id) or zone_states.get(str(zone_id))
 
     def _should_suppress_passive(self, zone_id: str, zone_name: str) -> bool:
@@ -333,7 +331,7 @@ class AdaptivePreheatManager:
                 "power": "ON",
                 "temperature": {"celsius": target_temp},
             }
-            termination = {"type": "TADO_MODE"}
+            termination = build_timer_termination(overlay="next_time_block")
 
             success = await client.set_zone_overlay(zone_id, setting, termination)
 
@@ -343,9 +341,9 @@ class AdaptivePreheatManager:
                     "triggered_at": dt_util.utcnow(),
                     "termination": "TADO_MODE",
                 }
-                _LOGGER.info("Adaptive Preheat: %s overlay set successfully", zone_name)
+                _LOGGER.info("Adaptive Preheat: %s heating activated successfully", zone_name)
             else:
-                _LOGGER.warning("Adaptive Preheat: %s failed to set overlay", zone_name)
+                _LOGGER.warning("Adaptive Preheat: %s failed to activate heating", zone_name)
 
         except Exception:
             _LOGGER.exception("Adaptive Preheat: %s error setting overlay", zone_name)
@@ -373,7 +371,7 @@ class AdaptivePreheatManager:
         # The overlay should auto-clear with TADO_MODE termination (follows device settings)
         # Just remove from our tracking
         del self._active_overlays[zone_id]
-        _LOGGER.info("Adaptive Preheat: %s preheat ended, overlay will auto-clear at schedule start", zone_name)
+        _LOGGER.info("Adaptive Preheat: %s preheat ended, heating will stop at next schedule change", zone_name)
 
     async def async_unload(self) -> None:
         """Unload the Adaptive Preheat Manager.

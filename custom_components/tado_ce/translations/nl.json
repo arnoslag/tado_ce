@@ -79,7 +79,76 @@
         }
       },
       "bridge_connected": {
-        "name": "Verbonden brug"
+        "name": "Brug"
+      },
+      "connection": {
+        "name": "Aansluiting",
+        "state_attributes": {
+          "device_serial": {
+            "name": "Serieel apparaat"
+          },
+          "device_type": {
+            "name": "Type apparaat"
+          },
+          "firmware_version": {
+            "name": "Firmwareversie"
+          },
+          "last_seen": {
+            "name": "Laatst gezien"
+          },
+          "offline_minutes": {
+            "name": "Offline minuten"
+          },
+          "recommendation": {
+            "name": "Aanbeveling"
+          }
+        }
+      },
+      "connection_suffixed": {
+        "name": "Verbinding{apparaat_suffix}",
+        "state_attributes": {
+          "device_serial": {
+            "name": "Serieel apparaat"
+          },
+          "device_type": {
+            "name": "Type apparaat"
+          },
+          "firmware_version": {
+            "name": "Firmwareversie"
+          },
+          "last_seen": {
+            "name": "Laatst gezien"
+          },
+          "offline_minutes": {
+            "name": "Offline minuten"
+          },
+          "recommendation": {
+            "name": "Aanbeveling"
+          }
+        }
+      },
+      "power": {
+        "name": "Stroom"
+      },
+      "homekit_connected": {
+        "name": "HomeKit",
+        "state_attributes": {
+          "last_connected": {
+            "name": "Laatste verbinding"
+          },
+          "last_disconnected": {
+            "name": "Laatst losgekoppeld"
+          },
+          "reconnect_count": {
+            "name": "Aantal opnieuw verbinden"
+          },
+          "uptime": {
+            "name": "Uptime"
+          },
+          "status": {
+            "name": "Status"
+          }
+        }
       }
     },
     "button": {
@@ -138,33 +207,9 @@
         }
       }
     },
-    "device_tracker": {
-      "mobile_device": {
-        "state_attributes": {
-          "device_id": {
-            "name": "Apparaat-ID"
-          },
-          "platform": {
-            "name": "Platform"
-          },
-          "os_version": {
-            "name": "OS-versie"
-          },
-          "model": {
-            "name": "Model"
-          },
-          "bearing": {
-            "name": "Lager"
-          },
-          "relative_distance": {
-            "name": "Relatieve afstand"
-          }
-        }
-      }
-    },
     "sensor": {
       "temperature": {
-        "name": "Temp"
+        "name": "Temperatuur"
       },
       "humidity": {
         "name": "Vochtigheid"
@@ -196,9 +241,6 @@
             "name": "Bron zone"
           }
         }
-      },
-      "power": {
-        "name": "Stroom"
       },
       "outside_temp": {
         "name": "Buitentemperatuur",
@@ -267,46 +309,6 @@
           },
           "connection_timestamp": {
             "name": "Tijdstempel verbinding"
-          },
-          "recommendation": {
-            "name": "Aanbeveling"
-          }
-        }
-      },
-      "connection": {
-        "name": "Aansluiting",
-        "state_attributes": {
-          "device_serial": {
-            "name": "Serieel apparaat"
-          },
-          "device_type": {
-            "name": "Type apparaat"
-          },
-          "firmware_version": {
-            "name": "Firmwareversie"
-          },
-          "last_seen": {
-            "name": "Laatst gezien"
-          },
-          "recommendation": {
-            "name": "Aanbeveling"
-          }
-        }
-      },
-      "connection_suffixed": {
-        "name": "Aansluiting{device_suffix}",
-        "state_attributes": {
-          "device_serial": {
-            "name": "Serieel apparaat"
-          },
-          "device_type": {
-            "name": "Type apparaat"
-          },
-          "firmware_version": {
-            "name": "Firmwareversie"
-          },
-          "last_seen": {
-            "name": "Laatst gezien"
           },
           "recommendation": {
             "name": "Aanbeveling"
@@ -581,7 +583,7 @@
         }
       },
       "next_sched_temp": {
-        "name": "Volgende Temp.",
+        "name": "Temperatuur volgende schema",
         "state_attributes": {
           "schedule_time": {
             "name": "Tijd plannen"
@@ -724,7 +726,7 @@
         }
       },
       "heat_accel": {
-        "name": "Warmte Accel"
+        "name": "Verwarming Versnelling"
       },
       "approach_factor": {
         "name": "Benaderingsfactor",
@@ -812,7 +814,7 @@
         }
       },
       "condensation_risk": {
-        "name": "Condensatie",
+        "name": "Condensatierisico",
         "state_attributes": {
           "room_temperature": {
             "name": "Kamertemperatuur"
@@ -926,19 +928,6 @@
             "name": "Aanbeveling"
           }
         }
-      },
-      "boiler_wiring_state": {
-        "name": "Status van de bedrading van de ketel",
-        "state": {
-          "ready": "Klaar",
-          "installed": "Geïnstalleerd",
-          "not_installed": "Niet geïnstalleerd",
-          "installing": "Installeren",
-          "failed": "Mislukt"
-        }
-      },
-      "boiler_output_temperature": {
-        "name": "Uitgangstemperatuur van de ketel"
       },
       "bridge_wiring_state": {
         "name": "Staat van brugbedrading"
@@ -1104,8 +1093,8 @@
       }
     },
     "number": {
-      "boiler_max_output_temperature": {
-        "name": "Maximale uitgangstemperatuur van de ketel"
+      "boiler_max_output_temp": {
+        "name": "Max. temperatuur doorstroming"
       }
     }
   },
@@ -1297,7 +1286,8 @@
         "weather_compensation": "Weerscompensatie",
         "bridge": "Internet Brug",
         "mobile_tracking": "Traceren van mobiele apparaten",
-        "polling_api": "Polling & API"
+        "polling_api": "Polling & API",
+        "homekit": "HomeKit"
       }
     }
   },
@@ -1438,7 +1428,8 @@
           "zone_config": "Zone Configuratie",
           "general_settings": "Algemene instellingen",
           "advanced_settings": "Geavanceerde instellingen",
-          "reset_to_defaults": "Standaardinstellingen herstellen"
+          "reset_to_defaults": "Standaardinstellingen herstellen",
+          "homekit_unpair": "HomeKit ontkoppelen"
         }
       },
       "zone_config": {
@@ -1691,7 +1682,8 @@
               "api_history_retention_days": "API geschiedenis retentie (dagen)",
               "quota_reserve_enabled": "Bescherming quotareserve",
               "smart_actions_debounce_seconds": "Temperatuur schuifvertraging",
-              "device_sync_delay_seconds": "Apparaat synchronisatievertraging"
+              "device_sync_delay_seconds": "Apparaat synchronisatievertraging",
+              "mobile_devices_frequent_sync": "Frequente mobiele synchronisatie"
             },
             "data_description": {
               "day_start_hour": "Wanneer de polling overdag start (0-23, standaard: 7)",
@@ -1702,7 +1694,21 @@
               "api_history_retention_days": "Hoeveel dagen API oproepgeschiedenis bij te houden voor de gebruiksgrafiek (0 = voor altijd)",
               "quota_reserve_enabled": "Pauzeer polling automatisch wanneer je API-quota bijna op is. Alleen uitschakelen als je weet wat je doet.",
               "smart_actions_debounce_seconds": "Wanneer u de temperatuurschuifregelaar versleept, wacht dan zo lang voordat u de eindwaarde verzendt (0 = onmiddellijk verzenden)",
-              "device_sync_delay_seconds": "Pauze tussen opeenvolgende apparaatbewerkingen zoals kinderslot of offsetwijzigingen"
+              "device_sync_delay_seconds": "Pauze tussen opeenvolgende apparaatbewerkingen zoals kinderslot of offsetwijzigingen",
+              "mobile_devices_frequent_sync": "Apparaatlocaties elke poll-cyclus bijwerken. Zonder dit worden locaties alleen vernieuwd wanneer HA opnieuw wordt gestart (+1 API-aanroep per peiling)"
+            }
+          },
+          "homekit": {
+            "name": "HomeKit",
+            "data": {
+              "homekit_status": "Verbindingsstatus",
+              "homekit_cloud_sync_minutes": "Cloud gegevens vernieuwen",
+              "homekit_unpair": "HomeKit ontkoppelen"
+            },
+            "data_description": {
+              "homekit_status": "Of de lokale HomeKit-verbinding met je Tado bridge actief is",
+              "homekit_cloud_sync_minutes": "Hoe vaak de servers van Tado controleren op verwarmingsvermogen, overlay-status en andere gegevens die lokaal niet beschikbaar zijn (5-120 min)",
+              "homekit_unpair": "Verbreek de verbinding met de lokale HomeKit-verbinding en verwijder de koppelingsgegevens"
             }
           }
         }
@@ -1737,8 +1743,22 @@
         }
       },
       "reset_confirm": {
-        "description": "Weet je het zeker? Dit kan niet ongedaan worden gemaakt.",
+        "description": "Hierdoor worden alle instellingen teruggezet naar de standaardwaarden. Je Tado-account, bridgeverbinding en HomeKit-koppeling blijven behouden - die hoef je niet opnieuw in te stellen.",
         "title": "Bevestig reset"
+      },
+      "homekit_pairing": {
+        "title": "HomeKit-koppeling",
+        "description": "Voer de 8-cijferige HomeKit PIN van je Tado bridge in (formaat: XXX-XX-XXX). Je vindt deze op het label van de bridge of in de Tado app. Als je bridge al gekoppeld is met Apple Home, moet je deze eerst ontkoppelen. Je kunt klimaatentiteiten opnieuw aan Apple Home koppelen via de HA HomeKit Bridge-integratie.",
+        "data": {
+          "homekit_pin": "HomeKit PIN"
+        },
+        "data_description": {
+          "homekit_pin": "8-cijferige code van uw Tado Internet Bridge (bijv. 123-45-678)"
+        }
+      },
+      "homekit_unpair": {
+        "title": "HomeKit ontkoppelen",
+        "description": "Hierdoor wordt de lokale HomeKit-verbinding verbroken en worden de koppelingsgegevens verwijderd. Je kunt later opnieuw koppelen via de instellingen voor Verbindingen."
       }
     },
     "abort": {
@@ -1749,7 +1769,12 @@
       "invalid_number": "Voer een geldig nummer in",
       "bridge_auth_failed": "Ongeldige bridge-serienummer of auth-code - controleer en probeer het opnieuw",
       "wc_min_exceeds_max": "De minimale aanvoertemperatuur kan niet hoger zijn dan de maximale aanvoertemperatuur",
-      "bridge_serial_invalid": "Alleen v3+ Internet Bridges (serieel beginnend met IB) ondersteunen de lokale API. Uw serie suggereert een v2 bridge (GW prefix) die geen lokale API heeft. Weercompensatie kan nog steeds worden gebruikt zonder een bridge via cloudgegevens."
+      "bridge_serial_invalid": "Alleen v3+ Internet Bridges (serieel beginnend met IB) ondersteunen de lokale API. Uw serie suggereert een v2 bridge (GW prefix) die geen lokale API heeft. Weercompensatie kan nog steeds worden gebruikt zonder een bridge via cloudgegevens.",
+      "homekit_wrong_pin": "Onjuiste HomeKit PIN - controleer de code op je bridge of in de Tado app",
+      "homekit_already_paired": "Bridge is al gekoppeld met een andere controller. Ontkoppel eerst van Apple Home en probeer het dan opnieuw.",
+      "homekit_network_error": "Kan de bridge in je netwerk niet bereiken. Controleer of deze is ingeschakeld en verbonden",
+      "homekit_timeout": "Het koppelen is uitgelopen - de bridge heeft niet op tijd gereageerd",
+      "homekit_pairing_failed": "Koppelen mislukt - probeer het opnieuw"
     }
   }
 }

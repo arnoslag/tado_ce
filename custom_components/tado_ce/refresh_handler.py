@@ -1,7 +1,4 @@
-"""Tado CE Immediate Refresh Handler — per-entity rate limiting and debounce.
-
-Per-entity rate limiting and debounce for user-initiated state changes.
-"""
+"""Tado CE Immediate Refresh Handler — per-entity rate limiting and debounce."""
 
 from __future__ import annotations
 
@@ -59,7 +56,8 @@ class RefreshHandler:
         # Debounce mechanism for batch updates
         self._pending_refresh: bool = False
         self._pending_home_state_refresh: bool = False  # Track if home state refresh needed
-        self._debounce_task: object | None = None
+        self._pending_zone_only: bool = False  # Track if refresh is write-triggered (zone data only)
+        self._debounce_task: asyncio.Task[None] | None = None
         self._debounce_delay = 15.0  # Configurable via options
 
     def _get_debounce_delay(self) -> float:
@@ -70,14 +68,14 @@ class RefreshHandler:
         """
         try:
             return float(self._coordinator.config_manager.get_refresh_debounce_seconds())
-        except Exception as e:  # noqa: BLE001 — defensive config access, must not crash refresh
+        except Exception as e:
             _LOGGER.debug("Could not get debounce config, using default: %s", e)
         return self._debounce_delay
 
     def cancel(self) -> None:
         """Cancel pending debounce task and clean up."""
         if self._debounce_task is not None:
-            self._debounce_task.cancel()  # type: ignore[union-attr]
+            self._debounce_task.cancel()
             self._debounce_task = None
 
     async def _get_rate_limit_info(self) -> dict[str, Any]:
@@ -95,7 +93,7 @@ class RefreshHandler:
                 )
                 or {}
             )
-        except Exception as e:  # noqa: BLE001 — defensive I/O, must not crash refresh handler
+        except Exception as e:
             _LOGGER.debug("Failed to read rate limit file: %s", e)
         return {}
 
@@ -215,6 +213,7 @@ class RefreshHandler:
         force: bool = False,
         skip_debounce: bool = False,
         include_home_state: bool = False,
+        zone_only: bool = False,
     ) -> None:
         """Trigger immediate refresh for an entity.
 
@@ -226,6 +225,7 @@ class RefreshHandler:
             force: If True, skip entity type check (for buttons like Resume All Schedules)
             skip_debounce: If True, execute refresh immediately without debounce delay
             include_home_state: If True, also fetch home state (for presence mode changes)
+            zone_only: If True, only fetch zone data (skip weather, mobile, etc.)
         """
         if not force and not self.should_refresh(entity_id):
             _LOGGER.debug("Entity %s does not trigger immediate refresh", entity_id)
@@ -242,12 +242,13 @@ class RefreshHandler:
         _LOGGER.debug("Scheduling debounced refresh for %s (reason: %s)", entity_id, reason)
 
         if self._debounce_task is not None:
-            self._debounce_task.cancel()  # type: ignore[attr-defined]
+            self._debounce_task.cancel()
             self._debounce_task = None
 
         self._pending_refresh = True
         self._last_refresh_per_entity[entity_id] = dt_util.utcnow()
         self._pending_home_state_refresh = include_home_state
+        self._pending_zone_only = zone_only
 
         self._debounce_task = asyncio.create_task(
             self._execute_debounced_refresh(reason, skip_debounce),

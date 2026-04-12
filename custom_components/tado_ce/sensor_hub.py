@@ -1,4 +1,4 @@
-"""Tado CE Hub Sensors — API status, home info, monitoring."""  # HA async_track_time_interval callback signature
+"""Tado CE Hub Sensors — API status, home info, monitoring."""
 
 from __future__ import annotations
 
@@ -155,7 +155,7 @@ class TadoHomeIdSensor(TadoHubSensor):
                 self._attr_available = True
             else:
                 self._attr_available = False
-        except Exception:  # noqa: BLE001 — HA entity update pattern
+        except Exception:
             self._attr_available = False
 
 
@@ -209,7 +209,7 @@ class TadoApiUsageSensor(TadoHubSensor):
         return attrs
 
     @staticmethod
-    def _parse_call_history(history_data: dict | None) -> list[dict[str, Any]]:
+    def _parse_call_history(history_data: dict[str, Any] | None) -> list[dict[str, Any]]:
         """Parse API call history from coordinator data into display format."""
         if not history_data or not isinstance(history_data, dict):
             return []
@@ -259,7 +259,7 @@ class TadoApiUsageSensor(TadoHubSensor):
             _LOGGER.exception("Permission denied reading ratelimit file")
         except json.JSONDecodeError:
             _LOGGER.exception("Invalid JSON in ratelimit file")
-        except Exception:  # noqa: BLE001 — HA entity update pattern
+        except Exception:
             _LOGGER.exception("Unexpected error loading ratelimit data")
 
 
@@ -313,7 +313,7 @@ class TadoApiResetSensor(TadoHubSensor):
             _LOGGER.debug("Failed to parse %s: %s", label, e)
             return None
 
-    def _update_next_poll(self, data: dict) -> None:
+    def _update_next_poll(self, data: dict[str, Any]) -> None:
         """Calculate and set next poll time from ratelimit data."""
         from datetime import timedelta
 
@@ -329,7 +329,13 @@ class TadoApiResetSensor(TadoHubSensor):
 
             config_manager = self.coordinator.config_manager
             if config_manager:
-                self._current_interval = get_polling_interval(config_manager, cached_ratelimit=data)
+                homekit_connected = (
+                    self.coordinator.homekit_provider is not None
+                    and self.coordinator.homekit_provider.is_connected
+                )
+                self._current_interval = get_polling_interval(
+                    config_manager, cached_ratelimit=data, homekit_connected=homekit_connected,
+                )
                 next_poll_time = last_sync + timedelta(minutes=self._current_interval)
                 self._next_poll = dt_util.as_local(next_poll_time).strftime("%Y-%m-%d %H:%M:%S")
             else:
@@ -377,7 +383,7 @@ class TadoApiResetSensor(TadoHubSensor):
             self._last_reset = self._parse_local_timestamp(data.get("last_reset_utc"), "last_reset_utc")
             self._update_next_poll(data)
 
-        except Exception as e:  # noqa: BLE001 — HA entity update pattern
+        except Exception as e:
             _LOGGER.debug("Failed to update API reset sensor: %s", e)
 
 
@@ -462,7 +468,7 @@ class TadoApiLimitSensor(TadoHubSensor):
                 )
 
             self._attr_extra_state_attributes = extra_attrs
-        except Exception:  # noqa: BLE001 — HA entity update pattern
+        except Exception:
             self._attr_available = False
 
 
@@ -517,7 +523,7 @@ class TadoApiStatusSensor(TadoHubSensor):
             else:
                 self._attr_native_value = "unknown"
                 self._attr_available = True
-        except Exception:  # noqa: BLE001 — HA entity update pattern
+        except Exception:
             self._attr_native_value = "error"
             self._attr_available = True
 
@@ -548,7 +554,7 @@ class TadoTokenStatusSensor(TadoHubSensor):
             else:
                 self._attr_native_value = "missing"
             self._attr_available = True
-        except Exception:  # noqa: BLE001 — HA entity update pattern
+        except Exception:
             self._attr_native_value = "error"
             self._attr_available = True
 
@@ -586,7 +592,7 @@ class TadoZoneCountSensor(TadoHubSensor):
                 self._attr_available = True
             else:
                 self._attr_available = False
-        except Exception:  # noqa: BLE001 — HA entity update pattern
+        except Exception:
             self._attr_available = False
 
 
@@ -612,7 +618,7 @@ class TadoLastSyncSensor(TadoHubSensor):
                     self._attr_available = False
             else:
                 self._attr_available = False
-        except Exception:  # noqa: BLE001 — HA entity update pattern
+        except Exception:
             self._attr_available = False
 
 
@@ -701,7 +707,13 @@ class TadoNextSyncSensor(TadoHubSensor):
 
             config_manager = self.coordinator.config_manager
             if config_manager:
-                self._current_interval = get_polling_interval(config_manager, cached_ratelimit=data)
+                homekit_connected = (
+                    self.coordinator.homekit_provider is not None
+                    and self.coordinator.homekit_provider.is_connected
+                )
+                self._current_interval = get_polling_interval(
+                    config_manager, cached_ratelimit=data, homekit_connected=homekit_connected,
+                )
 
                 next_sync_time = last_sync + timedelta(minutes=self._current_interval)
                 self._attr_native_value = next_sync_time
@@ -712,7 +724,7 @@ class TadoNextSyncSensor(TadoHubSensor):
                 self._current_interval = None
                 self._countdown = None
 
-        except Exception as e:  # noqa: BLE001 — HA entity update pattern
+        except Exception as e:
             _LOGGER.debug("Failed to update Next Sync sensor: %s", e)
 
 
@@ -783,7 +795,13 @@ class TadoPollingIntervalSensor(TadoHubSensor):
             ratelimit_data = (self.coordinator.data or {}).get("ratelimit")
             self._test_mode = ratelimit_data.get("test_mode", False) if ratelimit_data else False
 
-            self._attr_native_value = get_polling_interval(config_manager, cached_ratelimit=ratelimit_data)
+            homekit_connected = (
+                self.coordinator.homekit_provider is not None
+                and self.coordinator.homekit_provider.is_connected
+            )
+            self._attr_native_value = get_polling_interval(
+                config_manager, cached_ratelimit=ratelimit_data, homekit_connected=homekit_connected,
+            )
             self._attr_available = True
 
             custom_day = config_manager.get_custom_day_interval()
@@ -811,7 +829,7 @@ class TadoPollingIntervalSensor(TadoHubSensor):
                 is_night_mode=self._is_night_mode, is_uniform_mode=is_uniform_mode,
             )
 
-        except Exception as e:  # noqa: BLE001 — HA entity update pattern
+        except Exception as e:
             _LOGGER.debug("Failed to update Polling Interval sensor: %s", e)
 
 
@@ -881,7 +899,7 @@ class TadoApiHistorySensor(TadoHubSensor):
             self._calls_today = _calculate_calls_today(history_data)
             self._most_called_endpoint = _find_most_called_endpoint(all_calls)
 
-        except Exception:  # noqa: BLE001 — HA entity update pattern
+        except Exception:
             _LOGGER.exception("Failed to update Call History sensor")
 
 
@@ -919,7 +937,7 @@ class TadoApiBreakdownSensor(TadoHubSensor):
         self._chart_data = []
 
     @staticmethod
-    def _count_by_type(calls: list[dict]) -> dict[str, int]:
+    def _count_by_type(calls: list[dict[str, Any]]) -> dict[str, int]:
         """Count API calls by type_name."""
         breakdown: dict[str, int] = {}
         for call in calls:
@@ -938,7 +956,7 @@ class TadoApiBreakdownSensor(TadoHubSensor):
                 self._set_empty_breakdown()
                 return
 
-            all_calls: list[dict] = []
+            all_calls: list[dict[str, Any]] = []
             for calls in history_data.values():
                 all_calls.extend(calls)
 
@@ -976,5 +994,5 @@ class TadoApiBreakdownSensor(TadoHubSensor):
             ]
             self._attr_available = True
 
-        except Exception:  # noqa: BLE001 — HA entity update pattern
+        except Exception:
             _LOGGER.exception("Failed to update API Call Breakdown sensor")

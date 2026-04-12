@@ -1,10 +1,4 @@
-"""Tado CE Data Loader — thread-safe, per-home file I/O for schedules and config.
-
-Thread-safe, per-home file loading for all Tado CE components.
-API cache files use blocking I/O via hass.async_add_executor_job().
-Auxiliary files (window_detection, wc_state, bridge_health, outdoor_temp_history,
-insight_history) use HA Store for debounced writes and lifecycle management.
-"""
+"""Tado CE Data Loader — per-home file I/O and HA Store persistence."""
 
 from __future__ import annotations
 
@@ -15,16 +9,13 @@ from typing import TYPE_CHECKING, Any
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.storage import Store
 
-from .const import DATA_DIR, OVERLAY_MODE_DEFAULT, TIMER_DURATION_DEFAULT, get_data_file
+from .const import DATA_DIR, OUTDOOR_TEMP_HISTORY_MAX, OVERLAY_MODE_DEFAULT, TIMER_DURATION_DEFAULT, get_data_file
 from .storage import load_json_sync, save_json_sync
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
 _LOGGER = logging.getLogger(__name__)
-
-# Max outdoor temp readings (7 days at 30s poll interval)
-MAX_OUTDOOR_TEMP_READINGS = 336
 
 # Auxiliary file Store configuration: name -> delay_seconds
 _AUXILIARY_STORES: dict[str, int] = {
@@ -37,6 +28,7 @@ _AUXILIARY_STORES: dict[str, int] = {
     "smart_comfort_cache": 30,
     "overlay_mode": 5,
     "timer_duration": 5,
+    "homekit_savings": 10,
 }
 
 STORE_VERSION = 1
@@ -281,7 +273,7 @@ class DataLoader:
         Returns:
             True if valid duration, False otherwise.
         """
-        if not isinstance(duration, int) or duration < 15 or duration > 180:  # noqa: PLR2004 — Tado API timer bounds (15-180 min)
+        if not isinstance(duration, int) or duration < 15 or duration > 180:
             _LOGGER.error("Invalid timer duration: %s", duration)
             return False
         self.save_auxiliary("timer_duration", {"timer_duration": duration})
@@ -321,7 +313,7 @@ class DataLoader:
 
         migrated_path = old_path.with_suffix(".json.migrated")
         await self._hass.async_add_executor_job(old_path.rename, migrated_path)
-        _LOGGER.info("Migrated %s → Store (old file renamed to %s)", name, migrated_path)
+        _LOGGER.info("Migrated %s data to new storage (old file: %s)", name, migrated_path)
         return old_data
 
     # === Store-backed async load methods ===
@@ -411,7 +403,7 @@ class DataLoader:
             if isinstance(data, dict):
                 readings = data.get("readings", [])
                 readings = [float(r) for r in readings if isinstance(r, (int, float))]
-                return readings[-MAX_OUTDOOR_TEMP_READINGS:]
+                return readings[-OUTDOOR_TEMP_HISTORY_MAX:]
             return []
         except (HomeAssistantError, OSError) as e:
             _LOGGER.warning("Failed to load outdoor_temp_history: %s", e)
@@ -426,7 +418,7 @@ class DataLoader:
         Returns:
             True (always succeeds — Store handles async write).
         """
-        trimmed = readings[-MAX_OUTDOOR_TEMP_READINGS:]
+        trimmed = readings[-OUTDOOR_TEMP_HISTORY_MAX:]
         data = {"readings": trimmed}
         self.save_auxiliary("outdoor_temp_history", data)
         return True
@@ -481,6 +473,31 @@ class DataLoader:
         self.save_auxiliary("bridge_health", data)
         return True
 
+    # === HomeKit Savings Counters (Store-backed) ===
+
+    async def async_load_homekit_savings(self) -> dict[str, Any] | None:
+        """Load HomeKit API savings counters from Store.
+
+        Returns:
+            Dict with reads_saved, writes_saved, last_reset_utc, or None if not found.
+        """
+        data = await self.async_load_auxiliary("homekit_savings")
+        if data is not None and isinstance(data, dict):
+            return data
+        return None
+
+    def save_homekit_savings(self, data: dict[str, Any]) -> bool:
+        """Save HomeKit API savings counters via Store.
+
+        Args:
+            data: Dict with reads_saved, writes_saved, last_reset_utc.
+
+        Returns:
+            True (always succeeds — Store handles async write).
+        """
+        self.save_auxiliary("homekit_savings", data)
+        return True
+
     # === Window Detection State (Store-backed) ===
 
     async def async_load_window_detection(self) -> dict[str, Any] | None:
@@ -505,6 +522,3 @@ class DataLoader:
         """
         self.save_auxiliary("window_detection", data)
         return True
-
-    # Note: Legacy sync load methods removed in Phase 2.
-    # All auxiliary file access now goes through async_load_auxiliary / save_auxiliary.

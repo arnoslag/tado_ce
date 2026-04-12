@@ -68,6 +68,28 @@ async def async_get_config_entry_diagnostics(
     if sr_diagnostics:
         redacted_coord["state_restore_captured"] = sr_diagnostics
 
+    # HomeKit diagnostics (redact credentials)
+    homekit_diag: dict[str, Any] = {"status": "not_configured"}
+    if coordinator.homekit_client is not None:
+        client = coordinator.homekit_client
+        if client.is_connected:
+            homekit_diag["status"] = "connected"
+        else:
+            homekit_diag["status"] = "disconnected"
+        mapped = len(getattr(client, "_zone_to_aids", {}))
+        homekit_diag["mapped_zones"] = mapped
+        from .const import HOMEKIT_CACHE_REFRESH_SECONDS, get_climate_zone_ids
+
+        all_climate = get_climate_zone_ids(zones_info)
+        homekit_diag["unmapped_zones"] = max(0, len(all_climate) - mapped)
+        homekit_diag["cache_refresh_interval_seconds"] = HOMEKIT_CACHE_REFRESH_SECONDS
+        # Check pairing file existence without exposing credentials
+        from .const import get_data_file
+
+        home_id = entry.data.get("home_id") or "default"
+        pairing_path = get_data_file("homekit_pairing", home_id)
+        homekit_diag["pairing_file_exists"] = pairing_path.exists()
+
     return {
         "entry": {
             "entry_id": entry.entry_id,
@@ -76,6 +98,7 @@ async def async_get_config_entry_diagnostics(
             "options": redacted_options,
         },
         "coordinator": redacted_coord,
+        "homekit": homekit_diag,
     }
 
 

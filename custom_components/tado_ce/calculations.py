@@ -1,14 +1,4 @@
-"""Tado CE centralized physics calculations — dew point, surface temp, risk classifiers, comfort models.
-
-Single source of truth for all thermodynamic formulas, risk classification,
-and comfort calculations. All functions return exact (unrounded) values;
-rounding is applied only at the display layer in sensor classes.
-
-References:
-    - Magnus-Tetens: Alduchov & Eskridge 1996 (WMO recommended)
-    - Surface temp: ISO 6946 / ASHRAE 160
-    - Comfort: ASHRAE 55 Adaptive Comfort Model
-"""
+"""Tado CE centralized physics calculations — dew point, surface temp, risk classifiers, comfort models."""
 
 from __future__ import annotations
 
@@ -134,11 +124,11 @@ def calculate_heat_index(temperature: float, humidity: float) -> float:
     )
 
     # Step 3a: Low-RH adjustment
-    if rh < 13.0 and 80.0 < t_f < 112.0:  # noqa: PLR2004 — NWS Heat Index formula constants
+    if rh < 13.0 and 80.0 < t_f < 112.0:
         hi -= ((13.0 - rh) / 4.0) * math.sqrt((17.0 - abs(t_f - 95.0)) / 17.0)
 
     # Step 3b: High-RH adjustment
-    elif rh > 85.0 and 80.0 < t_f < 87.0:  # noqa: PLR2004 — NWS Heat Index formula constants
+    elif rh > 85.0 and 80.0 < t_f < 87.0:
         hi += ((rh - 85.0) / 10.0) * ((87.0 - t_f) / 5.0)
 
     rothfusz_c = (hi - 32.0) * 5.0 / 9.0

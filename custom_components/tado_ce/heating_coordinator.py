@@ -60,14 +60,14 @@ class HeatingCycleCoordinator(DataUpdateCoordinator):
 
     async def async_setup(self) -> None:
         """Set up coordinator - load storage and resume active cycles."""
-        _LOGGER.debug("HeatingCycleCoordinator: Starting async_setup for home %s", self._home_id)
+        _LOGGER.debug("Heating Cycle: Starting async_setup for home %s", self._home_id)
 
         await self._storage.async_load()
-        _LOGGER.debug("HeatingCycleCoordinator: Storage loaded")
+        _LOGGER.debug("Heating Cycle: Storage loaded")
 
         # Resume active cycles
         active_cycles = await self._storage.get_active_cycles()
-        _LOGGER.debug("HeatingCycleCoordinator: Found %d active cycles to resume", len(active_cycles))
+        _LOGGER.debug("Heating Cycle: Found %d active cycles to resume", len(active_cycles))
 
         for zone_id, cycle in active_cycles.items():
             detector = self._get_or_create_detector(zone_id)
@@ -80,12 +80,12 @@ class HeatingCycleCoordinator(DataUpdateCoordinator):
 
         # Load historical data for all zones with completed cycles
         all_zone_ids = await self._storage.get_all_zone_ids()
-        _LOGGER.debug("HeatingCycleCoordinator: Loading historical data for %d zones", len(all_zone_ids))
+        _LOGGER.debug("Heating Cycle: Loading historical data for %d zones", len(all_zone_ids))
 
         for zone_id in all_zone_ids:
             await self._async_update_zone_data(zone_id)
 
-        _LOGGER.debug("HeatingCycleCoordinator: async_setup complete")
+        _LOGGER.debug("Heating Cycle: async_setup complete")
 
     def _get_or_create_detector(self, zone_id: str) -> HeatingCycleDetector:
         """Get or create detector for zone."""

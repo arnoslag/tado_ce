@@ -1,8 +1,4 @@
-"""Entity lifecycle cleanup for disabled feature toggles.
-
-Handles removal of entities from the HA entity registry when users
-disable feature toggles via the Options Flow UI.
-"""
+"""Entity lifecycle cleanup for disabled feature toggles."""
 
 from __future__ import annotations
 
@@ -157,6 +153,12 @@ FEATURE_GROUP_CONTEXTS: tuple[FeatureGroupContext, ...] = (
         label="Weather Compensation",
         legacy_suffixes=(),
     ),
+    FeatureGroupContext(
+        cleanup_flag="_cleanup_homekit",
+        feature_group="homekit",
+        label="HomeKit",
+        legacy_suffixes=(),
+    ),
 )
 
 
@@ -262,6 +264,7 @@ FEATURE_CLEANUP_MAP: list[tuple[str, str, bool]] = [
     ("weather_enabled", "_cleanup_weather", False),
     ("mobile_devices_enabled", "_cleanup_mobile_devices", False),
     ("wc_enabled", "_cleanup_weather_compensation", False),
+    ("homekit_enabled", "_cleanup_homekit", False),
 ]
 
 # ---------------------------------------------------------------------------
