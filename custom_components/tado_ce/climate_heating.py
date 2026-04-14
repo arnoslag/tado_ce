@@ -18,6 +18,7 @@ from homeassistant.components.climate.const import (
 from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
 from homeassistant.core import CALLBACK_TYPE, Event, EventStateChangedData, callback
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -29,7 +30,7 @@ from .climate_helpers import (
     update_offset,
     update_preset_mode,
 )
-from .const import DOMAIN
+from .const import CLOUD_VERIFICATION_BUFFER_SECONDS, DOMAIN, SIGNAL_HOMEKIT_UPDATE
 from .device_manager import get_zone_device_info
 from .entity_registry import ENTITY_REGISTRY
 from .format_helpers import (
@@ -52,6 +53,8 @@ from .schedule_helpers import get_current_schedule_target
 from .write_optimizer import ActionGuard
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from .api_client import TadoApiClient
     from .coordinator import TadoDataUpdateCoordinator
 
@@ -131,6 +134,12 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity,
 
         # Unsubscribe callbacks for external sensor state change listeners
         self._unsub_external_sensors: list[CALLBACK_TYPE] = []
+
+        # Cloud verification timer handle
+        self._cloud_verification_handle: asyncio.TimerHandle | None = None
+
+        # Unsubscribe callback for HomeKit dispatcher signal
+        self._unsub_homekit_signal: Callable[[], None] | None = None
 
     def _calculate_hvac_action(self, target_temp: float | None = None) -> HVACAction:
         """Calculate hvac_action for heating zone.
@@ -231,16 +240,25 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity,
         # Subscribe to external sensor state changes for real-time updates
         self._subscribe_external_sensors()
 
-    async def async_will_remove_from_hass(self) -> None:
-        """Unregister listeners when entity is removed.
+        # Subscribe to HomeKit dispatcher signal for real-time sensor updates
+        self._unsub_homekit_signal = async_dispatcher_connect(
+            self.hass,
+            SIGNAL_HOMEKIT_UPDATE.format(home_id=self._home_id),
+            self._handle_homekit_update,
+        )
 
-        CoordinatorEntity handles update unsubscription.
-        Only zone config listener needs manual cleanup.
-        """
+    async def async_will_remove_from_hass(self) -> None:
+        """Unregister listeners when entity is removed."""
         self._unsubscribe_external_sensors()
+        if self._unsub_homekit_signal:
+            self._unsub_homekit_signal()
+            self._unsub_homekit_signal = None
         if self._unsub_zone_config:
             self._unsub_zone_config()
             self._unsub_zone_config = None
+        if self._cloud_verification_handle is not None:
+            self._cloud_verification_handle.cancel()
+            self._cloud_verification_handle = None
         await super().async_will_remove_from_hass()
 
     @callback
@@ -274,6 +292,17 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity,
     def _unsubscribe_external_sensors(self) -> None:
         """Unsubscribe from external sensor state change listeners."""
         unsubscribe_external_sensors(self._unsub_external_sensors)
+
+    @callback
+    def _handle_homekit_update(self, zone_id: str) -> None:
+        """Handle HomeKit data update for this zone."""
+        if zone_id != self._zone_id:
+            return
+        if self.coordinator.is_entity_fresh(self.entity_id):
+            return
+        zone_data = get_zone_state(self.coordinator.data, self._zone_id) or {}
+        self._update_sensor_data(zone_data)
+        self.async_write_ha_state()
 
     @callback
     def _update_temp_limits(self) -> None:
@@ -331,29 +360,41 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity,
         self.async_write_ha_state()
 
     def _update_sensor_data(self, zone_data: dict[str, Any]) -> None:
-        """Extract sensor data and apply external sensor overrides."""
+        """Extract sensor data with priority: external > homekit > cloud."""
         sensor_data = zone_data.get("sensorDataPoints") or {}
-        self._attr_current_temperature = (sensor_data.get("insideTemperature") or {}).get("celsius")
-        self._attr_current_humidity = (sensor_data.get("humidity") or {}).get("percentage")
+        cloud_temp = (sensor_data.get("insideTemperature") or {}).get("celsius")
+        cloud_humidity = (sensor_data.get("humidity") or {}).get("percentage")
 
         # External sensor overrides
         zcm = self.coordinator.zone_config_manager
         ext_temp = read_external_sensor(self.hass, zcm, self._zone_id, "external_temp_sensor")
-        if ext_temp is not None:
-            self._attr_current_temperature = ext_temp
-            self._temperature_source = "external"
-        else:
-            # Use coordinator data source (homekit/cloud) if available
-            sources = self.coordinator.data_sources.get(self._zone_id, {})
-            self._temperature_source = sources.get("temperature", "cloud")
-
         ext_hum = read_external_sensor(self.hass, zcm, self._zone_id, "external_humidity_sensor")
-        if ext_hum is not None:
-            self._attr_current_humidity = ext_hum
-            self._humidity_source = "external"
+
+        # Priority chain via StateReconciler (external > homekit if fresh > cloud)
+        reconciler = self.coordinator.state_reconciler
+        provider = self.coordinator.homekit_provider
+        if reconciler and provider and provider.is_connected:
+            reconciler.local_provider = provider
+            merged_temp, temp_source = reconciler.merge_zone_temperature(
+                self._zone_id, cloud_temp, external_value=ext_temp,
+            )
+            merged_hum, hum_source = reconciler.merge_zone_humidity(
+                self._zone_id, cloud_humidity, external_value=ext_hum,
+            )
+        elif ext_temp is not None:
+            merged_temp, temp_source = ext_temp, "external"
+            merged_hum, hum_source = (ext_hum, "external") if ext_hum is not None else (cloud_humidity, "cloud")
+        elif ext_hum is not None:
+            merged_temp, temp_source = cloud_temp, "cloud"
+            merged_hum, hum_source = ext_hum, "external"
         else:
-            sources = self.coordinator.data_sources.get(self._zone_id, {})
-            self._humidity_source = sources.get("humidity", "cloud")
+            merged_temp, temp_source = cloud_temp, "cloud"
+            merged_hum, hum_source = cloud_humidity, "cloud"
+
+        self._attr_current_temperature = merged_temp
+        self._temperature_source = temp_source
+        self._attr_current_humidity = merged_hum
+        self._humidity_source = hum_source
 
         # Track configured entity_ids for extra_state_attributes
         if zcm:
@@ -402,6 +443,29 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity,
 
         self.hass.async_create_task(_safe_heating_cycle_update())
 
+    def _schedule_cloud_verification(self) -> None:
+        """Schedule a coordinator refresh to verify HomeKit write."""
+        if self._cloud_verification_handle is not None:
+            self._cloud_verification_handle.cancel()
+            self._cloud_verification_handle = None
+
+        from .helpers import get_optimistic_window
+
+        delay = get_optimistic_window(self.hass, entry_id=self._entry_id) + CLOUD_VERIFICATION_BUFFER_SECONDS
+        entity_id = self.entity_id
+
+        def _fire() -> None:
+            self._cloud_verification_handle = None
+            self.hass.async_create_task(
+                async_trigger_immediate_refresh(self.hass, entity_id, "homekit_verification"),
+            )
+
+        try:
+            loop = asyncio.get_running_loop()
+            self._cloud_verification_handle = loop.call_later(delay, _fire)
+        except RuntimeError:
+            pass
+
     def _apply_optimistic_or_api_state(
         self, api_hvac_mode: HVACMode, api_hvac_action: HVACAction, power: str | None,
     ) -> None:
@@ -420,6 +484,25 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity,
                 self._zone_name, self._attr_hvac_mode, self._attr_hvac_action,
             )
         else:
+            if result == OptimisticUpdateResult.EXPIRED:
+                _LOGGER.warning(
+                    "%s: Optimistic state expired, accepting API state",
+                    self._zone_name,
+                )
+                # Record failure if this was a HomeKit write
+                if self._last_write_source == "homekit":
+                    write_tracker = self.coordinator.write_health_tracker
+                    if write_tracker is not None:
+                        write_tracker.record_failure()
+                    self._last_write_source = ""
+
+            elif result == OptimisticUpdateResult.ACCEPT_API and self._last_write_source == "homekit":
+                # API confirmed the HomeKit write
+                write_tracker = self.coordinator.write_health_tracker
+                if write_tracker is not None:
+                    write_tracker.record_success()
+                self._last_write_source = ""
+
             self._attr_hvac_mode = api_hvac_mode
             self._attr_hvac_action = api_hvac_action
             if power != "ON" and api_hvac_mode == HVACMode.OFF:
@@ -590,7 +673,7 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity,
             self.coordinator._homekit_write_latency_sum += elapsed_ms
             self.coordinator._homekit_write_latency_count += 1
             if local_success:
-                write_tracker.record_success()
+                # Don't record_success yet — deferred to cloud verification
                 self.coordinator._homekit_write_successes += 1
             else:
                 write_tracker.record_failure()
@@ -605,7 +688,8 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity,
                 await heating_cycle_coordinator.on_setpoint_change(
                     self._zone_id, temperature, self._attr_current_temperature,
                 )
-            # Skip cloud refresh — HomeKit event confirms locally
+            # Schedule cloud verification to confirm write reached Tado server
+            self._schedule_cloud_verification()
             return
 
         # Cloud fallback
@@ -667,6 +751,7 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity,
         if ActionGuard.should_skip_temperature(
             temperature, self._attr_target_temperature,
             HVACMode.HEAT, self._attr_hvac_mode,
+            optimistic_active=self._optimistic_sequence is not None,
         ):
             _LOGGER.debug(
                 "Action Guard: skip %s set_temperature (already %s°C)",
@@ -730,7 +815,10 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity,
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set new HVAC mode."""
         # Action Guard — skip if mode already matches current state
-        if ActionGuard.should_skip_hvac_mode(hvac_mode, self._attr_hvac_mode):
+        if ActionGuard.should_skip_hvac_mode(
+            hvac_mode, self._attr_hvac_mode,
+            optimistic_active=self._optimistic_sequence is not None,
+        ):
             _LOGGER.debug(
                 "Action Guard: skip %s set_hvac_mode (already %s)",
                 self._zone_name, hvac_mode,
@@ -765,7 +853,6 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity,
                 self.coordinator._homekit_write_latency_sum += elapsed_ms
                 self.coordinator._homekit_write_latency_count += 1
                 if local_success:
-                    write_tracker.record_success()
                     self.coordinator._homekit_write_successes += 1
                 else:
                     write_tracker.record_failure()
@@ -775,6 +862,7 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity,
                 self.coordinator.record_homekit_write_saved(self._zone_id)
                 self._last_write_source = "homekit"
                 _LOGGER.debug("Set %s to HEAT via homekit", self._zone_name)
+                self._schedule_cloud_verification()
                 return
 
             # Cloud fallback
@@ -825,7 +913,6 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity,
                 self.coordinator._homekit_write_latency_sum += elapsed_ms
                 self.coordinator._homekit_write_latency_count += 1
                 if local_success:
-                    write_tracker.record_success()
                     self.coordinator._homekit_write_successes += 1
                 else:
                     write_tracker.record_failure()
@@ -835,6 +922,7 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity,
                 self.coordinator.record_homekit_write_saved(self._zone_id)
                 self._last_write_source = "homekit"
                 _LOGGER.debug("Set %s to OFF via homekit", self._zone_name)
+                self._schedule_cloud_verification()
                 return
 
             # Cloud fallback

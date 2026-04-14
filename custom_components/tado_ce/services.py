@@ -29,7 +29,7 @@ from .const import (
     SERVICE_SET_TEMP_OFFSET,
     SERVICE_SET_WATER_HEATER_TIMER,
 )
-from .helpers import build_timer_termination
+from .helpers import async_trigger_immediate_refresh, build_timer_termination
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant, ServiceCall
@@ -623,6 +623,7 @@ async def handle_resume_schedule(hass: HomeAssistant, call: ServiceCall) -> None
             if zone_id:
                 await _coord.api_client.delete_zone_overlay(zone_id)
                 _LOGGER.info("Resumed schedule for %s", entity_id)
+                await async_trigger_immediate_refresh(hass, entity_id, "resume_schedule")
 
 
 async def handle_set_temp_offset(hass: HomeAssistant, call: ServiceCall) -> None:
@@ -668,7 +669,7 @@ async def handle_set_temp_offset(hass: HomeAssistant, call: ServiceCall) -> None
                 # reflects the automation's last write rather than the device's
                 # actual state.
                 readback = await _coord.api_client.get_device_offset(serials[0])
-                cache_value: float | None = readback if readback is not None else offset  # type: ignore[assignment]
+                cache_value: float | None = readback if readback is not None else offset
 
                 # Sanity check before caching (#221)
                 from .const import DEVICE_OFFSET_MAX, DEVICE_OFFSET_MIN
@@ -775,7 +776,9 @@ async def handle_set_away_config(hass: HomeAssistant, call: ServiceCall) -> None
                 temperature,
                 comfort_level,
             )
-            if not success:
+            if success:
+                await async_trigger_immediate_refresh(hass, entity_id, "set_away_config")  # type: ignore[arg-type]
+            elif not success:
                 _LOGGER.error("Failed to set away config for %s", entity_id)
 
 
@@ -813,6 +816,7 @@ async def handle_activate_open_window(hass: HomeAssistant, call: ServiceCall) ->
                 success = await _coord.api_client.activate_open_window(zone_id)
                 if success:
                     _LOGGER.info("Activated open window for %s", entity_id)
+                    await async_trigger_immediate_refresh(hass, entity_id, "activate_open_window")
                 else:
                     _LOGGER.error("Failed to activate open window for %s", entity_id)
 
@@ -851,6 +855,7 @@ async def handle_deactivate_open_window(hass: HomeAssistant, call: ServiceCall) 
                 success = await _coord.api_client.deactivate_open_window(zone_id)
                 if success:
                     _LOGGER.info("Deactivated open window for %s", entity_id)
+                    await async_trigger_immediate_refresh(hass, entity_id, "deactivate_open_window")
                 else:
                     _LOGGER.error("Failed to deactivate open window for %s", entity_id)
 
@@ -939,6 +944,7 @@ async def handle_set_open_window_mode(hass: HomeAssistant, call: ServiceCall) ->
         success = await _coord.api_client.set_zone_overlay(zone_id, setting, termination)
         if success:
             _LOGGER.info("Set open window mode for %s (%s, %s°C)", entity_id, duration_desc, OPEN_WINDOW_DEFAULT_TEMP)
+            await async_trigger_immediate_refresh(hass, entity_id, "set_open_window_mode")
         else:
             _LOGGER.error("Failed to set open window mode for %s", entity_id)
 
@@ -1026,12 +1032,14 @@ async def handle_restore_previous_state(hass: HomeAssistant, call: ServiceCall) 
             # Fallback: resume schedule (delete overlay)
             await _coord.api_client.delete_zone_overlay(zone_id)
             _LOGGER.info("State Restore: no captured state for %s, resumed schedule", entity_id)
+            await async_trigger_immediate_refresh(hass, entity_id, "restore_previous_state")
             continue
 
         if captured.overlay_type is None:
             # Was on schedule — resume schedule
             await _coord.api_client.delete_zone_overlay(zone_id)
             _LOGGER.info("State Restore: restored schedule for %s", entity_id)
+            await async_trigger_immediate_refresh(hass, entity_id, "restore_previous_state")
         else:
             # Was on overlay — rebuild and re-apply
             setting, termination = _build_setting_from_captured(captured)
@@ -1042,6 +1050,7 @@ async def handle_restore_previous_state(hass: HomeAssistant, call: ServiceCall) 
                 captured.overlay_type,
                 captured.temperature,
             )
+            await async_trigger_immediate_refresh(hass, entity_id, "restore_previous_state")
 
 
 async def _async_register_services(hass: HomeAssistant) -> None:

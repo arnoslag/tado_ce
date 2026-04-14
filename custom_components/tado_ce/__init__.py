@@ -306,7 +306,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         from .write_health_tracker import WriteHealthTracker
 
         coordinator.homekit_client = homekit_client
-        provider = HomeKitLocalProvider(homekit_client)
+        provider = HomeKitLocalProvider(homekit_client, hass, coordinator.home_id)
         coordinator.homekit_provider = provider
         coordinator.state_reconciler = StateReconciler()
         coordinator.write_health_tracker = WriteHealthTracker()

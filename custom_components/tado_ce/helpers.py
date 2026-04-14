@@ -179,7 +179,7 @@ async def async_trigger_immediate_refresh(
 def get_optimistic_window(hass: HomeAssistant, entry_id: str | None = None) -> float:
     """Get the optimistic update window duration in seconds.
 
-    The optimistic window = debounce_seconds + 2.0 seconds buffer.
+    The optimistic window = debounce_seconds + OPTIMISTIC_WINDOW_BUFFER_SECONDS.
     During this window, entities ignore API updates to preserve optimistic state.
 
     Args:
@@ -190,14 +190,16 @@ def get_optimistic_window(hass: HomeAssistant, entry_id: str | None = None) -> f
         Optimistic window duration in seconds (default: 17.0 = 15 + 2)
 
     """
+    from .const import DEFAULT_OPTIMISTIC_WINDOW_SECONDS, OPTIMISTIC_WINDOW_BUFFER_SECONDS
+
     try:
         if entry_id:
             coordinator = _get_coordinator(hass, entry_id)
             if coordinator and coordinator.config_manager:
-                return float(coordinator.config_manager.get_refresh_debounce_seconds()) + 2.0
+                return float(coordinator.config_manager.get_refresh_debounce_seconds()) + OPTIMISTIC_WINDOW_BUFFER_SECONDS
     except (AttributeError, TypeError, ValueError) as err:
         _LOGGER.debug("Failed to get optimistic window from config: %s", err)
-    return 17.0  # Default: 15s debounce + 2s buffer
+    return DEFAULT_OPTIMISTIC_WINDOW_SECONDS
 
 
 def get_overlay_termination(hass: HomeAssistant, entry_id: str | None = None) -> dict[str, Any]:

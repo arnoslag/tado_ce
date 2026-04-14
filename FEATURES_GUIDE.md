@@ -935,6 +935,8 @@ automation:
           entity_id: climate.bedroom
 ```
 
+> **Community Blueprint:** [@jeverley](https://github.com/jeverley) built a comprehensive [Window Mode Blueprint](https://raw.githubusercontent.com/jeverley/home-assistant-blueprints/refs/heads/main/blueprints/automation/tado_ce_window_mode_sensors.yaml) that handles multiple window/door sensors per zone with separate delays for nearby openings. [Import it directly](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fraw.githubusercontent.com%2Fjeverley%2Fhome-assistant-blueprints%2Frefs%2Fheads%2Fmain%2Fblueprints%2Fautomation%2Ftado_ce_window_mode_sensors.yaml) or use the examples above as a starting point for your own automation.
+
 ---
 
 ## 🌉 Bridge API Integration
@@ -1775,4 +1777,4 @@ Look for `Bridge API full response` in logs to verify the API is returning data.
 
 ---
 
-**Last Updated:** v4.0.0-beta.1 (2026-04-12)
+**Last Updated:** v4.0.0-beta.2 (2026-04-14)

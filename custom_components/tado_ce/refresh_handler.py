@@ -57,6 +57,7 @@ class RefreshHandler:
         self._pending_refresh: bool = False
         self._pending_home_state_refresh: bool = False  # Track if home state refresh needed
         self._pending_zone_only: bool = False  # Track if refresh is write-triggered (zone data only)
+        self._pending_force_zone_fetch: bool = False  # Force cloud zone fetch even in HomeKit mode
         self._debounce_task: asyncio.Task[None] | None = None
         self._debounce_delay = 15.0  # Configurable via options
 
@@ -249,6 +250,7 @@ class RefreshHandler:
         self._last_refresh_per_entity[entity_id] = dt_util.utcnow()
         self._pending_home_state_refresh = include_home_state
         self._pending_zone_only = zone_only
+        self._pending_force_zone_fetch = True
 
         self._debounce_task = asyncio.create_task(
             self._execute_debounced_refresh(reason, skip_debounce),

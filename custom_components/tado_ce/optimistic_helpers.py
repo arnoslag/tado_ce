@@ -12,6 +12,8 @@ import logging
 import time
 from typing import TYPE_CHECKING, Any
 
+from .const import DEFAULT_OPTIMISTIC_WINDOW_SECONDS
+
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
@@ -42,6 +44,7 @@ class OptimisticUpdateResult(Enum):
 
     ACCEPT_API = "accept_api"
     PRESERVE_OPTIMISTIC = "preserve"
+    EXPIRED = "expired"
 
 
 def clear_optimistic_state(entity: object) -> None:
@@ -122,7 +125,7 @@ def is_within_optimistic_window(
     from .helpers import get_optimistic_window
 
     elapsed = time.monotonic() - optimistic_set_at
-    return elapsed < get_optimistic_window(hass, entry_id=entry_id) if hass else elapsed < 17.0
+    return elapsed < get_optimistic_window(hass, entry_id=entry_id) if hass else elapsed < DEFAULT_OPTIMISTIC_WINDOW_SECONDS
 
 
 def resolve_optimistic_update(
@@ -181,6 +184,19 @@ def resolve_optimistic_update(
             )
             clear_optimistic_state(entity)
             return OptimisticUpdateResult.ACCEPT_API
+
+        # Time-based expiry: if optimistic window has elapsed, the write
+        # likely failed silently.  Accept API state to prevent permanent stuck.
+        hass: HomeAssistant | None = getattr(entity, "hass", None)
+        if set_at is not None and not is_within_optimistic_window(
+            hass, set_at, entry_id=entry_id,  # type: ignore[arg-type]
+        ):
+            _LOGGER.warning(
+                "%s: Optimistic window expired without API confirmation",
+                getattr(entity, "_zone_name", getattr(entity, "entity_id", "?")),
+            )
+            clear_optimistic_state(entity)
+            return OptimisticUpdateResult.EXPIRED
 
         _LOGGER.debug(
             "%s: Preserving optimistic state (API not confirmed)",

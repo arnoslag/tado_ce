@@ -21,6 +21,11 @@ Thank you to everyone who supported the project through [Buy Me a Coffee](https:
 
 Community contributors who helped shape each release through bug reports, feature requests, testing, and feedback.
 
+### v4.0.0-beta.2
+
+- **[@jeverley](https://github.com/jeverley)** — Discovered that overlay services (`set_open_window_mode`, `restore_previous_state`, etc.) weren't triggering entity state updates, and spotted that overnight temperature graphs showed polling steps instead of real-time data from the HomeKit bridge ([Discussion #219](https://github.com/hiall-fyi/tado_ce/discussions/219)). Also built and shared a comprehensive [Window Mode Blueprint](https://raw.githubusercontent.com/jeverley/home-assistant-blueprints/refs/heads/main/blueprints/automation/tado_ce_window_mode_sensors.yaml) for controlling Tado CE window mode with physical sensors, including per-zone and nearby-opening support ([Discussion #184](https://github.com/hiall-fyi/tado_ce/discussions/184))
+- **[@ChrisMarriott38](https://github.com/ChrisMarriott38)** — Confirmed the same real-time update gap with humidity data, providing before/after graphs that clearly showed the polling step pattern despite HomeKit being connected ([Discussion #219](https://github.com/hiall-fyi/tado_ce/discussions/219))
+
 ### v4.0.0-beta.1
 
 - **[@Thilas](https://github.com/Thilas)** — Originally proposed converting battery and connection sensors to binary sensors for better HA grouping support ([#160](https://github.com/hiall-fyi/tado_ce/issues/160))

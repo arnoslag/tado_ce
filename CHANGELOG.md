@@ -2,6 +2,25 @@
 
 All notable changes to Tado CE will be documented in this file.
 
+## [4.0.0-beta.2] - 2026-04-14
+
+### Bug Fixes
+- **Fixed heating controls getting permanently stuck after a HomeKit write** — If a temperature or mode change went through HomeKit but the Tado server never received it, the integration would keep showing "heating" indefinitely, blocking all further control attempts. Your HA dashboard would show the zone heating while the Tado app showed OFF, and no amount of retrying would fix it. The integration now detects when a local write isn't confirmed by Tado's servers, clears the stale state, and automatically switches to the cloud API for subsequent commands.
+- **Fixed repeated commands being silently ignored** — After a HomeKit write that silently failed, the integration would skip your next command because it thought the zone was already in the requested state. For example, setting 20°C when the dashboard already showed 20°C (from the failed write) would do nothing. Commands are no longer skipped when the displayed state hasn't been confirmed by Tado's servers.
+- **Fixed climate entity not updating after service calls** ([Discussion #219](https://github.com/hiall-fyi/tado_ce/discussions/219) - @jeverley) — When you called services like `set_open_window_mode`, `restore_previous_state`, `resume_schedule`, or `set_climate_timer`, the Tado app would update immediately but the HA entity state would stay stale until the next poll. All overlay-related services now trigger an immediate refresh so your entities reflect the change straight away.
+- **Fixed entity attributes showing blank after writes in HomeKit mode** — When HomeKit was connected, entity attributes (target temperature, heating power, overlay type) could stay blank after a temperature or mode change until the next periodic cloud sync. Writes now always fetch fresh data from Tado's servers regardless of HomeKit connection status.
+
+### Improvements
+- **Real-time HomeKit data now updates your dashboard immediately** ([Discussion #219](https://github.com/hiall-fyi/tado_ce/discussions/219) - @jeverley, @ChrisMarriott38) — Previously, temperature and humidity from the HomeKit bridge only appeared on your dashboard at the polling interval (every 5–30 minutes), producing the same step pattern as cloud-only mode even though the bridge was pushing data in real-time. Now changes from the bridge appear on your dashboard within 2 seconds.
+- **HomeKit writes are now verified against Tado's servers** — After every local write through HomeKit, the integration checks that Tado's servers actually received the change. If they didn't, future writes automatically switch to the cloud API until the local path recovers. This catches the scenario where HomeKit reports success but the command never reaches the Tado server.
+- **More reliable HomeKit savings counters** — The "Reads saved today" and "Writes saved today" counters on the HomeKit Connected sensor now use the API quota reset time as a single source of truth, with a 24-hour fallback for edge cases where the reset signal is delayed. Counters also survive HA restarts instead of starting from zero.
+- **Smarter API error handling** — The integration now handles different HTTP error codes more intelligently instead of treating them all the same:
+  - Deleting an overlay that's already gone (HTTP 404) no longer shows as an error.
+  - Tado API rejections (HTTP 422) are logged as warnings instead of errors, with the actual rejection reason from the API response so you can see what went wrong.
+  - If Tado tells you to slow down (HTTP 429), the integration now reads the server's Retry-After header to know exactly when to try again, instead of guessing from historical data.
+  - Server errors (500/502/503/504) are now retried automatically with backoff, the same way connection timeouts are handled. Previously a single server hiccup would fail the entire request.
+  - If restoring a previous state fails (e.g. the captured temperature is no longer valid), the integration falls back to resuming the schedule instead of leaving the zone in a broken state.
+
 ## [4.0.0-beta.1] - 2026-04-12
 
 **HomeKit Local Control**

@@ -23,14 +23,33 @@ from homeassistant.helpers.selector import (
 )
 import voluptuous as vol
 
+from .config_manager import (
+    DEFAULT_DAY_START_HOUR,
+    DEFAULT_HOT_WATER_TIMER_DURATION,
+    DEFAULT_NIGHT_START_HOUR,
+    DEFAULT_REFRESH_DEBOUNCE_SECONDS,
+    MAX_HOUR,
+    MAX_REFRESH_DEBOUNCE_SECONDS,
+    MIN_HOUR,
+    MIN_REFRESH_DEBOUNCE_SECONDS,
+)
 from .const import (
+    DEFAULT_HOMEKIT_CLOUD_SYNC_MINUTES,
+    DEVICE_SYNC_DELAY_DEFAULT,
+    DEVICE_SYNC_DELAY_MAX,
+    DEVICE_SYNC_DELAY_MIN,
     HEATING_TYPE_OPTIONS,
     HEATING_TYPE_RADIATOR,
     MAX_CUSTOM_INTERVAL,
+    MAX_HOMEKIT_CLOUD_SYNC_MINUTES,
+    MIN_HOMEKIT_CLOUD_SYNC_MINUTES,
     OVERLAY_MODE_DEFAULT,
     OVERLAY_MODE_MAP,
     OVERLAY_MODE_OPTIONS,
     OVERLAY_MODE_REVERSE_MAP,
+    SMART_ACTIONS_DEBOUNCE_DEFAULT,
+    SMART_ACTIONS_DEBOUNCE_MAX,
+    SMART_ACTIONS_DEBOUNCE_MIN,
     SMART_COMFORT_MODE_OPTIONS,
     SURFACE_TEMP_OFFSET_MAX,
     SURFACE_TEMP_OFFSET_MIN,
@@ -290,8 +309,8 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                         ): EntitySelector(EntitySelectorConfig(domain=["sensor", "weather"])),
                         vol.Optional(
                             "hot_water_timer_duration",
-                            default=opt("hot_water_timer_duration", 60),
-                        ): NumberSelector(NumberSelectorConfig(min=1, max=1440, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="min")),
+                            default=opt("hot_water_timer_duration", DEFAULT_HOT_WATER_TIMER_DURATION),
+                        ): NumberSelector(NumberSelectorConfig(min=1, max=MAX_CUSTOM_INTERVAL, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="min")),
                         vol.Optional(
                             "smart_comfort_mode",
                             default=smart_comfort_default,
@@ -340,7 +359,7 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                         vol.Optional("wc_min_flow_temp", default=opt("wc_min_flow_temp", 25.0)): NumberSelector(NumberSelectorConfig(min=25, max=60, step=0.5, mode=NumberSelectorMode.BOX, unit_of_measurement="°C")),
                         vol.Optional("wc_shutoff_temp", default=opt("wc_shutoff_temp", 18.0)): NumberSelector(NumberSelectorConfig(min=5, max=30, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="°C")),
                         vol.Optional("wc_smoothing_method", default=opt("wc_smoothing_method", "ema")): SelectSelector(SelectSelectorConfig(options=["none", "ema", "rolling_average"], translation_key="wc_smoothing_method", mode=SelectSelectorMode.DROPDOWN)),
-                        vol.Optional("wc_smoothing_window", default=opt("wc_smoothing_window", 60)): NumberSelector(NumberSelectorConfig(min=15, max=1440, step=15, mode=NumberSelectorMode.BOX, unit_of_measurement="min")),
+                        vol.Optional("wc_smoothing_window", default=opt("wc_smoothing_window", 60)): NumberSelector(NumberSelectorConfig(min=15, max=MAX_CUSTOM_INTERVAL, step=15, mode=NumberSelectorMode.BOX, unit_of_measurement="min")),
                         vol.Optional("wc_room_compensation_enabled", default=opt("wc_room_compensation_enabled", False)): BooleanSelector(),
                         vol.Optional("wc_room_compensation_factor", default=opt("wc_room_compensation_factor", 3.0)): NumberSelector(NumberSelectorConfig(min=1.0, max=5.0, step=0.5, mode=NumberSelectorMode.BOX, unit_of_measurement="°C/°C")),
                         vol.Optional("wc_step_size", default=opt("wc_step_size", 1.0)): NumberSelector(NumberSelectorConfig(min=0.5, max=2.0, step=0.5, mode=NumberSelectorMode.BOX, unit_of_measurement="°C")),
@@ -379,9 +398,9 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                     ): TextSelector(TextSelectorConfig(type=TextSelectorType.TEXT)),
                     vol.Optional(
                         "homekit_cloud_sync_minutes",
-                        default=opt("homekit_cloud_sync_minutes", 30),
+                        default=opt("homekit_cloud_sync_minutes", DEFAULT_HOMEKIT_CLOUD_SYNC_MINUTES),
                     ): NumberSelector(NumberSelectorConfig(
-                        min=5, max=120, step=1,
+                        min=MIN_HOMEKIT_CLOUD_SYNC_MINUTES, max=MAX_HOMEKIT_CLOUD_SYNC_MINUTES, step=1,
                         mode=NumberSelectorMode.BOX,
                         unit_of_measurement="min",
                     )),
@@ -393,20 +412,20 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
         # --- Polling & API (always visible) ---
         polling_schema_fields: dict[vol.Optional | vol.Required, Any] = {}
 
-        polling_schema_fields[vol.Required("day_start_hour", default=opt("day_start_hour", 7))] = NumberSelector(NumberSelectorConfig(min=0, max=23, step=1, mode=NumberSelectorMode.BOX))
-        polling_schema_fields[vol.Required("night_start_hour", default=opt("night_start_hour", 23))] = NumberSelector(NumberSelectorConfig(min=0, max=23, step=1, mode=NumberSelectorMode.BOX))
+        polling_schema_fields[vol.Required("day_start_hour", default=opt("day_start_hour", DEFAULT_DAY_START_HOUR))] = NumberSelector(NumberSelectorConfig(min=MIN_HOUR, max=MAX_HOUR, step=1, mode=NumberSelectorMode.BOX))
+        polling_schema_fields[vol.Required("night_start_hour", default=opt("night_start_hour", DEFAULT_NIGHT_START_HOUR))] = NumberSelector(NumberSelectorConfig(min=MIN_HOUR, max=MAX_HOUR, step=1, mode=NumberSelectorMode.BOX))
 
         custom_day_interval = options.get("custom_day_interval")
         custom_night_interval = options.get("custom_night_interval")
         custom_day_schema = vol.Optional("custom_day_interval", description={"suggested_value": custom_day_interval}) if custom_day_interval is not None else vol.Optional("custom_day_interval")
         custom_night_schema = vol.Optional("custom_night_interval", description={"suggested_value": custom_night_interval}) if custom_night_interval is not None else vol.Optional("custom_night_interval")
 
-        polling_schema_fields[custom_day_schema] = NumberSelector(NumberSelectorConfig(min=1, max=1440, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="min"))
-        polling_schema_fields[custom_night_schema] = NumberSelector(NumberSelectorConfig(min=1, max=1440, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="min"))
-        polling_schema_fields[vol.Optional("refresh_debounce_seconds", default=opt("refresh_debounce_seconds", 15))] = NumberSelector(NumberSelectorConfig(min=1, max=60, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="s"))
+        polling_schema_fields[custom_day_schema] = NumberSelector(NumberSelectorConfig(min=1, max=MAX_CUSTOM_INTERVAL, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="min"))
+        polling_schema_fields[custom_night_schema] = NumberSelector(NumberSelectorConfig(min=1, max=MAX_CUSTOM_INTERVAL, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="min"))
+        polling_schema_fields[vol.Optional("refresh_debounce_seconds", default=opt("refresh_debounce_seconds", DEFAULT_REFRESH_DEBOUNCE_SECONDS))] = NumberSelector(NumberSelectorConfig(min=MIN_REFRESH_DEBOUNCE_SECONDS, max=MAX_REFRESH_DEBOUNCE_SECONDS, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="s"))
         polling_schema_fields[vol.Optional("api_history_retention_days", default=opt("api_history_retention_days", 14))] = NumberSelector(NumberSelectorConfig(min=0, max=365, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="d"))
-        polling_schema_fields[vol.Optional("smart_actions_debounce_seconds", default=opt("smart_actions_debounce_seconds", 3))] = NumberSelector(NumberSelectorConfig(min=0, max=10, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="s"))
-        polling_schema_fields[vol.Optional("device_sync_delay_seconds", default=opt("device_sync_delay_seconds", 1.0))] = NumberSelector(NumberSelectorConfig(min=0.5, max=5.0, step=0.5, mode=NumberSelectorMode.BOX, unit_of_measurement="s"))
+        polling_schema_fields[vol.Optional("smart_actions_debounce_seconds", default=opt("smart_actions_debounce_seconds", SMART_ACTIONS_DEBOUNCE_DEFAULT))] = NumberSelector(NumberSelectorConfig(min=SMART_ACTIONS_DEBOUNCE_MIN, max=SMART_ACTIONS_DEBOUNCE_MAX, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="s"))
+        polling_schema_fields[vol.Optional("device_sync_delay_seconds", default=opt("device_sync_delay_seconds", DEVICE_SYNC_DELAY_DEFAULT))] = NumberSelector(NumberSelectorConfig(min=DEVICE_SYNC_DELAY_MIN, max=DEVICE_SYNC_DELAY_MAX, step=0.5, mode=NumberSelectorMode.BOX, unit_of_measurement="s"))
 
         # Mobile frequent sync in Polling & API (conditional on mobile_devices_enabled)
         if opt("mobile_devices_enabled", False):

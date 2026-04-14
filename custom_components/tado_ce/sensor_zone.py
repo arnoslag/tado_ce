@@ -12,13 +12,17 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.const import PERCENTAGE, UnitOfTemperature
 from homeassistant.core import callback
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from .const import SIGNAL_HOMEKIT_UPDATE
 from .device_manager import get_hub_device_info, get_zone_device_info
 from .entity_registry import ENTITY_REGISTRY, get_entity_category
 from .helpers import get_zone_state, get_zone_states
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from .coordinator import TadoDataUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -43,6 +47,30 @@ class TadoZoneSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], SensorEntit
         self._attr_available = False
         self._attr_native_value = None
         self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type, coordinator.home_id)
+        self._unsub_homekit_signal: Callable[[], None] | None = None
+
+    async def async_added_to_hass(self) -> None:
+        """Register listeners when entity is added to hass."""
+        await super().async_added_to_hass()
+        self._unsub_homekit_signal = async_dispatcher_connect(
+            self.hass,
+            SIGNAL_HOMEKIT_UPDATE.format(home_id=self._home_id),
+            self._handle_homekit_signal,
+        )
+
+    async def async_will_remove_from_hass(self) -> None:
+        """Unregister listeners when entity is removed."""
+        if self._unsub_homekit_signal:
+            self._unsub_homekit_signal()
+            self._unsub_homekit_signal = None
+        await super().async_will_remove_from_hass()
+
+    @callback
+    def _handle_homekit_signal(self, zone_id: str) -> None:
+        """Handle HomeKit data update for this zone."""
+        if zone_id != self._zone_id:
+            return
+        self._handle_coordinator_update()
 
     def _get_zone_data(self) -> dict[str, Any] | None:
         """Get zone data from coordinator data."""
@@ -51,6 +79,29 @@ class TadoZoneSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], SensorEntit
         except Exception:
             _LOGGER.debug("Failed to get zone data for zone %s", self._zone_id)
             return None
+
+    def _get_zone_data_with_homekit(self) -> dict[str, Any] | None:
+        """Get zone data with HomeKit overlay for sensor readings."""
+        zone_data = self._get_zone_data()
+        if not zone_data:
+            return None
+        provider = self.coordinator.homekit_provider
+        reconciler = self.coordinator.state_reconciler
+        if not provider or not provider.is_connected or not reconciler:
+            return zone_data
+        reconciler.local_provider = provider
+        sensor_data = (zone_data.get("sensorDataPoints") or {}).copy()
+        cloud_temp = (sensor_data.get("insideTemperature") or {}).get("celsius")
+        cloud_humidity = (sensor_data.get("humidity") or {}).get("percentage")
+        merged_temp, _ = reconciler.merge_zone_temperature(self._zone_id, cloud_temp)
+        merged_hum, _ = reconciler.merge_zone_humidity(self._zone_id, cloud_humidity)
+        if merged_temp is not None:
+            sensor_data.setdefault("insideTemperature", {})["celsius"] = merged_temp
+        if merged_hum is not None:
+            sensor_data.setdefault("humidity", {})["percentage"] = merged_hum
+        result = dict(zone_data)
+        result["sensorDataPoints"] = sensor_data
+        return result
 
     @callback
     def _handle_coordinator_update(self) -> None:

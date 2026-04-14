@@ -227,7 +227,7 @@ class TadoMoldRiskSensor(TadoZoneSensor):
         Uses 2-tier temperature source strategy for more accurate assessment.
         """
         try:
-            zone_data = self._get_zone_data()
+            zone_data = self._get_zone_data_with_homekit()
             if not zone_data:
                 self._attr_available = False
                 return
@@ -345,7 +345,7 @@ class TadoMoldRiskPercentageSensor(TadoZoneSensor):
         Uses the same 2-tier temperature source strategy as TadoMoldRiskSensor.
         """
         try:
-            zone_data = self._get_zone_data()
+            zone_data = self._get_zone_data_with_homekit()
             if not zone_data:
                 self._attr_available = False
                 return
@@ -495,7 +495,7 @@ class TadoCondensationRiskSensor(TadoZoneSensor):
         HEATING zones — indoor dew point vs window inner surface temp.
         """
         try:
-            zone_data = self._get_zone_data()
+            zone_data = self._get_zone_data_with_homekit()
             if not zone_data:
                 self._attr_available = False
                 return
@@ -779,7 +779,7 @@ class TadoSurfaceTemperatureSensor(TadoZoneSensor):
     def update(self) -> None:
         """Update surface temperature using 2-tier calculation strategy."""
         try:
-            zone_data = self._get_zone_data()
+            zone_data = self._get_zone_data_with_homekit()
             if not zone_data:
                 self._attr_available = False
                 return
@@ -928,7 +928,7 @@ class TadoDewPointSensor(TadoZoneSensor):
     def update(self) -> None:
         """Update dew point based on room temperature and humidity."""
         try:
-            zone_data = self._get_zone_data()
+            zone_data = self._get_zone_data_with_homekit()
             if not zone_data:
                 self._attr_available = False
                 return
@@ -1054,7 +1054,7 @@ class TadoComfortLevelSensor(TadoZoneSensor):
     def update(self) -> None:
         """Update air comfort using adaptive comfort model."""
         try:
-            zone_data = self._get_zone_data()
+            zone_data = self._get_zone_data_with_homekit()
             if not zone_data:
                 self._attr_available = False
                 return

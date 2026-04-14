@@ -9,7 +9,15 @@ from typing import TYPE_CHECKING, Any
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.storage import Store
 
-from .const import DATA_DIR, OUTDOOR_TEMP_HISTORY_MAX, OVERLAY_MODE_DEFAULT, TIMER_DURATION_DEFAULT, get_data_file
+from .const import (
+    DATA_DIR,
+    OUTDOOR_TEMP_HISTORY_MAX,
+    OVERLAY_MODE_DEFAULT,
+    TIMER_DURATION_DEFAULT,
+    TIMER_DURATION_MAX,
+    TIMER_DURATION_MIN,
+    get_data_file,
+)
 from .storage import load_json_sync, save_json_sync
 
 if TYPE_CHECKING:
@@ -273,7 +281,7 @@ class DataLoader:
         Returns:
             True if valid duration, False otherwise.
         """
-        if not isinstance(duration, int) or duration < 15 or duration > 180:
+        if not isinstance(duration, int) or duration < TIMER_DURATION_MIN or duration > TIMER_DURATION_MAX:
             _LOGGER.error("Invalid timer duration: %s", duration)
             return False
         self.save_auxiliary("timer_duration", {"timer_duration": duration})

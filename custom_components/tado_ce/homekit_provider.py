@@ -5,11 +5,17 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
+from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.util import dt as dt_util
 
-from .const import CACHE_REFRESH_FAILURE_THRESHOLD, HOMEKIT_CACHE_REFRESH_SECONDS, HOMEKIT_WRITE_TIMEOUT_SECONDS
+from .const import (
+    CACHE_REFRESH_FAILURE_THRESHOLD,
+    HOMEKIT_CACHE_REFRESH_SECONDS,
+    HOMEKIT_WRITE_TIMEOUT_SECONDS,
+    SIGNAL_HOMEKIT_UPDATE,
+)
 from .homekit_client import (
     CHAR_CURRENT_HEATING_STATE,
     CHAR_CURRENT_HUMIDITY,
@@ -18,6 +24,9 @@ from .homekit_client import (
     CHAR_TARGET_TEMPERATURE,
     HomeKitClient,
 )
+
+if TYPE_CHECKING:
+    from homeassistant.core import HomeAssistant
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -61,9 +70,11 @@ class HomeKitLocalProvider:
     can check freshness. Returns (None, None) when data is unavailable.
     """
 
-    def __init__(self, client: HomeKitClient) -> None:
+    def __init__(self, client: HomeKitClient, hass: HomeAssistant, home_id: str) -> None:
         """Initialize the HomeKit Local Provider."""
         self._client = client
+        self._hass = hass
+        self._home_id = home_id
         # Cache: zone_id → {char_type: (value, timestamp)}
         self._cache: dict[str, dict[str, tuple[Any, datetime]]] = {}
         # Accessory list cache (refreshed on connect)
@@ -291,6 +302,7 @@ class HomeKitLocalProvider:
         Args:
             event_data: Dict mapping (aid, iid) to {"value": ...}.
         """
+        updated_zones: set[str] = set()
         for key, data in event_data.items():
             mapping = self._event_map.get(key)
             if mapping is None:
@@ -299,10 +311,15 @@ class HomeKitLocalProvider:
             value = data.get("value")
             if value is not None:
                 self.update_cache(zone_id, char_type, value)
+                updated_zones.add(zone_id)
                 _LOGGER.debug(
                     "HomeKit event: zone %s char %s = %s",
                     zone_id, char_type, value,
                 )
+        # Fire dispatcher signal once per updated zone
+        signal = SIGNAL_HOMEKIT_UPDATE.format(home_id=self._home_id)
+        for zone_id in updated_zones:
+            async_dispatcher_send(self._hass, signal, zone_id)
 
     async def _periodic_cache_refresh(self) -> None:
         """Periodically poll all subscribed characteristics to keep cache fresh.
@@ -324,6 +341,7 @@ class HomeKitLocalProvider:
                 if not chars_to_read:
                     continue
                 result = await self._client.pairing.get_characteristics(chars_to_read)
+                updated_zones: set[str] = set()
                 for key, data in result.items():
                     mapping = self._event_map.get(key)
                     if mapping is None:
@@ -332,7 +350,12 @@ class HomeKitLocalProvider:
                     value = data.get("value")
                     if value is not None:
                         self.update_cache(zone_id, char_type, value)
+                        updated_zones.add(zone_id)
                 consecutive_failures = 0
+                # Fire dispatcher signal per refreshed zone
+                signal = SIGNAL_HOMEKIT_UPDATE.format(home_id=self._home_id)
+                for zone_id in updated_zones:
+                    async_dispatcher_send(self._hass, signal, zone_id)
                 _LOGGER.debug(
                     "HomeKit: Cache refresh — %d characteristics polled",
                     len(chars_to_read),

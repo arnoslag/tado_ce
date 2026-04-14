@@ -24,7 +24,15 @@ from .api_call_tracker import (
     CALL_TYPE_ZONE_STATES,
     CALL_TYPE_ZONES,
 )
-from .const import API_ENDPOINT_DEVICES, DEVICE_OFFSET_MAX, DEVICE_OFFSET_MIN, MAX_RETRY_ATTEMPTS, TADO_API_BASE, is_climate_zone
+from .const import (
+    API_ENDPOINT_DEVICES,
+    DEVICE_OFFSET_MAX,
+    DEVICE_OFFSET_MIN,
+    MAX_RETRY_ATTEMPTS,
+    QUOTA_WARNING_PERCENTAGE,
+    TADO_API_BASE,
+    is_climate_zone,
+)
 from .exceptions import TadoAuthError, TadoSyncError
 from .helpers import parse_iso_datetime, retry_delay
 from .storage import async_load_json, async_save_json
@@ -622,7 +630,7 @@ class TadoApiClient(TadoAuthMixin):
         # Update status based on usage
         if remaining == 0:
             status = "rate_limited"
-        elif percentage_used > 80:
+        elif percentage_used > QUOTA_WARNING_PERCENTAGE:
             status = "warning"
 
         data: dict[str, Any] = {
@@ -744,8 +752,9 @@ class TadoApiClient(TadoAuthMixin):
         endpoint: str,
         attempt: int,
         is_safe_to_retry: bool,
+        response_body: str = "",
     ) -> str:
-        """Handle non-success HTTP status. Returns 'continue', 'return_none'."""
+        """Handle non-success HTTP status. Returns 'continue', 'return_none', or 'return_success'."""
         if status == HTTPStatus.UNAUTHORIZED:
             if await self._handle_401(method, endpoint, attempt):
                 return "continue"
@@ -756,8 +765,38 @@ class TadoApiClient(TadoAuthMixin):
                 return "continue"
             return "return_none"
 
+        # 422 Unprocessable Entity — semantic rejection, not server failure
+        if status == HTTPStatus.UNPROCESSABLE_ENTITY:
+            _LOGGER.warning(
+                "API 422 (semantic rejection): %s %s — %s",
+                method, endpoint, response_body[:200] if response_body else "no body",
+            )
+            return "return_none"
+
+        # 404 on DELETE — resource already gone, treat as success
+        if status == HTTPStatus.NOT_FOUND and method == "DELETE":
+            _LOGGER.debug("DELETE %s returned 404 — resource already gone", endpoint)
+            return "return_success"
+
         if status == HTTPStatus.TOO_MANY_REQUESTS:
             _LOGGER.error("Rate limit exceeded: %s", endpoint)
+            return "return_none"
+
+        # 5xx Server Errors — transient, retry on idempotent methods
+        if status >= HTTPStatus.INTERNAL_SERVER_ERROR and is_safe_to_retry:
+            if attempt < MAX_RETRY_ATTEMPTS:
+                delay = retry_delay(attempt)
+                _LOGGER.warning(
+                    "API %s (attempt %s/%s), retrying in %.1fs: %s %s",
+                    status, attempt, MAX_RETRY_ATTEMPTS, delay, method, endpoint,
+                )
+                await asyncio.sleep(delay)
+                return "continue"
+            _LOGGER.error("API %s after %s retries: %s %s", status, MAX_RETRY_ATTEMPTS, method, endpoint)
+            return "return_none"
+
+        if response_body:
+            _LOGGER.error("API call failed: %s %s → %s — %s", method, endpoint, status, response_body[:200])
         else:
             _LOGGER.error("API call failed: %s %s → %s", method, endpoint, status)
         return "return_none"
@@ -814,10 +853,28 @@ class TadoApiClient(TadoAuthMixin):
                     return {}, False
                 return await resp.json(), False
 
+            # Read response body for error logging
+            try:
+                response_body = await resp.text()
+            except Exception:
+                response_body = ""
+
+            # Parse Retry-After header on 429
+            if resp.status == HTTPStatus.TOO_MANY_REQUESTS:
+                retry_after_header = resp.headers.get("Retry-After")
+                if retry_after_header:
+                    try:
+                        self._rate_limit["reset_seconds"] = int(float(retry_after_header))
+                    except (ValueError, TypeError):
+                        pass
+
             action = await self._handle_error_status(
                 resp.status, method, url, attempt,
                 method in _RETRYABLE_METHODS,
+                response_body=response_body,
             )
+            if action == "return_success":
+                return {}, False
             return None, action == "continue"
 
     async def api_call(

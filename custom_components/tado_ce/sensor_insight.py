@@ -11,6 +11,7 @@ from homeassistant.core import callback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
+from .const import SECONDS_PER_DAY
 from .device_manager import get_hub_device_info, get_zone_device_info
 from .entity_registry import ENTITY_REGISTRY, get_entity_category
 from .format_helpers import (
@@ -221,8 +222,8 @@ class TadoHomeInsightsSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], Sen
         for zone_key in zone_insights:
             for i, insight in enumerate(zone_insights[zone_key]):
                 dur = history.get_duration(insight.insight_type, insight.zone_name)
-                if dur is not None and dur.total_seconds() >= 86400:
-                    days = int(dur.total_seconds() // 86400)
+                if dur is not None and dur.total_seconds() >= SECONDS_PER_DAY:
+                    days = int(dur.total_seconds() // SECONDS_PER_DAY)
                     enhanced = _enhance_recommendation_with_duration(
                         insight.recommendation, insight.insight_type, days,
                     )
@@ -387,8 +388,8 @@ class TadoZoneInsightsSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], Sen
             history = self.coordinator.insight_history
             for i, insight in enumerate(self._insights):
                 dur = history.get_duration(insight.insight_type, insight.zone_name)
-                if dur is not None and dur.total_seconds() >= 86400:
-                    days = int(dur.total_seconds() // 86400)
+                if dur is not None and dur.total_seconds() >= SECONDS_PER_DAY:
+                    days = int(dur.total_seconds() // SECONDS_PER_DAY)
                     enhanced = _enhance_recommendation_with_duration(
                         insight.recommendation, insight.insight_type, days,
                     )

@@ -20,6 +20,7 @@ from homeassistant.components.climate.const import (
 from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
 from homeassistant.core import CALLBACK_TYPE, Event, EventStateChangedData, callback
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -29,7 +30,7 @@ from .climate_helpers import (
     subscribe_external_sensors,
     unsubscribe_external_sensors,
 )
-from .const import DOMAIN
+from .const import DOMAIN, SIGNAL_HOMEKIT_UPDATE
 from .device_manager import get_zone_device_info
 from .entity_registry import ENTITY_REGISTRY
 from .format_helpers import (
@@ -55,6 +56,8 @@ from .schedule_helpers import get_current_schedule_target
 from .write_optimizer import ActionGuard
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from .coordinator import TadoDataUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -346,6 +349,9 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
         # Unsubscribe callbacks for external sensor state change listeners
         self._unsub_external_sensors: list[CALLBACK_TYPE] = []
 
+        # Unsubscribe callback for HomeKit dispatcher signal
+        self._unsub_homekit_signal: Callable[[], None] | None = None
+
     def _calculate_hvac_action(self, hvac_mode: HVACMode | None = None, ac_power_on: bool | None = None) -> HVACAction:
         """Calculate hvac_action for AC zone.
 
@@ -448,6 +454,13 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
         # Subscribe to external sensor state changes for real-time updates
         self._subscribe_external_sensors()
 
+        # Subscribe to HomeKit dispatcher signal for real-time sensor updates
+        self._unsub_homekit_signal = async_dispatcher_connect(
+            self.hass,
+            SIGNAL_HOMEKIT_UPDATE.format(home_id=self._home_id),
+            self._handle_homekit_update,
+        )
+
     async def async_will_remove_from_hass(self) -> None:
         """Unregister listeners when entity is removed.
 
@@ -455,6 +468,9 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
         Only zone config and external sensor listeners need manual cleanup.
         """
         self._unsubscribe_external_sensors()
+        if self._unsub_homekit_signal:
+            self._unsub_homekit_signal()
+            self._unsub_homekit_signal = None
         if self._unsub_zone_config:
             self._unsub_zone_config()
             self._unsub_zone_config = None
@@ -491,6 +507,17 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
     def _unsubscribe_external_sensors(self) -> None:
         """Unsubscribe from external sensor state change listeners."""
         unsubscribe_external_sensors(self._unsub_external_sensors)
+
+    @callback
+    def _handle_homekit_update(self, zone_id: str) -> None:
+        """Handle HomeKit data update for this zone."""
+        if zone_id != self._zone_id:
+            return
+        if self.coordinator.is_entity_fresh(self.entity_id):
+            return
+        zone_data = get_zone_state(self.coordinator.data, self._zone_id) or {}
+        self._update_ac_sensor_data(zone_data)
+        self.async_write_ha_state()
 
     @callback
     def _update_temp_limits(self) -> None:
@@ -681,28 +708,40 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
             self._attr_hvac_action = HVACAction.OFF
 
     def _update_ac_sensor_data(self, zone_data: dict[str, Any]) -> None:
-        """Extract sensor data and apply external sensor overrides for AC."""
+        """Extract sensor data with priority: external > homekit > cloud."""
         sensor_data = zone_data.get("sensorDataPoints") or {}
-        self._attr_current_temperature = (sensor_data.get("insideTemperature") or {}).get("celsius")
-        self._attr_current_humidity = (sensor_data.get("humidity") or {}).get("percentage")
+        cloud_temp = (sensor_data.get("insideTemperature") or {}).get("celsius")
+        cloud_humidity = (sensor_data.get("humidity") or {}).get("percentage")
 
         zcm = self.coordinator.zone_config_manager
         ext_temp = read_external_sensor(self.hass, zcm, self._zone_id, "external_temp_sensor")
-        if ext_temp is not None:
-            self._attr_current_temperature = ext_temp
-            self._temperature_source = "external"
-        else:
-            # Use coordinator data source (homekit/cloud) if available
-            sources = self.coordinator.data_sources.get(self._zone_id, {})
-            self._temperature_source = sources.get("temperature", "cloud")
-
         ext_hum = read_external_sensor(self.hass, zcm, self._zone_id, "external_humidity_sensor")
-        if ext_hum is not None:
-            self._attr_current_humidity = ext_hum
-            self._humidity_source = "external"
+
+        # Priority chain via StateReconciler (external > homekit if fresh > cloud)
+        reconciler = self.coordinator.state_reconciler
+        provider = self.coordinator.homekit_provider
+        if reconciler and provider and provider.is_connected:
+            reconciler.local_provider = provider
+            merged_temp, temp_source = reconciler.merge_zone_temperature(
+                self._zone_id, cloud_temp, external_value=ext_temp,
+            )
+            merged_hum, hum_source = reconciler.merge_zone_humidity(
+                self._zone_id, cloud_humidity, external_value=ext_hum,
+            )
+        elif ext_temp is not None:
+            merged_temp, temp_source = ext_temp, "external"
+            merged_hum, hum_source = (ext_hum, "external") if ext_hum is not None else (cloud_humidity, "cloud")
+        elif ext_hum is not None:
+            merged_temp, temp_source = cloud_temp, "cloud"
+            merged_hum, hum_source = ext_hum, "external"
         else:
-            sources = self.coordinator.data_sources.get(self._zone_id, {})
-            self._humidity_source = sources.get("humidity", "cloud")
+            merged_temp, temp_source = cloud_temp, "cloud"
+            merged_hum, hum_source = cloud_humidity, "cloud"
+
+        self._attr_current_temperature = merged_temp
+        self._temperature_source = temp_source
+        self._attr_current_humidity = merged_hum
+        self._humidity_source = hum_source
 
         if zcm:
             zc = zcm.get_zone_config(self._zone_id)
@@ -800,6 +839,7 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
         if self._attr_hvac_mode != HVACMode.OFF and ActionGuard.should_skip_temperature(
             temperature, self._attr_target_temperature,
             hvac_mode or self._attr_hvac_mode, self._attr_hvac_mode,
+            optimistic_active=self._optimistic_sequence is not None,
         ):
             _LOGGER.debug("Action Guard: skip AC %s set_temperature (already %s°C)", self._zone_name, temperature)
             return
@@ -927,7 +967,10 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set new HVAC mode."""
         # Action Guard — skip if mode already matches current state
-        if ActionGuard.should_skip_hvac_mode(hvac_mode, self._attr_hvac_mode):
+        if ActionGuard.should_skip_hvac_mode(
+            hvac_mode, self._attr_hvac_mode,
+            optimistic_active=self._optimistic_sequence is not None,
+        ):
             _LOGGER.debug(
                 "Action Guard: skip AC %s set_hvac_mode (already %s)",
                 self._zone_name, hvac_mode,

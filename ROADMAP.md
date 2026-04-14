@@ -8,12 +8,11 @@ For completed features, see [CHANGELOG.md](CHANGELOG.md).
 
 ## Up Next
 
-**HomeKit Local Control — Stabilisation & GA**
+**HomeKit Local Control — GA Release**
 
-v4.0.0-beta.1 shipped HomeKit local control (reads, writes, real-time events, cloud fallback, polling optimization). Currently in beta testing. Next steps:
+v4.0.0-beta.2 shipped the architecture change (real-time entity updates via dispatcher signals, direct HomeKit reads, environment sensor support) and five bug fixes (optimistic state expiry, ActionGuard bypass, deferred write verification, cleanup leaks, savings reset robustness). Currently in beta testing with community testers. Next steps:
 
-- Collect feedback from testers on different zone counts, AC zones, bridge restarts, and long-term stability
-- Address any issues found during beta
+- Collect feedback on real-time responsiveness, long-term stability, and edge cases
 - Ship v4.0.0 stable once confidence is high
 
 ---

@@ -20,7 +20,7 @@ from .climate_helpers import (
     subscribe_external_sensors,
     unsubscribe_external_sensors,
 )
-from .const import is_climate_zone
+from .const import INSIGHT_READING_THROTTLE_SECONDS, is_climate_zone
 from .device_manager import get_device_name_suffix, get_hub_device_info, get_zone_device_info
 from .entity_registry import ENTITY_REGISTRY, get_entity_category
 from .format_helpers import (
@@ -858,7 +858,7 @@ class TadoWindowPredictedSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], 
 
             # Add reading to history (throttle to avoid duplicates)
             now = dt_util.utcnow()
-            if self._last_reading_time is None or (now - self._last_reading_time).total_seconds() >= 25:
+            if self._last_reading_time is None or (now - self._last_reading_time).total_seconds() >= INSIGHT_READING_THROTTLE_SECONDS:
                 reading = InsightTemperatureReading(
                     temperature=current_temp,
                     humidity=current_humidity,

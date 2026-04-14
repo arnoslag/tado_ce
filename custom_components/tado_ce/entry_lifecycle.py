@@ -190,6 +190,11 @@ async def async_cleanup_entry_components(
     if hkc is not None:
         from .homekit_client import HomeKitClient
 
+        # Unsubscribe events and stop cache refresh before disconnecting
+        provider = _attr("homekit_provider")
+        if provider is not None and hasattr(provider, "unsubscribe_events"):
+            provider.unsubscribe_events()
+
         if isinstance(hkc, HomeKitClient):
             await hkc.async_disconnect()
         coordinator.homekit_client = None

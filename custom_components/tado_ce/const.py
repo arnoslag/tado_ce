@@ -10,6 +10,9 @@ from typing import Any, Final
 DOMAIN = "tado_ce"
 MANUFACTURER = "Joe Yiu (@hiall-fyi)"
 
+# Dispatcher signal for HomeKit real-time entity updates
+SIGNAL_HOMEKIT_UPDATE = "tado_ce_homekit_update_{home_id}"
+
 # Tado bridge device models (Internet Bridge hardware)
 # Used for pre-registering bridge devices in the device registry before platform setup
 TADO_BRIDGE_MODELS = ["IB01", "IB02"]
@@ -276,6 +279,7 @@ OPEN_WINDOW_DEFAULT_TIMEOUT = 900  # 15 minutes in seconds (Tado default)
 
 # Timer duration limits
 TIMER_DURATION_MIN = 15
+TIMER_DURATION_MAX = 180
 
 # Timer duration options (for per-zone select)
 TIMER_DURATION_OPTIONS = ["15", "30", "45", "60", "90", "120", "180"]
@@ -340,6 +344,13 @@ RETRY_BASE_DELAY: Final = 2  # seconds — exponential: 2s, 4s, 8s
 MAX_RETRY_DELAY: Final = 30  # seconds — cap to prevent runaway delays
 
 # =============================================================================
+# Rate Limit / Quota Constants
+# =============================================================================
+
+# Quota warning threshold — log warning when usage exceeds this percentage
+QUOTA_WARNING_PERCENTAGE: Final[int] = 80
+
+# =============================================================================
 # Rate Limit Retry-After Constants (UpdateFailed(retry_after=N))
 # =============================================================================
 
@@ -365,6 +376,9 @@ MAX_HOMEKIT_CLOUD_SYNC_MINUTES: Final[int] = 120
 # HomeKit write timeout — fallback to cloud if local write exceeds this
 HOMEKIT_WRITE_TIMEOUT_SECONDS: Final[float] = 3.0
 
+# Buffer added to optimistic window before cloud verification refresh
+CLOUD_VERIFICATION_BUFFER_SECONDS: Final[float] = 2.0
+
 # Write-side circuit breaker — skip HomeKit writes after consecutive failures
 WRITE_FAILURE_THRESHOLD: Final[int] = 3
 WRITE_CIRCUIT_OPEN_SECONDS: Final[float] = 300.0  # 5 minutes cooldown
@@ -380,6 +394,25 @@ CLIMATE_ZONE_TYPES: Final[frozenset[str]] = frozenset({"HEATING", "AIR_CONDITION
 
 # Outdoor temperature history — 14 days × 24 hourly readings
 OUTDOOR_TEMP_HISTORY_MAX: Final = 336
+
+# Entity freshness expiry — stale entries cleaned up after this many seconds
+ENTITY_FRESHNESS_EXPIRY_SECONDS: Final[int] = 60
+
+# Buffer added to debounce delay for optimistic window calculation
+OPTIMISTIC_WINDOW_BUFFER_SECONDS: Final[float] = 2.0
+
+# Default optimistic window when hass is unavailable (seconds)
+# = DEFAULT_REFRESH_DEBOUNCE_SECONDS (15) + OPTIMISTIC_WINDOW_BUFFER_SECONDS (2)
+DEFAULT_OPTIMISTIC_WINDOW_SECONDS: Final[float] = 17.0
+
+# Seconds per day — used for duration formatting
+SECONDS_PER_DAY: Final[int] = 86400
+
+# Insight escalation — days before an insight is considered long-standing
+INSIGHT_ESCALATION_DAYS: Final[int] = 14
+
+# Insight temperature reading throttle — minimum seconds between readings
+INSIGHT_READING_THROTTLE_SECONDS: Final[int] = 25
 
 
 def is_climate_zone(zone_type: str) -> bool:

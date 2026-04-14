@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 import re
 from typing import TYPE_CHECKING, Any
 
+from .const import INSIGHT_ESCALATION_DAYS
 from .helpers import parse_iso_datetime as _parse_iso_dt
 from .insights_models import (
     _INSIGHT_TO_GROUP,
@@ -388,7 +389,7 @@ def _narrative_urgency_reason(label: str, grp: dict[str, Any]) -> str:
     dur = grp.get("max_duration_days", 0)
 
     if insight_type == "battery":
-        if dur >= 14:
+        if dur >= INSIGHT_ESCALATION_DAYS:
             return f"first reported {dur} days ago"
         if dur >= 2:
             return f"reported {dur} days ago"
@@ -496,7 +497,7 @@ def build_flat_action_list(
         dur_suffix = ""
         if dur >= 2:
             insight_type = _reverse_action_label(label)
-            if insight_type == "battery" and dur >= 14:
+            if insight_type == "battery" and dur >= INSIGHT_ESCALATION_DAYS:
                 dur_suffix = f" (overdue \u2014 {dur} days)"
             elif insight_type == "battery":
                 dur_suffix = f" ({dur} days)"

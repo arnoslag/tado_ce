@@ -20,10 +20,10 @@ from homeassistant.util import dt as dt_util
 from .const import (
     DEVICE_SYNC_QUEUE_MAX_DEPTH,
     DOMAIN,
+    ENTITY_FRESHNESS_EXPIRY_SECONDS,
     OUTDOOR_TEMP_HISTORY_MAX,
     OVERLAY_MODE_DEFAULT,
     TIMER_DURATION_DEFAULT,
-    get_climate_zone_ids,
 )
 from .exceptions import TadoAuthError, TadoBridgeApiError, TadoSyncError
 from .insight_history import InsightHistoryTracker
@@ -159,11 +159,6 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.homekit_client: Any | None = None
         self.homekit_provider: Any | None = None
         self.state_reconciler: Any | None = None
-
-        # Per-zone data source tracking — populated by HomeKit merge in _async_post_sync_processing.
-        # Structure: {zone_id: {"temperature": "homekit"|"cloud", "humidity": "homekit"|"cloud"}}
-        # Entities read this to set temperature_source / humidity_source attributes.
-        self.data_sources: dict[str, dict[str, str]] = {}
 
         # HomeKit polling optimization state
         self._last_cloud_zone_fetch: datetime | None = None
@@ -308,57 +303,6 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         ac_capabilities = self.data_loader.get_cached("ac_capabilities")
         home_details_data = self.data_loader.get_cached("home_details")
 
-        # HomeKit local data merge — overwrite cloud values with fresh local data
-        if self.homekit_provider and self.homekit_provider.is_connected and self.state_reconciler:
-            self.state_reconciler.local_provider = self.homekit_provider
-            cached_zones = self.data_loader.get_cached("zones")
-            zone_states = (cached_zones or {}).get("zoneStates") or {} if isinstance(cached_zones, dict) else {}
-            # Only merge climate zones (heating/AC) — skip hot water and other types
-            climate_ids = get_climate_zone_ids(zones_info_data if isinstance(zones_info_data, list) else [])
-            for zone_id_str, cloud_zone in zone_states.items():
-                if zone_id_str not in climate_ids:
-                    continue
-                if not self.state_reconciler.should_accept_cloud_value(zone_id_str):
-                    continue
-
-                sensor_data = cloud_zone.get("sensorDataPoints") or {}
-                cloud_temp = (sensor_data.get("insideTemperature") or {}).get("celsius")
-                cloud_humidity = (sensor_data.get("humidity") or {}).get("percentage")
-
-                merged_temp, temp_source = self.state_reconciler.merge_zone_temperature(
-                    zone_id_str, cloud_temp,
-                )
-                merged_humidity, humidity_source = self.state_reconciler.merge_zone_humidity(
-                    zone_id_str, cloud_humidity,
-                )
-
-                # Track data source per zone for entity attributes
-                self.data_sources[zone_id_str] = {
-                    "temperature": temp_source,
-                    "humidity": humidity_source,
-                }
-
-                if merged_temp is not None and temp_source != "cloud":
-                    if "insideTemperature" not in sensor_data:
-                        sensor_data["insideTemperature"] = {}
-                    sensor_data["insideTemperature"]["celsius"] = merged_temp
-                if merged_humidity is not None and humidity_source != "cloud":
-                    if "humidity" not in sensor_data:
-                        sensor_data["humidity"] = {}
-                    sensor_data["humidity"]["percentage"] = merged_humidity
-
-                # Log non-cloud sources
-                local_parts = []
-                if temp_source != "cloud" and merged_temp is not None:
-                    local_parts.append(f"temp={merged_temp:.1f}°C")
-                if humidity_source != "cloud" and merged_humidity is not None:
-                    local_parts.append(f"humidity={merged_humidity:.0f}%")
-                if local_parts:
-                    _LOGGER.debug(
-                        "Zone %s from homekit: %s",
-                        zone_id_str, ", ".join(local_parts),
-                    )
-
         # Accumulate outdoor temp history
         await self._accumulate_outdoor_temp_history(weather_data)
 
@@ -457,13 +401,6 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._prev_homekit_connected = homekit_connected
 
         # 2c. Compute skip_zone_states
-        cm = self.config_manager
-        skip_zone_states = False
-        if homekit_connected and self._last_cloud_zone_fetch is not None:
-            cloud_sync_minutes = cm.get_homekit_cloud_sync_minutes()
-            elapsed = (dt_util.utcnow() - self._last_cloud_zone_fetch).total_seconds() / 60
-            skip_zone_states = elapsed < cloud_sync_minutes
-
         # 3. Execute API sync
         do_full_sync = self._should_do_full_sync()
 
@@ -471,6 +408,21 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         zone_only = getattr(self.refresh_handler, "_pending_zone_only", False)
         if zone_only:
             self.refresh_handler._pending_zone_only = False
+
+        # Check if a write-triggered refresh needs cloud zone data
+        force_zone_fetch = getattr(self.refresh_handler, "_pending_force_zone_fetch", False)
+        if force_zone_fetch:
+            self.refresh_handler._pending_force_zone_fetch = False
+
+        # 2c. Compute skip_zone_states
+        cm = self.config_manager
+        skip_zone_states = False
+        if force_zone_fetch:
+            skip_zone_states = False
+        elif homekit_connected and self._last_cloud_zone_fetch is not None:
+            cloud_sync_minutes = cm.get_homekit_cloud_sync_minutes()
+            elapsed = (dt_util.utcnow() - self._last_cloud_zone_fetch).total_seconds() / 60
+            skip_zone_states = elapsed < cloud_sync_minutes
 
         # Weather fetch frequency reduction when HomeKit connected
         skip_weather = False
@@ -770,7 +722,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Remove expired freshness entries."""
         async with self._freshness_lock:
             now = time.monotonic()
-            expired = [eid for eid, timestamp in self.entity_freshness.items() if now - timestamp > 60]
+            expired = [eid for eid, timestamp in self.entity_freshness.items() if now - timestamp > ENTITY_FRESHNESS_EXPIRY_SECONDS]
             for eid in expired:
                 del self.entity_freshness[eid]
             if expired:

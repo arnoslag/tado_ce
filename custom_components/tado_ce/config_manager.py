@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from .const import MAX_CUSTOM_INTERVAL
+
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
@@ -22,9 +24,13 @@ DEFAULT_TEST_MODE_ENABLED = False
 DEFAULT_QUOTA_RESERVE_ENABLED = True  # Quota Reserve Protection default ON
 DEFAULT_DAY_START_HOUR = 7
 DEFAULT_NIGHT_START_HOUR = 23
+MIN_HOUR: int = 0
+MAX_HOUR: int = 23
 DEFAULT_API_HISTORY_RETENTION_DAYS = 14  # 0 = keep forever
 DEFAULT_HOT_WATER_TIMER_DURATION = 60  # minutes
 DEFAULT_REFRESH_DEBOUNCE_SECONDS = 15  # Debounce delay for immediate refresh
+MIN_REFRESH_DEBOUNCE_SECONDS: int = 1
+MAX_REFRESH_DEBOUNCE_SECONDS: int = 60
 DEFAULT_SCHEDULE_CALENDAR_ENABLED = False  # Schedule Calendar (opt-in)
 DEFAULT_SMART_COMFORT_ENABLED = False  # Smart Comfort analytics (opt-in)
 DEFAULT_OUTDOOR_TEMP_ENTITY = ""  # Outdoor temperature entity for weather compensation
@@ -267,7 +273,7 @@ class ConfigurationManager:
         Returns:
             Hour (0-23) when day period starts
         """
-        return self._get_int_option("day_start_hour", DEFAULT_DAY_START_HOUR, 0, 23)
+        return self._get_int_option("day_start_hour", DEFAULT_DAY_START_HOUR, MIN_HOUR, MAX_HOUR)
 
     def get_night_start_hour(self) -> int:
         """Get configured night start hour (default 11pm).
@@ -275,7 +281,7 @@ class ConfigurationManager:
         Returns:
             Hour (0-23) when night period starts
         """
-        return self._get_int_option("night_start_hour", DEFAULT_NIGHT_START_HOUR, 0, 23)
+        return self._get_int_option("night_start_hour", DEFAULT_NIGHT_START_HOUR, MIN_HOUR, MAX_HOUR)
 
     def _get_optional_interval(self, key: str) -> int | None:
         """Get optional polling interval with float→int conversion and range validation.
@@ -301,7 +307,7 @@ class ConfigurationManager:
                 _LOGGER.warning("Invalid %s: %s, ignoring", key, interval)
                 return None
 
-        if not isinstance(interval, int) or interval < 1 or interval > 1440:
+        if not isinstance(interval, int) or interval < 1 or interval > MAX_CUSTOM_INTERVAL:
             _LOGGER.warning("Invalid %s: %s, ignoring", key, interval)
             return None
         return interval
@@ -347,7 +353,7 @@ class ConfigurationManager:
         Returns:
             Debounce delay in seconds (1-60, default 15)
         """
-        return self._get_int_option("refresh_debounce_seconds", DEFAULT_REFRESH_DEBOUNCE_SECONDS, 1, 60)
+        return self._get_int_option("refresh_debounce_seconds", DEFAULT_REFRESH_DEBOUNCE_SECONDS, MIN_REFRESH_DEBOUNCE_SECONDS, MAX_REFRESH_DEBOUNCE_SECONDS)
 
     def get_schedule_calendar_enabled(self) -> bool:
         """Check if Schedule Calendar is enabled.

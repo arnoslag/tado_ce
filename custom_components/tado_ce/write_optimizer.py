@@ -35,17 +35,16 @@ class ActionGuard:
         current_temp: float | None,
         requested_mode: HVACMode | None,
         current_mode: HVACMode | None,
+        *,
+        optimistic_active: bool = False,
     ) -> bool:
-        """Return True if temperature change is redundant.
-
-        Only skips when ALL requested attributes match current state.
-        If either temp or mode differs, the call proceeds.
-        """
+        """Return True if temperature change is redundant."""
+        if optimistic_active:
+            return False
         if requested_temp is None:
             return False
         if current_temp is None:
             return False
-        # Both temp and mode must match to skip
         temp_matches = requested_temp == current_temp
         mode_matches = requested_mode == current_mode
         return temp_matches and mode_matches
@@ -54,8 +53,12 @@ class ActionGuard:
     def should_skip_hvac_mode(
         requested_mode: HVACMode,
         current_mode: HVACMode | None,
+        *,
+        optimistic_active: bool = False,
     ) -> bool:
         """Return True if HVAC mode change is redundant."""
+        if optimistic_active:
+            return False
         return requested_mode == current_mode
 
     @staticmethod
