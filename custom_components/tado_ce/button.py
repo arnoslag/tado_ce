@@ -13,7 +13,12 @@ from .const import DOMAIN
 from .coordinator import TadoDataUpdateCoordinator
 from .device_manager import get_hub_device_info, get_zone_device_info
 from .entity_registry import ENTITY_REGISTRY, get_entity_category
-from .helpers import async_trigger_immediate_refresh, build_timer_termination, get_zone_states
+from .helpers import (
+    async_trigger_immediate_refresh,
+    build_timer_termination,
+    get_zone_states,
+    merge_homekit_into_zone_data,
+)
 from .ratelimit import async_check_bootstrap_reserve_or_raise as _check_bootstrap_reserve_or_raise
 
 if TYPE_CHECKING:
@@ -567,6 +572,7 @@ class TadoSmartBoostButton(CoordinatorEntity[TadoDataUpdateCoordinator], ButtonE
             _LOGGER.error("Smart Boost: No zone data for %s", self._zone_name)
             return
 
+        zone_data = merge_homekit_into_zone_data(zone_data, self._zone_id, self.coordinator)
         sensor_data = zone_data.get("sensorDataPoints") or {}
         current_temp = (sensor_data.get("insideTemperature") or {}).get("celsius")
         if current_temp is None:

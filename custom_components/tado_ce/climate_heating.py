@@ -413,7 +413,14 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity,
             self._schedule_heating_cycle_update(temp)
             return HVACMode.HEAT if self._overlay_type == "MANUAL" else HVACMode.AUTO
 
-        # Power is OFF
+        # Power is OFF — update target temp to scheduled value when in Auto mode
+        if self._overlay_type != "MANUAL":
+            scheduled = get_current_schedule_target(
+                self._zone_id, data_loader=self.coordinator.data_loader,
+            )
+            if scheduled is not None:
+                self._attr_target_temperature = scheduled
+
         return HVACMode.OFF if self._overlay_type == "MANUAL" else HVACMode.AUTO
 
     def _schedule_heating_cycle_update(self, temp: float | None) -> None:
@@ -685,8 +692,8 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity,
             _LOGGER.debug("Set %s to %s°C via homekit", self._zone_name, temperature)
             heating_cycle_coordinator = self.coordinator.heating_cycle_coordinator
             if heating_cycle_coordinator:
-                await heating_cycle_coordinator.on_setpoint_change(
-                    self._zone_id, temperature, self._attr_current_temperature,
+                await heating_cycle_coordinator.on_zone_update(
+                    self._zone_id, temperature, self._attr_current_temperature or temperature,
                 )
             # Schedule cloud verification to confirm write reached Tado server
             self._schedule_cloud_verification()
@@ -707,8 +714,8 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity,
             _LOGGER.info("Set %s to %s°C", self._zone_name, temperature)
             heating_cycle_coordinator = self.coordinator.heating_cycle_coordinator
             if heating_cycle_coordinator:
-                await heating_cycle_coordinator.on_setpoint_change(
-                    self._zone_id, temperature, self._attr_current_temperature,
+                await heating_cycle_coordinator.on_zone_update(
+                    self._zone_id, temperature, self._attr_current_temperature or temperature,
                 )
             await async_trigger_immediate_refresh(self.hass, self.entity_id, "temperature_change")
         else:

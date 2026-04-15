@@ -1135,6 +1135,8 @@ When HomeKit is connected, climate entities show where their readings come from:
 
 Priority: external sensor override > HomeKit (if fresh) > cloud.
 
+This priority applies to all entities that read temperature or humidity — climate cards, sensor entities (temperature, humidity, mold risk, dew point, comfort level, etc.), window detection, insights, and preheat decisions. Climate entities expose the source via attributes; other entities use the same logic silently.
+
 ### What Stays Cloud-Only
 
 Even with HomeKit connected, some data only comes from Tado's servers:

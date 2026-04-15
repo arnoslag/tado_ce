@@ -21,6 +21,11 @@ Thank you to everyone who supported the project through [Buy Me a Coffee](https:
 
 Community contributors who helped shape each release through bug reports, feature requests, testing, and feedback.
 
+### v4.0.0-beta.3
+
+- **[@ChrisMarriott38](https://github.com/ChrisMarriott38)** — Reported spikey temperature and humidity charts when HomeKit was connected, with before/after screenshots that clearly showed the sensor entities bouncing between stale cloud data and live bridge data ([#224](https://github.com/hiall-fyi/tado_ce/issues/224))
+- **[@hapklaar](https://github.com/hapklaar)** — Reported that the climate card showed the wrong target temperature after switching from manual to Auto mode, with screenshots comparing HA and the Tado app side by side. Also provided debug logs that confirmed HomeKit connection stability and helped rule out bridge-side issues ([Discussion #219](https://github.com/hiall-fyi/tado_ce/discussions/219))
+
 ### v4.0.0-beta.2
 
 - **[@jeverley](https://github.com/jeverley)** — Discovered that overlay services (`set_open_window_mode`, `restore_previous_state`, etc.) weren't triggering entity state updates, and spotted that overnight temperature graphs showed polling steps instead of real-time data from the HomeKit bridge ([Discussion #219](https://github.com/hiall-fyi/tado_ce/discussions/219)). Also built and shared a comprehensive [Window Mode Blueprint](https://raw.githubusercontent.com/jeverley/home-assistant-blueprints/refs/heads/main/blueprints/automation/tado_ce_window_mode_sensors.yaml) for controlling Tado CE window mode with physical sensors, including per-zone and nearby-opening support ([Discussion #184](https://github.com/hiall-fyi/tado_ce/discussions/184))

@@ -258,6 +258,10 @@ class AdaptivePreheatManager:
         zone_data = self._get_zone_state(zone_id)
         if not zone_data:
             return False
+        if self._coordinator is not None:
+            from .helpers import merge_homekit_into_zone_data
+
+            zone_data = merge_homekit_into_zone_data(zone_data, zone_id, self._coordinator)
         sensor_data = zone_data.get("sensorDataPoints") or {}
         current_temp = (sensor_data.get("insideTemperature") or {}).get("celsius")
         if current_temp is not None and current_temp >= target_temp - 0.5:

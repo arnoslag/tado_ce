@@ -301,7 +301,6 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         offsets_data = self.data_loader.get_cached("offsets")
         schedules_data = self.data_loader.get_cached("schedules")
         ac_capabilities = self.data_loader.get_cached("ac_capabilities")
-        home_details_data = self.data_loader.get_cached("home_details")
 
         # Accumulate outdoor temp history
         await self._accumulate_outdoor_temp_history(weather_data)
@@ -350,7 +349,6 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "mobile_devices": mobile_devices_data or [],
             "offsets": offsets_data or {},
             "schedules": schedules_data or {},
-            "home_details": home_details_data or {},
         }
         if bridge_data is not None:
             result["bridge"] = bridge_data

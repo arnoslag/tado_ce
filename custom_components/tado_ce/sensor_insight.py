@@ -29,7 +29,7 @@ from .format_helpers import (
 from .format_helpers import (
     format_priority as _format_priority,
 )
-from .helpers import get_zone_state
+from .helpers import get_zone_state, merge_homekit_into_zone_data
 from .insights_models import Insight
 from .insights_presenter import (
     aggregate_home_insights,
@@ -372,6 +372,7 @@ class TadoZoneInsightsSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], Sen
                 self._attr_available = False
                 return
 
+            zone_data = merge_homekit_into_zone_data(zone_data, self._zone_id, self.coordinator)
             zones_info = coord_data.get("zones_info")
 
             self._insights = collect_single_zone_insights(

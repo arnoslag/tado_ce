@@ -44,6 +44,43 @@ def get_zone_state(coord_data: dict[str, Any] | None, zone_id: str) -> dict[str,
     return get_zone_states(coord_data).get(zone_id)
 
 
+def merge_homekit_into_zone_data(
+    zone_data: dict[str, Any],
+    zone_id: str,
+    coordinator: TadoDataUpdateCoordinator,
+) -> dict[str, Any]:
+    """Overlay fresh HomeKit temperature/humidity onto cloud zone data.
+
+    Returns a shallow copy of zone_data with sensorDataPoints merged.
+    If HomeKit is not connected or has no fresh data, returns zone_data unchanged.
+
+    Safe to call from any entity regardless of base class.
+    """
+    try:
+        provider = coordinator.homekit_provider
+        reconciler = coordinator.state_reconciler
+        if provider is None or reconciler is None:
+            return zone_data
+        if not provider.is_connected:
+            return zone_data
+        reconciler.local_provider = provider
+        sensor_data = (zone_data.get("sensorDataPoints") or {}).copy()
+        cloud_temp = (sensor_data.get("insideTemperature") or {}).get("celsius")
+        cloud_humidity = (sensor_data.get("humidity") or {}).get("percentage")
+        merged_temp, _ = reconciler.merge_zone_temperature(zone_id, cloud_temp)
+        merged_hum, _ = reconciler.merge_zone_humidity(zone_id, cloud_humidity)
+        if merged_temp is not None:
+            sensor_data.setdefault("insideTemperature", {})["celsius"] = merged_temp
+        if merged_hum is not None:
+            sensor_data.setdefault("humidity", {})["percentage"] = merged_hum
+        result = dict(zone_data)
+        result["sensorDataPoints"] = sensor_data
+    except (TypeError, ValueError, AttributeError):
+        return zone_data
+    else:
+        return result
+
+
 # Tado API only accepts: MANUAL, TADO_MODE, TIMER
 _OVERLAY_API_MAP: dict[str, str] = {
     "NEXT_TIME_BLOCK": "TADO_MODE",

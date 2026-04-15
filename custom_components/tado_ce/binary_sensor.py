@@ -38,7 +38,7 @@ from .format_helpers import (
 from .format_helpers import (
     strip_zone_prefix as _strip_zone_prefix,
 )
-from .helpers import get_zone_state, get_zone_states, parse_iso_datetime
+from .helpers import get_zone_state, get_zone_states, merge_homekit_into_zone_data, parse_iso_datetime
 from .insights_device import calculate_connection_recommendation
 from .insights_models import (
     COOLDOWN_READINGS,
@@ -839,6 +839,7 @@ class TadoWindowPredictedSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], 
                 self._attr_available = False
                 return
 
+            zone_data = merge_homekit_into_zone_data(zone_data, self._zone_id, self.coordinator)
             sensor_data = zone_data.get("sensorDataPoints") or {}
             temp_data = sensor_data.get("insideTemperature") or {}
             humidity_data = sensor_data.get("humidity") or {}
@@ -1163,7 +1164,7 @@ class TadoHomeKitConnectedSensor(CoordinatorEntity["TadoDataUpdateCoordinator"],
 
         return {
             "last_connected": stats.get("last_connected"),
-            "last_disconnected": stats.get("last_disconnected"),
+            "last_disconnected": stats.get("last_disconnected") or "Never",
             "reconnect_count": stats.get("reconnect_count", 0),
             "uptime": uptime,
             "status": self._status,

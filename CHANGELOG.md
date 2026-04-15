@@ -2,6 +2,21 @@
 
 All notable changes to Tado CE will be documented in this file.
 
+## [4.0.0-beta.3] - 2026-04-15
+
+### Bug Fixes
+- **Fixed temperature and humidity sensors lagging behind when HomeKit is connected** ([#224](https://github.com/hiall-fyi/tado_ce/issues/224) - @ChrisMarriott38) — The temperature and humidity sensor entities were only reading from the cloud, even when HomeKit was providing fresher data from your bridge. This meant your history charts could show data up to 30 minutes old while the climate card showed the correct live value. These sensors now use the same "pick the freshest source" logic as the climate card — HomeKit data when available, cloud as fallback.
+- **Fixed smart comfort sensors using stale data when HomeKit is connected** — The schedule deviation, next schedule temperature, preheat advisor, and smart comfort target sensors had the same issue as above. All four now use live HomeKit data when available.
+- **Fixed window detection using stale data when HomeKit is connected** — The predicted window-open sensor was running its detection algorithm on cloud data that could be up to 30 minutes old, making it much less responsive to actual temperature drops from open windows. It now uses live HomeKit data, so window detection reacts in real-time.
+- **Fixed insights, preheat decisions, and boost calculations using stale data when HomeKit is connected** — Zone insights (mold risk, comfort, humidity trends), adaptive preheat "already at target" checks, and smart boost current temperature reads all now use live HomeKit data when available.
+- **Fixed climate card showing wrong target temperature after switching to Auto mode** ([Discussion #219](https://github.com/hiall-fyi/tado_ce/discussions/219) - @hapklaar) — After setting a manual temperature and then switching back to Auto, the climate card would keep showing the manual temperature instead of the scheduled one. It now reads the current schedule target so the card matches what Tado is actually doing.
+
+### Improvements
+- **HomeKit Connected sensor now shows "Never" instead of blank** — The `last_disconnected` attribute shows "Never" when the bridge hasn't disconnected since HA started, instead of showing a confusing blank value.
+
+### Internal
+- Codebase cleanup — removed unused code paths and improved internal consistency.
+
 ## [4.0.0-beta.2] - 2026-04-14
 
 ### Bug Fixes

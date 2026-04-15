@@ -10,9 +10,11 @@ For completed features, see [CHANGELOG.md](CHANGELOG.md).
 
 **HomeKit Local Control — GA Release**
 
-v4.0.0-beta.2 shipped the architecture change (real-time entity updates via dispatcher signals, direct HomeKit reads, environment sensor support) and five bug fixes (optimistic state expiry, ActionGuard bypass, deferred write verification, cleanup leaks, savings reset robustness). Currently in beta testing with community testers. Next steps:
+v4.0.0-beta.3 extended HomeKit data to all sensor entities (temperature, humidity, smart comfort, window detection, insights, preheat decisions) and fixed the Auto mode target temperature display. Beta.2 shipped the core architecture (real-time entity updates, direct HomeKit reads, write verification, circuit breaker). Currently in beta testing with community testers. Next steps:
 
-- Collect feedback on real-time responsiveness, long-term stability, and edge cases
+- Monitor beta.3 feedback — sensor charts should now be smooth, Auto mode target temp correct
+- Investigate intermittent write flip-back reported by @hapklaar (needs reproduction logs)
+- Investigate weather compensation bridge API failure on some setups
 - Ship v4.0.0 stable once confidence is high
 
 ---

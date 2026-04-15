@@ -18,7 +18,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import SIGNAL_HOMEKIT_UPDATE
 from .device_manager import get_hub_device_info, get_zone_device_info
 from .entity_registry import ENTITY_REGISTRY, get_entity_category
-from .helpers import get_zone_state, get_zone_states
+from .helpers import get_zone_state, get_zone_states, merge_homekit_into_zone_data
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -32,8 +32,6 @@ class TadoZoneSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], SensorEntit
     """Represent a base Tado zone sensor."""
 
     _attr_has_entity_name = True
-
-    """Base class for Tado zone sensors (CoordinatorEntity pattern)."""
 
     def __init__(
         self, coordinator: TadoDataUpdateCoordinator, zone_id: str, zone_name: str, zone_type: str = "HEATING",
@@ -73,35 +71,19 @@ class TadoZoneSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], SensorEntit
         self._handle_coordinator_update()
 
     def _get_zone_data(self) -> dict[str, Any] | None:
-        """Get zone data from coordinator data."""
+        """Get zone data from coordinator, with HomeKit overlay when available.
+
+        Merges fresh HomeKit temperature/humidity into sensorDataPoints.
+        Other fields (activityDataPoints, setting, overlayType) are unaffected.
+        """
         try:
-            return get_zone_state(self.coordinator.data, self._zone_id)
+            zone_data = get_zone_state(self.coordinator.data, self._zone_id)
         except Exception:
             _LOGGER.debug("Failed to get zone data for zone %s", self._zone_id)
             return None
-
-    def _get_zone_data_with_homekit(self) -> dict[str, Any] | None:
-        """Get zone data with HomeKit overlay for sensor readings."""
-        zone_data = self._get_zone_data()
-        if not zone_data:
+        if zone_data is None:
             return None
-        provider = self.coordinator.homekit_provider
-        reconciler = self.coordinator.state_reconciler
-        if not provider or not provider.is_connected or not reconciler:
-            return zone_data
-        reconciler.local_provider = provider
-        sensor_data = (zone_data.get("sensorDataPoints") or {}).copy()
-        cloud_temp = (sensor_data.get("insideTemperature") or {}).get("celsius")
-        cloud_humidity = (sensor_data.get("humidity") or {}).get("percentage")
-        merged_temp, _ = reconciler.merge_zone_temperature(self._zone_id, cloud_temp)
-        merged_hum, _ = reconciler.merge_zone_humidity(self._zone_id, cloud_humidity)
-        if merged_temp is not None:
-            sensor_data.setdefault("insideTemperature", {})["celsius"] = merged_temp
-        if merged_hum is not None:
-            sensor_data.setdefault("humidity", {})["percentage"] = merged_hum
-        result = dict(zone_data)
-        result["sensorDataPoints"] = sensor_data
-        return result
+        return merge_homekit_into_zone_data(zone_data, self._zone_id, self.coordinator)
 
     @callback
     def _handle_coordinator_update(self) -> None:

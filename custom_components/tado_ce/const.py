@@ -37,7 +37,6 @@ PER_HOME_FILES = [
     "offsets",
     "ac_capabilities",
     "schedules",
-    "home_details",
     "homekit_pairing",
     "homekit_device_map",
 ]
@@ -97,7 +96,7 @@ AUTH_ENDPOINT_DEVICE = f"{TADO_AUTH_URL}/device_authorize"
 AUTH_ENDPOINT_TOKEN = f"{TADO_AUTH_URL}/token"
 
 # =============================================================================
-# Unit Conversion Constants
+# Weather Compensation & Smart Comfort Presets
 # =============================================================================
 
 # Weather compensation presets: (cold_threshold, cold_factor, warm_threshold, warm_factor)

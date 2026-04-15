@@ -198,14 +198,6 @@ class DataLoader:
 
     # === Convenience methods ===
 
-    def get_zone_data(self, zone_id: str) -> dict[str, Any] | None:
-        """Get state data for a specific zone."""
-        zones_data = self.load_zones_file()
-        if zones_data:
-            zone_states = zones_data.get("zoneStates") or {}
-            return zone_states.get(zone_id)
-        return None
-
     def get_zone_schedule(self, zone_id: str) -> dict[str, Any] | None:
         """Get schedule data for a specific zone."""
         schedules = self.load_schedules_file()
