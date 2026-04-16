@@ -179,7 +179,6 @@ async def async_trigger_immediate_refresh(
     reason: str,
     force: bool = False,
     skip_debounce: bool = False,
-    include_home_state: bool = False,
 ) -> None:
     """Trigger immediate refresh after state change.
 
@@ -189,7 +188,6 @@ async def async_trigger_immediate_refresh(
         reason: Reason for the refresh (for logging)
         force: If True, force refresh even if recently refreshed (for buttons)
         skip_debounce: If True, skip debounce delay (for buttons)
-        include_home_state: If True, also fetch home state (for presence mode changes)
 
     """
     try:
@@ -205,7 +203,6 @@ async def async_trigger_immediate_refresh(
                     reason,
                     force=force,
                     skip_debounce=skip_debounce,
-                    include_home_state=include_home_state,
                 )
                 return
         _LOGGER.warning("No refresh handler found for entity %s", entity_id)

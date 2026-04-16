@@ -304,6 +304,11 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity,
         self._update_sensor_data(zone_data)
         self.async_write_ha_state()
 
+        # Record temperature for heating cycle analysis (real-time HomeKit data
+        # gives denser readings → more accurate heating rate/acceleration)
+        if self._attr_target_temperature is not None:
+            self._schedule_heating_cycle_update(self._attr_target_temperature)
+
     @callback
     def _update_temp_limits(self) -> None:
         """Update min/max temp from zone config.

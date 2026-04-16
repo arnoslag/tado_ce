@@ -202,7 +202,7 @@ def _calc_temp_rate_score(
     time_span = (
         readings[-1].timestamp - readings[start_idx].timestamp
     ).total_seconds() / 60.0
-    if time_span <= 0:
+    if time_span <= 0.5:  # Less than 30 seconds — too short for reliable rate
         return 0.0, anomaly_count
 
     temp_rate = total_change / time_span

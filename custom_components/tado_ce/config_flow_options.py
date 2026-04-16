@@ -961,7 +961,6 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
             s = user_input["temperature_section"]
             all_values["min_temp"] = float(s.get("min_temp", 5.0))
             all_values["max_temp"] = float(s.get("max_temp", 25.0))
-            all_values["temp_offset"] = float(s.get("temp_offset", 0.0))
             all_values["surface_temp_offset"] = float(s.get("surface_temp_offset", 0.0))
 
         return all_values
@@ -1028,7 +1027,6 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
         cur_timer = str(config.get("timer_duration", TIMER_DURATION_DEFAULT))
         cur_min_temp = config.get("min_temp", 5.0)
         cur_max_temp = config.get("max_temp", 25.0)
-        cur_temp_offset = config.get("temp_offset", 0.0)
         cur_surface_offset = config.get("surface_temp_offset", 0.0)
 
         return self.async_show_form(
@@ -1185,15 +1183,6 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                                 ): NumberSelector(
                                     NumberSelectorConfig(
                                         min=15.0, max=30.0, step=0.5,
-                                        mode=NumberSelectorMode.BOX,
-                                        unit_of_measurement="°C",
-                                    ),
-                                ),
-                                vol.Optional(
-                                    "temp_offset", default=cur_temp_offset,
-                                ): NumberSelector(
-                                    NumberSelectorConfig(
-                                        min=-3.0, max=3.0, step=0.1,
                                         mode=NumberSelectorMode.BOX,
                                         unit_of_measurement="°C",
                                     ),

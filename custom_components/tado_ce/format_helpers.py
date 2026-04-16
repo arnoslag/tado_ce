@@ -106,7 +106,6 @@ BATTERY_STATE_DISPLAY_MAP: dict[str, str] = {
 }
 
 
-CONNECTION_STATE_DISPLAY_MAP: dict[bool, str] = {True: "Online", False: "Offline"}
 CONNECTION_STATE_ATTR_MAP: dict[bool, str] = {True: "online", False: "offline"}
 
 
@@ -187,11 +186,6 @@ def format_data_source(source: str) -> str:
 def format_battery_state(state: str) -> str:
     """Convert API batteryState to user-friendly display value."""
     return _lookup(BATTERY_STATE_DISPLAY_MAP, state, lambda v: v.title())
-
-
-def format_connection_state(connected: bool | None) -> str:
-    """Convert connectionState.value (bool) to display value. True -> 'Online', False/None -> 'Offline'."""
-    return CONNECTION_STATE_DISPLAY_MAP.get(bool(connected) if connected is not None else False, "Offline")
 
 
 def format_connection_state_attr(connected: bool | None) -> str:

@@ -1502,13 +1502,11 @@
             "data": {
               "min_temp": "Minimum temperatuur",
               "max_temp": "Maximale temperatuur",
-              "temp_offset": "Temperatuurcompensatie",
               "surface_temp_offset": "Oppervlakte temperatuur offset"
             },
             "data_description": {
               "min_temp": "Minimaal toegestane doeltemperatuur (5-25°C)",
               "max_temp": "Maximaal toegestane doeltemperatuur (15-30°C)",
-              "temp_offset": "Offset toegepast op doeltemperatuur (-3 tot +3°C)",
               "surface_temp_offset": "Offset voor berekening schimmelrisico oppervlaktetemp (-5 tot +5°C)"
             }
           }

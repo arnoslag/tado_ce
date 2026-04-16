@@ -1502,13 +1502,11 @@
             "data": {
               "min_temp": "Temperatura mínima",
               "max_temp": "Temperatura máxima",
-              "temp_offset": "Desvio de temperatura",
               "surface_temp_offset": "Desvio da temperatura da superfície"
             },
             "data_description": {
               "min_temp": "Temperatura alvo mínima permitida (5-25°C)",
               "max_temp": "Temperatura alvo máxima permitida (15-30°C)",
-              "temp_offset": "Desvio aplicado à temperatura alvo (-3 a +3°C)",
               "surface_temp_offset": "Desvio para o cálculo da temperatura da superfície de risco do molde (-5 a +5°C)"
             }
           }

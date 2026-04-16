@@ -9,6 +9,7 @@ from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.util import dt as dt_util
 
+from .const import ENTITY_DATA_PREHEAT_ADVISOR, ENTITY_DATA_PREHEAT_NOW
 from .helpers import build_timer_termination, get_zone_states
 
 if TYPE_CHECKING:
@@ -202,7 +203,7 @@ class AdaptivePreheatManager:
             return
 
         for zone_id in self._enabled_zones:
-            preheat_data = self._coordinator.get_entity_data(zone_id, "preheat_now")
+            preheat_data = self._coordinator.get_entity_data(zone_id, ENTITY_DATA_PREHEAT_NOW)
             if preheat_data and preheat_data.get("state") == "on":
                 _LOGGER.info(
                     "Adaptive Preheat: %s preheat_now already ON, triggering preheat",
@@ -237,7 +238,7 @@ class AdaptivePreheatManager:
 
     def _get_target_temp(self, zone_id: str, zone_name: str) -> float | None:
         """Get and validate target temperature from preheat advisor data."""
-        preheat_data = self._coordinator.get_entity_data(zone_id, "preheat_advisor")  # type: ignore[union-attr]
+        preheat_data = self._coordinator.get_entity_data(zone_id, ENTITY_DATA_PREHEAT_ADVISOR)  # type: ignore[union-attr]
         if not preheat_data:
             _LOGGER.warning("Adaptive Preheat: %s preheat advisor data not available", zone_name)
             return None

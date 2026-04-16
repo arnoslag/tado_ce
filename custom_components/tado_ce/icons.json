@@ -73,9 +73,6 @@
       "max_temp": {
         "default": "mdi:thermometer-high"
       },
-      "temp_offset": {
-        "default": "mdi:thermometer-plus"
-      },
       "surface_offset": {
         "default": "mdi:thermometer-minus"
       },

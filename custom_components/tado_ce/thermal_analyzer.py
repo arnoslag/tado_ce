@@ -23,6 +23,32 @@ _SLOPE_EPSILON = -0.001  # slope must be more negative than this for heating
 _LOG_DIFF_EPSILON = 0.05  # minimum diff for log calculation
 _APPROACH_VALIDATION_DIFF = 0.3  # significant difference between methods
 _MIN_READINGS_FOR_POINT_BASED = 2  # minimum readings at each temperature point
+_MIN_TIME_SPAN_MINUTES = 0.5  # minimum time span for rate calculation (30 seconds)
+_ACCELERATION_MAX = 50.0  # °C/h² — sanity bound for acceleration
+_RATE_MAX_VALID = 15.0  # °C/h — maximum valid heating rate (TRV can be 5-8°C/h, allow headroom)
+_DEDUP_THRESHOLD_SECONDS = 2  # seconds — readings closer than this are duplicates
+
+
+def _deduplicate_readings(
+    readings: list[HeatingCycleReading],
+) -> list[HeatingCycleReading]:
+    """Remove duplicate/near-duplicate readings by timestamp.
+
+    HomeKit events and cloud polls can arrive within the same second,
+    creating duplicate timestamps that distort rate calculations.
+    Keeps the last reading when timestamps are within the threshold.
+    """
+    if not readings:
+        return []
+    sorted_readings = sorted(readings, key=lambda r: r.time)
+    deduped: list[HeatingCycleReading] = [sorted_readings[0]]
+    for r in sorted_readings[1:]:
+        if abs((r.time - deduped[-1].time).total_seconds()) >= _DEDUP_THRESHOLD_SECONDS:
+            deduped.append(r)
+        else:
+            # Update in-place — keep latest value for same timestamp
+            deduped[-1] = r
+    return deduped
 
 
 class ThermalAnalyzer:
@@ -107,7 +133,8 @@ class ThermalAnalyzer:
         Returns:
             Acceleration in °C/h², or None if cannot calculate
         """
-        readings = cycle.temperature_readings
+        # Deduplicate readings to prevent near-zero time deltas
+        readings = _deduplicate_readings(cycle.temperature_readings)
 
         if len(readings) < _MIN_READINGS_FOR_ANALYSIS:
             return None
@@ -146,7 +173,23 @@ class ThermalAnalyzer:
         initial_rate_h = initial_rate * 60
         final_rate_h = final_rate * 60
 
+        # Sanity check: reject extreme rates (caused by near-zero time deltas)
+        if abs(initial_rate_h) > _RATE_MAX_VALID or abs(final_rate_h) > _RATE_MAX_VALID:
+            _LOGGER.debug(
+                "Acceleration skip: extreme rate detected (init=%.1f, final=%.1f °C/h)",
+                initial_rate_h, final_rate_h,
+            )
+            return None
+
         acceleration = (final_rate_h - initial_rate_h) / duration_hours
+
+        # Sanity bound: reject extreme acceleration values
+        if abs(acceleration) > _ACCELERATION_MAX:
+            _LOGGER.debug(
+                "Acceleration skip: extreme value %.1f °C/h² (bound=±%.0f)",
+                acceleration, _ACCELERATION_MAX,
+            )
+            return None
 
         return acceleration
 
@@ -256,7 +299,7 @@ class ThermalAnalyzer:
             - = 1.0: Constant rate (no deceleration)
             - > 1.0: Acceleration (unusual, may overshoot)
         """
-        readings = cycle.temperature_readings
+        readings = _deduplicate_readings(cycle.temperature_readings)
 
         if len(readings) < _MIN_READINGS_FOR_ANALYSIS or cycle.start_temp is None:
             _LOGGER.debug(
@@ -397,7 +440,7 @@ class ThermalAnalyzer:
         temp_change = readings[-1].temp - readings[0].temp
         time_change = (readings[-1].time - readings[0].time).total_seconds() / 60
 
-        if time_change <= 0:
+        if time_change < _MIN_TIME_SPAN_MINUTES:
             return None
 
         return temp_change / time_change

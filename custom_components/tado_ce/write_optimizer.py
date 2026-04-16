@@ -148,6 +148,12 @@ class ActionDebouncer:
 
     def cancel_all(self) -> None:
         """Cancel all pending debounces (cleanup on unload)."""
+        if self._pending:
+            _LOGGER.warning(
+                "Shutdown: dropping %d pending debounced action(s) for zone(s): %s",
+                len(self._pending),
+                ", ".join(sorted(self._pending.keys())),
+            )
         for handle in self._pending.values():
             handle.cancel()
         self._pending.clear()
@@ -262,13 +268,23 @@ class DeviceSyncQueue:
                 await self._processor_task
             self._processor_task = None
 
-        # Drain the queue
+        # Drain the queue with logging
+        dropped_count = 0
         while not self._queue.empty():
             try:
-                self._queue.get_nowait()
+                op = self._queue.get_nowait()
+                _LOGGER.warning(
+                    "Shutdown: dropping queued device operation: %s for %s",
+                    op.operation_name,
+                    op.entity_id,
+                )
                 self._queue.task_done()
+                dropped_count += 1
             except asyncio.QueueEmpty:
                 break
+
+        if dropped_count:
+            _LOGGER.warning("Shutdown: dropped %d queued device operation(s) total", dropped_count)
 
         self._is_processing = False
 
@@ -338,6 +354,11 @@ class RefreshCoalescer:
 
     def cancel(self) -> None:
         """Cancel pending refresh (cleanup on unload)."""
+        if self._pending_count > 0:
+            _LOGGER.debug(
+                "Shutdown: cancelling coalesced refresh (%d pending entity update(s))",
+                self._pending_count,
+            )
         if self._pending_timer is not None:
             self._pending_timer.cancel()
             self._pending_timer = None

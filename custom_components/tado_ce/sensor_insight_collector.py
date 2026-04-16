@@ -10,7 +10,8 @@ from typing import TYPE_CHECKING, Any
 from homeassistant.util import dt as dt_util
 
 from .calculations import classify_comfort_level, classify_mold_risk_level
-from .helpers import get_zone_states, parse_iso_datetime
+from .const import ENTITY_DATA_CONDENSATION_RISK, ENTITY_DATA_WINDOW_PREDICTED
+from .helpers import get_zone_states, merge_homekit_into_zone_data, parse_iso_datetime
 from .insights_api import (
     calculate_api_quota_planning_insight,
     calculate_api_usage_spike_insight,
@@ -356,12 +357,14 @@ def collect_zone_insights(
 
         for zone_id, zone_data in zone_states.items():
             zone_name = zone_name_map.get(zone_id, f"Zone {zone_id}")
+            # Merge HomeKit data so insights use the freshest readings
+            merged_zone_data = merge_homekit_into_zone_data(zone_data, zone_id, coordinator)
             insights = collect_single_zone_insights(
                 hass=hass,
                 coordinator=coordinator,
                 zone_id=zone_id,
                 zone_name=zone_name,
-                zone_data=zone_data,
+                zone_data=merged_zone_data,
                 zones_info=zones_info,
                 anomaly_start_times=anomaly_start_times,
                 humidity_histories=humidity_histories,
@@ -384,7 +387,7 @@ def _collect_condensation_insight(
     insights: list[Any],
 ) -> None:
     """Collect condensation risk insight for a zone."""
-    cond_data = coordinator.get_entity_data(zone_id, "condensation_risk")
+    cond_data = coordinator.get_entity_data(zone_id, ENTITY_DATA_CONDENSATION_RISK)
     if not cond_data:
         return
     cond_state = cond_data.get("state", "None")
@@ -408,7 +411,7 @@ def _collect_window_predicted_insight(
     insights: list[Any],
 ) -> None:
     """Collect window predicted insight for a zone."""
-    wp_data = coordinator.get_entity_data(zone_id, "window_predicted")
+    wp_data = coordinator.get_entity_data(zone_id, ENTITY_DATA_WINDOW_PREDICTED)
     if not wp_data or wp_data.get("state") != "on":
         return
     wp_rec = wp_data.get("recommendation", "") or f"{zone_name}: Possible open window detected"
@@ -673,7 +676,7 @@ def _collect_cross_zone_windows(
     for z in zones_info:
         z_name = z.get("name", f"Zone {z.get('id')}")
         z_id = str(z.get("id"))
-        wp_data = coordinator.get_entity_data(z_id, "window_predicted")
+        wp_data = coordinator.get_entity_data(z_id, ENTITY_DATA_WINDOW_PREDICTED)
         if wp_data:
             zone_window_states[z_name] = wp_data.get("state") == "on"
     return aggregate_cross_zone_window_predicted(zone_window_states)
@@ -687,7 +690,7 @@ def _collect_cross_zone_condensation(
     for z in zones_info:
         z_name = z.get("name", f"Zone {z.get('id')}")
         z_id = str(z.get("id"))
-        cond_data = coordinator.get_entity_data(z_id, "condensation_risk")
+        cond_data = coordinator.get_entity_data(z_id, ENTITY_DATA_CONDENSATION_RISK)
         if cond_data:
             cond_state = cond_data.get("state", "None")
             if cond_state not in ("unavailable", "unknown"):
@@ -802,7 +805,12 @@ def get_cross_zone_insights(
 
         zone_states = get_zone_states(coord_data)
 
-        return _collect_all_cross_zone(ctx, coordinator, zone_states, zone_name_map, zones_info)
+        # Merge HomeKit data into each zone for fresher readings
+        merged_states = {}
+        for zid, zdata in zone_states.items():
+            merged_states[zid] = merge_homekit_into_zone_data(zdata, zid, coordinator)
+
+        return _collect_all_cross_zone(ctx, coordinator, merged_states, zone_name_map, zones_info)
 
     except Exception as e:
         _LOGGER.debug("Failed to collect cross-zone insights: %s", e)

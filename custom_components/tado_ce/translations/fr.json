@@ -1502,13 +1502,11 @@
             "data": {
               "min_temp": "Température minimale",
               "max_temp": "Température maximale",
-              "temp_offset": "Décalage de température",
               "surface_temp_offset": "Décalage de la température de surface"
             },
             "data_description": {
               "min_temp": "Température cible minimale autorisée (5-25°C)",
               "max_temp": "Température cible maximale autorisée (15-30°C)",
-              "temp_offset": "Décalage appliqué à la température de consigne (-3 à +3°C)",
               "surface_temp_offset": "Décalage pour le calcul de la température de surface du risque de moisissure (-5 à +5°C)"
             }
           }

@@ -14,6 +14,7 @@ from .calculations import (
     calculate_seasonal_comfort_target,
     estimate_cooling_crossover,
 )
+from .const import ENTITY_DATA_PREHEAT_ADVISOR
 from .entity_registry import ENTITY_REGISTRY, get_entity_category
 from .format_helpers import (
     format_comfort_model as _format_comfort_model,
@@ -699,7 +700,7 @@ class TadoPreheatAdvisorSensor(TadoZoneSensor):
             # (used by TadoPreheatNowSensor and insight collector)
             self.coordinator.publish_entity_data(
                 self._zone_id,
-                "preheat_advisor",
+                ENTITY_DATA_PREHEAT_ADVISOR,
                 {
                     "state": str(self._attr_native_value) if self._attr_native_value else None,
                     "target_time": self._target_time,

@@ -171,6 +171,12 @@ async def _async_wire_and_start_coordinator(
 
     await async_load_insight_history(coordinator)
 
+    # Eager-load outdoor temp history for weather compensation
+    loaded_history = await coordinator.data_loader.async_load_outdoor_temp_history()
+    coordinator._outdoor_temp_history = loaded_history
+    coordinator._outdoor_temp_loaded = True
+    _LOGGER.debug("Outdoor temp history loaded: %d readings", len(loaded_history))
+
     # Load persisted HomeKit savings counters
     saved = await coordinator.data_loader.async_load_homekit_savings()
     if saved and isinstance(saved, dict):

@@ -111,73 +111,12 @@ WEATHER_COMPENSATION_PRESETS = {
     "aggressive": (0, 1.4, 10, 0.8),
 }
 
-# Smart Comfort Presets - comprehensive comfort optimization
-# Combines outdoor temp compensation, humidity adjustment, and preheat factors
-SMART_COMFORT_PRESETS = {
-    "none": {
-        # Outdoor temperature compensation
-        "outdoor_cold_threshold": None,  # °C - apply cold offset below this
-        "outdoor_cold_offset": 0.0,  # °C - add to target when cold
-        "outdoor_warm_threshold": None,  # °C - apply warm offset above this
-        "outdoor_warm_offset": 0.0,  # °C - subtract from target when warm
-        "outdoor_shutoff_threshold": None,  # °C - turn off heating above this
-        # Humidity compensation
-        "humidity_high_threshold": 70,  # % - apply high humidity offset above this
-        "humidity_high_offset": 0.0,  # °C - subtract when humid
-        "humidity_low_threshold": 35,  # % - apply low humidity offset below this
-        "humidity_low_offset": 0.0,  # °C - add when dry
-        # Preheat duration factors
-        "preheat_cold_factor": 1.0,  # Multiply preheat time when cold
-        "preheat_warm_factor": 1.0,  # Multiply preheat time when warm
-    },
-    "light": {
-        "outdoor_cold_threshold": 5,
-        "outdoor_cold_offset": 0.5,
-        "outdoor_warm_threshold": 15,
-        "outdoor_warm_offset": 0.5,
-        "outdoor_shutoff_threshold": None,
-        "humidity_high_threshold": 70,
-        "humidity_high_offset": 0.3,
-        "humidity_low_threshold": 35,
-        "humidity_low_offset": 0.3,
-        "preheat_cold_factor": 1.1,
-        "preheat_warm_factor": 0.95,
-    },
-    "moderate": {
-        "outdoor_cold_threshold": 5,
-        "outdoor_cold_offset": 1.0,
-        "outdoor_warm_threshold": 15,
-        "outdoor_warm_offset": 1.0,
-        "outdoor_shutoff_threshold": None,
-        "humidity_high_threshold": 70,
-        "humidity_high_offset": 0.5,
-        "humidity_low_threshold": 35,
-        "humidity_low_offset": 0.5,
-        "preheat_cold_factor": 1.2,
-        "preheat_warm_factor": 0.9,
-    },
-    "aggressive": {
-        "outdoor_cold_threshold": 5,
-        "outdoor_cold_offset": 1.5,
-        "outdoor_warm_threshold": 15,
-        "outdoor_warm_offset": 1.5,
-        "outdoor_shutoff_threshold": 18,  # Turn off heating when outdoor > 18°C
-        "humidity_high_threshold": 70,
-        "humidity_high_offset": 0.5,
-        "humidity_low_threshold": 35,
-        "humidity_low_offset": 0.5,
-        "preheat_cold_factor": 1.4,
-        "preheat_warm_factor": 0.8,
-    },
-}
-
 # Adaptive Smart Polling Constants
 # MIN_POLLING_INTERVAL is for adaptive calculation floor (sensible default)
 # Custom intervals can go as low as 1 minute when user explicitly sets them
 MIN_POLLING_INTERVAL = 5  # minutes (adaptive floor - prevents excessive polling by default)
 DEFAULT_DAY_INTERVAL = 30  # minutes (default day polling interval)
 DEFAULT_NIGHT_INTERVAL = 120  # minutes (default night polling interval)
-MIN_CUSTOM_INTERVAL = 1  # minutes (custom interval floor - allows 1-min for high-quota users)
 MAX_POLLING_INTERVAL = 120  # minutes (ensure reasonable updates even with low quota)
 MAX_CUSTOM_INTERVAL = 1440  # minutes (24 hours — maximum custom polling interval)
 POLLING_SAFETY_BUFFER = 0.90  # Reserve 10% quota for manual calls and unexpected usage
@@ -251,7 +190,6 @@ DEFAULT_ZONE_CONFIG = {
     "timer_duration": TIMER_DURATION_DEFAULT,  # 15-180 minutes (Heating + AC, when Timer)
     "min_temp": 5.0,  # 5-25°C (Heating + AC)
     "max_temp": 25.0,  # 15-30°C (Heating + AC)
-    "temp_offset": 0.0,  # -3.0 to +3.0°C (Heating + AC)
     "surface_temp_offset": 0.0,  # -5.0 to +5.0°C offset for mold risk calculation
 }
 
@@ -266,11 +204,6 @@ HEATING_TYPE_OPTIONS = ["Radiator", "UFH"]
 
 # Smart comfort mode options (for per-zone select)
 SMART_COMFORT_MODE_OPTIONS = ["None", "Light", "Moderate", "Aggressive"]
-
-# Condensation risk thresholds (dew point in °C)
-CONDENSATION_RISK_NONE_THRESHOLD = 13.0  # Below this = None
-CONDENSATION_RISK_LOW_THRESHOLD = 15.5  # Below this = Low
-CONDENSATION_RISK_MODERATE_THRESHOLD = 18.0  # Below this = Moderate, above = High
 
 # Open window mode defaults
 OPEN_WINDOW_DEFAULT_TEMP = 5.0  # Frost protection temperature (°C)
@@ -307,11 +240,6 @@ WINDOW_DETECTION_MODE_MAP = {
 }
 WINDOW_DETECTION_MODE_REVERSE_MAP = {v: k for k, v in WINDOW_DETECTION_MODE_MAP.items()}
 WINDOW_DETECTION_MODE_DEFAULT = "auto"
-
-# Temperature offset limits (per-zone UI config)
-TEMP_OFFSET_MIN = -3.0
-TEMP_OFFSET_MAX = 3.0
-TEMP_OFFSET_STEP = 0.5
 
 # Device offset sanity bounds — reject values outside this range.
 # Tado devices support roughly -10 to +10°C offsets; anything beyond
@@ -385,6 +313,17 @@ WRITE_CIRCUIT_OPEN_SECONDS: Final[float] = 300.0  # 5 minutes cooldown
 # Cache refresh failure threshold — trigger reconnect after consecutive failures
 CACHE_REFRESH_FAILURE_THRESHOLD: Final[int] = 3
 
+# HomeKit savings: detect API quota reset by observing a significant jump
+# in remaining calls. The jump must exceed both an absolute minimum and
+# a percentage of the total limit to avoid false positives from normal usage.
+HOMEKIT_SAVINGS_RESET_MIN_JUMP: Final[int] = 20
+HOMEKIT_SAVINGS_RESET_RATIO: Final[float] = 0.05
+
+# When HomeKit is connected, skip weather API calls if the last fetch
+# was less than this many minutes ago. Weather data changes slowly,
+# so reducing fetch frequency saves API quota.
+HOMEKIT_WEATHER_SKIP_MINUTES: Final[int] = 30
+
 # =============================================================================
 # Climate Zone Type Helper
 # =============================================================================
@@ -412,6 +351,15 @@ INSIGHT_ESCALATION_DAYS: Final[int] = 14
 
 # Insight temperature reading throttle — minimum seconds between readings
 INSIGHT_READING_THROTTLE_SECONDS: Final[int] = 25
+
+# =============================================================================
+# Entity Data Keys — cross-component data sharing via coordinator.entity_data
+# =============================================================================
+
+ENTITY_DATA_CONDENSATION_RISK: Final[str] = "condensation_risk"
+ENTITY_DATA_WINDOW_PREDICTED: Final[str] = "window_predicted"
+ENTITY_DATA_PREHEAT_NOW: Final[str] = "preheat_now"
+ENTITY_DATA_PREHEAT_ADVISOR: Final[str] = "preheat_advisor"
 
 
 def is_climate_zone(zone_type: str) -> bool:

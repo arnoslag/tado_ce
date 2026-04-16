@@ -55,9 +55,13 @@ class ZoneConfigManager:
             if isinstance(ap, bool):
                 zone_cfg["adaptive_preheat"] = "active" if ap else "off"
                 migrated = True
+            # Remove dead temp_offset key (never had any effect — see #221 audit)
+            if "temp_offset" in zone_cfg:
+                del zone_cfg["temp_offset"]
+                migrated = True
         if migrated:
             await self.async_save()
-            _LOGGER.info("Migrated adaptive_preheat bool → str in zone config")
+            _LOGGER.info("Migrated zone config (adaptive_preheat bool→str, removed dead temp_offset)")
         _LOGGER.debug("Loaded zone config for %s zones", len(self._config))
 
     async def async_save(self) -> None:

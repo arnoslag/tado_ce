@@ -10,7 +10,7 @@ from homeassistant.components.diagnostics import async_redact_data
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
-    from .coordinator import TadoConfigEntry
+    from .coordinator import TadoConfigEntry, TadoDataUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -99,7 +99,56 @@ async def async_get_config_entry_diagnostics(
         },
         "coordinator": redacted_coord,
         "homekit": homekit_diag,
+        "data_flow_health": _build_data_flow_health(coordinator),
     }
+
+
+def _build_data_flow_health(
+    coordinator: TadoDataUpdateCoordinator,
+) -> dict[str, Any]:
+    """Build data flow health summary for diagnostics.
+
+    Includes data source status, last fetch timestamps, and persistence state.
+    All timestamps in ISO format. No PII exposed.
+    """
+    health: dict[str, Any] = {}
+
+    # Cloud fetch timestamps
+    last_cloud = getattr(coordinator, "_last_cloud_zone_fetch", None)
+    health["last_cloud_zone_fetch"] = last_cloud.isoformat() if last_cloud else None
+
+    last_weather = getattr(coordinator, "_last_weather_fetch", None)
+    health["last_weather_fetch"] = last_weather.isoformat() if last_weather else None
+
+    # HomeKit status
+    provider = getattr(coordinator, "homekit_provider", None)
+    if provider is not None:
+        health["homekit_connected"] = provider.is_connected
+    else:
+        health["homekit_status"] = "not_configured"
+
+    # Bridge API status
+    bht = getattr(coordinator, "bridge_health_tracker", None)
+    if bht is not None:
+        health["bridge_connected"] = bht.state.is_connected
+        health["bridge_consecutive_failures"] = bht.state.consecutive_failures
+    else:
+        health["bridge_status"] = "not_configured"
+
+    # Persistence state
+    health["outdoor_temp_history_length"] = len(
+        getattr(coordinator, "_outdoor_temp_history", []),
+    )
+    health["wc_state_loaded"] = getattr(coordinator, "_wc_state_loaded", False)
+
+    # Smart comfort
+    scm = getattr(coordinator, "smart_comfort_manager", None)
+    if scm is not None:
+        health["smart_comfort_zones"] = len(getattr(scm, "_zones", {}))
+    else:
+        health["smart_comfort_status"] = "disabled"
+
+    return health
 
 
 def _summarise_zone_types(zones_info: list[dict[str, Any]]) -> dict[str, int]:

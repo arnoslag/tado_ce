@@ -1076,6 +1076,15 @@ Pair your Tado bridge via HomeKit to control heating and AC directly on your loc
 | Automatic fallback | If HomeKit becomes unavailable, the integration switches to cloud seamlessly |
 | Zero-config reconnect | If the bridge connection drops, it reconnects in the background automatically |
 
+### Known Limitations
+
+| Limitation | Detail |
+|------------|--------|
+| Humidity resolution | HomeKit provides humidity at 1% steps (whole numbers) — this is defined by the HAP protocol spec. The cloud API returns 0.1% precision. Temperature is unaffected (0.1°C from both). If you need smoother humidity for specific rooms, use the per-zone external sensor feature to point those zones at a Zigbee humidity sensor. |
+| Cloud-only data | Heating power, battery status, schedules, hot water, and geofencing are only available from Tado's cloud. HomeKit provides temperature, humidity, and HVAC mode. |
+| Wireless Temp Sensors | Standalone temperature sensors (ST01) don't appear as HomeKit accessories — their data always comes from the cloud. |
+| Single pairing | The bridge can only be paired with one HomeKit controller at a time. |
+
 ### Setup
 
 1. Go to **Settings → Tado CE → Configure → General Settings**

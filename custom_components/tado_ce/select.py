@@ -228,7 +228,7 @@ class TadoPresenceModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sel
         if success:
             _LOGGER.info("Set presence mode to %s", option)
             await async_trigger_immediate_refresh(
-                self.hass, self.entity_id, f"presence_mode_{option}", include_home_state=True,
+                self.hass, self.entity_id, f"presence_mode_{option}",
             )
         else:
             # Rollback on failure

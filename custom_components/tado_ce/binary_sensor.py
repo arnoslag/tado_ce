@@ -12,6 +12,7 @@ from homeassistant.components.binary_sensor import (
     BinarySensorEntity,
 )
 from homeassistant.core import CALLBACK_TYPE, Event, EventStateChangedData, HomeAssistant, callback
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
@@ -20,7 +21,14 @@ from .climate_helpers import (
     subscribe_external_sensors,
     unsubscribe_external_sensors,
 )
-from .const import INSIGHT_READING_THROTTLE_SECONDS, is_climate_zone
+from .const import (
+    ENTITY_DATA_PREHEAT_ADVISOR,
+    ENTITY_DATA_PREHEAT_NOW,
+    ENTITY_DATA_WINDOW_PREDICTED,
+    INSIGHT_READING_THROTTLE_SECONDS,
+    SIGNAL_HOMEKIT_UPDATE,
+    is_climate_zone,
+)
 from .device_manager import get_device_name_suffix, get_hub_device_info, get_zone_device_info
 from .entity_registry import ENTITY_REGISTRY, get_entity_category
 from .format_helpers import (
@@ -411,7 +419,7 @@ class TadoPreheatNowSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], Binar
                 return
 
             # Read preheat advisor data from coordinator (published by TadoPreheatAdvisorSensor)
-            preheat_data = self.coordinator.get_entity_data(self._zone_id, "preheat_advisor")
+            preheat_data = self.coordinator.get_entity_data(self._zone_id, ENTITY_DATA_PREHEAT_ADVISOR)
 
             # Copy attributes from preheat advisor data
             if preheat_data:
@@ -479,7 +487,7 @@ class TadoPreheatNowSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], Binar
             # (used by AdaptivePreheatManager initial state check)
             self.coordinator.publish_entity_data(
                 self._zone_id,
-                "preheat_now",
+                ENTITY_DATA_PREHEAT_NOW,
                 {
                     "state": "on" if self._attr_is_on else "off",
                     "recommended_start": self._recommended_start,
@@ -625,6 +633,9 @@ class TadoWindowPredictedSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], 
         # Unsubscribe callbacks for external sensor state change listeners
         self._unsub_external_sensors: list[CALLBACK_TYPE] = []
 
+        # Unsubscribe callback for HomeKit real-time events
+        self._unsub_homekit_signal: CALLBACK_TYPE | None = None
+
         # Detection mode (active/passive/auto)
         self._detection_mode: str = "auto"
 
@@ -658,9 +669,19 @@ class TadoWindowPredictedSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], 
                 )
         self._subscribe_external_sensors()
 
+        # Subscribe to HomeKit real-time events for faster window detection
+        self._unsub_homekit_signal = async_dispatcher_connect(
+            self.hass,
+            SIGNAL_HOMEKIT_UPDATE.format(home_id=self.coordinator.home_id),
+            self._handle_homekit_update,
+        )
+
     async def async_will_remove_from_hass(self) -> None:
         """Unregister listeners when entity is removed."""
         self._unsubscribe_external_sensors()
+        if self._unsub_homekit_signal:
+            self._unsub_homekit_signal()
+            self._unsub_homekit_signal = None
         await self._async_save_detection_state()
         await super().async_will_remove_from_hass()
 
@@ -694,6 +715,13 @@ class TadoWindowPredictedSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], 
     def _unsubscribe_external_sensors(self) -> None:
         """Unsubscribe from external sensor state change listeners."""
         unsubscribe_external_sensors(self._unsub_external_sensors)
+
+    @callback
+    def _handle_homekit_update(self, zone_id: str) -> None:
+        """Handle HomeKit real-time event — re-run window detection for this zone."""
+        if zone_id != self._zone_id:
+            return
+        self._handle_coordinator_update()
 
     @callback
     def _handle_coordinator_update(self) -> None:
@@ -939,7 +967,7 @@ class TadoWindowPredictedSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], 
             # Publish computed data to coordinator for cross-component access
             self.coordinator.publish_entity_data(
                 self._zone_id,
-                "window_predicted",
+                ENTITY_DATA_WINDOW_PREDICTED,
                 {
                     "state": "on" if result.detected else "off",
                     "recommendation": result.recommendation,

@@ -1726,13 +1726,11 @@
             "data": {
               "min_temp": "Minimum Temperature",
               "max_temp": "Maximum Temperature",
-              "temp_offset": "Temperature Offset",
               "surface_temp_offset": "Surface Temp Offset"
             },
             "data_description": {
               "min_temp": "Minimum allowed target temperature (5-25°C)",
               "max_temp": "Maximum allowed target temperature (15-30°C)",
-              "temp_offset": "Offset applied to target temperature (-3 to +3°C)",
               "surface_temp_offset": "Offset for mold risk surface temp calculation (-5 to +5°C)"
             }
           }

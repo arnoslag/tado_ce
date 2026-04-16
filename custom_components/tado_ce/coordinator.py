@@ -21,6 +21,9 @@ from .const import (
     DEVICE_SYNC_QUEUE_MAX_DEPTH,
     DOMAIN,
     ENTITY_FRESHNESS_EXPIRY_SECONDS,
+    HOMEKIT_SAVINGS_RESET_MIN_JUMP,
+    HOMEKIT_SAVINGS_RESET_RATIO,
+    HOMEKIT_WEATHER_SKIP_MINUTES,
     OUTDOOR_TEMP_HISTORY_MAX,
     OVERLAY_MODE_DEFAULT,
     TIMER_DURATION_DEFAULT,
@@ -49,7 +52,10 @@ if TYPE_CHECKING:
     from .config_manager import ConfigurationManager
     from .data_loader import DataLoader
     from .heating_coordinator import HeatingCycleCoordinator
+    from .homekit_client import HomeKitClient
+    from .homekit_provider import HomeKitLocalProvider
     from .smart_comfort import SmartComfortManager
+    from .state_reconciler import StateReconciler
     from .state_restore_manager import CapturedState, StateRestoreManager
     from .zone_config_manager import ZoneConfigManager
 
@@ -156,9 +162,9 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.loaded_platforms: frozenset[Platform] = frozenset()
 
         # HomeKit local control (optional — set by entry_lifecycle when homekit_enabled)
-        self.homekit_client: Any | None = None
-        self.homekit_provider: Any | None = None
-        self.state_reconciler: Any | None = None
+        self.homekit_client: HomeKitClient | None = None
+        self.homekit_provider: HomeKitLocalProvider | None = None
+        self.state_reconciler: StateReconciler | None = None
 
         # HomeKit polling optimization state
         self._last_cloud_zone_fetch: datetime | None = None
@@ -403,14 +409,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         do_full_sync = self._should_do_full_sync()
 
         # Check if this is a write-triggered refresh (zone data only)
-        zone_only = getattr(self.refresh_handler, "_pending_zone_only", False)
-        if zone_only:
-            self.refresh_handler._pending_zone_only = False
-
-        # Check if a write-triggered refresh needs cloud zone data
-        force_zone_fetch = getattr(self.refresh_handler, "_pending_force_zone_fetch", False)
-        if force_zone_fetch:
-            self.refresh_handler._pending_force_zone_fetch = False
+        zone_only, force_zone_fetch = self.refresh_handler.consume_pending_flags()
 
         # 2c. Compute skip_zone_states
         cm = self.config_manager
@@ -426,7 +425,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         skip_weather = False
         if homekit_connected and self._last_weather_fetch is not None:
             weather_age = (dt_util.utcnow() - self._last_weather_fetch).total_seconds() / 60
-            skip_weather = weather_age < 30
+            skip_weather = weather_age < HOMEKIT_WEATHER_SKIP_MINUTES
 
         try:
             await self.api_client.async_sync(
@@ -468,7 +467,10 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if (
                 current_remaining is not None
                 and self._prev_savings_remaining is not None
-                and current_remaining > self._prev_savings_remaining + max(20, int(rl_data.get("limit", 5000) * 0.05))
+                and current_remaining > self._prev_savings_remaining + max(
+                    HOMEKIT_SAVINGS_RESET_MIN_JUMP,
+                    int(rl_data.get("limit", 5000) * HOMEKIT_SAVINGS_RESET_RATIO),
+                )
             ):
                 _LOGGER.info(
                     "HomeKit savings: quota reset detected (remaining %s → %s), zeroing (was reads=%s, writes=%s)",
@@ -503,8 +505,8 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     ) -> None:
         """Accumulate outdoor temperature from weather data into history buffer.
 
-        Lazy-loads persisted history on first call, appends new reading,
-        trims to max size, and persists.
+        Appends new reading, trims to max size, and persists.
+        History is eager-loaded during setup in _async_wire_and_start_coordinator().
         """
         if not weather_data:
             return
@@ -512,9 +514,10 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if outdoor_temp is None:
             return
 
+        # Defensive guard — should already be loaded during setup
         if not self._outdoor_temp_loaded:
-            loaded = await self.data_loader.async_load_outdoor_temp_history()
-            self._outdoor_temp_history = loaded
+            _LOGGER.warning("Outdoor temp history not loaded during setup — loading now")
+            self._outdoor_temp_history = await self.data_loader.async_load_outdoor_temp_history()
             self._outdoor_temp_loaded = True
 
         prev_last = self._outdoor_temp_history[-1] if self._outdoor_temp_history else None

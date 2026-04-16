@@ -136,6 +136,18 @@ class HeatingCycleDetector:
             )
 
         # Add temperature reading (with limit to prevent memory leak)
+        # Deduplicate: if last reading is within 2 seconds, update in-place
+        # instead of appending. HomeKit events and cloud polls can arrive
+        # within the same second, creating duplicate timestamps that distort
+        # rate calculations in thermal_analyzer.
+        if self._active_cycle.temperature_readings:
+            last = self._active_cycle.temperature_readings[-1]
+            if abs((timestamp - last.time).total_seconds()) < 2:
+                self._active_cycle.temperature_readings[-1] = HeatingCycleReading(
+                    time=timestamp, temp=temp,
+                )
+                return
+
         if len(self._active_cycle.temperature_readings) < 100:
             self._active_cycle.temperature_readings.append(
                 HeatingCycleReading(time=timestamp, temp=temp),

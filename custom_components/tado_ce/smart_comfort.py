@@ -30,8 +30,6 @@ except (ImportError, ModuleNotFoundError):
     _get_outdoor_temp = _sh_mod.get_outdoor_temperature
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from homeassistant.core import HomeAssistant
 
     from .data_loader import DataLoader
@@ -697,22 +695,18 @@ class SmartComfortManager:
             zone.set_history_days(days)
         _LOGGER.info("Smart Comfort: History retention set to %s days", days)
 
-    def _get_cache_file(self) -> Path:
-        """Get the cache file path."""
-        from .const import DATA_DIR
-
-        if self._home_id:
-            return DATA_DIR / f"smart_comfort_cache_{self._home_id}.json"
-        return DATA_DIR / "smart_comfort_cache.json"
-
     def save_to_file(self) -> bool:
         """Save zone data via DataLoader Store (debounced).
 
         Returns:
-            True if save was scheduled successfully.
+            True if save was scheduled successfully, False if no data loader.
         """
         if not self._zones:
             return True
+
+        if not self._data_loader:
+            _LOGGER.debug("Smart Comfort: No data loader, skipping save")
+            return False
 
         try:
             data = {
@@ -721,13 +715,7 @@ class SmartComfortManager:
                 "zones": {zone_id: zone.to_dict() for zone_id, zone in self._zones.items()},
             }
 
-            if self._data_loader:
-                self._data_loader.save_auxiliary("smart_comfort_cache", data)
-            else:
-                from .storage import save_json_sync
-
-                cache_file = self._get_cache_file()
-                save_json_sync(cache_file, data)
+            self._data_loader.save_auxiliary("smart_comfort_cache", data)
 
             self._last_save_time = dt_util.utcnow()
 

@@ -1502,13 +1502,11 @@
             "data": {
               "min_temp": "Temperatura mínima",
               "max_temp": "Temperatura máxima",
-              "temp_offset": "Desviación de temperatura",
               "surface_temp_offset": "Desviación de la temperatura de superficie"
             },
             "data_description": {
               "min_temp": "Temperatura objetivo mínima permitida (5-25°C)",
               "max_temp": "Temperatura objetivo máxima permitida (15-30°C)",
-              "temp_offset": "Offset aplicado a la temperatura objetivo (-3 a +3°C)",
               "surface_temp_offset": "Compensación para el cálculo de la temperatura de la superficie de riesgo de moho (-5 a +5°C)"
             }
           }

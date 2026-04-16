@@ -1502,13 +1502,11 @@
             "data": {
               "min_temp": "Minimale Temperatur",
               "max_temp": "Maximale Temperatur",
-              "temp_offset": "Temperatur-Offset",
               "surface_temp_offset": "Oberflächentemperatur-Offset"
             },
             "data_description": {
               "min_temp": "Minimal zulässige Zieltemperatur (5-25°C)",
               "max_temp": "Maximal zulässige Zieltemperatur (15-30°C)",
-              "temp_offset": "Auf die Zieltemperatur angewandter Offset (-3 bis +3°C)",
               "surface_temp_offset": "Offset für die Berechnung der Oberflächentemperatur bei Schimmelpilzgefahr (-5 bis +5°C)"
             }
           }

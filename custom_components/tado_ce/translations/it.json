@@ -1502,13 +1502,11 @@
             "data": {
               "min_temp": "Temperatura minima",
               "max_temp": "Temperatura massima",
-              "temp_offset": "Offset di temperatura",
               "surface_temp_offset": "Offset della temperatura di superficie"
             },
             "data_description": {
               "min_temp": "Temperatura minima consentita (5-25°C)",
               "max_temp": "Temperatura massima consentita (15-30°C)",
-              "temp_offset": "Offset applicato alla temperatura target (da -3 a +3°C)",
               "surface_temp_offset": "Offset per il calcolo della temperatura superficiale del rischio stampo (da -5 a +5°C)"
             }
           }

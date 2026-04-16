@@ -29,6 +29,7 @@ from .calculations import calculate_surface_rh as _calculate_surface_rh
 from .calculations import (
     calculate_surface_temperature as _calculate_surface_temperature,
 )
+from .const import ENTITY_DATA_CONDENSATION_RISK
 from .entity_registry import ENTITY_REGISTRY, get_entity_category
 from .format_helpers import (
     format_comfort_model as _format_comfort_model,
@@ -538,7 +539,7 @@ class TadoCondensationRiskSensor(TadoZoneSensor):
 
             self.coordinator.publish_entity_data(
                 self._zone_id,
-                "condensation_risk",
+                ENTITY_DATA_CONDENSATION_RISK,
                 {
                     "state": self._attr_native_value,
                     "recommendation": self._recommendation,

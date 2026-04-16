@@ -55,7 +55,6 @@ class RefreshHandler:
 
         # Debounce mechanism for batch updates
         self._pending_refresh: bool = False
-        self._pending_home_state_refresh: bool = False  # Track if home state refresh needed
         self._pending_zone_only: bool = False  # Track if refresh is write-triggered (zone data only)
         self._pending_force_zone_fetch: bool = False  # Force cloud zone fetch even in HomeKit mode
         self._debounce_task: asyncio.Task[None] | None = None
@@ -78,6 +77,22 @@ class RefreshHandler:
         if self._debounce_task is not None:
             self._debounce_task.cancel()
             self._debounce_task = None
+
+    def consume_pending_flags(self) -> tuple[bool, bool]:
+        """Consume and reset pending refresh flags.
+
+        Called by the coordinator at the start of each poll cycle to read
+        flags set by trigger_refresh() and atomically reset them.
+
+        Returns:
+            Tuple of (zone_only, force_zone_fetch). Both reset to False
+            after consumption.
+        """
+        zone_only = self._pending_zone_only
+        force_zone_fetch = self._pending_force_zone_fetch
+        self._pending_zone_only = False
+        self._pending_force_zone_fetch = False
+        return zone_only, force_zone_fetch
 
     async def _get_rate_limit_info(self) -> dict[str, Any]:
         """Get current rate limit information.
@@ -213,7 +228,6 @@ class RefreshHandler:
         reason: str = "state_change",
         force: bool = False,
         skip_debounce: bool = False,
-        include_home_state: bool = False,
         zone_only: bool = False,
     ) -> None:
         """Trigger immediate refresh for an entity.
@@ -225,7 +239,6 @@ class RefreshHandler:
             reason: Reason for refresh (for logging)
             force: If True, skip entity type check (for buttons like Resume All Schedules)
             skip_debounce: If True, execute refresh immediately without debounce delay
-            include_home_state: If True, also fetch home state (for presence mode changes)
             zone_only: If True, only fetch zone data (skip weather, mobile, etc.)
         """
         if not force and not self.should_refresh(entity_id):
@@ -248,7 +261,6 @@ class RefreshHandler:
 
         self._pending_refresh = True
         self._last_refresh_per_entity[entity_id] = dt_util.utcnow()
-        self._pending_home_state_refresh = include_home_state
         self._pending_zone_only = zone_only
         self._pending_force_zone_fetch = True
 

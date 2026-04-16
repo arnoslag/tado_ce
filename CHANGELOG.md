@@ -2,6 +2,22 @@
 
 All notable changes to Tado CE will be documented in this file.
 
+## [4.0.0-beta.4] - 2026-04-16
+
+### Bug Fixes
+- **Fixed thermal analytics sensors showing nonsensical values when HomeKit is connected** — The Heating Acceleration and Approach Factor sensors could show extreme values (e.g. -20°C/h² instead of +5) because HomeKit and cloud data arriving within the same second created duplicate temperature readings. The thermal analyzer now deduplicates readings before analysis and rejects values outside sane bounds. Your actual heating behaviour (preheat timing, heating rate) was never affected — only these two diagnostic display sensors.
+
+### Improvements
+- **Window Predicted now reacts in real time when HomeKit is connected** — Previously, the predicted window-open sensor only checked for temperature drops at each polling interval (up to 30 minutes with HomeKit). It now responds to every temperature push from the bridge, so an open window can be detected within seconds instead of waiting for the next poll.
+- **Heating rate and acceleration are now more accurate when HomeKit is connected** — Temperature readings from the bridge are now fed into heating cycle tracking as they arrive, so your Heating Rate and Thermal Inertia sensors are based on more frequent measurements instead of waiting for each cloud poll.
+- **Actionable Insights now use the freshest data when HomeKit is connected** — Insights like mold risk, comfort level, humidity trends, and heating anomalies were using cloud data even when HomeKit had fresher readings available. They now use the same live data as the rest of the integration.
+- **Weather compensation now has full temperature history from the first poll** — Previously, the outdoor temperature history was only loaded when the first weather data arrived, which could be delayed if HomeKit was connected. It's now loaded during startup so weather compensation calculations are accurate from the start.
+- **Pending actions are now logged when HA restarts** — If you change a temperature or queue a device operation right before HA restarts, the log now tells you which actions were dropped instead of silently discarding them.
+- **Diagnostics now include data flow health** — The diagnostics dump (Settings → Devices → Tado CE → Download Diagnostics) now includes a `data_flow_health` section showing last cloud fetch timestamps, HomeKit and Bridge connection status, and persistence state. Useful for troubleshooting data freshness issues.
+
+### Documentation
+- Added humidity resolution (1% via HomeKit vs 0.1% via cloud) to the Known Limitations in README and Features Guide.
+
 ## [4.0.0-beta.3] - 2026-04-15
 
 ### Bug Fixes
