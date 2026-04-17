@@ -349,8 +349,15 @@ class HomeKitLocalProvider:
                     zone_id, char_type = mapping
                     value = data.get("value")
                     if value is not None:
+                        old_entry = self._cache.get(zone_id, {}).get(char_type)
+                        old_value = old_entry[0] if old_entry else None
                         self.update_cache(zone_id, char_type, value)
                         updated_zones.add(zone_id)
+                        if value != old_value:
+                            _LOGGER.debug(
+                                "HomeKit cache refresh: zone %s char %s changed %s → %s",
+                                zone_id, char_type, old_value, value,
+                            )
                 consecutive_failures = 0
                 # Fire dispatcher signal per refreshed zone
                 signal = SIGNAL_HOMEKIT_UPDATE.format(home_id=self._home_id)

@@ -417,8 +417,11 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
 
         custom_day_interval = options.get("custom_day_interval")
         custom_night_interval = options.get("custom_night_interval")
-        custom_day_schema = vol.Optional("custom_day_interval", description={"suggested_value": custom_day_interval}) if custom_day_interval is not None else vol.Optional("custom_day_interval")
-        custom_night_schema = vol.Optional("custom_night_interval", description={"suggested_value": custom_night_interval}) if custom_night_interval is not None else vol.Optional("custom_night_interval")
+        # Use default= (not suggested_value) so collapsed sections preserve
+        # existing values. When no custom interval is set (None), omit default
+        # so the field submits None — correctly meaning "use adaptive".
+        custom_day_schema = vol.Optional("custom_day_interval", default=custom_day_interval) if custom_day_interval is not None else vol.Optional("custom_day_interval")
+        custom_night_schema = vol.Optional("custom_night_interval", default=custom_night_interval) if custom_night_interval is not None else vol.Optional("custom_night_interval")
 
         polling_schema_fields[custom_day_schema] = NumberSelector(NumberSelectorConfig(min=1, max=MAX_CUSTOM_INTERVAL, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="min"))
         polling_schema_fields[custom_night_schema] = NumberSelector(NumberSelectorConfig(min=1, max=MAX_CUSTOM_INTERVAL, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="min"))
@@ -752,9 +755,14 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
             if key in section:
                 processed[key] = section[key]
 
-        # Boolean toggle controls whether EntitySelector value is used
+        # Boolean toggle controls whether EntitySelector value is used.
+        # When toggle is ON but entity field is missing (collapsed section),
+        # preserve existing value instead of clearing it.
         if section.get("use_outdoor_temp_entity", False):
-            processed["outdoor_temp_entity"] = section.get("outdoor_temp_entity", "")
+            submitted = (section.get("outdoor_temp_entity") or "").strip()
+            processed["outdoor_temp_entity"] = (
+                submitted or self.config_entry.options.get("outdoor_temp_entity", "")
+            )
         else:
             processed["outdoor_temp_entity"] = ""
 
@@ -809,28 +817,44 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
             return
         section = user_input["flow_temperature_control"]
 
-        # Bridge toggle controls whether credentials are kept
-        if section.get("bridge_enabled", False):
+        # Bridge credential handling.
+        # The bridge_enabled toggle only exists in the bridge-only section
+        # (no WC). The WC section has bridge_serial/bridge_auth_key fields
+        # directly without a toggle. We must distinguish three cases:
+        #   1. bridge_enabled present AND True  → use submitted credentials
+        #   2. bridge_enabled present AND False → user disabled bridge, clear
+        #   3. bridge_enabled absent (WC path)  → preserve submitted or existing
+        if "bridge_enabled" in section:
+            # Case 1 & 2: bridge-only section with explicit toggle
+            if section["bridge_enabled"]:
+                bridge_serial = (section.get("bridge_serial") or "").strip()
+                bridge_auth_key = (section.get("bridge_auth_key") or "").strip()
+                processed["bridge_serial"] = bridge_serial
+                processed["bridge_auth_key"] = bridge_auth_key
+
+                if bridge_serial and bridge_auth_key:
+                    if not bridge_serial.upper().startswith("IB"):
+                        errors["flow_temperature_control"] = "bridge_serial_invalid"
+                    else:
+                        from .bridge_api import TadoBridgeApiClient
+
+                        session = async_get_clientsession(self.hass)
+                        bridge_client = TadoBridgeApiClient(session, bridge_serial, bridge_auth_key)
+                        if not await bridge_client.async_validate_credentials():
+                            errors["flow_temperature_control"] = "bridge_auth_failed"
+            else:
+                # Toggle explicitly off — clear credentials
+                processed["bridge_serial"] = ""
+                processed["bridge_auth_key"] = ""
+        else:
+            # Case 3: WC path — no toggle, preserve credentials from form
+            # or fall back to existing options (collapsed section won't
+            # submit Optional fields without a default value).
+            existing = self.config_entry.options
             bridge_serial = (section.get("bridge_serial") or "").strip()
             bridge_auth_key = (section.get("bridge_auth_key") or "").strip()
-            processed["bridge_serial"] = bridge_serial
-            processed["bridge_auth_key"] = bridge_auth_key
-
-            # Validate credentials if both fields provided
-            if bridge_serial and bridge_auth_key:
-                if not bridge_serial.upper().startswith("IB"):
-                    errors["flow_temperature_control"] = "bridge_serial_invalid"
-                else:
-                    from .bridge_api import TadoBridgeApiClient
-
-                    session = async_get_clientsession(self.hass)
-                    bridge_client = TadoBridgeApiClient(session, bridge_serial, bridge_auth_key)
-                    if not await bridge_client.async_validate_credentials():
-                        errors["flow_temperature_control"] = "bridge_auth_failed"
-        else:
-            # Toggle off — clear credentials (triggers bridge entity cleanup)
-            processed["bridge_serial"] = ""
-            processed["bridge_auth_key"] = ""
+            processed["bridge_serial"] = bridge_serial or existing.get("bridge_serial", "")
+            processed["bridge_auth_key"] = bridge_auth_key or existing.get("bridge_auth_key", "")
 
         # Weather compensation settings
         for key in [
@@ -917,9 +941,12 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
             ),
         )
 
-    def _process_zone_sensor_input(self, user_input: dict[str, Any]) -> dict[str, Any]:
+    def _process_zone_sensor_input(
+        self, user_input: dict[str, Any], existing_config: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Flatten and process zone sensor config form sections into key-value pairs."""
         all_values: dict[str, Any] = {}
+        existing = existing_config or {}
 
         if "heating_section" in user_input:
             s = user_input["heating_section"]
@@ -943,12 +970,22 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
 
         if "sensor_section" in user_input:
             s = user_input["sensor_section"]
-            all_values["external_temp_sensor"] = (
-                s.get("external_temp_sensor", "") if s.get("use_external_temp", False) else ""
-            )
-            all_values["external_humidity_sensor"] = (
-                s.get("external_humidity_sensor", "") if s.get("use_external_humidity", False) else ""
-            )
+            # When toggle is ON but entity field is missing (collapsed section),
+            # preserve existing value instead of clearing it.
+            if s.get("use_external_temp", False):
+                submitted = (s.get("external_temp_sensor") or "").strip()
+                all_values["external_temp_sensor"] = (
+                    submitted or existing.get("external_temp_sensor", "")
+                )
+            else:
+                all_values["external_temp_sensor"] = ""
+            if s.get("use_external_humidity", False):
+                submitted = (s.get("external_humidity_sensor") or "").strip()
+                all_values["external_humidity_sensor"] = (
+                    submitted or existing.get("external_humidity_sensor", "")
+                )
+            else:
+                all_values["external_humidity_sensor"] = ""
 
         if "overlay_section" in user_input:
             s = user_input["overlay_section"]
@@ -977,7 +1014,9 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
         zone_config_manager = coordinator.zone_config_manager
 
         if user_input is not None:
-            all_values = self._process_zone_sensor_input(user_input)
+            all_values = self._process_zone_sensor_input(
+                user_input, zone_config_manager.get_zone_config(zone_id),
+            )
 
             for key, value in all_values.items():
                 await zone_config_manager.async_set_zone_value(zone_id, key, value)

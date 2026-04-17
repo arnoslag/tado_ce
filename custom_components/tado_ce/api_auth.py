@@ -69,6 +69,11 @@ class TadoAuthMixin:
     # Token cache duration (5 minutes to be safe, Tado tokens valid for ~10 minutes)
     TOKEN_CACHE_DURATION = 300
 
+    @property
+    def has_valid_credentials(self: _AuthHost) -> bool:
+        """Return True if a refresh token or access token is available."""
+        return bool(self._injected_refresh_token or self._access_token)
+
     # --- Config I/O ---
 
     async def _load_config(self: _AuthHost) -> dict[str, Any]:
@@ -94,7 +99,12 @@ class TadoAuthMixin:
                 self._config_entry, data=new_data,
             )
 
-        # Update DataLoader cache for in-memory consumers
+        # Update DataLoader in-memory cache for runtime consumers.
+        # NOTE: This intentionally uses update_cache() (in-memory only), NOT
+        # async_update_store() (Store persistence). ConfigEntry.data is the
+        # sole source of truth for auth credentials. The DataLoader "config"
+        # Store only exists for v3.5.3 → v4.x migration bootstrap and is
+        # not updated after initial load.
         if self._data_loader is not None:
             self._data_loader.update_cache("config", config)
 

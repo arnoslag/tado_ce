@@ -136,10 +136,12 @@ async def async_migrate_json_to_store(
     """
     exists = await hass.async_add_executor_job(old_path.exists)
     if not exists:
+        _LOGGER.debug("JSON→Store migration: %s not found, skipping", label or old_path.stem)
         return None
 
     old_data = await hass.async_add_executor_job(load_json_sync, old_path)
     if old_data is None:
+        _LOGGER.debug("JSON→Store migration: %s returned None", label or old_path.stem)
         return None
 
     await store.async_save(old_data)

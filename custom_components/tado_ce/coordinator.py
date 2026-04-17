@@ -559,6 +559,10 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 sensor_data = data.get("sensorDataPoints") or {}
                 current_temp = (sensor_data.get("insideTemperature") or {}).get("celsius")
                 if target_temp is not None and current_temp is not None:
+                    _LOGGER.debug(
+                        "HeatingCycle feed zone %s: target=%.1f, current=%.1f (raw cloud data)",
+                        zone_id, target_temp, current_temp,
+                    )
                     await self.heating_cycle_coordinator.on_zone_update(
                         zone_id,
                         target_temp,

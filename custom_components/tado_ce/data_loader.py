@@ -2,25 +2,25 @@
 
 Manages two categories of persistent data via HA Store:
 
-**API Data** (11 stores, immediate save):
+**API Data** (10 stores, immediate save):
     Written on every API response via ``async_update_store()``.
     Uses ``Store.async_save()`` for immediate persistence.
-    Stores: zones, config, home_state, ratelimit, api_call_history,
+    Stores: zones, config, home_state, ratelimit,
     zones_info, weather, mobile_devices, offsets, schedules, ac_capabilities.
 
-**Auxiliary Data** (10 stores, debounced save):
+**Auxiliary Data** (9 stores, debounced save):
     Written via ``save_auxiliary()`` with configurable delay.
     Uses ``Store.async_delay_save()`` for batched writes.
     HA automatically persists pending data on shutdown via
     ``EVENT_HOMEASSISTANT_FINAL_WRITE``.
     Stores: window_detection, wc_state, bridge_health, outdoor_temp_history,
-    insight_history, zone_config, smart_comfort_cache, overlay_mode,
+    zone_config, smart_comfort_cache, overlay_mode,
     timer_duration, homekit_savings.
 
 **Standalone Stores** (not managed by DataLoader):
-    HeatingCycleStorage, InsightHistoryTracker, StateRestoreManager
-    manage their own Store instances because they have complex
-    data-format migration, dirty-flag tracking, or domain-specific
+    HeatingCycleStorage, InsightHistoryTracker, StateRestoreManager,
+    APICallTracker manage their own Store instances because they have
+    complex data-format migration, dirty-flag tracking, or domain-specific
     save/load logic that doesn't fit the DataLoader pattern.
 
 **When to use DataLoader vs standalone Store:**
@@ -79,7 +79,6 @@ _ALL_STORES: dict[str, int] = {
     "wc_state": 10,
     "bridge_health": 10,
     "outdoor_temp_history": 10,
-    "insight_history": 10,
     "zone_config": 5,
     "smart_comfort_cache": 30,
     "overlay_mode": 5,
@@ -205,9 +204,12 @@ class DataLoader:
             if data is None and self._hass is not None:
                 # v3.5.3 migration: try loading from old JSON file
                 old_path = self._old_api_data_path(name)
+                _LOGGER.debug("DataLoader: Store %s empty, trying JSON migration from %s", name, old_path)
                 data = await async_migrate_json_to_store(
                     self._hass, old_path, store, label=name,
                 )
+            if data is not None:
+                _LOGGER.debug("DataLoader: Loaded %s (type=%s)", name, type(data).__name__)
             self._cache[name] = data if data is not None else _CACHE_MISSING
 
     def _old_api_data_path(self, name: str) -> Path:

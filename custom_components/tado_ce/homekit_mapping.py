@@ -147,7 +147,7 @@ def validate_mapping(
 
     # Check for zone "0" — known corruption from earlier builds
     if "0" in zone_to_aids or "0" in serial_to_zone.values():
-        _LOGGER.warning("HomeKit: Cached mapping contains invalid zone '0' — forcing rebuild")
+        _LOGGER.info("HomeKit: Cached mapping contains invalid zone '0' — forcing rebuild")
         return False
 
     # Cross-check against cloud zone IDs if available

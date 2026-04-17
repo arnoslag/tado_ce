@@ -18,7 +18,6 @@ from .const import (
     AUTH_ENDPOINT_DEVICE,
     AUTH_ENDPOINT_TOKEN,
     CLIENT_ID,
-    DATA_DIR,
     DOMAIN,
 )
 
@@ -288,17 +287,6 @@ class TadoCEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         await self.async_set_unique_id(f"tado_ce_{home_id}")
         self._abort_if_unique_id_configured()
 
-        config = {
-            "home_id": str(home_id),
-            "refresh_token": self._refresh_token,
-        }
-
-        # Use executor to avoid blocking I/O in event loop
-        await self.hass.async_add_executor_job(
-            self._save_config_sync,
-            config,
-        )
-
         _LOGGER.info("Saved credentials for home: %s (ID: %s)", home_name, home_id)
 
         return self.async_create_entry(
@@ -308,26 +296,6 @@ class TadoCEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 "refresh_token": self._refresh_token,
             },
         )
-
-    def _save_config_sync(self, config: dict[str, Any]) -> None:
-        """Save config synchronously using atomic write.
-
-        Performs blocking file I/O — call via ``hass.async_add_executor_job()``.
-
-        Writes to per-home config file (config_{home_id}.json) only.
-        """
-        from .const import get_data_file
-        from .storage import save_json_sync
-
-        home_id = config.get("home_id")
-
-        if home_id:
-            config_path = get_data_file("config", str(home_id))
-        else:
-            # No home_id — write to DATA_DIR/config.json as last resort
-            config_path = DATA_DIR / "config.json"
-
-        save_json_sync(config_path, config)
 
     # ========== Reauth Flow (HA-triggered when ConfigEntryAuthFailed) ==========
 
@@ -386,13 +354,6 @@ class TadoCEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Save new credentials and finish reauth flow."""
         reauth_entry = self._get_reauth_entry()
         home_id = reauth_entry.data.get("home_id")
-
-        # Save new credentials
-        config = {
-            "home_id": str(home_id),
-            "refresh_token": self._refresh_token,
-        }
-        await self.hass.async_add_executor_job(self._save_config_sync, config)
 
         _LOGGER.info("Reauth successful, saved new credentials for home ID: %s", home_id)
 
@@ -470,18 +431,6 @@ class TadoCEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 # Home no longer exists, let user select a new one
                 return await self.async_step_reconfigure_select_home()
 
-        # Save new credentials (mkdir handled inside _save_config_sync)
-        config = {
-            "home_id": str(home_id),
-            "refresh_token": self._refresh_token,
-        }
-
-        # Use executor to avoid blocking I/O in event loop
-        await self.hass.async_add_executor_job(
-            self._save_config_sync,
-            config,
-        )
-
         _LOGGER.info("Re-authentication successful, saved new credentials for home ID: %s", home_id)
 
         # Dismiss auth repair issue on successful re-auth
@@ -503,18 +452,6 @@ class TadoCEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             home_id = user_input["home"]
-
-            # Save new credentials with new home (mkdir handled inside _save_config_sync)
-            config = {
-                "home_id": str(home_id),
-                "refresh_token": self._refresh_token,
-            }
-
-            # Use executor to avoid blocking I/O in event loop
-            await self.hass.async_add_executor_job(
-                self._save_config_sync,
-                config,
-            )
 
             _LOGGER.info("Re-authentication successful with new home ID: %s", home_id)
 

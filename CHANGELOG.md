@@ -2,6 +2,20 @@
 
 All notable changes to Tado CE will be documented in this file.
 
+## [4.0.0-beta.6] - 2026-04-17
+
+### Bug Fixes
+- **Fixed settings silently wiping your bridge credentials when you change other options** ([#227](https://github.com/hiall-fyi/tado_ce/issues/227) - @ChrisMarriott38) — If you had Weather Compensation enabled and went to Advanced Settings to change something else (like the polling interval), saving the form would silently clear your bridge serial and auth key. Your boiler flow temperature and other bridge sensors would go unavailable until you re-entered the credentials. The settings form now correctly preserves your bridge credentials when you're not explicitly changing them.
+- **Fixed settings silently wiping your outdoor temperature entity, custom polling intervals, and per-zone external sensors** — The same underlying issue affected three more places: your outdoor temperature entity selection (Smart Comfort), custom day/night polling intervals (Polling & API), and per-zone external temperature/humidity sensor selections (Zone Config) could all be silently cleared when saving settings with those sections collapsed. All four are fixed with the same approach — collapsed sections now preserve your existing values instead of treating missing fields as "user wants to clear this".
+- **Fixed timer set via service call not updating the UI immediately** — When you set a heating or AC timer through the `set_climate_timer` service, the entity state wouldn't update until the next polling cycle (up to 30 minutes with HomeKit). It now triggers an immediate refresh, matching the behaviour of all other control actions.
+- **Fixed API call counter resetting to zero on every HA restart** ([#224](https://github.com/hiall-fyi/tado_ce/issues/224) - @ChrisMarriott38) — A legacy code path was writing a config JSON file on every restart, which triggered a token rotation that reset Tado's per-token API counter. The redundant file write has been removed — your API usage history now persists correctly across restarts.
+
+### Internal
+- Removed dead exception handlers, unused store entries, and repeated imports from the sensor hub module.
+- Token status sensor now uses a public API instead of accessing internal attributes directly.
+- Adaptive polling interval calculation is now a public function for cleaner cross-module access.
+- DataLoader documentation updated to accurately reflect store counts and standalone store list.
+
 ## [4.0.0-beta.5] - 2026-04-17
 
 ### Improvements

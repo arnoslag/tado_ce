@@ -351,7 +351,7 @@ def _calculate_day_night_interval(
     return interval_minutes
 
 
-def _calculate_adaptive_interval(
+def calculate_adaptive_interval(
     ratelimit_data: dict[str, Any],
     config_manager: ConfigurationManager,
     homekit_connected: bool = False,
@@ -561,7 +561,7 @@ def get_polling_interval(
             ratelimit_data = cached_ratelimit
 
         if ratelimit_data:
-            adaptive_interval = _calculate_adaptive_interval(
+            adaptive_interval = calculate_adaptive_interval(
                 ratelimit_data, config_manager, homekit_connected=homekit_connected,
             )
 

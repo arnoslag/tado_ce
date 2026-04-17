@@ -21,6 +21,10 @@ Thank you to everyone who supported the project through [Buy Me a Coffee](https:
 
 Community contributors who helped shape each release through bug reports, feature requests, testing, and feedback.
 
+### v4.0.0-beta.6
+
+- **[@ChrisMarriott38](https://github.com/ChrisMarriott38)** — Reported bridge sensors going unavailable after changing polling settings, which led to discovering that the options flow was silently wiping bridge credentials, outdoor temperature entity, custom polling intervals, and per-zone external sensors whenever settings were saved with collapsed sections ([#227](https://github.com/hiall-fyi/tado_ce/issues/227), [#224](https://github.com/hiall-fyi/tado_ce/issues/224)). Also confirmed the API call counter reset-on-restart issue that traced back to a legacy config file write loop.
+
 ### v4.0.0-beta.5
 
 - **[@ChrisMarriott38](https://github.com/ChrisMarriott38)** — Reported the blocking I/O startup warning when schedule data hadn't been fetched yet ([Discussion #219](https://github.com/hiall-fyi/tado_ce/discussions/219)). Also continued investigating humidity sensor behaviour with HomeKit, providing detailed screenshots comparing Tado and SwitchBot Co2 units side by side, which led to confirming the 1% resolution as a HomeKit protocol limitation and adding data freshness attributes to sensors ([#224](https://github.com/hiall-fyi/tado_ce/issues/224))

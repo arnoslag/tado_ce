@@ -59,14 +59,33 @@ class StateReconciler:
             (value, is_fresh) — value is None if unavailable or stale.
         """
         if not self._local_provider or not self._local_provider.is_connected:
+            _LOGGER.debug(
+                "Zone %s %s: HomeKit not available (provider=%s, connected=%s)",
+                zone_id, getter,
+                self._local_provider is not None,
+                self._local_provider.is_connected if self._local_provider else False,
+            )
             return None, False
         method = getattr(self._local_provider, getter)
         value, timestamp = method(zone_id)
         if value is None or timestamp is None:
+            _LOGGER.debug(
+                "Zone %s %s: HomeKit cache empty (value=%s, ts=%s)",
+                zone_id, getter, value, timestamp,
+            )
             return None, False
         age = dt_util.utcnow() - timestamp
         if age >= HOMEKIT_STALENESS_THRESHOLD:
+            _LOGGER.debug(
+                "Zone %s %s: HomeKit cache STALE (value=%s, age=%.1fs, threshold=%.0fs)",
+                zone_id, getter, value, age.total_seconds(),
+                HOMEKIT_STALENESS_THRESHOLD.total_seconds(),
+            )
             return None, False
+        _LOGGER.debug(
+            "Zone %s %s: HomeKit cache fresh (value=%s, age=%.1fs)",
+            zone_id, getter, value, age.total_seconds(),
+        )
         return value, True
 
     def merge_zone_temperature(
@@ -80,12 +99,21 @@ class StateReconciler:
         Priority: external > homekit (if fresh) > cloud.
         """
         if external_value is not None:
+            _LOGGER.debug("Zone %s temp: external=%.1f → using external", zone_id, external_value)
             return external_value, "external"
 
         local_val, is_fresh = self._get_fresh_local_value(zone_id, "get_temperature")
         if is_fresh and local_val is not None:
+            _LOGGER.debug(
+                "Zone %s temp: cloud=%s, homekit=%s → using homekit",
+                zone_id, cloud_value, local_val,
+            )
             return local_val, "homekit"
 
+        _LOGGER.debug(
+            "Zone %s temp: cloud=%s, homekit not fresh → using cloud",
+            zone_id, cloud_value,
+        )
         return cloud_value, "cloud"
 
     def merge_zone_humidity(
@@ -99,12 +127,21 @@ class StateReconciler:
         Priority: external > homekit (if fresh) > cloud.
         """
         if external_value is not None:
+            _LOGGER.debug("Zone %s humidity: external=%s → using external", zone_id, external_value)
             return external_value, "external"
 
         local_val, is_fresh = self._get_fresh_local_value(zone_id, "get_humidity")
         if is_fresh and local_val is not None:
+            _LOGGER.debug(
+                "Zone %s humidity: cloud=%s, homekit=%s → using homekit",
+                zone_id, cloud_value, local_val,
+            )
             return local_val, "homekit"
 
+        _LOGGER.debug(
+            "Zone %s humidity: cloud=%s, homekit not fresh → using cloud",
+            zone_id, cloud_value,
+        )
         return cloud_value, "cloud"
 
     def merge_zone_target_temperature(

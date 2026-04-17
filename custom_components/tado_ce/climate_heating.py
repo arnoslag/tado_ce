@@ -401,6 +401,16 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity,
         self._attr_current_humidity = merged_hum
         self._humidity_source = hum_source
 
+        # Log source changes for diagnostic tracing
+        if temp_source != getattr(self, "_prev_temp_source", None) or hum_source != getattr(self, "_prev_hum_source", None):
+            _LOGGER.debug(
+                "%s climate merge: temp=%s (%s), humidity=%s (%s), cloud_temp=%s, cloud_hum=%s",
+                self._zone_name, merged_temp, temp_source, merged_hum, hum_source,
+                cloud_temp, cloud_humidity,
+            )
+            self._prev_temp_source = temp_source
+            self._prev_hum_source = hum_source
+
         # Track configured entity_ids for extra_state_attributes
         if zcm:
             zc = zcm.get_zone_config(self._zone_id)
@@ -1022,5 +1032,6 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity,
 
         if api_success:
             _LOGGER.info("Set %s to %s°C %s", self._zone_name, temperature, term_desc)
+            await async_trigger_immediate_refresh(self.hass, self.entity_id, "set_timer")
             return True
         return False

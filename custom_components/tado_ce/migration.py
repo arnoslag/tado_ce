@@ -36,9 +36,11 @@ async def async_migrate_config_json(
 
     home_id = config_entry.data.get("home_id")
     config_path = get_data_file("config", home_id)
+    _LOGGER.debug("Config JSON migration: checking %s", config_path)
 
     path_exists = await hass.async_add_executor_job(config_path.exists)
     if not path_exists:
+        _LOGGER.debug("Config JSON migration: %s not found, skipping", config_path)
         return
 
     json_data = await async_load_json(hass, config_path)

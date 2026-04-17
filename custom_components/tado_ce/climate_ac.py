@@ -1409,4 +1409,7 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
         except Exception as e:
             _LOGGER.warning("AC error: %s set_timer API call failed (%s)", self._zone_name, e)
 
+        if api_success:
+            await async_trigger_immediate_refresh(self.hass, self.entity_id, "set_timer")
+
         return api_success

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import contextlib
-import json
+from datetime import datetime, timedelta
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -61,8 +61,6 @@ def _parse_call_time_range(
 def _calculate_calls_per_hour(all_calls: list[dict[str, Any]]) -> float | None:
     """Calculate average API calls per hour over the last 24h."""
     try:
-        from datetime import timedelta
-
         now = dt_util.utcnow()
         cutoff = now - timedelta(hours=24)
         last_24h = [c for c in all_calls if parse_iso_datetime(c["timestamp"]) > cutoff]
@@ -253,12 +251,6 @@ class TadoApiUsageSensor(TadoHubSensor):
                 _LOGGER.debug("Failed to load call history: %s", e)
                 self._call_history = []
 
-        except FileNotFoundError:
-            _LOGGER.debug("Ratelimit file not found - first run or migration pending")
-        except PermissionError:
-            _LOGGER.exception("Permission denied reading ratelimit file")
-        except json.JSONDecodeError:
-            _LOGGER.exception("Invalid JSON in ratelimit file")
         except Exception:
             _LOGGER.exception("Unexpected error loading ratelimit data")
 
@@ -315,8 +307,6 @@ class TadoApiResetSensor(TadoHubSensor):
 
     def _update_next_poll(self, data: dict[str, Any]) -> None:
         """Calculate and set next poll time from ratelimit data."""
-        from datetime import timedelta
-
         try:
             last_updated = data.get("last_updated")
             if not last_updated:
@@ -418,8 +408,6 @@ class TadoApiLimitSensor(TadoHubSensor):
 
             # Load recent API calls from history (last 100 calls only to avoid DB size issues)
             try:
-                from datetime import timedelta
-
                 history = (self.coordinator.data or {}).get("api_call_history")
                 if history:
                     all_calls = []
@@ -546,10 +534,8 @@ class TadoTokenStatusSensor(TadoHubSensor):
     def update(self) -> None:
         """Update sensor state from coordinator data."""
         try:
-            # Check api_client's injected refresh token (from ConfigEntry.data)
-            # rather than config file which may have null refresh_token
             client = self.coordinator.api_client
-            if client._injected_refresh_token or client._access_token:
+            if client.has_valid_credentials:
                 self._attr_native_value = "valid"
             else:
                 self._attr_native_value = "missing"
@@ -648,8 +634,6 @@ class TadoNextSyncSensor(TadoHubSensor):
         """Start periodic countdown refresh when added to HA."""
         await super().async_added_to_hass()
 
-        from datetime import timedelta as td
-
         from homeassistant.helpers.event import async_track_time_interval
 
         @callback
@@ -659,7 +643,7 @@ class TadoNextSyncSensor(TadoHubSensor):
             self.async_write_ha_state()
 
         self._countdown_unsub = async_track_time_interval(
-            self.hass, _refresh_countdown, td(seconds=30),
+            self.hass, _refresh_countdown, timedelta(seconds=30),
         )
 
     async def async_will_remove_from_hass(self) -> None:
@@ -671,8 +655,6 @@ class TadoNextSyncSensor(TadoHubSensor):
 
     def _recalculate_countdown(self) -> None:
         """Recalculate countdown from current native_value."""
-        from datetime import datetime
-
         native = self._attr_native_value
         if not isinstance(native, datetime):
             self._countdown = None
@@ -691,8 +673,6 @@ class TadoNextSyncSensor(TadoHubSensor):
     def update(self) -> None:
         """Update sensor state from coordinator data."""
         try:
-            from datetime import timedelta
-
             data = (self.coordinator.data or {}).get("ratelimit")
             if not data:
                 return
@@ -786,7 +766,7 @@ class TadoPollingIntervalSensor(TadoHubSensor):
         """Update sensor state from coordinator data."""
         try:
             from .const import DEFAULT_DAY_INTERVAL, DEFAULT_NIGHT_INTERVAL
-            from .polling import _calculate_adaptive_interval, get_polling_interval
+            from .polling import calculate_adaptive_interval, get_polling_interval
 
             config_manager = self.coordinator.config_manager
             if not config_manager:
@@ -818,7 +798,7 @@ class TadoPollingIntervalSensor(TadoHubSensor):
             adaptive_interval = None
             if ratelimit_data:
                 with contextlib.suppress(Exception):
-                    adaptive_interval = _calculate_adaptive_interval(ratelimit_data, config_manager)
+                    adaptive_interval = calculate_adaptive_interval(ratelimit_data, config_manager)
 
             baseline_interval = self._night_interval if self._is_night_mode else self._day_interval
 
@@ -949,8 +929,6 @@ class TadoApiBreakdownSensor(TadoHubSensor):
     def update(self) -> None:
         """Update sensor state from coordinator data."""
         try:
-            from datetime import timedelta
-
             history_data = (self.coordinator.data or {}).get("api_call_history")
             if not history_data:
                 self._set_empty_breakdown()

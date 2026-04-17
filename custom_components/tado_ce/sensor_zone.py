@@ -153,7 +153,13 @@ class TadoTemperatureSensor(TadoZoneSensor):
     @callback
     def _update_from_zone_data(self, zone_data: dict[str, Any]) -> None:
         sensor_data = zone_data.get("sensorDataPoints") or {}
-        self._attr_native_value = (sensor_data.get("insideTemperature") or {}).get("celsius")
+        new_value = (sensor_data.get("insideTemperature") or {}).get("celsius")
+        if new_value != self._attr_native_value:
+            _LOGGER.debug(
+                "Zone %s temp entity: %s → %s (source: %s)",
+                self._zone_id, self._attr_native_value, new_value, self._data_source,
+            )
+        self._attr_native_value = new_value
 
     def _update_homekit_attributes(self) -> None:
         """Update data_source and last_homekit_update from HomeKit provider."""
@@ -219,7 +225,13 @@ class TadoHumiditySensor(TadoZoneSensor):
     @callback
     def _update_from_zone_data(self, zone_data: dict[str, Any]) -> None:
         sensor_data = zone_data.get("sensorDataPoints") or {}
-        self._attr_native_value = (sensor_data.get("humidity") or {}).get("percentage")
+        new_value = (sensor_data.get("humidity") or {}).get("percentage")
+        if new_value != self._attr_native_value:
+            _LOGGER.debug(
+                "Zone %s humidity entity: %s → %s (source: %s)",
+                self._zone_id, self._attr_native_value, new_value, self._data_source,
+            )
+        self._attr_native_value = new_value
 
     def _update_homekit_attributes(self) -> None:
         """Update data_source and last_homekit_update from HomeKit provider."""

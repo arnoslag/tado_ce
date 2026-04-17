@@ -67,12 +67,19 @@ def merge_homekit_into_zone_data(
         sensor_data = (zone_data.get("sensorDataPoints") or {}).copy()
         cloud_temp = (sensor_data.get("insideTemperature") or {}).get("celsius")
         cloud_humidity = (sensor_data.get("humidity") or {}).get("percentage")
-        merged_temp, _ = reconciler.merge_zone_temperature(zone_id, cloud_temp)
-        merged_hum, _ = reconciler.merge_zone_humidity(zone_id, cloud_humidity)
+        merged_temp, temp_src = reconciler.merge_zone_temperature(zone_id, cloud_temp)
+        merged_hum, hum_src = reconciler.merge_zone_humidity(zone_id, cloud_humidity)
         if merged_temp is not None:
             sensor_data.setdefault("insideTemperature", {})["celsius"] = merged_temp
         if merged_hum is not None:
             sensor_data.setdefault("humidity", {})["percentage"] = merged_hum
+        # Log when merge changes the value (cloud → homekit or vice versa)
+        if cloud_temp != merged_temp or cloud_humidity != merged_hum:
+            _LOGGER.debug(
+                "Zone %s merge: temp %s→%s (%s), humidity %s→%s (%s)",
+                zone_id, cloud_temp, merged_temp, temp_src,
+                cloud_humidity, merged_hum, hum_src,
+            )
         result = dict(zone_data)
         result["sensorDataPoints"] = sensor_data
     except (TypeError, ValueError, AttributeError):
