@@ -137,6 +137,12 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Shared entity data store — entities publish computed values here
         # so other components (insight collector, adaptive preheat) can read
         # without cross-entity hass.states.get() coupling.
+        #
+        # LIFECYCLE: In-memory only — not persisted across restarts.
+        # Populated progressively as entities process their first poll data.
+        # Consumers MUST handle None returns from get_entity_data() during
+        # the startup gap (typically 0-2 poll cycles after restart).
+        #
         # Structure: {zone_id: {"condensation_risk": {...}, "window_predicted": {...}, ...}}
         self.entity_data: dict[str, dict[str, dict[str, Any]]] = {}
 
@@ -247,7 +253,11 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._homekit_write_latency_count = 0
 
     def publish_entity_data(self, zone_id: str, key: str, data: dict[str, Any]) -> None:
-        """Publish computed entity data for cross-component access.
+        """Publish computed entity data for cross-component consumption.
+
+        Published data is in-memory only and does not persist across restarts.
+        Consumers should handle None returns from get_entity_data() gracefully
+        during the startup gap (before entities have processed their first poll).
 
         Entities call this to share their computed values (e.g. condensation
         risk, window predicted state) so insight collectors and other
@@ -301,7 +311,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         config_data = self.data_loader.get_cached("config")
         home_state_data = self.data_loader.get_cached("home_state")
         ratelimit_data = self.data_loader.get_cached("ratelimit")
-        api_call_history_data = self.data_loader.get_cached("api_call_history")
+        api_call_history_data: dict[str, Any] = dict(self.api_tracker._call_history) if self.api_tracker else {}
         zones_info_data = self.data_loader.get_cached("zones_info")
         mobile_devices_data = self.data_loader.get_cached("mobile_devices")
         offsets_data = self.data_loader.get_cached("offsets")

@@ -1,4 +1,4 @@
-"""Tado CE API Auth Mixin — token management and config I/O."""
+"""Tado CE API Auth Mixin — token management via ConfigEntry."""
 
 from __future__ import annotations
 
@@ -9,16 +9,12 @@ import logging
 from typing import TYPE_CHECKING, Any, Protocol
 
 import aiohttp
-from homeassistant.exceptions import HomeAssistantError
 
-from .const import CLIENT_ID, CONFIG_FILE, MAX_RETRY_ATTEMPTS, TADO_AUTH_URL
+from .const import CLIENT_ID, MAX_RETRY_ATTEMPTS, TADO_AUTH_URL
 from .exceptions import TadoAuthError
 from .helpers import retry_delay
-from .storage import async_load_json, async_save_json
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from homeassistant.config_entries import ConfigEntry
     from homeassistant.core import HomeAssistant
 
@@ -48,8 +44,6 @@ class _AuthHost(Protocol):
     _data_loader: DataLoader | None
     _config_entry: ConfigEntry | None
 
-    def _get_data_file(self, base_name: str) -> Path: ...
-
     # --- Mixin-provided members (for cross-method calls) ---
     TOKEN_CACHE_DURATION: int
 
@@ -59,10 +53,13 @@ class _AuthHost(Protocol):
 
 
 class TadoAuthMixin:
-    """Mixin providing OAuth token management and config file I/O.
+    """Mixin providing OAuth token management.
 
-    The host class must satisfy the ``_AuthHost`` protocol — i.e. provide
-    ``_session``, ``_hass``, ``_home_id``, ``_get_data_file()``, etc.
+    Token source of truth is the HA ConfigEntry (``entry.data["refresh_token"]``).
+    The host class injects the refresh token via constructor; rotated tokens
+    are persisted back to ConfigEntry via ``async_update_entry``.
+
+    The host class must satisfy the ``_AuthHost`` protocol.
     See ``_AuthHost`` for the full contract.
     """
 
@@ -75,65 +72,31 @@ class TadoAuthMixin:
     # --- Config I/O ---
 
     async def _load_config(self: _AuthHost) -> dict[str, Any]:
-        """Load config from file using native async I/O.
+        """Build config dict from injected values.
 
-        Uses per-home config file (config_{home_id}.json) when home_id is set.
-        Falls back to DATA_DIR/config.json when no home_id (bootstrap only).
-        If refresh_token was injected via constructor, it takes precedence.
+        Refresh token comes from ConfigEntry (injected at construction time).
+        No file I/O needed — ConfigEntry is the source of truth.
         """
-        try:
-            # Use per-home config file when home_id is available
-            if self._home_id:
-                config_path = self._get_data_file("config")
-            else:
-                config_path = CONFIG_FILE
-
-            loaded = await async_load_json(self._hass, config_path)  # type: ignore[arg-type]
-
-            if loaded is None:
-                result: dict[str, Any] = {"home_id": self._home_id, "refresh_token": None}
-                # Use injected refresh_token if available
-                if self._injected_refresh_token:
-                    result["refresh_token"] = self._injected_refresh_token
-                return result
-
-            config: dict[str, Any] = loaded  # type: ignore[assignment]
-            # Cache home_id when loading config
-            if config.get("home_id"):
-                self._home_id = config["home_id"]
-            # Injected refresh_token takes precedence
-            if self._injected_refresh_token:
-                config["refresh_token"] = self._injected_refresh_token
-            return config
-        except (OSError, HomeAssistantError, KeyError):
-            _LOGGER.exception("Failed to load config")
-            result = {"home_id": self._home_id, "refresh_token": None}
-            if self._injected_refresh_token:
-                result["refresh_token"] = self._injected_refresh_token
-            return result
+        return {
+            "home_id": self._home_id,
+            "refresh_token": self._injected_refresh_token,
+        }
 
     async def _save_config(self: _AuthHost, config: dict[str, Any]) -> None:
-        """Save config to file atomically using native async I/O.
+        """Persist rotated refresh token to ConfigEntry.
 
-        Writes to per-home config file (config_{home_id}.json) when home_id
-        is set. Falls back to DATA_DIR/config.json when no home_id.
-        Per-home isolation prevents token rotation for one home from
-        corrupting another home's config.
+        ConfigEntry is the sole source of truth for auth credentials.
+        DataLoader cache is also updated for in-memory consumers.
         """
-        try:
-            # Use per-home config file when home_id is available
-            if self._home_id:
-                config_path = self._get_data_file("config")
-            else:
-                config_path = CONFIG_FILE
+        if self._hass and self._config_entry:
+            new_data = {**self._config_entry.data, **config}
+            self._hass.config_entries.async_update_entry(
+                self._config_entry, data=new_data,
+            )
 
-            await async_save_json(self._hass, config_path, config)  # type: ignore[arg-type]
-
-            # Write-through: update DataLoader cache
-            if self._data_loader is not None:
-                self._data_loader.update_cache("config", config)
-        except (OSError, HomeAssistantError):
-            _LOGGER.exception("Failed to save config")
+        # Update DataLoader cache for in-memory consumers
+        if self._data_loader is not None:
+            self._data_loader.update_cache("config", config)
 
     # --- Token Management ---
 
@@ -170,12 +133,9 @@ class TadoAuthMixin:
         # Save new refresh token if rotated
         if new_refresh_token and new_refresh_token != refresh_token:
             config["refresh_token"] = new_refresh_token
-            await self._save_config(config)
             self._injected_refresh_token = new_refresh_token
-            if self._hass and self._config_entry:
-                new_data = {**self._config_entry.data, "refresh_token": new_refresh_token}
-                self._hass.config_entries.async_update_entry(self._config_entry, data=new_data)
-            _LOGGER.debug("Refresh token rotated and saved")
+            await self._save_config(config)
+            _LOGGER.debug("Refresh token rotated and saved to ConfigEntry")
 
         self._token_expiry = datetime.now(UTC) + timedelta(seconds=self.TOKEN_CACHE_DURATION)
         _LOGGER.debug("Access token refreshed successfully")

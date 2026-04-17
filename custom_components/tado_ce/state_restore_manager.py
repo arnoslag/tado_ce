@@ -13,7 +13,7 @@ from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
 from .helpers import get_zone_states, parse_iso_datetime
-from .storage import load_json_sync
+from .storage import async_migrate_json_to_store
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -135,14 +135,14 @@ class StateRestoreManager:
 
     async def async_setup(self) -> None:
         """Load persisted state from Store and purge stale entries."""
-        raw = await self._store.async_load()
+        raw: dict[str, Any] | list[Any] | None = await self._store.async_load()
 
         if raw is None:
             # Try migrating from old JSON file
-            raw = await self._migrate_from_json()
-        else:
-            # Clean up old JSON file if it still exists
-            await self._cleanup_old_json()
+            raw = await async_migrate_json_to_store(
+                self._hass, self._old_storage_path, self._store,
+                label="state_restore",
+            )
 
         if not raw or not isinstance(raw, dict):
             _LOGGER.debug("State Restore: No persisted state found")
@@ -175,51 +175,6 @@ class StateRestoreManager:
         # Persist after purge so stale entries are removed from Store
         if purged:
             self._schedule_persist()
-
-    async def _migrate_from_json(self) -> dict[str, Any] | None:
-        """Migrate old JSON file to Store.
-
-        Reads the old file, saves to Store, and renames old file to .json.migrated.
-        """
-        exists = await self._hass.async_add_executor_job(
-            self._old_storage_path.exists,
-        )
-        if not exists:
-            return None
-
-        old_data = await self._hass.async_add_executor_job(
-            load_json_sync, self._old_storage_path,
-        )
-        if old_data is None:
-            return None
-
-        if isinstance(old_data, dict):
-            await self._store.async_save(old_data)
-
-        migrated_path = self._old_storage_path.with_suffix(".json.migrated")
-        await self._hass.async_add_executor_job(
-            self._old_storage_path.rename, migrated_path,
-        )
-        _LOGGER.info(
-            "Migrated state restore data → Store (old file renamed to %s)",
-            migrated_path,
-        )
-        return old_data  # type: ignore[return-value]
-
-    async def _cleanup_old_json(self) -> None:
-        """Rename old JSON file to .json.migrated if it still exists."""
-        exists = await self._hass.async_add_executor_job(
-            self._old_storage_path.exists,
-        )
-        if exists:
-            migrated_path = self._old_storage_path.with_suffix(".json.migrated")
-            await self._hass.async_add_executor_job(
-                self._old_storage_path.rename, migrated_path,
-            )
-            _LOGGER.info(
-                "Cleaned up old state restore file (renamed to %s)",
-                migrated_path,
-            )
 
     async def async_shutdown(self) -> None:
         """Persist state to Store on HA shutdown / config entry unload."""

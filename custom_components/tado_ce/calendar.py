@@ -12,9 +12,8 @@ from homeassistant.helpers.entity import DeviceInfo  # type: ignore[attr-defined
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
-from .const import DOMAIN, MANUFACTURER, get_data_file
+from .const import DOMAIN, MANUFACTURER
 from .entity_registry import ENTITY_REGISTRY
-from .storage import load_json_sync, save_json_sync
 
 if TYPE_CHECKING:
     from homeassistant.core import Event
@@ -135,17 +134,9 @@ async def _async_save_schedules(
     home_id: str | None = None,
     data_loader: DataLoader | None = None,
 ) -> None:
-    """Save schedules to file using atomic write."""
-    schedules_file = get_data_file("schedules", home_id)
-
-    def _save() -> None:
-        save_json_sync(schedules_file, schedules)
-
-    await hass.async_add_executor_job(_save)
-
-    # Write-through: update DataLoader cache
+    """Save schedules to Store."""
     if data_loader is not None:
-        data_loader.update_cache("schedules", schedules)
+        await data_loader.async_update_store("schedules", schedules)
 
 
 class TadoZoneScheduleCalendar(CoordinatorEntity["TadoDataUpdateCoordinator"], CalendarEntity):
@@ -222,18 +213,7 @@ class TadoZoneScheduleCalendar(CoordinatorEntity["TadoDataUpdateCoordinator"], C
                 self.async_write_ha_state()
                 return
 
-            # Fallback to disk read
-            def _load() -> dict[str, Any]:
-                home_id = self.coordinator.home_id
-                schedules_file = get_data_file("schedules", home_id)
-                data = load_json_sync(schedules_file)
-                return data if data is not None else {}  # type: ignore[return-value]
 
-            schedules = await self.hass.async_add_executor_job(_load)
-            if self._zone_id in schedules:
-                self._schedule = schedules[self._zone_id]
-                _LOGGER.debug("Reloaded schedule for %s (from disk)", self._zone_name)
-                self.async_write_ha_state()
         except Exception:
             _LOGGER.exception("Failed to reload schedule for %s", self._zone_name)
 

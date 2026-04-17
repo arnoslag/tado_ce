@@ -75,7 +75,7 @@ async def _async_init_data_layer(
     Returns (data_loader, zone_config_manager, overlay_mode, timer_duration, components).
     """
     data_loader = DataLoader(home_id or "default", hass=hass)
-    await hass.async_add_executor_job(data_loader.load_all_to_cache)
+    await data_loader.async_load_all_to_cache()
 
     zone_config_manager = ZoneConfigManager(hass, home_id or "default", data_loader)
     await zone_config_manager.async_load()
@@ -152,6 +152,7 @@ async def _async_wire_and_start_coordinator(
     overlay_mode: str,
     timer_duration: int,
     home_id: str | None,
+    components: dict[str, Any] | None = None,
 ) -> None:
     """Wire back-references, load caches, and perform first refresh."""
     if optional["adaptive_preheat_manager"] is not None:
@@ -191,6 +192,12 @@ async def _async_wire_and_start_coordinator(
         _LOGGER.debug("HomeKit savings: no persisted data (fresh start)")
 
     await coordinator.async_config_entry_first_refresh()
+
+    # Deferred HomeKit mapping rebuild (if empty mapping at setup time)
+    if components is not None:
+        deferred_rebuild = components.get("_deferred_homekit_rebuild")
+        if deferred_rebuild is not None:
+            await deferred_rebuild(coordinator)
 
     zones_info = coordinator.data.get("zones_info") or []
     if zones_info:
@@ -273,12 +280,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await _async_init_data_layer(hass, entry, config_manager, home_id)
     )
 
-    # Check if per-home config file exists
-    from .const import get_data_file
-
-    _config_path = get_data_file("config", home_id) if home_id else (DATA_DIR / "config.json")
-    config_exists = await hass.async_add_executor_job(_config_path.exists)
-    if not config_exists:
+    # Check if config data exists (either from Store or migrated from JSON)
+    config_cached = data_loader.get_cached("config")
+    if not config_cached:
         _LOGGER.warning(
             "Tado CE config file not found for home %s. "
             "Use Settings > Devices & Services > Add Integration > Tado CE to authenticate.",
@@ -335,6 +339,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     await _async_wire_and_start_coordinator(
         hass, entry, coordinator, optional, overlay_mode, timer_duration, home_id,
+        components=components,
     )
 
     await _async_finalize_entry(hass, entry, coordinator, config_manager)
@@ -407,7 +412,16 @@ async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
 
 async def _async_shutdown_coordinator(coordinator: TadoDataUpdateCoordinator) -> None:
-    """Shut down coordinator: cancel tasks, persist state, save history."""
+    """Shut down coordinator: cancel tasks, persist dirty state.
+
+    Most Store-backed data is automatically persisted on HA shutdown via
+    EVENT_HOMEASSISTANT_FINAL_WRITE. Explicit saves are only needed for:
+    - Components with dirty-flag tracking (insight_history, api_tracker)
+    - State restore shutdown (clears in-memory state)
+
+    Auxiliary stores (wc_state, homekit_savings, bridge_health, etc.) use
+    async_delay_save and are auto-flushed by HA Store on shutdown.
+    """
     if hasattr(coordinator, "refresh_handler") and coordinator.refresh_handler:
         coordinator.refresh_handler.cancel()
         coordinator.refresh_handler = None  # type: ignore[assignment]
@@ -418,15 +432,16 @@ async def _async_shutdown_coordinator(coordinator: TadoDataUpdateCoordinator) ->
     await coordinator.device_sync_queue.shutdown()
     _LOGGER.debug("Cleaned up write optimization components")
 
+    # Explicit saves for dirty-flag components only
+    # (HA Store auto-flush handles debounced auxiliary stores)
     if hasattr(coordinator, "insight_history"):
         await coordinator.insight_history.async_save()
 
-    await coordinator.async_shutdown_state_restore()
-    coordinator.save_wc_state_if_loaded()
-    coordinator._save_homekit_savings()
-
     if coordinator.api_tracker:
         await coordinator.api_tracker.async_save_if_dirty()
+
+    # State restore shutdown (clears in-memory state)
+    await coordinator.async_shutdown_state_restore()
 
 
 def _unregister_all_services(hass: HomeAssistant) -> None:

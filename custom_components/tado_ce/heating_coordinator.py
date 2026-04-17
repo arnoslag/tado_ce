@@ -166,7 +166,7 @@ class HeatingCycleCoordinator(DataUpdateCoordinator):
         async with self._lock:
             for zone_id, detector in self._detectors.items():
                 if detector.check_cycle_timeout():
-                    _LOGGER.warning("Zone %s: Cycle timed out", zone_id)
+                    _LOGGER.debug("Zone %s: Cycle timed out", zone_id)
                     await self._async_update_zone_data(zone_id)
 
     async def _async_update_zone_data(self, zone_id: str) -> None:

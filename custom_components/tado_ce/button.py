@@ -357,9 +357,6 @@ class TadoRefreshScheduleButton(CoordinatorEntity[TadoDataUpdateCoordinator], Bu
 
     async def async_press(self) -> None:
         """Handle button press - refresh schedule for this zone."""
-        from .const import get_data_file
-        from .storage import load_json_sync, save_json_sync
-
         _LOGGER.info("Refresh Schedule button pressed for %s (zone %s)", self._zone_name, self._zone_id)
 
         client = self.coordinator.api_client
@@ -372,33 +369,19 @@ class TadoRefreshScheduleButton(CoordinatorEntity[TadoDataUpdateCoordinator], Bu
                 _LOGGER.warning("No schedule data returned for %s", self._zone_name)
                 return
 
-            # Get per-home schedules file path
-            home_id = self.coordinator.home_id
-            schedules_file = get_data_file("schedules", home_id)
-
-            # Load existing schedules
-            def _load_schedules() -> dict[str, Any]:
-                data = load_json_sync(schedules_file)
-                return data if isinstance(data, dict) else {}
-
-            schedules = await self.hass.async_add_executor_job(_load_schedules)
+            # Load existing schedules from cache
+            cached = self.coordinator.data_loader.get_cached("schedules")
+            schedules: dict[str, Any] = dict(cached) if isinstance(cached, dict) else {}
 
             # Update this zone's schedule
             schedules[self._zone_id] = {
                 "name": self._zone_name,
                 "type": schedule_data.get("type", "ONE_DAY"),
-                # Tado API may return null for existing keys; 'or {}' handles None correctly
                 "blocks": schedule_data.get("blocks") or {},
             }
 
-            # Save back to file using atomic write
-            def _save_schedules() -> None:
-                save_json_sync(schedules_file, schedules)
-
-            await self.hass.async_add_executor_job(_save_schedules)
-
-            # Write-through: update DataLoader cache
-            self.coordinator.data_loader.update_cache("schedules", schedules)
+            # Save to Store
+            await self.coordinator.data_loader.async_update_store("schedules", schedules)
 
             _LOGGER.debug("Schedule refreshed for %s", self._zone_name)
 

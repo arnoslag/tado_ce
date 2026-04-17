@@ -4,16 +4,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from pathlib import Path
 import random
 from typing import TYPE_CHECKING, Any, Final
 
+from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
-from .const import get_data_file
-from .storage import async_load_json, async_save_json
-
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from homeassistant.config_entries import ConfigFlowResult
     from homeassistant.core import HomeAssistant
 
@@ -33,6 +32,8 @@ CHAR_TARGET_HEATING_STATE: Final = "33"
 CHAR_SERIAL_NUMBER: Final = "30"
 CHAR_MODEL: Final = "21"
 
+_STORE_VERSION = 1
+
 
 class HomeKitClient:
     """Manage HomeKit connection to a Tado Internet Bridge.
@@ -49,18 +50,24 @@ class HomeKitClient:
         self,
         hass: HomeAssistant,
         home_id: str,
-        pairing_path: Path,
+        pairing_path: Path | None = None,
     ) -> None:
         """Initialize the HomeKit Client.
 
         Args:
             hass: Home Assistant instance.
             home_id: Tado home ID (for multi-home isolation).
-            pairing_path: Path to stored pairing credentials JSON.
+            pairing_path: Deprecated — ignored. Pairing uses HA Store.
         """
         self._hass = hass
         self._home_id = home_id
-        self._pairing_path = pairing_path
+        self._store: Store[dict[str, Any]] = Store(
+            hass, _STORE_VERSION, f"tado_ce/homekit_pairing_{home_id}",
+        )
+        # Old JSON path for migration
+        from .const import get_data_file
+
+        self._old_pairing_path = get_data_file("homekit_pairing", home_id)
         self._controller: Any | None = None  # aiohomekit Controller
         self._pairing: Any | None = None  # aiohomekit IpPairing
         self._is_connected = False
@@ -145,9 +152,17 @@ class HomeKitClient:
         Returns:
             True if connection succeeded, False otherwise.
         """
-        pairing_data = await async_load_json(self._hass, self._pairing_path)
+        pairing_data: dict[str, Any] | list[Any] | None = await self._store.async_load()
         if not pairing_data or not isinstance(pairing_data, dict):
-            _LOGGER.debug("HomeKit: No pairing credentials found at %s", self._pairing_path)
+            # Try migrating from old JSON file
+            from .storage import async_migrate_json_to_store
+
+            pairing_data = await async_migrate_json_to_store(
+                self._hass, self._old_pairing_path, self._store,
+                label="homekit_pairing",
+            )
+        if not pairing_data or not isinstance(pairing_data, dict):
+            _LOGGER.debug("HomeKit: No pairing credentials found")
             return False
 
         try:
@@ -279,7 +294,7 @@ class HomeKitClient:
 
         # Store pairing credentials
         pairing_data = dict(pairing._pairing_data)
-        await async_save_json(self._hass, self._pairing_path, pairing_data)
+        await self._store.async_save(pairing_data)
 
         self._pairing = pairing
         self._is_connected = True
@@ -302,15 +317,13 @@ class HomeKitClient:
                 await self.async_disconnect()
 
         # Delete stored credentials
-        if await self._hass.async_add_executor_job(self._pairing_path.exists):
-            await self._hass.async_add_executor_job(self._pairing_path.unlink, True)
-            _LOGGER.info("HomeKit: Deleted pairing credentials")
+        await self._store.async_remove()
+        _LOGGER.info("HomeKit: Deleted pairing credentials")
 
         # Delete device mapping
-        mapping_path = get_data_file("homekit_device_map", self._home_id)
-        if await self._hass.async_add_executor_job(mapping_path.exists):
-            await self._hass.async_add_executor_job(mapping_path.unlink, True)
-            _LOGGER.debug("HomeKit: Deleted device mapping")
+        from .homekit_mapping import remove_device_mapping
+
+        await remove_device_mapping(self._hass, self._home_id)
 
     async def async_list_accessories(self) -> list[dict[str, Any]]:
         """List all accessories from the paired bridge.
@@ -357,8 +370,7 @@ async def async_step_homekit_pairing(
                 from .homekit_mapping import build_serial_mapping, save_device_mapping
 
                 home_id = flow.config_entry.data.get("home_id") or "default"
-                pairing_path = get_data_file("homekit_pairing", home_id)
-                client = HomeKitClient(flow.hass, home_id, pairing_path)
+                client = HomeKitClient(flow.hass, home_id)
 
                 await client.async_pair(pin)
 
@@ -424,8 +436,7 @@ async def async_step_homekit_unpair(
     if user_input is not None:
         try:
             home_id = flow.config_entry.data.get("home_id") or "default"
-            pairing_path = get_data_file("homekit_pairing", home_id)
-            client = HomeKitClient(flow.hass, home_id, pairing_path)
+            client = HomeKitClient(flow.hass, home_id)
 
             # Try to connect first so we can remove pairing from bridge
             await client.async_connect()

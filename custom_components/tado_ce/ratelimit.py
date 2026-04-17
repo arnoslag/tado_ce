@@ -14,10 +14,8 @@ from .const import (
     _RATE_LIMIT_MIN_S,
     DOMAIN,
     QUOTA_BOOTSTRAP_CALLS,
-    get_data_file,
 )
 from .helpers import parse_iso_datetime
-from .storage import async_load_json, async_save_json
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -382,7 +380,7 @@ async def async_update_ratelimit_reset_time(
     home_id: str | None = None,
     data_loader: DataLoader | None = None,
 ) -> None:
-    """Update ratelimit JSON with detected reset time from HA history.
+    """Update ratelimit data with detected reset time from HA history.
 
     This is called after sync when we detect the actual reset time from
     the API usage sensor history. It's more accurate than extrapolation.
@@ -390,23 +388,18 @@ async def async_update_ratelimit_reset_time(
     Args:
         hass: Home Assistant instance
         detected_reset: Detected reset time (datetime in UTC)
-        home_id: Home ID for per-home ratelimit file (multi-home support)
-        data_loader: DataLoader instance for cache read/write-through
+        home_id: Home ID for per-home ratelimit (multi-home support)
+        data_loader: DataLoader instance for cache read/write
     """
     try:
-        # Read from in-memory cache first, fall back to disk
-        data: dict[str, Any] | None = None
-        if data_loader is not None:
-            cached = data_loader.get_cached("ratelimit")
-            if isinstance(cached, dict):
-                data = dict(cached)
+        if data_loader is None:
+            return
 
-        if data is None:
-            ratelimit_path = get_data_file("ratelimit", home_id)
-            loaded = await async_load_json(hass, ratelimit_path)
-            if not isinstance(loaded, dict):
-                return
-            data = loaded
+        # Read from in-memory cache
+        cached = data_loader.get_cached("ratelimit")
+        if not isinstance(cached, dict):
+            return
+        data = dict(cached)
 
         new_reset = detected_reset.strftime("%Y-%m-%dT%H:%M:%SZ")
         if data.get("last_reset_utc") == new_reset:
@@ -415,11 +408,7 @@ async def async_update_ratelimit_reset_time(
         data["last_reset_utc"] = new_reset
         _recalculate_reset_fields(data, detected_reset)
 
-        ratelimit_path = get_data_file("ratelimit", home_id)
-        await async_save_json(hass, ratelimit_path, data)
-
-        if data_loader is not None:
-            data_loader.update_cache("ratelimit", data)
+        await data_loader.async_update_store("ratelimit", data)
 
         _LOGGER.info("Updated reset time from HA history: %s UTC", detected_reset.strftime("%H:%M"))
 

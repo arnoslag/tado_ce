@@ -21,6 +21,10 @@ Thank you to everyone who supported the project through [Buy Me a Coffee](https:
 
 Community contributors who helped shape each release through bug reports, feature requests, testing, and feedback.
 
+### v4.0.0-beta.5
+
+- **[@ChrisMarriott38](https://github.com/ChrisMarriott38)** — Reported the blocking I/O startup warning when schedule data hadn't been fetched yet ([Discussion #219](https://github.com/hiall-fyi/tado_ce/discussions/219)). Also continued investigating humidity sensor behaviour with HomeKit, providing detailed screenshots comparing Tado and SwitchBot Co2 units side by side, which led to confirming the 1% resolution as a HomeKit protocol limitation and adding data freshness attributes to sensors ([#224](https://github.com/hiall-fyi/tado_ce/issues/224))
+
 ### v4.0.0-beta.3
 
 - **[@ChrisMarriott38](https://github.com/ChrisMarriott38)** — Reported spikey temperature and humidity charts when HomeKit was connected, with before/after screenshots that clearly showed the sensor entities bouncing between stale cloud data and live bridge data ([#224](https://github.com/hiall-fyi/tado_ce/issues/224))

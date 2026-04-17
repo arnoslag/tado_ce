@@ -235,7 +235,7 @@ class HeatingCycleDetector:
             self._active_cycle.interrupt_reason = "timeout"
             self._active_cycle.end_time = dt_util.utcnow()
 
-            _LOGGER.warning(
+            _LOGGER.debug(
                 "Zone %s: Cycle timed out after %.1f hours",
                 self._zone_id,
                 age.total_seconds() / 3600,

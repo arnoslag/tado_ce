@@ -2,6 +2,24 @@
 
 All notable changes to Tado CE will be documented in this file.
 
+## [4.0.0-beta.5] - 2026-04-17
+
+### Improvements
+- **Faster and more reliable data storage** — All integration data (zone states, weather, rate limits, schedules, and more) now uses Home Assistant's built-in storage system instead of managing its own JSON files. This means faster startup, no more blocking file reads on the main thread, and your data is automatically saved when HA shuts down — nothing gets lost between restarts.
+- **Seamless upgrade from any previous version** — Whether you're coming from v3.5.3 or any v4.0.0 beta, your existing data is automatically migrated to the new storage format on first startup. The old files are renamed (not deleted) so you can roll back if needed.
+- **HomeKit pairing survives storage changes** — HomeKit pairing credentials and device mappings are now stored alongside all other integration data, instead of in separate files that could get out of sync.
+- **HomeKit zone mapping now retries after first sync** — If your HomeKit bridge connects before the cloud has synced zone data (common on first install), the integration now automatically rebuilds the zone mapping after the first successful cloud sync instead of giving up.
+- **Simpler shutdown** — The integration no longer needs to manually save a dozen files when HA stops. HA's storage system handles it automatically, reducing the chance of data loss during unexpected shutdowns.
+- **Temperature and humidity sensors now show data freshness** — When HomeKit is connected, the temperature and humidity sensors now include `data_source` (showing "homekit" or "cloud") and `last_homekit_update` (showing when the bridge last sent data) attributes. This makes it easy to verify your sensors are receiving live data, even when humidity appears flat due to the 1% resolution of the HomeKit protocol.
+
+### Bug Fixes
+- **Fixed HomeKit zone mapping corruption that could send one zone's data to the wrong place** ([#224](https://github.com/hiall-fyi/tado_ce/issues/224) - @ChrisMarriott38) — If the cloud API returned incomplete zone data during the initial HomeKit pairing, a device could be mapped to a non-existent zone (e.g. zone "0" instead of zone "10"). That zone would then fall back to slower cloud data while its HomeKit readings went nowhere. The mapping now rejects invalid zone IDs, validates cached mappings against your actual zones on every startup, and automatically rebuilds if anything looks wrong.
+- **Fixed blocking I/O warning on startup when schedule data hasn't been fetched yet** ([Discussion #219](https://github.com/hiall-fyi/tado_ce/discussions/219) - @ChrisMarriott38) — If you restarted HA before the integration had fetched your zone schedules (common on first install), the smart comfort sensors would trigger a synchronous file read on the main thread, causing HA to log a blocking call warning. The data cache now remembers "file doesn't exist" so it doesn't keep trying to read from disk on every update cycle.
+
+### Internal
+- All integration data now stored through a single unified mechanism (HA Store), replacing three different approaches that had accumulated over previous versions.
+- Upgrading from v3.5.3 or any v4.0.0 beta automatically migrates your data — old files are kept as backups in case you need to roll back.
+
 ## [4.0.0-beta.4] - 2026-04-16
 
 ### Bug Fixes

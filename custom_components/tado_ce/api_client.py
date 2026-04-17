@@ -35,11 +35,8 @@ from .const import (
 )
 from .exceptions import TadoAuthError, TadoSyncError
 from .helpers import parse_iso_datetime, retry_delay
-from .storage import async_load_json, async_save_json
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from homeassistant.config_entries import ConfigEntry
     from homeassistant.core import HomeAssistant
 
@@ -139,36 +136,6 @@ class TadoApiClient(TadoAuthMixin):
         self._data_loader = data_loader
         self._config_entry = config_entry
 
-    def _get_data_file(self, base_name: str) -> Path:
-        """Get per-home data file path.
-
-        Args:
-            base_name: Base filename without extension (e.g., "zones", "weather")
-
-        Returns:
-            Path to the data file
-        """
-        from .const import get_data_file
-
-        return get_data_file(base_name, self._home_id)
-
-    def _extract_base_name(self, file_path: Path) -> str:
-        """Extract base name from per-home file path.
-
-        Strips the ``_{home_id}`` suffix from filenames to get the cache key.
-        e.g. ``zones_12345.json`` → ``zones``, ``weather_12345.json`` → ``weather``.
-
-        Args:
-            file_path: Path to the per-home JSON file.
-
-        Returns:
-            Base name suitable for DataLoader cache key.
-        """
-        stem = file_path.stem
-        if self._home_id and stem.endswith(f"_{self._home_id}"):
-            return stem[: -(len(self._home_id) + 1)]
-        return stem
-
     async def _ensure_home_id(self) -> str | None:
         """Ensure home_id is loaded and cached.
 
@@ -220,15 +187,17 @@ class TadoApiClient(TadoAuthMixin):
         _LOGGER.debug("Parsed rate limit: %s", self._rate_limit)
 
     async def _load_ratelimit(self) -> dict[str, Any]:
-        """Load rate limit file using executor I/O."""
-        try:
-            await self._ensure_home_id()
-            ratelimit_path = self._get_data_file("ratelimit")
-            data = await async_load_json(self._hass, ratelimit_path)  # type: ignore[arg-type]
+        """Load rate limit from DataLoader cache, with Store fallback."""
+        if self._data_loader is not None:
+            data = self._data_loader.get_cached("ratelimit")
             if data is not None and isinstance(data, dict):
                 return data
-        except (OSError, ValueError) as e:
-            _LOGGER.debug("Could not load ratelimit file: %s", e)
+            # Cache not yet populated — load directly from Store
+            store = self._data_loader._stores.get("ratelimit")
+            if store:
+                loaded = await store.async_load()
+                if loaded is not None and isinstance(loaded, dict):
+                    return loaded
         return {}
 
     def _calculate_test_mode_ratelimit(
@@ -694,14 +663,9 @@ class TadoApiClient(TadoAuthMixin):
                 data["test_mode_used"] = prev_used
 
     async def _save_ratelimit(self, data: dict[str, Any]) -> None:
-        """Save rate limit using executor I/O with atomic write."""
-        ratelimit_path = self._get_data_file("ratelimit")
-
-        await async_save_json(self._hass, ratelimit_path, data)  # type: ignore[arg-type]
-
-        # Write-through: update DataLoader cache (same pattern as _save_json_file)
+        """Save rate limit data via DataLoader Store."""
         if self._data_loader is not None:
-            self._data_loader.update_cache("ratelimit", data)
+            await self._data_loader.async_update_store("ratelimit", data)
 
     async def _handle_401(
         self, method: str, endpoint: str, attempt: int,
@@ -1071,10 +1035,11 @@ class TadoApiClient(TadoAuthMixin):
 
 
     async def _sync_and_save(self, endpoint: str, file_key: str, label: str) -> Any:
-        """Fetch an API endpoint and save to file. Returns data or None."""
+        """Fetch an API endpoint and save to Store. Returns data or None."""
         data = await self.api_call(endpoint)
         if data:
-            await self._save_json_file(self._get_data_file(file_key), data)
+            if self._data_loader is not None:
+                await self._data_loader.async_update_store(file_key, data)
             _LOGGER.debug("%s saved", label)
         return data
 
@@ -1158,7 +1123,7 @@ class TadoApiClient(TadoAuthMixin):
                     await self.save_ratelimit("error")
                     raise TadoSyncError("Failed to fetch zone states")
 
-                await self._save_json_file(self._get_data_file("zones"), zones_data)
+                await self._data_loader.async_update_store("zones", zones_data) if self._data_loader else None
                 _LOGGER.debug("Zone states saved (%s zones)", len((zones_data.get("zoneStates") or {}).keys()))
 
             if not zone_only:
@@ -1193,27 +1158,6 @@ class TadoApiClient(TadoAuthMixin):
             _LOGGER.exception("Tado CE async sync failed")
             await self.save_ratelimit("error")
             raise TadoSyncError(f"Sync failed: {e}") from e
-
-    async def _save_json_file(self, file_path: Path, data: dict[str, Any] | list[Any]) -> None:
-        """Save data to JSON file atomically using executor I/O.
-
-        After a successful write, updates the DataLoader in-memory cache
-        so that subsequent reads avoid disk I/O.
-
-        Args:
-            file_path: Path to save to.
-            data: Data to serialize as JSON.
-        """
-        await async_save_json(self._hass, file_path, data)  # type: ignore[arg-type]
-
-        # Write-through: update DataLoader cache
-        if self._data_loader is not None:
-            base_name = self._extract_base_name(file_path)
-            self._data_loader.update_cache(base_name, data)
-
-    async def _load_json_file(self, file_path: Path) -> dict[str, Any] | list[Any]:
-        """Load JSON file using executor I/O."""
-        return await async_load_json(self._hass, file_path)  # type: ignore[arg-type, return-value]
 
     async def _sync_offsets(self, zones_info: list[Any]) -> None:
         """Sync temperature offsets for all devices.
@@ -1251,7 +1195,8 @@ class TadoApiClient(TadoAuthMixin):
                         _LOGGER.warning("Failed to fetch offset for device %s: %s", serial, e)
 
         if offsets:
-            await self._save_json_file(self._get_data_file("offsets"), offsets)
+            if self._data_loader is not None:
+                await self._data_loader.async_update_store("offsets", offsets)
             _LOGGER.debug("Offsets saved (%s zones)", len(offsets))
 
     async def _sync_ac_capabilities(self, zones_info: list[Any]) -> None:
@@ -1264,18 +1209,11 @@ class TadoApiClient(TadoAuthMixin):
             zones_info: List of zone info dicts from API.
         """
         # Check if cache already exists - AC capabilities don't change
-        ac_caps_path = self._get_data_file("ac_capabilities")
-        try:
-            path_exists = await self._hass.async_add_executor_job(  # type: ignore[union-attr]
-                ac_caps_path.exists,
-            )
-            if path_exists:
-                existing = await self._load_json_file(ac_caps_path)
-                if existing:
-                    _LOGGER.debug("AC capabilities loaded from cache (%s zones)", len(existing))
-                    return
-        except (KeyError, TypeError, ValueError) as e:
-            _LOGGER.debug("AC capabilities cache corrupted, fetching fresh: %s", e)
+        if self._data_loader is not None:
+            cached = self._data_loader.get_cached("ac_capabilities")
+            if cached is not None:
+                _LOGGER.debug("AC capabilities loaded from cache (%s zones)", len(cached))
+                return
 
         ac_capabilities = {}
 
@@ -1297,7 +1235,8 @@ class TadoApiClient(TadoAuthMixin):
                 _LOGGER.warning("Failed to fetch AC capabilities for zone %s: %s", zone_id, e)
 
         if ac_capabilities:
-            await self._save_json_file(self._get_data_file("ac_capabilities"), ac_capabilities)
+            if self._data_loader is not None:
+                await self._data_loader.async_update_store("ac_capabilities", ac_capabilities)
             _LOGGER.debug("AC capabilities saved (%s zones)", len(ac_capabilities))
 
     async def add_meter_reading(self, reading: int, date: str | None = None) -> bool:

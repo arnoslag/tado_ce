@@ -13,7 +13,7 @@ from homeassistant.util import dt as dt_util
 
 from .heating_models import HeatingCycle
 from .helpers import parse_iso_datetime
-from .storage import load_json_sync
+from .storage import async_migrate_json_to_store
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -55,13 +55,15 @@ class HeatingCycleStorage:
                     self._home_id,
                     len(self._data.get("zones", {})),
                 )
-                # Clean up old JSON file if it still exists
-                await self._cleanup_old_json()
                 return
 
             # No Store data — try migrating from old JSON file
-            migrated = await self._migrate_from_json()
-            if migrated is not None:
+            migrated = await async_migrate_json_to_store(
+                self._hass, self._old_storage_path, self._store,
+                label="heating_cycles",
+            )
+            if migrated is not None and isinstance(migrated, dict):
+                migrated.pop("version", None)
                 self._data = self._migrate_data_format(migrated)
                 return
 
@@ -73,53 +75,6 @@ class HeatingCycleStorage:
         except OSError:
             _LOGGER.exception("Failed to load heating cycle storage")
             self._data = {"zones": {}}
-
-    async def _migrate_from_json(self) -> dict[str, Any] | None:
-        """Migrate old JSON file to Store.
-
-        Reads the old file, saves to Store, and renames old file to .json.migrated.
-        """
-        exists = await self._hass.async_add_executor_job(
-            self._old_storage_path.exists,
-        )
-        if not exists:
-            return None
-
-        old_data = await self._hass.async_add_executor_job(
-            load_json_sync, self._old_storage_path,
-        )
-        if old_data is None:
-            return None
-
-        # Remove "version" key — Store manages version externally
-        if isinstance(old_data, dict):
-            old_data.pop("version", None)
-            await self._store.async_save(old_data)
-
-        migrated_path = self._old_storage_path.with_suffix(".json.migrated")
-        await self._hass.async_add_executor_job(
-            self._old_storage_path.rename, migrated_path,
-        )
-        _LOGGER.info(
-            "Migrated heating cycle history → Store (old file renamed to %s)",
-            migrated_path,
-        )
-        return old_data  # type: ignore[return-value]
-
-    async def _cleanup_old_json(self) -> None:
-        """Rename old JSON file to .json.migrated if it still exists."""
-        exists = await self._hass.async_add_executor_job(
-            self._old_storage_path.exists,
-        )
-        if exists:
-            migrated_path = self._old_storage_path.with_suffix(".json.migrated")
-            await self._hass.async_add_executor_job(
-                self._old_storage_path.rename, migrated_path,
-            )
-            _LOGGER.info(
-                "Cleaned up old heating cycle file (renamed to %s)",
-                migrated_path,
-            )
 
     def _migrate_data_format(self, loaded_data: dict[str, Any]) -> dict[str, Any]:
         """Migrate old data format to new format.

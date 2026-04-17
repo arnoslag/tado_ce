@@ -6,7 +6,7 @@
 ![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2025.11%2B-blue?style=for-the-badge&logo=home-assistant) ![Python](https://img.shields.io/badge/Python-3.13%2B-blue?style=for-the-badge&logo=python&logoColor=white) ![Tado](https://img.shields.io/badge/Tado-V2%2FV3%2FV3%2B-orange?style=for-the-badge) ![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg?style=for-the-badge)
 
 <!-- Status Badges -->
-![Version](https://img.shields.io/badge/Version-4.0.0--beta.4-purple?style=for-the-badge) ![License](https://img.shields.io/badge/License-AGPL--3.0-blue?style=for-the-badge) ![Maintained](https://img.shields.io/badge/Maintained-Yes-green.svg?style=for-the-badge) ![Coverage](https://img.shields.io/badge/Coverage-98%25-brightgreen?style=for-the-badge)
+![Version](https://img.shields.io/badge/Version-4.0.0--beta.5-purple?style=for-the-badge) ![License](https://img.shields.io/badge/License-AGPL--3.0-blue?style=for-the-badge) ![Maintained](https://img.shields.io/badge/Maintained-Yes-green.svg?style=for-the-badge) ![Coverage](https://img.shields.io/badge/Coverage-98%25-brightgreen?style=for-the-badge)
 
 <!-- Community Badges -->
 ![GitHub stars](https://img.shields.io/github/stars/hiall-fyi/tado_ce?style=for-the-badge&logo=github) ![GitHub forks](https://img.shields.io/github/forks/hiall-fyi/tado_ce?style=for-the-badge&logo=github) ![GitHub issues](https://img.shields.io/github/issues/hiall-fyi/tado_ce?style=for-the-badge&logo=github) ![GitHub Release Date](https://img.shields.io/github/release-date/hiall-fyi/tado_ce?style=for-the-badge&logo=github)
@@ -237,7 +237,7 @@ Tado X devices use Matter over Thread - use the [Home Assistant Matter integrati
 | Limitation | Description |
 |------------|-------------|
 | Cloud for some data | Heating power, battery, schedules, hot water, and geofencing are only available from Tado's cloud. With HomeKit enabled, temperature and humidity come from your local network. |
-| Humidity resolution | HomeKit provides humidity at 1% resolution (whole numbers) due to the HAP protocol spec. The cloud API returns 0.1% precision. Temperature is unaffected (0.1°C from both sources). If you need smoother humidity, use the per-zone external sensor feature to point specific zones at a Zigbee humidity sensor. |
+| Humidity resolution | HomeKit provides humidity at 1% resolution (whole numbers) due to the HAP protocol spec. The cloud API returns 0.1% precision. Temperature is unaffected (0.1°C from both sources). Humidity charts may appear flat for hours when the value stays within the same 1% band — this is expected, not a sensor failure. Check the `last_homekit_update` attribute to verify data is flowing. If you need smoother humidity, use the per-zone external sensor feature to point specific zones at a Zigbee humidity sensor. |
 | Wireless Temp Sensors | Standalone temperature sensors (ST01) don't appear as HomeKit accessories — their data always comes from the cloud |
 | Single HomeKit pairing | Your bridge can only be paired with one HomeKit controller at a time. If you're using Apple Home, you'll need to unpair it first. You can re-expose climate entities to Apple Home via the HA HomeKit Bridge integration. |
 | No GPS | Device trackers only show home/not_home status |

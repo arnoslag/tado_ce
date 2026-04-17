@@ -5,11 +5,10 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
-from .const import get_data_file
 from .homekit_client import CHAR_MODEL, CHAR_SERIAL_NUMBER
-from .storage import async_load_json, async_save_json
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -18,6 +17,8 @@ _LOGGER = logging.getLogger(__name__)
 
 # Bridge model identifier — skip in mapping (not a zone device)
 _BRIDGE_MODEL: str = "IB01"
+
+_STORE_VERSION = 1
 
 
 def build_serial_mapping(
@@ -52,11 +53,18 @@ def build_serial_mapping(
     # Cloud: zone_id → set of device serials
     zone_serials: dict[str, set[str]] = {}
     for zone in cloud_zones_info:
-        zone_id = str(zone.get("id", ""))
-        if not zone_id:
+        raw_id = zone.get("id")
+        if not raw_id:  # Skip None, 0, "", False — Tado zone IDs start from 1
+            _LOGGER.debug("HomeKit: Skipping zone with invalid id: %s", raw_id)
             continue
+        zone_id = str(raw_id)
         devices = zone.get("devices") or []
         zone_serials[zone_id] = {d.get("serialNo", "") for d in devices} - {""}
+
+    _LOGGER.debug(
+        "HomeKit: Cloud zone serials: %s",
+        {zid: len(serials) for zid, serials in zone_serials.items()},
+    )
 
     # HomeKit: extract serial and model per accessory
     serial_to_zone: dict[str, str] = {}
@@ -117,19 +125,67 @@ def build_serial_mapping(
     }
 
 
+def validate_mapping(
+    mapping: dict[str, Any],
+    valid_zone_ids: set[str] | None = None,
+) -> bool:
+    """Validate a device mapping for integrity.
+
+    Checks:
+    - No zone "0" entries (invalid Tado zone ID)
+    - If valid_zone_ids provided, all mapped zones must be in the set
+
+    Args:
+        mapping: Device mapping dict with serial_to_zone and zone_to_aids.
+        valid_zone_ids: Optional set of known-good zone IDs from cloud API.
+
+    Returns:
+        True if mapping is valid, False if it should be rebuilt.
+    """
+    serial_to_zone = mapping.get("serial_to_zone", {})
+    zone_to_aids = mapping.get("zone_to_aids", {})
+
+    # Check for zone "0" — known corruption from earlier builds
+    if "0" in zone_to_aids or "0" in serial_to_zone.values():
+        _LOGGER.warning("HomeKit: Cached mapping contains invalid zone '0' — forcing rebuild")
+        return False
+
+    # Cross-check against cloud zone IDs if available
+    if valid_zone_ids is not None:
+        mapped_zone_ids = set(serial_to_zone.values())
+        invalid_zones = mapped_zone_ids - valid_zone_ids
+        if invalid_zones:
+            _LOGGER.warning(
+                "HomeKit: Cached mapping contains zone IDs not in cloud: %s — forcing rebuild",
+                invalid_zones,
+            )
+            return False
+
+    return True
+
+
 async def load_device_mapping(
     hass: HomeAssistant,
     home_id: str,
 ) -> dict[str, Any] | None:
-    """Load stored device mapping from disk.
+    """Load stored device mapping from HA Store.
 
     Returns:
         Mapping dict or None if not found.
     """
-    path = get_data_file("homekit_device_map", home_id)
-    data = await async_load_json(hass, path)
+    store: Store[dict[str, Any]] = Store(hass, _STORE_VERSION, f"tado_ce/homekit_device_map_{home_id}")
+    data = await store.async_load()
     if data and isinstance(data, dict):
         return data
+
+    # Try migrating from old JSON file
+    from .const import get_data_file
+    from .storage import async_migrate_json_to_store
+
+    old_path = get_data_file("homekit_device_map", home_id)
+    migrated = await async_migrate_json_to_store(hass, old_path, store, label="homekit_device_map")
+    if migrated and isinstance(migrated, dict):
+        return migrated
     return None
 
 
@@ -138,7 +194,17 @@ async def save_device_mapping(
     home_id: str,
     mapping: dict[str, Any],
 ) -> None:
-    """Save device mapping to disk."""
-    path = get_data_file("homekit_device_map", home_id)
-    await async_save_json(hass, path, mapping)
+    """Save device mapping to HA Store."""
+    store: Store[dict[str, Any]] = Store(hass, _STORE_VERSION, f"tado_ce/homekit_device_map_{home_id}")
+    await store.async_save(mapping)
     _LOGGER.debug("HomeKit: Saved device mapping for home %s", home_id)
+
+
+async def remove_device_mapping(
+    hass: HomeAssistant,
+    home_id: str,
+) -> None:
+    """Remove device mapping from HA Store."""
+    store: Store[dict[str, Any]] = Store(hass, _STORE_VERSION, f"tado_ce/homekit_device_map_{home_id}")
+    await store.async_remove()
+    _LOGGER.debug("HomeKit: Removed device mapping for home %s", home_id)

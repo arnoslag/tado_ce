@@ -5,17 +5,19 @@ from __future__ import annotations
 import asyncio
 from datetime import UTC, datetime, timedelta
 import logging
-from pathlib import Path
 from threading import Lock
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
 from .helpers import parse_iso_datetime
-from .storage import async_load_json, async_save_json, load_json_sync, save_json_sync
+from .storage import async_migrate_json_to_store, load_json_sync
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from homeassistant.core import HomeAssistant
 
     from .config_manager import ConfigurationManager
@@ -73,9 +75,9 @@ class APICallTracker:
 
         Args:
             hass: Home Assistant instance.
-            data_dir: Directory for storing call history
+            data_dir: Directory for storing call history (used for migration path only)
             retention_days: Number of days to retain history (0 = forever)
-            home_id: Optional home ID for per-home file paths
+            home_id: Optional home ID for per-home Store keys
             config_manager: Optional ConfigurationManager for config-based rate estimation
         """
         self._hass = hass
@@ -84,10 +86,17 @@ class APICallTracker:
         self.home_id = home_id
         self._config_manager = config_manager
 
-        # Use per-home file path if home_id provided
+        # HA Store for persistent storage
+        self._store: Store[dict[str, Any]] = Store(
+            hass,
+            1,
+            f"tado_ce/api_call_tracker_{home_id or 'default'}",
+        )
+
+        # Old JSON file path for migration
         from .const import get_data_file  # avoid circular import
 
-        self.history_file = get_data_file("api_call_history", home_id)
+        self._old_json_path = get_data_file("api_call_history", home_id)
 
         self._lock = Lock()
         self._async_lock = asyncio.Lock()
@@ -96,44 +105,42 @@ class APICallTracker:
         self._initialized = False
         self._dirty = False
 
-        # Do not call blocking mkdir here — __init__ runs in the event loop.
-        # Directory creation is deferred to _save_history_sync() / _save_history_async().
-
     def _load_history_sync(self) -> dict[str, Any]:
-        """Load call history from disk synchronously."""
+        """Load call history from old JSON file synchronously (fallback only)."""
         try:
-            data = load_json_sync(self.history_file)
+            data = load_json_sync(self._old_json_path)
             if data is not None:
                 return data  # type: ignore[return-value]
         except (OSError, HomeAssistantError):
             _LOGGER.exception("Failed to load API call history")
         return {}
 
-    def _save_history_sync(self, data: dict[str, Any]) -> None:
-        """Save call history to disk synchronously with atomic write."""
-        try:
-            save_json_sync(self.history_file, data)
-        except (OSError, TypeError):
-            _LOGGER.exception("Failed to save API call history")
-
     async def _load_history_async(self) -> dict[str, Any]:
-        """Load call history from disk using executor."""
+        """Load call history from Store, with JSON migration fallback."""
         try:
-            data = await async_load_json(self._hass, self.history_file)
+            data = await self._store.async_load()
             if data is not None:
-                return data  # type: ignore[return-value]
+                return data
+
+            # Try migrating from old JSON file
+            migrated = await async_migrate_json_to_store(
+                self._hass, self._old_json_path, self._store,
+                label="api_call_tracker",
+            )
+            if migrated is not None and isinstance(migrated, dict):
+                return migrated
         except (OSError, HomeAssistantError):
             _LOGGER.exception("Failed to load API call history")
         return {}
 
     async def _save_history_async(self, data: dict[str, Any]) -> None:
-        """Save call history to disk using executor with atomic write.
+        """Save call history to Store.
 
         Uses asyncio.Lock to serialize concurrent writes.
         """
         async with self._async_lock:
             try:
-                await async_save_json(self._hass, self.history_file, data)
+                await self._store.async_save(data)
             except (OSError, TypeError):
                 _LOGGER.exception("Failed to save API call history")
 
@@ -163,12 +170,13 @@ class APICallTracker:
     def _ensure_initialized_sync(self) -> None:
         """Ensure tracker is initialized synchronously.
 
+        Falls back to reading old JSON file if Store not yet loaded.
         Should only be used when async_init() cannot be called.
         """
         if not self._initialized:
             self._call_history = self._load_history_sync()
             self._initialized = True
-            _LOGGER.debug("Loaded API call history (sync): %s dates", len(self._call_history))
+            _LOGGER.debug("Loaded API call history (sync fallback): %s dates", len(self._call_history))
 
     @property
     def needs_save(self) -> bool:

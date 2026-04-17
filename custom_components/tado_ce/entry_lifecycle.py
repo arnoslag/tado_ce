@@ -67,20 +67,37 @@ async def async_create_entry_components(
     # Create HomeKit client if enabled
     homekit_client = None
     if config_manager.get_homekit_enabled():
-        from .const import get_data_file
         from .homekit_client import HomeKitClient
 
-        pairing_path = get_data_file("homekit_pairing", home_id)
-        homekit_client = HomeKitClient(hass, home_id or "default", pairing_path)
+        homekit_client = HomeKitClient(hass, home_id or "default")
         connected = await homekit_client.async_connect()
         if connected:
             _LOGGER.info("Tado CE: HomeKit connected to bridge")
-            from .homekit_mapping import build_serial_mapping, load_device_mapping, save_device_mapping
+            from .homekit_mapping import (
+                build_serial_mapping,
+                load_device_mapping,
+                save_device_mapping,
+                validate_mapping,
+            )
 
             mapping = await load_device_mapping(hass, home_id or "default")
             serial_to_zone = mapping.get("serial_to_zone", {}) if mapping else {}
 
-            # Rebuild mapping if empty (first connect after pairing, or stale file)
+            # Validate cached mapping against cloud zone IDs
+            if serial_to_zone and mapping:
+                # Load zones_info for validation
+                if data_loader:
+                    zi_for_validation = await hass.async_add_executor_job(data_loader.load_zones_info_file)
+                else:
+                    zi_for_validation = None
+                from .const import get_climate_zone_ids
+
+                valid_ids = get_climate_zone_ids(zi_for_validation or []) if zi_for_validation else None
+                if not validate_mapping(mapping, valid_zone_ids=valid_ids):
+                    _LOGGER.info("Tado CE: HomeKit cached mapping invalid — rebuilding")
+                    serial_to_zone = {}  # Force rebuild below
+
+            # Rebuild mapping if empty or invalid
             if not serial_to_zone:
                 _LOGGER.info("Tado CE: HomeKit mapping empty — rebuilding from accessories + cloud zones")
                 accessories = await homekit_client.async_list_accessories()
@@ -100,6 +117,11 @@ async def async_create_entry_components(
                     mapping.get("zone_to_aids", {}),  # type: ignore[union-attr]
                 )
                 _LOGGER.info("Tado CE: HomeKit zone mapping loaded (%d zones)", len(serial_to_zone))
+                _LOGGER.debug(
+                    "HomeKit: Mapping detail — serial_to_zone=%s, zone_to_aids=%s",
+                    mapping.get("serial_to_zone", {}),  # type: ignore[union-attr]
+                    mapping.get("zone_to_aids", {}),  # type: ignore[union-attr]
+                )
 
                 # Log mapped vs unmapped climate zones for diagnostics
                 from .const import get_climate_zone_ids
@@ -114,7 +136,44 @@ async def async_create_entry_components(
                 if unmapped:
                     _LOGGER.info("HomeKit: Zones without local mapping (using cloud): %s", unmapped)
             else:
-                _LOGGER.warning("Tado CE: HomeKit connected but no zone mapping — local data unavailable")
+                _LOGGER.warning("Tado CE: HomeKit connected but no zone mapping — scheduling deferred rebuild")
+
+                # Schedule one-shot retry after first coordinator refresh
+                async def _deferred_homekit_rebuild(
+                    coord: TadoDataUpdateCoordinator,
+                    _hk_client: Any = homekit_client,
+                    _hass: HomeAssistant = hass,
+                    _home_id: str | None = home_id,
+                ) -> None:
+                    """Rebuild HomeKit mapping after first successful coordinator poll."""
+                    from .homekit_mapping import build_serial_mapping, save_device_mapping
+
+                    zi = coord.data.get("zones_info") or []
+                    if not zi:
+                        _LOGGER.warning("HomeKit: Deferred rebuild failed — still no zones_info")
+                        return
+                    accs = await _hk_client.async_list_accessories()
+                    if not accs:
+                        _LOGGER.warning("HomeKit: Deferred rebuild failed — no accessories")
+                        return
+                    new_mapping = build_serial_mapping(accs, zi)
+                    s2z = new_mapping.get("serial_to_zone", {})
+                    if not s2z:
+                        _LOGGER.warning("HomeKit: Deferred rebuild produced empty mapping — local data unavailable")
+                        return
+                    _hk_client.set_zone_mapping(
+                        new_mapping.get("serial_to_zone", {}),
+                        new_mapping.get("zone_to_aids", {}),
+                    )
+                    await save_device_mapping(_hass, _home_id or "default", new_mapping)
+                    _LOGGER.info("HomeKit: Deferred rebuild succeeded — %d zones mapped", len(s2z))
+
+                return {
+                    "api_tracker": api_tracker,
+                    "api_client": api_client,
+                    "homekit_client": homekit_client,
+                    "_deferred_homekit_rebuild": _deferred_homekit_rebuild,
+                }
         else:
             _LOGGER.warning("Tado CE: HomeKit connection failed, using cloud only")
 
@@ -162,18 +221,14 @@ async def async_cleanup_entry_components(
         _LOGGER.debug("Cleaned up per-entry TadoApiClient")
 
     # Save data before cleanup
+    # Note: smart_comfort_cache and bridge_health use HA Store debounced save,
+    # which auto-flushes on HA shutdown. Explicit saves here handle integration
+    # reload (where EVENT_HOMEASSISTANT_FINAL_WRITE does not fire).
     scm = _attr("smart_comfort_manager")
     if scm is not None:
         scm.save_to_file()
         coordinator.smart_comfort_manager = None
         _LOGGER.debug("Cleaned up per-entry SmartComfortManager")
-
-    # Save bridge health state before cleanup
-    bht = _attr("bridge_health_tracker")
-    dl = _attr("data_loader")
-    if bht is not None and dl is not None:
-        dl.save_bridge_health(bht.to_dict())
-        _LOGGER.debug("Saved bridge health state on cleanup")
 
     apm = _attr("adaptive_preheat_manager")
     if apm is not None:

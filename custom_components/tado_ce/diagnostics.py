@@ -83,12 +83,8 @@ async def async_get_config_entry_diagnostics(
         all_climate = get_climate_zone_ids(zones_info)
         homekit_diag["unmapped_zones"] = max(0, len(all_climate) - mapped)
         homekit_diag["cache_refresh_interval_seconds"] = HOMEKIT_CACHE_REFRESH_SECONDS
-        # Check pairing file existence without exposing credentials
-        from .const import get_data_file
-
-        home_id = entry.data.get("home_id") or "default"
-        pairing_path = get_data_file("homekit_pairing", home_id)
-        homekit_diag["pairing_file_exists"] = pairing_path.exists()
+        # Check pairing store existence without exposing credentials
+        homekit_diag["pairing_configured"] = client.is_connected or client.pairing is not None
 
     return {
         "entry": {

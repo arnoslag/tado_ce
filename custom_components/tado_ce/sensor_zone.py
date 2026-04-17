@@ -126,6 +126,17 @@ class TadoTemperatureSensor(TadoZoneSensor):
         self._attr_device_class = SensorDeviceClass.TEMPERATURE
         self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
         self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._data_source: str = "cloud"
+        self._last_homekit_update: str | None = None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return extra state attributes."""
+        attrs = self._base_zone_attributes
+        attrs["data_source"] = self._data_source
+        if self._last_homekit_update is not None:
+            attrs["last_homekit_update"] = self._last_homekit_update
+        return attrs
 
     @callback
     def _handle_coordinator_update(self) -> None:
@@ -133,6 +144,7 @@ class TadoTemperatureSensor(TadoZoneSensor):
         zone_data = self._get_zone_data()
         if zone_data:
             self._update_from_zone_data(zone_data)
+            self._update_homekit_attributes()
             self._attr_available = self._attr_native_value is not None
         else:
             self._attr_available = False
@@ -140,9 +152,26 @@ class TadoTemperatureSensor(TadoZoneSensor):
 
     @callback
     def _update_from_zone_data(self, zone_data: dict[str, Any]) -> None:
-        # Use 'or {}' pattern for null safety (API may return null for these fields)
         sensor_data = zone_data.get("sensorDataPoints") or {}
         self._attr_native_value = (sensor_data.get("insideTemperature") or {}).get("celsius")
+
+    def _update_homekit_attributes(self) -> None:
+        """Update data_source and last_homekit_update from HomeKit provider."""
+        try:
+            provider = self.coordinator.homekit_provider
+            reconciler = self.coordinator.state_reconciler
+            if provider and reconciler and provider.is_connected:
+                reconciler.local_provider = provider
+                result = reconciler.merge_zone_temperature(self._zone_id, None)
+                if isinstance(result, tuple) and len(result) == 2 and result[1] == "homekit":
+                    self._data_source = "homekit"
+                    _, ts = provider.get_temperature(self._zone_id)
+                    self._last_homekit_update = ts.isoformat() if ts else None
+                    return
+        except (TypeError, ValueError, AttributeError):
+            pass
+        self._data_source = "cloud"
+        self._last_homekit_update = None
 
 
 class TadoHumiditySensor(TadoZoneSensor):
@@ -163,6 +192,17 @@ class TadoHumiditySensor(TadoZoneSensor):
         self._attr_device_class = SensorDeviceClass.HUMIDITY
         self._attr_native_unit_of_measurement = PERCENTAGE
         self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._data_source: str = "cloud"
+        self._last_homekit_update: str | None = None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return extra state attributes."""
+        attrs = self._base_zone_attributes
+        attrs["data_source"] = self._data_source
+        if self._last_homekit_update is not None:
+            attrs["last_homekit_update"] = self._last_homekit_update
+        return attrs
 
     @callback
     def _handle_coordinator_update(self) -> None:
@@ -170,6 +210,7 @@ class TadoHumiditySensor(TadoZoneSensor):
         zone_data = self._get_zone_data()
         if zone_data:
             self._update_from_zone_data(zone_data)
+            self._update_homekit_attributes()
             self._attr_available = self._attr_native_value is not None
         else:
             self._attr_available = False
@@ -177,9 +218,26 @@ class TadoHumiditySensor(TadoZoneSensor):
 
     @callback
     def _update_from_zone_data(self, zone_data: dict[str, Any]) -> None:
-        # Use 'or {}' pattern for null safety (API may return null for these fields)
         sensor_data = zone_data.get("sensorDataPoints") or {}
         self._attr_native_value = (sensor_data.get("humidity") or {}).get("percentage")
+
+    def _update_homekit_attributes(self) -> None:
+        """Update data_source and last_homekit_update from HomeKit provider."""
+        try:
+            provider = self.coordinator.homekit_provider
+            reconciler = self.coordinator.state_reconciler
+            if provider and reconciler and provider.is_connected:
+                reconciler.local_provider = provider
+                result = reconciler.merge_zone_humidity(self._zone_id, None)
+                if isinstance(result, tuple) and len(result) == 2 and result[1] == "homekit":
+                    self._data_source = "homekit"
+                    _, ts = provider.get_humidity(self._zone_id)
+                    self._last_homekit_update = ts.isoformat() if ts else None
+                    return
+        except (TypeError, ValueError, AttributeError):
+            pass
+        self._data_source = "cloud"
+        self._last_homekit_update = None
 
 
 class TadoHeatingPowerSensor(TadoZoneSensor):

@@ -14,7 +14,7 @@ from homeassistant.util import dt as dt_util
 from .format_helpers import format_insight_type as _fmt_insight_type
 from .format_helpers import format_priority as _fmt_priority
 from .helpers import parse_iso_datetime
-from .storage import load_json_sync
+from .storage import async_migrate_json_to_store
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -77,17 +77,20 @@ class InsightHistoryTracker:
             Number of entries loaded.
         """
         try:
-            data = await self._store.async_load()
+            data: dict[str, Any] | list[Any] | None = await self._store.async_load()
 
             # Try migrating from old JSON file if Store is empty
             if data is None:
-                data = await self._migrate_from_json()
-            else:
-                # Clean up old JSON file if it still exists
-                await self._cleanup_old_json()
+                data = await async_migrate_json_to_store(
+                    self._hass, self._old_storage_path, self._store,
+                    label="insight_history",
+                )
 
             if data is None:
                 _LOGGER.debug("No insight history file found, starting fresh")
+                return 0
+            if not isinstance(data, dict):
+                _LOGGER.warning("Insight history has unexpected format, starting fresh")
                 return 0
             self._entries = data.get("entries", {})
             _LOGGER.debug(
@@ -102,47 +105,6 @@ class InsightHistoryTracker:
             )
             self._entries = {}
             return 0
-
-    async def _migrate_from_json(self) -> dict[str, Any] | None:
-        """Migrate old JSON file to Store."""
-        exists = await self._hass.async_add_executor_job(
-            self._old_storage_path.exists,
-        )
-        if not exists:
-            return None
-
-        old_data = await self._hass.async_add_executor_job(
-            load_json_sync, self._old_storage_path,
-        )
-        if old_data is None or not isinstance(old_data, dict):
-            return None
-
-        await self._store.async_save(old_data)
-
-        migrated_path = self._old_storage_path.with_suffix(".json.migrated")
-        await self._hass.async_add_executor_job(
-            self._old_storage_path.rename, migrated_path,
-        )
-        _LOGGER.info(
-            "Migrated insight history → Store (old file renamed to %s)",
-            migrated_path,
-        )
-        return old_data
-
-    async def _cleanup_old_json(self) -> None:
-        """Rename old JSON file to .json.migrated if it still exists."""
-        exists = await self._hass.async_add_executor_job(
-            self._old_storage_path.exists,
-        )
-        if exists:
-            migrated_path = self._old_storage_path.with_suffix(".json.migrated")
-            await self._hass.async_add_executor_job(
-                self._old_storage_path.rename, migrated_path,
-            )
-            _LOGGER.info(
-                "Cleaned up old insight history file (renamed to %s)",
-                migrated_path,
-            )
 
     async def async_save(self) -> bool:
         """Save history to Store. Only writes if dirty.

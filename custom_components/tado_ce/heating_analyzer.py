@@ -116,7 +116,7 @@ class HeatingCycleAnalyzer:
         heating_rate = metrics["heating_rate"]
 
         if heating_rate <= 0:
-            _LOGGER.warning("Invalid heating rate: %.3f", heating_rate)
+            _LOGGER.debug("Invalid heating rate: %.3f", heating_rate)
             return None
 
         # Preheat time = Inertia time + (ΔT / heating rate)
