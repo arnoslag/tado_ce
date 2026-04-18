@@ -49,9 +49,11 @@ def merge_homekit_into_zone_data(
     zone_id: str,
     coordinator: TadoDataUpdateCoordinator,
 ) -> dict[str, Any]:
-    """Overlay fresh HomeKit temperature/humidity onto cloud zone data.
+    """Overlay fresh HomeKit temperature onto cloud zone data.
 
     Returns a shallow copy of zone_data with sensorDataPoints merged.
+    Temperature uses HomeKit when fresh (real-time, accurate).
+    Humidity always uses cloud (bridge humidity is stale/unreliable).
     If HomeKit is not connected or has no fresh data, returns zone_data unchanged.
 
     Safe to call from any entity regardless of base class.

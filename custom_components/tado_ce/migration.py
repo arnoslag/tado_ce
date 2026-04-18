@@ -111,48 +111,6 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) ->
     return True
 
 
-async def async_handle_test_mode_transition(
-    hass: HomeAssistant,
-    entry: ConfigEntry,
-) -> None:
-    """Check if Test Mode was just disabled and refresh rate limit data.
-
-    When Test Mode is disabled, triggers an API call to refresh rate limit
-    data with real values instead of relying on backup.
-    """
-    from .const import get_data_file
-
-    home_id = entry.data.get("home_id")
-    ratelimit_path = get_data_file("ratelimit", home_id)
-
-    prev_test_mode = False
-    path_exists = await hass.async_add_executor_job(ratelimit_path.exists)
-    if path_exists:
-        from .storage import async_load_json
-
-        ratelimit_data = await async_load_json(hass, ratelimit_path)
-        if ratelimit_data is not None and isinstance(ratelimit_data, dict):
-            prev_test_mode = ratelimit_data.get("test_mode", False)
-
-    new_test_mode = entry.options.get("test_mode_enabled", False)
-    _LOGGER.debug("Test Mode transition check: prev=%s, new=%s", prev_test_mode, new_test_mode)
-
-    if prev_test_mode and not new_test_mode:
-        _LOGGER.info("Tado CE: Test Mode disabled - triggering API refresh for real rate limit data")
-
-        entry_data = getattr(entry, "runtime_data", None)
-        client = entry_data.api_client if entry_data else None
-
-        if client is None:
-            _LOGGER.warning("API client not ready for %s", entry.entry_id)
-        else:
-            try:
-                await client.get_me()
-                _LOGGER.info("Tado CE: API refresh completed - rate limit data updated with real values")
-            except Exception as e:
-                _LOGGER.warning("Tado CE: API refresh failed (will use backup): %s", e)
-
-
 async def async_deduplicate_entries(
     hass: HomeAssistant,
     entry: ConfigEntry,

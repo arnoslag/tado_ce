@@ -193,6 +193,17 @@ async def _async_wire_and_start_coordinator(
 
     await coordinator.async_config_entry_first_refresh()
 
+    # Log a user-friendly summary after first successful poll
+    zones_info = coordinator.data.get("zones_info") or []
+    zone_count = len(zones_info)
+    hk_status = "connected" if (coordinator.homekit_provider and coordinator.homekit_provider.is_connected) else "off"
+    weather_status = "on" if coordinator.config_manager.get_weather_enabled() else "off"
+    interval = int(coordinator.update_interval.total_seconds() // 60) if coordinator.update_interval else "?"
+    _LOGGER.info(
+        "Tado CE: Ready — %d zones, HomeKit=%s, weather=%s, polling=%sm",
+        zone_count, hk_status, weather_status, interval,
+    )
+
     # Deferred HomeKit mapping rebuild (if empty mapping at setup time)
     if components is not None:
         deferred_rebuild = components.get("_deferred_homekit_rebuild")
@@ -255,6 +266,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     from .migration import async_migrate_entity_platforms
 
     await async_migrate_entity_platforms(hass, entry)
+
+    # Remove deprecated Test Mode switch entity (removed in v4.0.0-beta.7)
+    from homeassistant.helpers import entity_registry as er
+
+    ent_reg = er.async_get(hass)
+    home_id = entry.data.get("home_id", "")
+    test_mode_uid = f"tado_ce_{home_id}_test_mode_enabled"
+    test_mode_entity = ent_reg.async_get_entity_id("switch", "tado_ce", test_mode_uid)
+    if test_mode_entity:
+        ent_reg.async_remove(test_mode_entity)
+        _LOGGER.info("Tado CE: Removed deprecated Test Mode entity (%s)", test_mode_entity)
+
+    # Clean up deprecated test_mode_enabled option key
+    if "test_mode_enabled" in entry.options:
+        new_options = {k: v for k, v in entry.options.items() if k != "test_mode_enabled"}
+        hass.config_entries.async_update_entry(entry, options=new_options)
+        _LOGGER.info("Tado CE: Removed deprecated test_mode_enabled option")
 
     # Ensure data directory exists
     def _ensure_data_dir() -> None:
@@ -354,7 +382,7 @@ _last_options_snapshot: dict[str, dict[str, Any]] = {}
 
 # Keys that take effect at runtime via config_manager real-time reads.
 # Changes to ONLY these keys skip the full integration reload.
-_RUNTIME_ONLY_KEYS: frozenset[str] = frozenset({"test_mode_enabled", "quota_reserve_enabled"})
+_RUNTIME_ONLY_KEYS: frozenset[str] = frozenset({"quota_reserve_enabled"})
 
 
 async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
@@ -364,7 +392,7 @@ async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     data-only changes like refresh token rotation. We compare the current
     options against the snapshot taken at setup to skip unnecessary reloads.
 
-    Runtime-only keys (test_mode_enabled, quota_reserve_enabled) are read
+    Runtime-only keys (quota_reserve_enabled) are read
     in real-time by config_manager, so changes to ONLY those keys skip
     the expensive full reload.
     """
@@ -396,17 +424,11 @@ async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     _LOGGER.info("Tado CE: Options changed, reloading integration...")
 
     from .entity_cleanup import cleanup_disabled_feature_entities
-    from .migration import async_handle_test_mode_transition
 
     try:
         cleanup_disabled_feature_entities(hass, entry)
     except (KeyError, TypeError, ValueError) as e:
         _LOGGER.warning("Tado CE: Could not cleanup entities: %s", e)
-
-    try:
-        await async_handle_test_mode_transition(hass, entry)
-    except (KeyError, TypeError, ValueError) as e:
-        _LOGGER.debug("Tado CE: Could not check Test Mode transition: %s", e)
 
     await hass.config_entries.async_reload(entry.entry_id)
 
@@ -422,6 +444,8 @@ async def _async_shutdown_coordinator(coordinator: TadoDataUpdateCoordinator) ->
     Auxiliary stores (wc_state, homekit_savings, bridge_health, etc.) use
     async_delay_save and are auto-flushed by HA Store on shutdown.
     """
+    _LOGGER.info("Tado CE: Shutting down (persisting state...)")
+
     if hasattr(coordinator, "refresh_handler") and coordinator.refresh_handler:
         coordinator.refresh_handler.cancel()
         coordinator.refresh_handler = None  # type: ignore[assignment]

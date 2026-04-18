@@ -20,7 +20,6 @@ DEFAULT_WEATHER_ENABLED = False
 DEFAULT_MOBILE_DEVICES_ENABLED = False
 DEFAULT_MOBILE_DEVICES_FREQUENT_SYNC = False
 DEFAULT_OFFSET_ENABLED = False
-DEFAULT_TEST_MODE_ENABLED = False
 DEFAULT_QUOTA_RESERVE_ENABLED = True  # Quota Reserve Protection default ON
 DEFAULT_DAY_START_HOUR = 7
 DEFAULT_NIGHT_START_HOUR = 23
@@ -244,16 +243,6 @@ class ConfigurationManager:
             True if home state should be synced, False to save API calls
         """
         return self._get_option("home_state_sync_enabled", False)  # type: ignore[no-any-return]
-
-    def get_test_mode_enabled(self) -> bool:
-        """Check if Test Mode is enabled (enforce 100 API limit).
-
-        Note: Uses _get_option() for real-time value after user toggles.
-
-        Returns:
-            True if Test Mode is active, False otherwise
-        """
-        return self._get_option("test_mode_enabled", DEFAULT_TEST_MODE_ENABLED)  # type: ignore[no-any-return]
 
     def get_quota_reserve_enabled(self) -> bool:
         """Check if Quota Reserve Protection is enabled.
@@ -749,7 +738,6 @@ class ConfigurationManager:
             "mobile_devices_enabled": self.get_mobile_devices_enabled(),
             "mobile_devices_frequent_sync": self.get_mobile_devices_frequent_sync(),
             "offset_enabled": self.get_offset_enabled(),
-            "test_mode_enabled": self.get_test_mode_enabled(),
             "day_start_hour": self.get_day_start_hour(),
             "night_start_hour": self.get_night_start_hour(),
             "custom_day_interval": self.get_custom_day_interval(),

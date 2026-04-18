@@ -1,6 +1,6 @@
-# Tado CE — Entity Reference (v4.0.0-beta.2)
+# Tado CE — Entity Reference (v4.0.0-beta.7)
 
-This document lists all 87 entity types in Tado CE, organised by function.
+This document lists all 86 entity types in Tado CE, organised by function.
 
 > **v3.1.0 change:** Per-zone configuration (overlay mode, timer, min/max temp, temp offset, heating type, window type, sensitivity, external sensors, etc.) moved from 11 HA entities per zone to a centralised Options Flow menu. Zero config entities are created — settings live in **Settings → Tado CE → Configure → Zone Configuration**.
 
@@ -183,14 +183,12 @@ This document lists all 87 entity types in Tado CE, organised by function.
 
 | # | Function | CE? | v2.3.1 Name | v3.0 Name |
 |---|----------|-----|-------------|-----------|
-| 39 | Test mode toggle | ✓ | — | Test Mode |
 | 40 | Quota reserve toggle | ✓ | — | Quota Reserve |
 
 ### Entity IDs
 
 | # | v2.3.1 entity_id | v3.0 entity_id (fresh) |
 |---|-------------------|------------------------|
-| 39 | — | `switch.tado_ce_hub_ce_test_mode` |
 | 40 | — | `switch.tado_ce_hub_ce_quota_reserve` |
 
 ---

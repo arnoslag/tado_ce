@@ -180,7 +180,7 @@ class HomeKitClient:
             _LOGGER.info("HomeKit: Connected to bridge (home %s)", self._home_id)
             return True
         except Exception:
-            _LOGGER.exception("HomeKit: Connection failed (home %s)", self._home_id)
+            _LOGGER.warning("HomeKit: Connection failed (home %s)", self._home_id, exc_info=True)
             self._pairing = None
             self._is_connected = False
             return False
@@ -247,7 +247,7 @@ class HomeKitClient:
                         try:
                             await cb()
                         except Exception:
-                            _LOGGER.debug("HomeKit: Reconnect callback failed", exc_info=True)
+                            _LOGGER.warning("HomeKit: Reconnect callback failed", exc_info=True)
                     return
             except Exception:
                 _LOGGER.debug("HomeKit: Reconnect attempt %d failed", backoff_idx + 1, exc_info=True)

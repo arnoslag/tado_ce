@@ -335,9 +335,6 @@
           },
           "status": {
             "name": "Status"
-          },
-          "test_mode": {
-            "name": "Test mode"
           }
         }
       },
@@ -364,9 +361,6 @@
           },
           "current_interval_minutes": {
             "name": "Current interval (min)"
-          },
-          "test_mode": {
-            "name": "Test mode"
           }
         }
       },
@@ -435,9 +429,6 @@
           },
           "is_night_mode": {
             "name": "Night mode"
-          },
-          "test_mode": {
-            "name": "Test mode"
           }
         }
       },
@@ -1073,9 +1064,6 @@
           }
         }
       },
-      "test_mode": {
-        "name": "Test Mode"
-      },
       "quota_reserve": {
         "name": "Quota Reserve"
       }
@@ -1686,8 +1674,8 @@
             "data_description": {
               "day_start_hour": "When daytime polling starts (0–23, default: 7)",
               "night_start_hour": "When nighttime polling starts — polls less often at night (0–23, default: 23)",
-              "custom_day_interval": "Override automatic daytime polling with a fixed interval (1–1440 min, leave empty for auto)",
-              "custom_night_interval": "Override automatic nighttime polling with a fixed interval (1–1440 min, leave empty for auto)",
+              "custom_day_interval": "Override automatic daytime polling with a fixed interval (1–1440 min, 0 for auto)",
+              "custom_night_interval": "Override automatic nighttime polling with a fixed interval (1–1440 min, 0 for auto)",
               "refresh_debounce_seconds": "Wait this long after a change before fetching fresh data from Tado (1–60s)",
               "api_history_retention_days": "How many days of API call history to keep for the usage chart (0 = forever)",
               "quota_reserve_enabled": "Automatically pause polling when your API quota is running low. Only disable if you know what you're doing.",

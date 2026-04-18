@@ -700,11 +700,15 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity,
             else:
                 write_tracker.record_failure()
                 self.coordinator._homekit_write_fallbacks += 1
+                _LOGGER.info(
+                    "%s: HomeKit write failed, falling back to cloud API",
+                    self._zone_name,
+                )
 
         if local_success:
             self.coordinator.record_homekit_write_saved(self._zone_id)
             self._last_write_source = "homekit"
-            _LOGGER.debug("Set %s to %s°C via homekit", self._zone_name, temperature)
+            _LOGGER.info("Set %s to %s°C via HomeKit", self._zone_name, temperature)
             heating_cycle_coordinator = self.coordinator.heating_cycle_coordinator
             if heating_cycle_coordinator:
                 await heating_cycle_coordinator.on_zone_update(
@@ -879,11 +883,15 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity,
                 else:
                     write_tracker.record_failure()
                     self.coordinator._homekit_write_fallbacks += 1
+                    _LOGGER.info(
+                        "%s: HomeKit set_hvac_mode HEAT failed, falling back to cloud API",
+                        self._zone_name,
+                    )
 
             if local_success:
                 self.coordinator.record_homekit_write_saved(self._zone_id)
                 self._last_write_source = "homekit"
-                _LOGGER.debug("Set %s to HEAT via homekit", self._zone_name)
+                _LOGGER.info("Set %s to HEAT via HomeKit", self._zone_name)
                 self._schedule_cloud_verification()
                 return
 
@@ -939,11 +947,15 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity,
                 else:
                     write_tracker.record_failure()
                     self.coordinator._homekit_write_fallbacks += 1
+                    _LOGGER.info(
+                        "%s: HomeKit set_hvac_mode OFF failed, falling back to cloud API",
+                        self._zone_name,
+                    )
 
             if local_success:
                 self.coordinator.record_homekit_write_saved(self._zone_id)
                 self._last_write_source = "homekit"
-                _LOGGER.debug("Set %s to OFF via homekit", self._zone_name)
+                _LOGGER.info("Set %s to OFF via HomeKit", self._zone_name)
                 self._schedule_cloud_verification()
                 return
 

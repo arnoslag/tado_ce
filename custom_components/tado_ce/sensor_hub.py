@@ -181,25 +181,13 @@ class TadoApiUsageSensor(TadoHubSensor):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return extra state attributes."""
-        test_mode = self._data.get("test_mode", False)
-
-        attrs = {
+        attrs: dict[str, Any] = {
             "limit": self._data.get("limit"),
             "remaining": self._data.get("remaining"),
             "percentage_used": self._data.get("percentage_used"),
             "last_updated": self._data.get("last_updated"),
             "status": self._data.get("status"),
-            "test_mode": test_mode,
         }
-
-        if test_mode:
-            attrs["test_mode_info"] = "Simulated 100-call API tier"
-            test_mode_start = self._data.get("test_mode_start_time")
-            test_mode_used = self._data.get("test_mode_used")
-            if test_mode_start:
-                attrs["test_mode_start_time"] = test_mode_start
-            if test_mode_used is not None:
-                attrs["test_mode_used"] = test_mode_used
 
         if self._call_history:
             attrs["call_history"] = self._call_history
@@ -269,8 +257,6 @@ class TadoApiResetSensor(TadoHubSensor):
         self._status: str | None = None
         self._next_poll: str | None = None
         self._current_interval: int | None = None
-        self._test_mode: bool = False
-        self._test_mode_start_time: str | None = None  # Test Mode cycle start
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -279,17 +265,11 @@ class TadoApiResetSensor(TadoHubSensor):
             "time_until_reset": self._reset_human,
             "reset_seconds": self._reset_seconds,
             "reset_at": self._reset_at,
-            "last_reset": self._last_reset,  # When last reset happened
+            "last_reset": self._last_reset,
             "status": self._status,
             "next_poll": self._next_poll,
             "current_interval_minutes": self._current_interval,
-            "test_mode": self._test_mode,
         }
-
-        if self._test_mode:
-            attrs["test_mode_info"] = "Simulated 24h cycle from enable time"
-            if self._test_mode_start_time:
-                attrs["test_mode_start_time"] = self._test_mode_start_time
 
         return attrs
 
@@ -344,15 +324,6 @@ class TadoApiResetSensor(TadoHubSensor):
             if not data:
                 return
 
-            self._test_mode = data.get("test_mode", False)
-
-            if data.get("test_mode_start_time") and self._test_mode:
-                self._test_mode_start_time = self._parse_local_timestamp(
-                    data.get("test_mode_start_time"), "test_mode_start_time",
-                ) or data.get("test_mode_start_time")
-            else:
-                self._test_mode_start_time = None
-
             self._reset_human = data.get("reset_human")
             self._reset_seconds = data.get("reset_seconds")
             self._status = data.get("status", "unknown")
@@ -385,7 +356,6 @@ class TadoApiLimitSensor(TadoHubSensor):
         super().__init__(coordinator, "sensor_api_limit")
         self._attr_native_unit_of_measurement = "calls"
         self._attr_extra_state_attributes: dict[str, Any] = {}
-        self._test_mode: bool = False
 
     @callback
     def update(self) -> None:
@@ -395,16 +365,8 @@ class TadoApiLimitSensor(TadoHubSensor):
             if data:
                 self._attr_native_value = data.get("limit")
                 self._attr_available = self._attr_native_value is not None
-                self._test_mode = data.get("test_mode", False)
-            else:
-                self._test_mode = False
 
-            extra_attrs: dict[str, Any] = {
-                "test_mode": self._test_mode,
-            }
-
-            if self._test_mode and data:
-                extra_attrs["test_mode_info"] = "Simulated 100-call limit"
+            extra_attrs: dict[str, Any] = {}
 
             # Load recent API calls from history (last 100 calls only to avoid DB size issues)
             try:
@@ -720,7 +682,6 @@ class TadoPollingIntervalSensor(TadoHubSensor):
         self._day_interval: int | None = None
         self._night_interval: int | None = None
         self._is_night_mode: bool | None = None
-        self._test_mode: bool = False
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -730,7 +691,6 @@ class TadoPollingIntervalSensor(TadoHubSensor):
             "day_interval": self._day_interval,
             "night_interval": self._night_interval,
             "is_night_mode": self._is_night_mode,
-            "test_mode": self._test_mode,
         }
 
     @staticmethod
@@ -773,7 +733,6 @@ class TadoPollingIntervalSensor(TadoHubSensor):
                 return
 
             ratelimit_data = (self.coordinator.data or {}).get("ratelimit")
-            self._test_mode = ratelimit_data.get("test_mode", False) if ratelimit_data else False
 
             homekit_connected = (
                 self.coordinator.homekit_provider is not None

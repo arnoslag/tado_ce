@@ -183,7 +183,7 @@ class HomeKitLocalProvider:
                 result = await self._client.pairing.put_characteristics([(aid, iid, temperature)])
             if not result:  # Empty dict = success
                 self.update_cache(zone_id, CHAR_TARGET_TEMPERATURE, temperature)
-                _LOGGER.debug("HomeKit: Set zone %s temperature to %.1f°C", zone_id, temperature)
+                _LOGGER.info("HomeKit: Set zone %s temperature to %.1f°C via local bridge", zone_id, temperature)
                 return True
             _LOGGER.warning("HomeKit: Set temperature failed for zone %s: %s", zone_id, result)
             return False
@@ -223,7 +223,7 @@ class HomeKitLocalProvider:
                 result = await self._client.pairing.put_characteristics([(aid, iid, mode)])
             if not result:
                 self.update_cache(zone_id, CHAR_TARGET_HEATING_STATE, mode)
-                _LOGGER.debug("HomeKit: Set zone %s HVAC mode to %d", zone_id, mode)
+                _LOGGER.info("HomeKit: Set zone %s HVAC mode to %d via local bridge", zone_id, mode)
                 return True
             _LOGGER.warning("HomeKit: Set HVAC mode failed for zone %s: %s", zone_id, result)
             return False
@@ -310,12 +310,16 @@ class HomeKitLocalProvider:
             zone_id, char_type = mapping
             value = data.get("value")
             if value is not None:
+                # Only log when value actually changed
+                old_entry = self._cache.get(zone_id, {}).get(char_type)
+                old_value = old_entry[0] if old_entry else None
                 self.update_cache(zone_id, char_type, value)
                 updated_zones.add(zone_id)
-                _LOGGER.debug(
-                    "HomeKit event: zone %s char %s = %s",
-                    zone_id, char_type, value,
-                )
+                if value != old_value:
+                    _LOGGER.debug(
+                        "HomeKit event: zone %s char %s changed %s → %s",
+                        zone_id, char_type, old_value, value,
+                    )
         # Fire dispatcher signal once per updated zone
         signal = SIGNAL_HOMEKIT_UPDATE.format(home_id=self._home_id)
         for zone_id in updated_zones:
@@ -332,6 +336,7 @@ class HomeKitLocalProvider:
         Tracks consecutive failures and triggers reconnect after threshold.
         """
         consecutive_failures = 0
+        first_refresh = True
         while True:
             await asyncio.sleep(HOMEKIT_CACHE_REFRESH_SECONDS)
             if not self._client.is_connected or not self._client.pairing:
@@ -342,6 +347,7 @@ class HomeKitLocalProvider:
                     continue
                 result = await self._client.pairing.get_characteristics(chars_to_read)
                 updated_zones: set[str] = set()
+                changes_found = 0
                 for key, data in result.items():
                     mapping = self._event_map.get(key)
                     if mapping is None:
@@ -354,6 +360,7 @@ class HomeKitLocalProvider:
                         self.update_cache(zone_id, char_type, value)
                         updated_zones.add(zone_id)
                         if value != old_value:
+                            changes_found += 1
                             _LOGGER.debug(
                                 "HomeKit cache refresh: zone %s char %s changed %s → %s",
                                 zone_id, char_type, old_value, value,
@@ -363,10 +370,18 @@ class HomeKitLocalProvider:
                 signal = SIGNAL_HOMEKIT_UPDATE.format(home_id=self._home_id)
                 for zone_id in updated_zones:
                     async_dispatcher_send(self._hass, signal, zone_id)
-                _LOGGER.debug(
-                    "HomeKit: Cache refresh — %d characteristics polled",
-                    len(chars_to_read),
-                )
+                # Only log on first refresh or when values changed
+                if first_refresh:
+                    _LOGGER.debug(
+                        "HomeKit: First cache refresh — %d characteristics polled",
+                        len(chars_to_read),
+                    )
+                    first_refresh = False
+                elif changes_found > 0:
+                    _LOGGER.debug(
+                        "HomeKit: Cache refresh — %d value(s) changed",
+                        changes_found,
+                    )
             except Exception:
                 consecutive_failures += 1
                 if consecutive_failures >= CACHE_REFRESH_FAILURE_THRESHOLD:

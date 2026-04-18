@@ -531,7 +531,7 @@ ENTITY_REGISTRY: dict[str, EntityMeta] = {
         legacy_name="Overlay Timer",
     ),
     # ===================================================================
-    # Switches (switch.py) — 4 entries (early_start, child_lock, test_mode, quota_reserve)
+    # Switches (switch.py) — 3 entries (early_start, child_lock, quota_reserve)
     # ===================================================================
     "switch_early_start": EntityMeta(
         translation_key="early_start",
@@ -548,13 +548,6 @@ ENTITY_REGISTRY: dict[str, EntityMeta] = {
         icon="mdi:lock",
         legacy_name="Child Lock",
         feature_group="device_controls",
-    ),
-    "switch_test_mode": EntityMeta(
-        translation_key="test_mode",
-        unique_id_suffix="test_mode_enabled",  # option_key used as suffix
-        entity_category="config",
-        icon=None,  # dynamic: mdi:test-tube / mdi:test-tube-off
-        legacy_name="Test Mode",
     ),
     "switch_quota_reserve": EntityMeta(
         translation_key="quota_reserve",

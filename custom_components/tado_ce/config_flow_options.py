@@ -423,8 +423,8 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
         custom_day_schema = vol.Optional("custom_day_interval", default=custom_day_interval) if custom_day_interval is not None else vol.Optional("custom_day_interval")
         custom_night_schema = vol.Optional("custom_night_interval", default=custom_night_interval) if custom_night_interval is not None else vol.Optional("custom_night_interval")
 
-        polling_schema_fields[custom_day_schema] = NumberSelector(NumberSelectorConfig(min=1, max=MAX_CUSTOM_INTERVAL, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="min"))
-        polling_schema_fields[custom_night_schema] = NumberSelector(NumberSelectorConfig(min=1, max=MAX_CUSTOM_INTERVAL, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="min"))
+        polling_schema_fields[custom_day_schema] = NumberSelector(NumberSelectorConfig(min=0, max=MAX_CUSTOM_INTERVAL, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="min"))
+        polling_schema_fields[custom_night_schema] = NumberSelector(NumberSelectorConfig(min=0, max=MAX_CUSTOM_INTERVAL, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="min"))
         polling_schema_fields[vol.Optional("refresh_debounce_seconds", default=opt("refresh_debounce_seconds", DEFAULT_REFRESH_DEBOUNCE_SECONDS))] = NumberSelector(NumberSelectorConfig(min=MIN_REFRESH_DEBOUNCE_SECONDS, max=MAX_REFRESH_DEBOUNCE_SECONDS, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="s"))
         polling_schema_fields[vol.Optional("api_history_retention_days", default=opt("api_history_retention_days", 14))] = NumberSelector(NumberSelectorConfig(min=0, max=365, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="d"))
         polling_schema_fields[vol.Optional("smart_actions_debounce_seconds", default=opt("smart_actions_debounce_seconds", SMART_ACTIONS_DEBOUNCE_DEFAULT))] = NumberSelector(NumberSelectorConfig(min=SMART_ACTIONS_DEBOUNCE_MIN, max=SMART_ACTIONS_DEBOUNCE_MAX, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="s"))
@@ -794,15 +794,19 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
             if "mobile_devices_frequent_sync" in section:
                 processed["mobile_devices_frequent_sync"] = section["mobile_devices_frequent_sync"]
 
-        # Validate custom day interval
+        # Validate custom day interval (0 = auto/adaptive)
         day_interval = processed.get("custom_day_interval")
-        if day_interval is not None and (day_interval < 1 or day_interval > MAX_CUSTOM_INTERVAL):
+        if day_interval is not None and day_interval == 0:
+            processed["custom_day_interval"] = None
+        elif day_interval is not None and (day_interval < 1 or day_interval > MAX_CUSTOM_INTERVAL):
             errors["custom_day_interval"] = "interval_out_of_range"
             processed["custom_day_interval"] = None
 
-        # Validate custom night interval
+        # Validate custom night interval (0 = auto/adaptive)
         night_interval = processed.get("custom_night_interval")
-        if night_interval is not None and (night_interval < 1 or night_interval > MAX_CUSTOM_INTERVAL):
+        if night_interval is not None and night_interval == 0:
+            processed["custom_night_interval"] = None
+        elif night_interval is not None and (night_interval < 1 or night_interval > MAX_CUSTOM_INTERVAL):
             errors["custom_night_interval"] = "interval_out_of_range"
             processed["custom_night_interval"] = None
 

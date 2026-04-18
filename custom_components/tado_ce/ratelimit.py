@@ -117,13 +117,11 @@ def should_block_manual_action(
 
     # No need to recalculate - save_ratelimit() stores the correct values
     remaining = ratelimit_data.get("remaining", 100)
-    test_mode = ratelimit_data.get("test_mode", False)
 
     _LOGGER.debug(
-        "Tado CE: should_block_manual_action check - remaining=%s, bootstrap_threshold=%s, test_mode=%s",
+        "Tado CE: should_block_manual_action check - remaining=%s, bootstrap_threshold=%s",
         remaining,
         QUOTA_BOOTSTRAP_CALLS,
-        test_mode,
     )
 
     # Check if we've hit the bootstrap reserve (hard limit)

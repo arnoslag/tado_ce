@@ -118,7 +118,6 @@ class TadoApiClient(TadoAuthMixin):
                            If provided, _load_config() uses this instead of reading
                            from config file. Required for multi-home isolation.
             config_manager: ConfigurationManager instance for this entry.
-                           Used by save_ratelimit() for test_mode check.
             api_tracker: APICallTracker instance for this entry.
             data_loader: DataLoader instance for write-through cache updates.
             config_entry: HA ConfigEntry for persisting rotated tokens across restarts.
@@ -200,106 +199,6 @@ class TadoApiClient(TadoAuthMixin):
                     return loaded
         return {}
 
-    def _calculate_test_mode_ratelimit(
-        self,
-        now_utc: datetime,
-        prev_data: dict[str, Any],
-        last_reset_utc: str | None,
-        status: str,
-    ) -> dict[str, Any]:
-        """Calculate simulated ratelimit values for test mode.
-
-        Independent 24-hour cycle per Test Mode session.
-        Each enable starts a fresh cycle, disable returns to Live quota.
-        """
-        prev_test_mode = prev_data.get("test_mode", False)
-        prev_test_mode_start = prev_data.get("test_mode_start_time")
-        prev_test_mode_used = prev_data.get("test_mode_used", 0)
-
-        _LOGGER.debug(
-            "Test Mode: prev_test_mode=%s, prev_test_mode_start=%s, prev_test_mode_used=%s",
-            prev_test_mode,
-            prev_test_mode_start,
-            prev_test_mode_used,
-        )
-
-        # Detect fresh enable (transition from disabled to enabled)
-        # OR first time enabling (no start time recorded)
-        fresh_enable = not prev_test_mode or prev_test_mode_start is None
-
-        # Backup live last_reset_utc when entering Test Mode
-        if fresh_enable and last_reset_utc:
-            _LOGGER.info("Test Mode: Backing up live last_reset_utc=%s", last_reset_utc)
-
-        # Check for 24h cycle expiry
-        cycle_expired = False
-        if not fresh_enable and prev_test_mode_start:
-            try:
-                start_time = parse_iso_datetime(prev_test_mode_start)
-                cycle_end = start_time + timedelta(hours=24)
-                if now_utc >= cycle_end:
-                    cycle_expired = True
-                    _LOGGER.info(
-                        "Test Mode: 24h cycle expired (started: %s, now: %s)",
-                        prev_test_mode_start,
-                        now_utc.isoformat(),
-                    )
-            except (ValueError, TypeError) as e:
-                _LOGGER.warning("Test Mode: Failed to parse start time: %s", e)
-                fresh_enable = True
-
-        # Reset on fresh enable or cycle expiry
-        if fresh_enable or cycle_expired:
-            test_mode_start_time = now_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
-            test_mode_used = 0
-            _LOGGER.info(
-                "Test Mode: %s - starting new cycle at %s",
-                "Fresh enable" if fresh_enable else "24h cycle reset",
-                test_mode_start_time,
-            )
-        else:
-            test_mode_start_time = prev_test_mode_start  # type: ignore[assignment]
-            test_mode_used = prev_test_mode_used
-
-        # Handle error status - preserve test_mode_used
-        if status == "error":
-            _LOGGER.debug("Test Mode: Error status, preserving used=%s", test_mode_used)
-        else:
-            test_mode_used = min(test_mode_used + 1, 100)
-            _LOGGER.debug("Test Mode: Simulated used=%s", test_mode_used)
-
-        # Calculate simulated values
-        remaining = max(0, 100 - test_mode_used)
-
-        # Calculate simulated reset time from test_mode_start_time
-        try:
-            start_time = parse_iso_datetime(test_mode_start_time)
-            test_mode_reset_at = start_time + timedelta(hours=24)
-            test_mode_reset_seconds = max(0, int((test_mode_reset_at - now_utc).total_seconds()))
-        except (ValueError, TypeError) as e:
-            _LOGGER.warning("Test Mode: Failed to calculate reset time: %s", e)
-            test_mode_reset_at = now_utc + timedelta(hours=24)
-            test_mode_reset_seconds = 86400
-
-        _LOGGER.debug(
-            "Test Mode: Storing simulated values - used=%s, remaining=%s, limit=100, reset_at=%s",
-            test_mode_used,
-            remaining,
-            test_mode_reset_at.isoformat(),
-        )
-
-        return {
-            "limit": 100,
-            "used": test_mode_used,
-            "remaining": remaining,
-            "percentage_used": round(test_mode_used, 1),
-            "test_mode_flag": True,
-            "test_mode_start_time": test_mode_start_time,
-            "test_mode_used": test_mode_used,
-            "test_mode_reset_at": test_mode_reset_at,
-            "test_mode_reset_seconds": test_mode_reset_seconds,
-        }
-
     def _calculate_live_ratelimit(
         self,
         now_utc: datetime,
@@ -314,16 +213,6 @@ class TadoApiClient(TadoAuthMixin):
         remaining = real_remaining
         used = limit - remaining
         percentage_used = round((used / limit) * 100, 1) if limit > 0 else 0
-
-        # Restore live last_reset_utc when exiting Test Mode
-        prev_test_mode = prev_data.get("test_mode", False)
-        if prev_test_mode:
-            live_last_reset_utc = prev_data.get("live_last_reset_utc")
-            if live_last_reset_utc:
-                last_reset_utc = live_last_reset_utc
-                _LOGGER.info("Test Mode disabled: Restored live last_reset_utc=%s", last_reset_utc)
-            else:
-                _LOGGER.debug("Test Mode disabled: No live_last_reset_utc backup found, will re-estimate")
 
         # Detect if rate limit has reset (remaining increased significantly)
         if prev_remaining is not None and remaining is not None:
@@ -343,7 +232,6 @@ class TadoApiClient(TadoAuthMixin):
             "used": used,
             "remaining": remaining,
             "percentage_used": percentage_used,
-            "test_mode_flag": False,
             "last_reset_utc": last_reset_utc,
         }
 
@@ -534,17 +422,12 @@ class TadoApiClient(TadoAuthMixin):
         return None
 
     async def save_ratelimit(self, status: str = "ok") -> None:
-        """Save current rate limit info to file for sensor updates.
+        """Save current rate limit info for sensor updates.
 
         Includes advanced reset detection:
         - Detects when rate limit resets (remaining increases significantly)
         - Uses multiple strategies to calculate reset time
         - Tracks last known reset time for accurate predictions
-
-        Test Mode Full Simulation
-        - When Test Mode is ON, simulates a 100-call API tier
-        - Stores simulated values in ratelimit.json
-        - All other components read from ratelimit.json without recalculation
 
         Args:
             status: Status string ("ok", "rate_limited", "error")
@@ -557,44 +440,26 @@ class TadoApiClient(TadoAuthMixin):
         real_remaining = self._rate_limit.get("remaining", 5000)
         reset_seconds = self._rate_limit.get("reset_seconds", 0)
 
-        # Check Test Mode from config_manager (real-time, not cached)
-        test_mode_enabled = self._is_test_mode_enabled()
-        _LOGGER.debug("save_ratelimit: test_mode_enabled=%s", test_mode_enabled)
-
         prev_remaining = prev_data.get("remaining")
         last_reset_utc = prev_data.get("last_reset_utc")
 
-        if test_mode_enabled:
-            result = self._calculate_test_mode_ratelimit(
-                now_utc, prev_data, last_reset_utc, status,
-            )
-        else:
-            result = self._calculate_live_ratelimit(
-                now_utc, prev_data, real_limit, real_remaining, prev_remaining, last_reset_utc,
-            )
+        result = self._calculate_live_ratelimit(
+            now_utc, prev_data, real_limit, real_remaining, prev_remaining, last_reset_utc,
+        )
 
         limit = result["limit"]
         used = result["used"]
         remaining = result["remaining"]
         percentage_used = result["percentage_used"]
-        test_mode_flag = result["test_mode_flag"]
         last_reset_utc = result.get("last_reset_utc", last_reset_utc)
 
         # Calculate reset time
-        if test_mode_flag:
-            # Test Mode uses its own reset time
-            reset_seconds = result["test_mode_reset_seconds"]
-            reset_at: str | None = result["test_mode_reset_at"].isoformat()
-            hours = reset_seconds // 3600
-            minutes = (reset_seconds % 3600) // 60
-            reset_human: str | None = f"{hours}h {minutes}m" if hours > 0 else f"{minutes}m"
-        else:
-            calculated_reset_seconds, last_reset_utc = self._calculate_reset_seconds(
-                now_utc, reset_seconds, last_reset_utc, used,
-            )
-            reset_at, reset_human, reset_seconds = _format_reset_display(
-                now_utc, calculated_reset_seconds, reset_seconds,
-            )
+        calculated_reset_seconds, last_reset_utc = self._calculate_reset_seconds(
+            now_utc, reset_seconds, last_reset_utc, used,
+        )
+        reset_at, reset_human, reset_seconds = _format_reset_display(
+            now_utc, calculated_reset_seconds, reset_seconds,
+        )
 
         # Update status based on usage
         if remaining == 0:
@@ -613,54 +478,13 @@ class TadoApiClient(TadoAuthMixin):
             "last_updated": now_utc.isoformat(),
             "last_reset_utc": last_reset_utc,
             "status": status,
-            "test_mode": test_mode_flag,
         }
-
-        self._populate_test_mode_metadata(data, test_mode_flag, result, prev_data, last_reset_utc)
 
         try:
             await self._save_ratelimit(data)
-            if test_mode_flag:
-                _LOGGER.debug("Test Mode: Rate limit saved (simulated): %s/%s", used, limit)
-            else:
-                _LOGGER.debug("Rate limit saved: %s/%s (%s%%)", used, limit, percentage_used)
+            _LOGGER.debug("Rate limit saved: %s/%s (%s%%)", used, limit, percentage_used)
         except (OSError, HomeAssistantError) as e:
             _LOGGER.debug("Failed to save rate limit: %s", e)
-
-    def _is_test_mode_enabled(self) -> bool:
-        """Check if test mode is enabled via config_manager."""
-        config_manager = self._config_manager
-        if config_manager is None:
-            _LOGGER.debug("No config_manager available for test_mode check, assuming test_mode=False")
-            return False
-        try:
-            return config_manager.get_test_mode_enabled()
-        except (AttributeError, TypeError) as e:
-            _LOGGER.warning("Could not read test mode setting: %s", e)
-            return False
-
-    @staticmethod
-    def _populate_test_mode_metadata(
-        data: dict[str, Any],
-        test_mode_flag: bool,
-        result: dict[str, Any],
-        prev_data: dict[str, Any],
-        last_reset_utc: str | None,
-    ) -> None:
-        """Populate test mode metadata fields in the ratelimit data dict."""
-        if test_mode_flag:
-            data["test_mode_start_time"] = result["test_mode_start_time"]
-            data["test_mode_used"] = result["test_mode_used"]
-            live_backup = prev_data.get("live_last_reset_utc") or last_reset_utc
-            if live_backup:
-                data["live_last_reset_utc"] = live_backup
-        else:
-            prev_start = prev_data.get("test_mode_start_time")
-            prev_used = prev_data.get("test_mode_used")
-            if prev_start is not None:
-                data["test_mode_start_time"] = prev_start
-            if prev_used is not None:
-                data["test_mode_used"] = prev_used
 
     async def _save_ratelimit(self, data: dict[str, Any]) -> None:
         """Save rate limit data via DataLoader Store."""

@@ -278,13 +278,6 @@
           "off": "mdi:lock-open"
         }
       },
-      "test_mode": {
-        "default": "mdi:test-tube",
-        "state": {
-          "on": "mdi:test-tube",
-          "off": "mdi:test-tube-off"
-        }
-      },
       "quota_reserve": {
         "default": "mdi:shield-check",
         "state": {

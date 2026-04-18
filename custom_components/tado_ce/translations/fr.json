@@ -335,9 +335,6 @@
           },
           "status": {
             "name": "Statut"
-          },
-          "test_mode": {
-            "name": "Mode test"
           }
         }
       },
@@ -364,9 +361,6 @@
           },
           "current_interval_minutes": {
             "name": "Intervalle actuel (min)"
-          },
-          "test_mode": {
-            "name": "Mode test"
           }
         }
       },
@@ -435,9 +429,6 @@
           },
           "is_night_mode": {
             "name": "Mode nuit"
-          },
-          "test_mode": {
-            "name": "Mode test"
           }
         }
       },
@@ -1073,9 +1064,6 @@
           }
         }
       },
-      "test_mode": {
-        "name": "Mode test"
-      },
       "quota_reserve": {
         "name": "Réserve de quotas"
       }
@@ -1686,8 +1674,8 @@
             "data_description": {
               "day_start_hour": "Lorsque l'interrogation de jour commence (0-23, par défaut : 7)",
               "night_start_hour": "Quand les sondages nocturnes commencent - les sondages sont moins fréquents la nuit (0-23, valeur par défaut : 23)",
-              "custom_day_interval": "Remplacer l'interrogation automatique de jour par un intervalle fixe (1-1440 min, laisser vide pour automatique)",
-              "custom_night_interval": "Remplacer l'interrogation nocturne automatique par un intervalle fixe (1-1440 min, laisser vide pour automatique)",
+              "custom_day_interval": "Remplacer l'interrogation automatique de jour par un intervalle fixe (1-1440 min, 0 pour auto)",
+              "custom_night_interval": "Remplacer l'interrogation nocturne automatique par un intervalle fixe (1-1440 min, 0 pour automatique)",
               "refresh_debounce_seconds": "Attendre ce temps après un changement avant de récupérer de nouvelles données de Tado (1-60s)",
               "api_history_retention_days": "Nombre de jours de l'historique des appels API à conserver pour le graphique d'utilisation (0 = pour toujours)",
               "quota_reserve_enabled": "Interrompt automatiquement l'interrogation lorsque votre quota d'API est faible. Ne le désactivez que si vous savez ce que vous faites.",

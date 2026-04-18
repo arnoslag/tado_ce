@@ -335,9 +335,6 @@
           },
           "status": {
             "name": "Estado"
-          },
-          "test_mode": {
-            "name": "Modo de teste"
           }
         }
       },
@@ -364,9 +361,6 @@
           },
           "current_interval_minutes": {
             "name": "Intervalo atual (min)"
-          },
-          "test_mode": {
-            "name": "Modo de teste"
           }
         }
       },
@@ -435,9 +429,6 @@
           },
           "is_night_mode": {
             "name": "Modo noturno"
-          },
-          "test_mode": {
-            "name": "Modo de teste"
           }
         }
       },
@@ -1073,9 +1064,6 @@
           }
         }
       },
-      "test_mode": {
-        "name": "Modo de teste"
-      },
       "quota_reserve": {
         "name": "Reserva de quotas"
       }
@@ -1686,8 +1674,8 @@
             "data_description": {
               "day_start_hour": "Quando se inicia a sondagem diurna (0-23, pré-definição: 7)",
               "night_start_hour": "Quando começa a sondagem nocturna - sondagens menos frequentes à noite (0-23, predefinição: 23)",
-              "custom_day_interval": "Anular a sondagem diurna automática com um intervalo fixo (1-1440 min, deixar em branco para automático)",
-              "custom_night_interval": "Anular a sondagem nocturna automática com um intervalo fixo (1-1440 min, deixar em branco para automático)",
+              "custom_day_interval": "Anular a sondagem diurna automática com um intervalo fixo (1-1440 min, 0 para automático)",
+              "custom_night_interval": "Anular a sondagem nocturna automática com um intervalo fixo (1-1440 min, 0 para automático)",
               "refresh_debounce_seconds": "Esperar este tempo após uma alteração antes de ir buscar novos dados ao Tado (1-60s)",
               "api_history_retention_days": "Quantos dias do histórico de chamadas da API devem ser mantidos para o gráfico de utilização (0 = para sempre)",
               "quota_reserve_enabled": "Pausa automaticamente a sondagem quando a quota da API está a ficar baixa. Desativar apenas se souber o que está a fazer.",

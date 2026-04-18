@@ -73,7 +73,6 @@ Tado enforces API rate limits (100–20,000 calls/day depending on your plan). T
 - Reading rate limit data from Tado API response headers
 - Auto-detecting your daily limit (100/1000/20000)
 - Tracking reset time, call history, and per-endpoint breakdown
-- Providing Test Mode to simulate low-quota scenarios
 
 ### Sensors
 
@@ -105,14 +104,6 @@ Tado enforces API rate limits (100–20,000 calls/day depending on your plan). T
 1. Go to Settings → Devices & Services → Tado CE → Configure
 2. Set "API History Retention" (0–365 days, default: 14)
 3. Set to 0 for unlimited retention
-
-**Test Mode (v2.0.2+):**
-1. Enable "Enable Test Mode" in Configure
-2. Integration simulates a 100 call/day API tier
-3. Each API call increments a simulated counter (capped at 100)
-4. All API sensors show `test_mode: true` attribute
-5. Quota Reserve, Bootstrap Reserve, and Adaptive Polling all use simulated values
-6. When real API reset is detected, simulated counter resets to 0
 
 ### Usage Scenarios
 
@@ -1716,7 +1707,7 @@ automation:
 
 **Causes:** Low remaining quota, custom interval too high, many zones consuming quota.
 
-**Solution:** Check `sensor.tado_ce_api_usage`, disable custom interval for pure adaptive, disable optional features, check if Test Mode is enabled.
+**Solution:** Check `sensor.tado_ce_api_usage`, disable custom interval for pure adaptive, disable optional features.
 
 ### Smart Comfort Sensors Not Appearing
 

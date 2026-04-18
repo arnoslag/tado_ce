@@ -234,20 +234,14 @@ class TadoHumiditySensor(TadoZoneSensor):
         self._attr_native_value = new_value
 
     def _update_homekit_attributes(self) -> None:
-        """Update data_source and last_homekit_update from HomeKit provider."""
-        try:
-            provider = self.coordinator.homekit_provider
-            reconciler = self.coordinator.state_reconciler
-            if provider and reconciler and provider.is_connected:
-                reconciler.local_provider = provider
-                result = reconciler.merge_zone_humidity(self._zone_id, None)
-                if isinstance(result, tuple) and len(result) == 2 and result[1] == "homekit":
-                    self._data_source = "homekit"
-                    _, ts = provider.get_humidity(self._zone_id)
-                    self._last_homekit_update = ts.isoformat() if ts else None
-                    return
-        except (TypeError, ValueError, AttributeError):
-            pass
+        """Update data_source attribute.
+
+        Humidity prefers cloud over HomeKit (bridge humidity is stale).
+        HomeKit is only used as fallback when cloud is unavailable.
+        The actual source is determined by the reconciler in _get_zone_data.
+        """
+        # In normal operation, cloud is always available → source is "cloud".
+        # Only when cloud sync fails AND HomeKit is connected does it become "homekit".
         self._data_source = "cloud"
         self._last_homekit_update = None
 

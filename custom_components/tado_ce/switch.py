@@ -96,9 +96,6 @@ async def async_setup_entry(
     # Hub control toggles (always created)
     hub_switches: list[SwitchEntity] = [
         TadoHubToggleSwitch(
-            coordinator, home_id, "switch_test_mode", "test_mode_enabled", "mdi:test-tube", "mdi:test-tube-off",
-        ),
-        TadoHubToggleSwitch(
             coordinator, home_id, "switch_quota_reserve", "quota_reserve_enabled", "mdi:shield-check", "mdi:shield-off",
         ),
     ]
@@ -440,7 +437,7 @@ class TadoChildLockSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switch
 
 
 class TadoHubToggleSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], SwitchEntity):
-    """Handle a hub-level config toggle (Test Mode / Quota Reserve)."""
+    """Handle a hub-level config toggle (Quota Reserve)."""
 
     _attr_has_entity_name = True
 
@@ -496,8 +493,6 @@ class TadoHubToggleSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switch
 
         These options are read in real-time by config_manager, so the
         change takes effect immediately without an integration reload.
-        For test_mode_enabled transitions, we also trigger an API refresh
-        to get real rate limit data when exiting test mode.
         """
         entry = self.coordinator.config_entry
         new_options = {**entry.options, self._option_key: value}
@@ -505,12 +500,3 @@ class TadoHubToggleSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switch
         self._attr_is_on = value
         self.async_write_ha_state()
         _LOGGER.info("Tado CE: %s set to %s", self._option_key, value)
-
-        # Handle test mode transition (disable → need API refresh for real data)
-        if self._option_key == "test_mode_enabled":
-            from .migration import async_handle_test_mode_transition
-
-            try:
-                await async_handle_test_mode_transition(self.hass, entry)
-            except Exception as exc:
-                _LOGGER.debug("Tado CE: Test mode transition handling: %s", exc)

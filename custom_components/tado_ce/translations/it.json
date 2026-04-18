@@ -335,9 +335,6 @@
           },
           "status": {
             "name": "Stato"
-          },
-          "test_mode": {
-            "name": "Modalità test"
           }
         }
       },
@@ -364,9 +361,6 @@
           },
           "current_interval_minutes": {
             "name": "Intervallo corrente (min)"
-          },
-          "test_mode": {
-            "name": "Modalità test"
           }
         }
       },
@@ -435,9 +429,6 @@
           },
           "is_night_mode": {
             "name": "Modalità notturna"
-          },
-          "test_mode": {
-            "name": "Modalità test"
           }
         }
       },
@@ -1073,9 +1064,6 @@
           }
         }
       },
-      "test_mode": {
-        "name": "Modalità test"
-      },
       "quota_reserve": {
         "name": "Riserva di quote"
       }
@@ -1686,8 +1674,8 @@
             "data_description": {
               "day_start_hour": "Quando inizia il polling diurno (0-23, valore predefinito: 7)",
               "night_start_hour": "Quando inizia il polling notturno - polling meno frequente di notte (0-23, default: 23)",
-              "custom_day_interval": "Annullamento del polling automatico diurno con un intervallo fisso (1-1440 min, lasciare vuoto per auto)",
-              "custom_night_interval": "Ignorare il polling notturno automatico con un intervallo fisso (1-1440 min, lasciare vuoto per auto)",
+              "custom_day_interval": "Annullamento del polling automatico diurno con un intervallo fisso (1-1440 min, 0 per automatico)",
+              "custom_night_interval": "Annullamento del polling notturno automatico con un intervallo fisso (1-1440 min, 0 per automatico)",
               "refresh_debounce_seconds": "Attendere questo tempo dopo una modifica prima di recuperare nuovi dati da Tado (1-60s)",
               "api_history_retention_days": "Quanti giorni di cronologia delle chiamate API conservare per il grafico di utilizzo (0 = per sempre)",
               "quota_reserve_enabled": "Sospende automaticamente il polling quando la quota API si sta esaurendo. Disattivare solo se si sa cosa si sta facendo.",

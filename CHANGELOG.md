@@ -2,6 +2,25 @@
 
 All notable changes to Tado CE will be documented in this file.
 
+## [4.0.0-beta.7] - 2026-04-18
+
+### Improvements
+- **Humidity now always uses cloud data when available** — Previously, humidity readings could flip between HomeKit and cloud sources, but the bridge caches humidity values and returns stale readings that can drift 1–4% from the actual sensor. Humidity now always prefers the cloud API (which provides 0.1% precision with real-time updates), with HomeKit only as a fallback when the cloud is unavailable. Temperature still uses HomeKit first since it's accurate and real-time.
+- **Cleaner, quieter logs** — Debug logging across polling, HomeKit, bridge, and state reconciliation has been significantly reduced. Repetitive per-poll messages are gone, HomeKit cache refreshes only log when values actually change, and data source tracking now only logs when a zone switches between cloud and HomeKit (instead of every single poll). Your logs stay readable even with debug enabled.
+- **HomeKit writes now log at info level** — Temperature and mode changes through HomeKit (and fallbacks to cloud) now appear in your normal logs so you can see what's happening without enabling debug. Previously these were hidden at debug level.
+- **Startup and shutdown now log a summary** — When the integration finishes loading, you'll see a single line showing zone count, HomeKit status, weather status, and polling interval. Shutdown also logs when it starts persisting state, so you know nothing was silently dropped.
+- **Test Mode removed** — The simulated 100-call API tier switch has been removed. With Custom Polling and HomeKit local control, there's no longer a need to simulate low-quota scenarios. If you had the Test Mode switch entity, it's automatically cleaned up on upgrade — no manual steps needed.
+
+### Bug Fixes
+- **Fixed custom polling interval stuck after being set** ([#234](https://github.com/hiall-fyi/tado_ce/issues/234) - @ChrisMarriott38) — Once you set a custom day or night polling interval, there was no way to clear it back to automatic through the UI. This was a side effect of the beta.6 fix for collapsed sections wiping values — the field now accepts `0` to mean "use automatic polling", and the description says so.
+
+### Internal
+- Removed ~130 lines of verbose debug logging from the polling module without losing any diagnostic value — the remaining single-line summaries contain the same information.
+- State reconciler now tracks source transitions per zone instead of logging every merge decision on every poll cycle.
+- HomeKit event handler only logs when characteristic values actually change, not on every event.
+- Bridge API logging consolidated to shorter, consistent format.
+- Test Mode removal: ~300 lines of simulation code, one switch entity, and the ratelimit test mode branch removed from api_client, polling, sensor_hub, config_manager, migration, and switch modules.
+
 ## [4.0.0-beta.6] - 2026-04-17
 
 ### Bug Fixes

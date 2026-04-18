@@ -335,9 +335,6 @@
           },
           "status": {
             "name": "Status"
-          },
-          "test_mode": {
-            "name": "Test-Modus"
           }
         }
       },
@@ -364,9 +361,6 @@
           },
           "current_interval_minutes": {
             "name": "Aktuelles Intervall (min)"
-          },
-          "test_mode": {
-            "name": "Test-Modus"
           }
         }
       },
@@ -435,9 +429,6 @@
           },
           "is_night_mode": {
             "name": "Nachtmodus"
-          },
-          "test_mode": {
-            "name": "Test-Modus"
           }
         }
       },
@@ -1073,9 +1064,6 @@
           }
         }
       },
-      "test_mode": {
-        "name": "Test-Modus"
-      },
       "quota_reserve": {
         "name": "Quotenreserve"
       }
@@ -1686,8 +1674,8 @@
             "data_description": {
               "day_start_hour": "Wann der Abruf am Tag beginnt (0-23, Standard: 7)",
               "night_start_hour": "Wann die nächtliche Abfrage beginnt - es wird nachts seltener abgefragt (0-23, Standard: 23)",
-              "custom_day_interval": "Automatische Tagesabfrage mit festem Intervall außer Kraft setzen (1-1440 min, für auto leer lassen)",
-              "custom_night_interval": "Automatische Nachtabfrage mit festem Intervall außer Kraft setzen (1-1440 min, für auto leer lassen)",
+              "custom_day_interval": "Aufhebung der automatischen Tagesabfrage mit einem festen Intervall (1-1440 min, 0 für Auto)",
+              "custom_night_interval": "Aufhebung der automatischen Nachtabfrage mit einem festen Intervall (1-1440 min, 0 für Auto)",
               "refresh_debounce_seconds": "Warte so lange nach einer Änderung, bevor du neue Daten von Tado abrufst (1-60s)",
               "api_history_retention_days": "Wie viele Tage des API-Aufrufverlaufs für das Nutzungsdiagramm aufbewahrt werden sollen (0 = für immer)",
               "quota_reserve_enabled": "Pausieren Sie die Abfrage automatisch, wenn Ihr API-Kontingent zur Neige geht. Nur deaktivieren, wenn Sie wissen, was Sie tun.",

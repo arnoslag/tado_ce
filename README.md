@@ -6,7 +6,7 @@
 ![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2025.11%2B-blue?style=for-the-badge&logo=home-assistant) ![Python](https://img.shields.io/badge/Python-3.13%2B-blue?style=for-the-badge&logo=python&logoColor=white) ![Tado](https://img.shields.io/badge/Tado-V2%2FV3%2FV3%2B-orange?style=for-the-badge) ![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg?style=for-the-badge)
 
 <!-- Status Badges -->
-![Version](https://img.shields.io/badge/Version-4.0.0--beta.6-purple?style=for-the-badge) ![License](https://img.shields.io/badge/License-AGPL--3.0-blue?style=for-the-badge) ![Maintained](https://img.shields.io/badge/Maintained-Yes-green.svg?style=for-the-badge) ![Coverage](https://img.shields.io/badge/Coverage-98%25-brightgreen?style=for-the-badge)
+![Version](https://img.shields.io/badge/Version-4.0.0--beta.7-purple?style=for-the-badge) ![License](https://img.shields.io/badge/License-AGPL--3.0-blue?style=for-the-badge) ![Maintained](https://img.shields.io/badge/Maintained-Yes-green.svg?style=for-the-badge) ![Coverage](https://img.shields.io/badge/Coverage-98%25-brightgreen?style=for-the-badge)
 
 <!-- Community Badges -->
 ![GitHub stars](https://img.shields.io/github/stars/hiall-fyi/tado_ce?style=for-the-badge&logo=github) ![GitHub forks](https://img.shields.io/github/forks/hiall-fyi/tado_ce?style=for-the-badge&logo=github) ![GitHub issues](https://img.shields.io/github/issues/hiall-fyi/tado_ce?style=for-the-badge&logo=github) ![GitHub Release Date](https://img.shields.io/github/release-date/hiall-fyi/tado_ce?style=for-the-badge&logo=github)
@@ -94,7 +94,7 @@ Tado CE provides comprehensive smart climate control with features developed by 
 - **Local Control (HomeKit)** — Pair your v3+ bridge via HomeKit for local temperature reads and writes over your LAN. Your heating keeps working when Tado's cloud is down, local commands don't count against your API quota, and temperature updates arrive in ~1 second instead of waiting for the next cloud poll. Everything falls back to cloud automatically if the local connection drops.
 - **Multi-Home Support** — Multiple Tado accounts/homes in a single HA instance with full data isolation
 - **Actionable Insights** — Per-zone and home-wide intelligent recommendations with priority escalation, correlation/deduplication, history tracking, health score, and 21+ insight types across 7 categories
-- **API Management** — Real-time rate limit tracking, reset time detection, call history, test mode, sync monitoring
+- **API Management** — Real-time rate limit tracking, reset time detection, call history, sync monitoring
 - **Smart Polling** — Adaptive real-time polling based on remaining API quota, custom intervals, monitoring sensors
 - **API Write Optimization** — Smart debounce, redundant call skipping, device operation queuing, write coalescing, and schedule resume guard to reduce unnecessary API calls
 - **Environment Monitoring** — Mold risk assessment, comfort level tracking, condensation risk (AC)
@@ -132,7 +132,7 @@ See [FEATURES_GUIDE.md](FEATURES_GUIDE.md) for detailed configuration guides and
 
 ## Entities
 
-Quick overview of entities created by Tado CE (87 entity types — see [ENTITIES.md](ENTITIES.md) for full reference):
+Quick overview of entities created by Tado CE (86 entity types — see [ENTITIES.md](ENTITIES.md) for full reference):
 
 - **Hub**: API usage/reset/sync sensors, weather sensors, home insights, presence mode, overlay mode, resume all button
 - **Per Zone**: Climate control, temperature/humidity, heating power, overlay status, battery, connection

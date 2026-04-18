@@ -335,9 +335,6 @@
           },
           "status": {
             "name": "Estado"
-          },
-          "test_mode": {
-            "name": "Modo de prueba"
           }
         }
       },
@@ -364,9 +361,6 @@
           },
           "current_interval_minutes": {
             "name": "Intervalo actual (min)"
-          },
-          "test_mode": {
-            "name": "Modo de prueba"
           }
         }
       },
@@ -435,9 +429,6 @@
           },
           "is_night_mode": {
             "name": "Modo nocturno"
-          },
-          "test_mode": {
-            "name": "Modo de prueba"
           }
         }
       },
@@ -1073,9 +1064,6 @@
           }
         }
       },
-      "test_mode": {
-        "name": "Modo de prueba"
-      },
       "quota_reserve": {
         "name": "Reserva de cuotas"
       }
@@ -1686,8 +1674,8 @@
             "data_description": {
               "day_start_hour": "Cuándo comienza el sondeo diurno (0-23, por defecto: 7)",
               "night_start_hour": "Cuándo comienza el sondeo nocturno - sondea con menos frecuencia por la noche (0-23, por defecto: 23)",
-              "custom_day_interval": "Anular el sondeo diurno automático con un intervalo fijo (1-1440 min, dejar vacío para automático)",
-              "custom_night_interval": "Anular el sondeo nocturno automático con un intervalo fijo (1-1440 min, dejar vacío para automático)",
+              "custom_day_interval": "Anular el sondeo diurno automático con un intervalo fijo (1-1440 min, 0 para automático)",
+              "custom_night_interval": "Anular el sondeo nocturno automático con un intervalo fijo (1-1440 min, 0 para automático)",
               "refresh_debounce_seconds": "Esperar este tiempo después de un cambio antes de obtener nuevos datos de Tado (1-60s)",
               "api_history_retention_days": "Cuántos días de historial de llamadas a la API conservar para el gráfico de uso (0 = para siempre)",
               "quota_reserve_enabled": "Pausa automáticamente el sondeo cuando la cuota de tu API se esté agotando. Desactivar sólo si sabes lo que estás haciendo.",

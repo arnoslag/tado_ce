@@ -505,6 +505,16 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if was_failing:
             _LOGGER.info("Tado CE: Connection restored — sync successful after previous failure")
 
+        # Poll cycle summary — single line for easy log tracing
+        _LOGGER.debug(
+            "Poll: zones=%s, weather=%s, homekit=%s, interval=%sm, full=%s",
+            "skip" if skip_zone_states else "fetch",
+            "skip" if skip_weather or zone_only else ("fetch" if cm.get_weather_enabled() else "off"),
+            "yes" if homekit_connected else "no",
+            new_interval,
+            "yes" if do_full_sync else "no",
+        )
+
         # 4. Post-sync processing: cache reads, bridge, WC, state restore
         zone_data = self.data_loader.get_cached("zones")
         weather_data = self.data_loader.get_cached("weather")
@@ -559,10 +569,6 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 sensor_data = data.get("sensorDataPoints") or {}
                 current_temp = (sensor_data.get("insideTemperature") or {}).get("celsius")
                 if target_temp is not None and current_temp is not None:
-                    _LOGGER.debug(
-                        "HeatingCycle feed zone %s: target=%.1f, current=%.1f (raw cloud data)",
-                        zone_id, target_temp, current_temp,
-                    )
                     await self.heating_cycle_coordinator.on_zone_update(
                         zone_id,
                         target_temp,
@@ -603,14 +609,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         bridge_serial = options.get("bridge_serial", "")
         bridge_auth_key = options.get("bridge_auth_key", "")
 
-        _LOGGER.debug(
-            "Bridge credentials check - serial: %s, auth_key: %s",
-            bridge_serial[:8] + "..." if bridge_serial else "EMPTY",
-            "SET" if bridge_auth_key else "EMPTY",
-        )
-
         if not bridge_serial or not bridge_auth_key:
-            _LOGGER.debug("Bridge API skipped — no credentials configured")
             self.bridge_api_client = None
             self.bridge_health_tracker = None
             return None
@@ -622,10 +621,6 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             raw = await self.data_loader.async_load_bridge_health()
             if raw and isinstance(raw, dict):
                 self.bridge_health_tracker = _BridgeHealthTracker.from_dict(raw)
-                _LOGGER.debug(
-                    "Bridge health: restored persisted state (connected=%s)",
-                    self.bridge_health_tracker.state.is_connected,
-                )
             else:
                 self.bridge_health_tracker = _BridgeHealthTracker()
 
@@ -639,16 +634,14 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
             session = async_get_clientsession(self.hass)
             self.bridge_api_client = TadoBridgeApiClient(session, bridge_serial, bridge_auth_key)
-            _LOGGER.debug("Bridge API client initialized for serial %s", bridge_serial[:8] + "...")
+            _LOGGER.debug("Bridge: API client initialized for serial %s...", bridge_serial[:8])
 
         try:
-            _LOGGER.debug("Fetching bridge API wiring state...")
             start_time = time.monotonic()
             result = await self.bridge_api_client.async_get_wiring_state()
             elapsed_ms = (time.monotonic() - start_time) * 1000
             self.bridge_health_tracker.record_success(elapsed_ms)
             self.data_loader.save_bridge_health(self.bridge_health_tracker.to_dict())
-            _LOGGER.debug("Bridge API fetch successful (%.0f ms): %s", elapsed_ms, result)
 
             # First-time field inventory logging
             if not self._bridge_first_fetch_logged:
@@ -656,9 +649,8 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
                 fields = flatten_response(result)
                 _LOGGER.debug(
-                    "Bridge API field inventory (%d fields): %s",
-                    len(fields),
-                    ", ".join(f.path for f in fields),
+                    "Bridge: First fetch OK (%.0fms, %d fields)",
+                    elapsed_ms, len(fields),
                 )
                 self._bridge_first_fetch_logged = True
 
@@ -666,7 +658,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except TadoBridgeApiError as e:
             self.bridge_health_tracker.record_failure(str(e))
             self.data_loader.save_bridge_health(self.bridge_health_tracker.to_dict())
-            _LOGGER.debug("Bridge API fetch failed — %s — cloud data unaffected", e)
+            _LOGGER.debug("Bridge: Fetch failed — %s — cloud data unaffected", e)
             return None
 
     async def _async_run_weather_compensation(

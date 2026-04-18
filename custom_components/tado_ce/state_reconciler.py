@@ -29,6 +29,9 @@ class StateReconciler:
         """Initialize the StateReconciler."""
         self._local_provider: HomeKitLocalProvider | None = None
         self._write_timestamps: dict[str, Any] = {}
+        # Track previous merge sources per zone for transition-only logging.
+        # Key: "{zone_id}_{characteristic}" → source string.
+        self._prev_sources: dict[str, str] = {}
 
     @property
     def local_provider(self) -> HomeKitLocalProvider | None:
@@ -59,34 +62,37 @@ class StateReconciler:
             (value, is_fresh) — value is None if unavailable or stale.
         """
         if not self._local_provider or not self._local_provider.is_connected:
-            _LOGGER.debug(
-                "Zone %s %s: HomeKit not available (provider=%s, connected=%s)",
-                zone_id, getter,
-                self._local_provider is not None,
-                self._local_provider.is_connected if self._local_provider else False,
-            )
             return None, False
         method = getattr(self._local_provider, getter)
         value, timestamp = method(zone_id)
         if value is None or timestamp is None:
-            _LOGGER.debug(
-                "Zone %s %s: HomeKit cache empty (value=%s, ts=%s)",
-                zone_id, getter, value, timestamp,
-            )
             return None, False
         age = dt_util.utcnow() - timestamp
         if age >= HOMEKIT_STALENESS_THRESHOLD:
-            _LOGGER.debug(
-                "Zone %s %s: HomeKit cache STALE (value=%s, age=%.1fs, threshold=%.0fs)",
-                zone_id, getter, value, age.total_seconds(),
-                HOMEKIT_STALENESS_THRESHOLD.total_seconds(),
-            )
             return None, False
-        _LOGGER.debug(
-            "Zone %s %s: HomeKit cache fresh (value=%s, age=%.1fs)",
-            zone_id, getter, value, age.total_seconds(),
-        )
         return value, True
+
+    def _log_source_transition(
+        self,
+        zone_id: str,
+        characteristic: str,
+        new_source: str,
+        value: float | int | None,
+    ) -> None:
+        """Log only when the data source for a zone characteristic changes.
+
+        Eliminates per-poll noise — only logs transitions like
+        cloud→homekit or homekit→cloud.
+        """
+        key = f"{zone_id}_{characteristic}"
+        prev_source = self._prev_sources.get(key)
+        if prev_source != new_source:
+            _LOGGER.debug(
+                "Zone %s %s: source %s → %s (value=%s)",
+                zone_id, characteristic,
+                prev_source or "none", new_source, value,
+            )
+            self._prev_sources[key] = new_source
 
     def merge_zone_temperature(
         self,
@@ -99,21 +105,15 @@ class StateReconciler:
         Priority: external > homekit (if fresh) > cloud.
         """
         if external_value is not None:
-            _LOGGER.debug("Zone %s temp: external=%.1f → using external", zone_id, external_value)
+            self._log_source_transition(zone_id, "temp", "external", external_value)
             return external_value, "external"
 
         local_val, is_fresh = self._get_fresh_local_value(zone_id, "get_temperature")
         if is_fresh and local_val is not None:
-            _LOGGER.debug(
-                "Zone %s temp: cloud=%s, homekit=%s → using homekit",
-                zone_id, cloud_value, local_val,
-            )
+            self._log_source_transition(zone_id, "temp", "homekit", local_val)
             return local_val, "homekit"
 
-        _LOGGER.debug(
-            "Zone %s temp: cloud=%s, homekit not fresh → using cloud",
-            zone_id, cloud_value,
-        )
+        self._log_source_transition(zone_id, "temp", "cloud", cloud_value)
         return cloud_value, "cloud"
 
     def merge_zone_humidity(
@@ -124,25 +124,31 @@ class StateReconciler:
     ) -> tuple[float | None, str]:
         """Return (merged_value, source_name).
 
-        Priority: external > homekit (if fresh) > cloud.
+        Priority: external > cloud > homekit.
+
+        Cloud is preferred over HomeKit for humidity because the bridge
+        caches humidity values and returns stale readings that can drift
+        1-4% from the TRV's actual sensor. Cloud API provides 0.1%
+        precision with real-time updates. HomeKit is kept as fallback
+        for when cloud data is unavailable (e.g. cloud sync failed).
+        Temperature uses HomeKit first (accurate, real-time push).
         """
         if external_value is not None:
-            _LOGGER.debug("Zone %s humidity: external=%s → using external", zone_id, external_value)
+            self._log_source_transition(zone_id, "humidity", "external", external_value)
             return external_value, "external"
 
+        if cloud_value is not None:
+            self._log_source_transition(zone_id, "humidity", "cloud", cloud_value)
+            return cloud_value, "cloud"
+
+        # Cloud unavailable — fall back to HomeKit (stale but better than nothing)
         local_val, is_fresh = self._get_fresh_local_value(zone_id, "get_humidity")
         if is_fresh and local_val is not None:
-            _LOGGER.debug(
-                "Zone %s humidity: cloud=%s, homekit=%s → using homekit",
-                zone_id, cloud_value, local_val,
-            )
+            self._log_source_transition(zone_id, "humidity", "homekit", local_val)
             return local_val, "homekit"
 
-        _LOGGER.debug(
-            "Zone %s humidity: cloud=%s, homekit not fresh → using cloud",
-            zone_id, cloud_value,
-        )
-        return cloud_value, "cloud"
+        self._log_source_transition(zone_id, "humidity", "cloud", None)
+        return None, "cloud"
 
     def merge_zone_target_temperature(
         self,
@@ -155,8 +161,10 @@ class StateReconciler:
         """
         local_val, is_fresh = self._get_fresh_local_value(zone_id, "get_target_temperature")
         if is_fresh and local_val is not None:
+            self._log_source_transition(zone_id, "target_temp", "homekit", local_val)
             return local_val, "homekit"
 
+        self._log_source_transition(zone_id, "target_temp", "cloud", cloud_value)
         return cloud_value, "cloud"
 
     def merge_zone_hvac_state(
@@ -170,8 +178,10 @@ class StateReconciler:
         """
         local_val, is_fresh = self._get_fresh_local_value(zone_id, "get_hvac_state")
         if is_fresh and local_val is not None:
+            self._log_source_transition(zone_id, "hvac_state", "homekit", int(local_val))
             return int(local_val), "homekit"
 
+        self._log_source_transition(zone_id, "hvac_state", "cloud", cloud_value)
         return cloud_value, "cloud"
 
     def should_accept_cloud_value(self, zone_id: str) -> bool:

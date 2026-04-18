@@ -21,6 +21,10 @@ Thank you to everyone who supported the project through [Buy Me a Coffee](https:
 
 Community contributors who helped shape each release through bug reports, feature requests, testing, and feedback.
 
+### v4.0.0-beta.7
+
+- **[@ChrisMarriott38](https://github.com/ChrisMarriott38)** — Reported blocky 5% humidity jumps with HomeKit enabled, with side-by-side screenshots comparing Tado CE and the Tado app that made the bridge's stale humidity data immediately obvious. Also discovered that custom polling intervals couldn't be cleared back to automatic after the beta.6 settings fix ([#234](https://github.com/hiall-fyi/tado_ce/issues/234))
+
 ### v4.0.0-beta.6
 
 - **[@ChrisMarriott38](https://github.com/ChrisMarriott38)** — Reported bridge sensors going unavailable after changing polling settings, which led to discovering that the options flow was silently wiping bridge credentials, outdoor temperature entity, custom polling intervals, and per-zone external sensors whenever settings were saved with collapsed sections ([#227](https://github.com/hiall-fyi/tado_ce/issues/227), [#224](https://github.com/hiall-fyi/tado_ce/issues/224)). Also confirmed the API call counter reset-on-restart issue that traced back to a legacy config file write loop.

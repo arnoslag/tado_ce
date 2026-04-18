@@ -335,9 +335,6 @@
           },
           "status": {
             "name": "Status"
-          },
-          "test_mode": {
-            "name": "Testmodus"
           }
         }
       },
@@ -364,9 +361,6 @@
           },
           "current_interval_minutes": {
             "name": "Huidig interval (min)"
-          },
-          "test_mode": {
-            "name": "Testmodus"
           }
         }
       },
@@ -435,9 +429,6 @@
           },
           "is_night_mode": {
             "name": "Nachtmodus"
-          },
-          "test_mode": {
-            "name": "Testmodus"
           }
         }
       },
@@ -1073,9 +1064,6 @@
           }
         }
       },
-      "test_mode": {
-        "name": "Testmodus"
-      },
       "quota_reserve": {
         "name": "Contingentreserve"
       }
@@ -1686,8 +1674,8 @@
             "data_description": {
               "day_start_hour": "Wanneer de polling overdag start (0-23, standaard: 7)",
               "night_start_hour": "Wanneer de nachtpeiling begint - peilt 's nachts minder vaak (0-23, standaard: 23)",
-              "custom_day_interval": "Automatische polling overdag opheffen met een vast interval (1-1440 min, leeg laten voor automatisch)",
-              "custom_night_interval": "Automatische polling 's nachts opheffen met een vast interval (1-1440 min, leeg laten voor automatisch)",
+              "custom_day_interval": "Automatische polling overdag opheffen met een vast interval (1-1440 min, 0 voor automatisch)",
+              "custom_night_interval": "Automatische polling 's nachts opheffen met een vast interval (1-1440 min, 0 voor automatisch)",
               "refresh_debounce_seconds": "Wacht zo lang na een wijziging voordat nieuwe gegevens van Tado worden opgehaald (1-60s)",
               "api_history_retention_days": "Hoeveel dagen API oproepgeschiedenis bij te houden voor de gebruiksgrafiek (0 = voor altijd)",
               "quota_reserve_enabled": "Pauzeer polling automatisch wanneer je API-quota bijna op is. Alleen uitschakelen als je weet wat je doet.",
