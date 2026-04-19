@@ -362,6 +362,7 @@ class TadoChildLockSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switch
 
             self._attr_available = False
         except Exception:
+            _LOGGER.debug("Failed to update child lock switch for zone %s", self._zone_name, exc_info=True)
             self._attr_available = False
 
     async def async_turn_on(self, **kwargs: Any) -> None:

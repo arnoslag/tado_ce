@@ -17,6 +17,11 @@ SIGNAL_HOMEKIT_UPDATE = "tado_ce_homekit_update_{home_id}"
 # Used for pre-registering bridge devices in the device registry before platform setup
 TADO_BRIDGE_MODELS = ["IB01", "IB02"]
 
+# Bridge API independent poll interval (seconds).
+# Bridge API uses its own auth key and does NOT count toward the Tado cloud API
+# quota, so it can poll more frequently than the main coordinator cycle.
+BRIDGE_POLL_INTERVAL_SECONDS: Final[float] = 60.0
+
 # Data directory (persistent storage)
 # Stored in .storage/tado_ce/ to prevent HACS upgrades from overwriting data files
 # Use environment variable if set (for testing), otherwise use standard HA path

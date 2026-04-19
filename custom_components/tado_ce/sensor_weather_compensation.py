@@ -34,6 +34,7 @@ class TadoWeatherCompensationTargetSensor(
     _attr_device_class = SensorDeviceClass.TEMPERATURE
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
+    _attr_suggested_display_precision = 1
 
     def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
         """Initialize the TadoWeatherCompensationTargetSensor."""

@@ -87,7 +87,7 @@ class AdaptivePreheatManager:
         if self._data_loader is not None:
             zones_info = await self._hass.async_add_executor_job(self._data_loader.load_zones_info_file)
         else:
-            _LOGGER.warning("Adaptive Preheat: No data_loader available")
+            _LOGGER.warning("Adaptive Preheat: zone data not available — skipping setup")
             return
 
         if not zones_info:

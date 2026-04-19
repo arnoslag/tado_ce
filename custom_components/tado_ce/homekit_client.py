@@ -180,7 +180,8 @@ class HomeKitClient:
             _LOGGER.info("HomeKit: Connected to bridge (home %s)", self._home_id)
             return True
         except Exception:
-            _LOGGER.warning("HomeKit: Connection failed (home %s)", self._home_id, exc_info=True)
+            _LOGGER.warning("HomeKit: Connection failed (home %s) — check bridge is reachable", self._home_id)
+            _LOGGER.debug("HomeKit connection error details", exc_info=True)
             self._pairing = None
             self._is_connected = False
             return False
@@ -247,7 +248,8 @@ class HomeKitClient:
                         try:
                             await cb()
                         except Exception:
-                            _LOGGER.warning("HomeKit: Reconnect callback failed", exc_info=True)
+                            _LOGGER.warning("HomeKit: Post-reconnect setup failed")
+                            _LOGGER.debug("HomeKit post-reconnect error details", exc_info=True)
                     return
             except Exception:
                 _LOGGER.debug("HomeKit: Reconnect attempt %d failed", backoff_idx + 1, exc_info=True)
@@ -312,7 +314,8 @@ class HomeKitClient:
                     await self._pairing.remove_pairing(pairing_id)
                     _LOGGER.info("HomeKit: Removed pairing from bridge")
             except Exception:
-                _LOGGER.warning("HomeKit: Failed to remove pairing from bridge", exc_info=True)
+                _LOGGER.warning("HomeKit: Failed to remove pairing from bridge — you may need to reset the bridge")
+                _LOGGER.debug("HomeKit unpair error details", exc_info=True)
             finally:
                 await self.async_disconnect()
 
@@ -444,7 +447,8 @@ async def async_step_homekit_unpair(
 
             _LOGGER.info("HomeKit: Unpaired successfully")
         except Exception:
-            _LOGGER.warning("HomeKit: Unpair encountered errors", exc_info=True)
+            _LOGGER.warning("HomeKit: Unpair encountered errors — pairing data has been cleared locally")
+            _LOGGER.debug("HomeKit unpair error details", exc_info=True)
 
         # Disable homekit_enabled in options and schedule entity cleanup
         new_options = dict(flow.config_entry.options)

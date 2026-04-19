@@ -748,6 +748,7 @@ class TadoSurfaceTemperatureSensor(TadoZoneSensor):
         self._attr_device_class = SensorDeviceClass.TEMPERATURE
         self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
         self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_suggested_display_precision = 1
 
         # Attributes
         self._room_temp: float | None = None
@@ -904,6 +905,7 @@ class TadoDewPointSensor(TadoZoneSensor):
         self._attr_device_class = SensorDeviceClass.TEMPERATURE
         self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
         self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_suggested_display_precision = 1
 
         # Attributes
         self._room_temp: float | None = None

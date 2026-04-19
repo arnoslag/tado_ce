@@ -475,6 +475,7 @@ class TadoPreheatNowSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], Binar
 
             except ValueError:
                 # Invalid time format
+                _LOGGER.debug("Preheat sensor: invalid time format in schedule data", exc_info=True)
                 self._attr_is_on = False
                 self._attr_available = True
                 self._recommended_start = None

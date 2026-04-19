@@ -126,6 +126,7 @@ class TadoTemperatureSensor(TadoZoneSensor):
         self._attr_device_class = SensorDeviceClass.TEMPERATURE
         self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
         self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_suggested_display_precision = 1
         self._data_source: str = "cloud"
         self._last_homekit_update: str | None = None
 
@@ -327,6 +328,7 @@ class TadoBoilerFlowTemperatureSensor(CoordinatorEntity["TadoDataUpdateCoordinat
         self._attr_device_class = SensorDeviceClass.TEMPERATURE
         self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
         self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_suggested_display_precision = 1
         self._attr_icon = _meta.icon
         self._attr_entity_category = get_entity_category(_meta)
         self._attr_device_info = get_hub_device_info(coordinator.home_id)
@@ -388,6 +390,7 @@ class TadoTargetTempSensor(TadoZoneSensor):
         self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{_meta.unique_id_suffix.format(zone_id=zone_id)}"
         self._attr_device_class = SensorDeviceClass.TEMPERATURE
         self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
+        self._attr_suggested_display_precision = 1
         self._attr_icon = _meta.icon
 
     @callback

@@ -11,8 +11,8 @@ For completed features, see [CHANGELOG.md](CHANGELOG.md).
 **HomeKit Local Control — GA Release**
 
 v4.0.0-beta.7 is the latest beta — seven releases since beta.1 introduced HomeKit local control. The beta cycle has addressed humidity source accuracy (cloud-first for humidity, HomeKit for temperature), cleaned up verbose logging, removed Test Mode, and fixed multiple settings and data persistence issues reported by community testers. Currently in final testing. Next steps:
-- Monitor beta.7 feedback — humidity source change, log cleanup, Test Mode removal
-- Investigate any remaining issues reported by community testers
+- Fix false HomeKit write failure detection — cloud verification retries (beta.8)
+- Monitor beta.7/8 feedback
 - Target: GA release in May 2026 if no blockers found
 
 ## Future Consideration

@@ -2,6 +2,22 @@
 
 All notable changes to Tado CE will be documented in this file.
 
+## [4.0.0-beta.8] - 2026-04-19
+
+### Improvements
+- **Boiler flow temperature now updates every 60 seconds** ([#237](https://github.com/hiall-fyi/tado_ce/issues/237) - @ChrisMarriott38) — The boiler flow temperature sensor was tied to your cloud polling interval, so if you set polling to 30 minutes, flow temperature data went stale for 30 minutes too — even though the bridge API doesn't count toward your Tado API quota. It now polls the bridge independently every 60 seconds, giving you smooth flow temperature charts regardless of your cloud polling settings. Weather Compensation also benefits from fresher flow data.
+- **Temperature sensors now display with consistent precision** — All temperature sensors (zone, outdoor, boiler flow, dew point, surface, weather compensation) now explicitly request one decimal place in the dashboard. Previously this relied on HA's default, which was usually correct but not guaranteed.
+
+### Bug Fixes
+- **Fixed false HomeKit write failures triggering circuit breaker** — After a HomeKit temperature or mode change, the integration checks that Tado's cloud servers received the change. But the cloud can take 3–5 minutes to sync from the bridge, while the verification window was only 17 seconds. This caused every HomeKit write to be counted as a "failure" even though the bridge accepted it, eventually tripping the circuit breaker and forcing all writes through the slower cloud API. The verification now retries multiple times over a longer window before giving up, and cloud sync delays are no longer counted as write failures.
+- **Fixed HomeKit savings counters not resetting after HA restart** — The "Reads Saved" and "Writes Saved" counters track how many API calls HomeKit local control has saved you. If HA restarted right around the time Tado's daily quota reset, the counters would keep climbing from the previous day instead of starting fresh. They now persist the data needed to detect the reset correctly across restarts.
+
+### Internal
+- External sensor subscription logic for climate entities (heating + AC) consolidated into a shared helper, eliminating ~60 lines of duplicated code.
+- Added debug logging to 10 previously silent exception handlers across sensor, switch, and helper modules. These only appear when debug logging is enabled — no change to normal log output.
+- Cleaned up 4 HomeKit warning messages: stack traces moved from warning to debug level, and messages reworded to be more helpful for end users (e.g. "check bridge is reachable" instead of internal error details).
+- Removed 2 internal jargon references from user-visible warning messages.
+
 ## [4.0.0-beta.7] - 2026-04-18
 
 ### Improvements

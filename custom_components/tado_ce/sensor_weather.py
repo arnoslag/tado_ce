@@ -39,6 +39,7 @@ class TadoOutsideTemperatureSensor(CoordinatorEntity["TadoDataUpdateCoordinator"
         self._attr_device_class = SensorDeviceClass.TEMPERATURE
         self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
         self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_suggested_display_precision = 1
         self._attr_entity_category = get_entity_category(_meta)
         self._attr_available = False
         self._attr_native_value = None

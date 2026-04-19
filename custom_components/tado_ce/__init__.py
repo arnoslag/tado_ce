@@ -183,6 +183,7 @@ async def _async_wire_and_start_coordinator(
     if saved and isinstance(saved, dict):
         coordinator._homekit_reads_saved = saved.get("reads_saved", 0)
         coordinator._homekit_writes_saved = saved.get("writes_saved", 0)
+        coordinator._prev_savings_remaining = saved.get("prev_remaining")
         _LOGGER.debug(
             "HomeKit savings loaded: reads=%s, writes=%s",
             coordinator._homekit_reads_saved,
@@ -453,6 +454,7 @@ async def _async_shutdown_coordinator(coordinator: TadoDataUpdateCoordinator) ->
 
     coordinator.action_debouncer.cancel_all()
     coordinator.refresh_coalescer.cancel()
+    coordinator.cancel_bridge_poll()
     await coordinator.device_sync_queue.shutdown()
     _LOGGER.debug("Cleaned up write optimization components")
 

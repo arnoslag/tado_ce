@@ -18,6 +18,7 @@ from homeassistant.helpers.update_coordinator import (
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    BRIDGE_POLL_INTERVAL_SECONDS,
     DEVICE_SYNC_QUEUE_MAX_DEPTH,
     DOMAIN,
     ENTITY_FRESHNESS_EXPIRY_SECONDS,
@@ -163,6 +164,10 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Bridge health tracking (init when bridge credentials present)
         self.bridge_health_tracker: BridgeHealthTracker | None = None
         self._bridge_first_fetch_logged: bool = False
+
+        # Independent bridge poll task (bridge API doesn't count toward cloud quota)
+        self._bridge_poll_task: asyncio.Task[None] | None = None
+        self._cached_bridge_data: dict[str, object] | None = None
 
         # Platforms loaded during setup (used by unload to match exactly)
         self.loaded_platforms: frozenset[Platform] = frozenset()
@@ -333,8 +338,10 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if self.api_tracker.needs_save:
             await self.api_tracker.async_save_if_dirty()
 
-        # Bridge API data (optional)
-        bridge_data = await self._async_fetch_bridge_data()
+        # Bridge API data (from independent poll loop — not fetched here)
+        bridge_data = self._cached_bridge_data
+        # Start independent bridge poll if credentials present and not yet running
+        self._ensure_bridge_poll_running()
 
         # Lazy-load persisted weather compensation state on first poll
         if not self._wc_state_loaded and self.config_manager.get_wc_enabled():
@@ -661,6 +668,62 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             _LOGGER.debug("Bridge: Fetch failed — %s — cloud data unaffected", e)
             return None
 
+    def _ensure_bridge_poll_running(self) -> None:
+        """Start the independent bridge poll loop if credentials are present.
+
+        Bridge API uses its own auth key and does NOT count toward the
+        Tado cloud API quota, so it runs on a fixed interval independent
+        of the main coordinator polling cycle.
+        """
+        if self._bridge_poll_task is not None and not self._bridge_poll_task.done():
+            return  # already running
+        options = self.config_entry.options
+        if not options.get("bridge_serial", "") or not options.get("bridge_auth_key", ""):
+            return  # no credentials
+        self._bridge_poll_task = asyncio.create_task(self._async_bridge_poll_loop())
+
+    async def _async_bridge_poll_loop(self) -> None:
+        """Poll bridge API on a fixed interval, independent of coordinator cycle.
+
+        Updates cached bridge data and notifies entity listeners so bridge
+        sensors (boiler flow temperature, wiring state, etc.) stay fresh
+        regardless of the cloud polling interval.
+        """
+        # Initial fetch immediately (don't wait for first interval)
+        bridge_data = await self._async_fetch_bridge_data()
+        if bridge_data is not None:
+            self._cached_bridge_data = bridge_data
+            self._update_bridge_in_coordinator_data()
+
+        while True:
+            await asyncio.sleep(BRIDGE_POLL_INTERVAL_SECONDS)
+            try:
+                bridge_data = await self._async_fetch_bridge_data()
+                if bridge_data is not None:
+                    self._cached_bridge_data = bridge_data
+                    self._update_bridge_in_coordinator_data()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                _LOGGER.debug("Bridge poll loop: fetch failed, will retry next cycle")
+
+    def _update_bridge_in_coordinator_data(self) -> None:
+        """Update bridge data in coordinator.data and notify listeners.
+
+        Writes the cached bridge data into the coordinator's data dict
+        so bridge sensors pick it up on their next _handle_coordinator_update.
+        """
+        if self.data is None or self._cached_bridge_data is None:
+            return
+        self.data["bridge"] = self._cached_bridge_data
+        self.async_update_listeners()
+
+    def cancel_bridge_poll(self) -> None:
+        """Cancel the independent bridge poll task."""
+        if self._bridge_poll_task is not None:
+            self._bridge_poll_task.cancel()
+            self._bridge_poll_task = None
+
     async def _async_run_weather_compensation(
         self,
         bridge_data: dict[str, object] | None,
@@ -748,6 +811,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.data_loader.save_homekit_savings({
             "reads_saved": self._homekit_reads_saved,
             "writes_saved": self._homekit_writes_saved,
+            "prev_remaining": self._prev_savings_remaining,
         })
 
     def record_homekit_read_saved(self) -> None:

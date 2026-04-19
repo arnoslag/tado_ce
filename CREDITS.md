@@ -21,6 +21,10 @@ Thank you to everyone who supported the project through [Buy Me a Coffee](https:
 
 Community contributors who helped shape each release through bug reports, feature requests, testing, and feedback.
 
+### v4.0.0-beta.8
+
+- **[@ChrisMarriott38](https://github.com/ChrisMarriott38)** — Spotted that the boiler flow temperature sensor was tied to the cloud polling interval, with a side-by-side chart comparing Tado CE (200-minute steps) against his own REST sensor (60-second updates) that made the problem immediately clear. This led to decoupling the bridge API fetch onto its own 60-second timer ([#237](https://github.com/hiall-fyi/tado_ce/issues/237))
+
 ### v4.0.0-beta.7
 
 - **[@ChrisMarriott38](https://github.com/ChrisMarriott38)** — Reported blocky 5% humidity jumps with HomeKit enabled, with side-by-side screenshots comparing Tado CE and the Tado app that made the bridge's stale humidity data immediately obvious. Also discovered that custom polling intervals couldn't be cleared back to automatic after the beta.6 settings fix ([#234](https://github.com/hiall-fyi/tado_ce/issues/234))

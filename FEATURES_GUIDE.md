@@ -1071,10 +1071,20 @@ Pair your Tado bridge via HomeKit to control heating and AC directly on your loc
 
 | Limitation | Detail |
 |------------|--------|
-| Humidity resolution | HomeKit provides humidity at 1% steps (whole numbers) — this is defined by the HAP protocol spec. The cloud API returns 0.1% precision. Temperature is unaffected (0.1°C from both). Humidity charts may appear flat for hours when the value stays within the same 1% band — this is expected, not a sensor failure. Check the `last_homekit_update` attribute to verify data is flowing. If you need smoother humidity for specific rooms, use the per-zone external sensor feature to point those zones at a Zigbee humidity sensor. |
-| Cloud-only data | Heating power, battery status, schedules, hot water, and geofencing are only available from Tado's cloud. HomeKit provides temperature, humidity, and HVAC mode. |
+| HomeKit humidity (fallback only) | Humidity defaults to cloud data (0.1% precision, updates every poll cycle). HomeKit humidity is only used when cloud is unavailable — it provides 1% resolution with infrequent updates due to bridge firmware behaviour. Temperature uses HomeKit first (accurate, real-time). |
+| Cloud-only data | Heating power, battery status, schedules, hot water, and geofencing are only available from Tado's cloud. HomeKit provides temperature and HVAC mode locally. |
 | Wireless Temp Sensors | Standalone temperature sensors (ST01) don't appear as HomeKit accessories — their data always comes from the cloud. |
 | Single pairing | The bridge can only be paired with one HomeKit controller at a time. |
+| External sensors don't control TRV valve | Per-zone external sensors change the displayed room temperature, but the TRV still uses its own sensor to control the valve. Use an automation or temperature offsets to compensate. See [Smart Valve Control](ROADMAP.md) for the planned solution. |
+
+### General Limitations
+
+| Limitation | Detail |
+|------------|--------|
+| No GPS tracking | Device trackers only show home/not_home status from Tado's geofencing — no GPS coordinates. |
+| Token expiry | If your Tado token expires, HA will prompt you to re-authenticate. |
+| No schedule management | Use the Tado app to create or edit heating schedules. Tado CE can read schedules (calendar entity) but not modify them. |
+| No historical data fetch | Tado CE doesn't pull historical data from Tado's servers — this would consume too many API calls. Use HA's built-in recorder for history. |
 
 ### Setup
 

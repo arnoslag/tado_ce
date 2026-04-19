@@ -154,6 +154,7 @@ class TadoHomeIdSensor(TadoHubSensor):
             else:
                 self._attr_available = False
         except Exception:
+            _LOGGER.debug("Failed to update home ID sensor", exc_info=True)
             self._attr_available = False
 
 
@@ -419,6 +420,7 @@ class TadoApiLimitSensor(TadoHubSensor):
 
             self._attr_extra_state_attributes = extra_attrs
         except Exception:
+            _LOGGER.debug("Failed to update API status sensor", exc_info=True)
             self._attr_available = False
 
 
@@ -474,6 +476,7 @@ class TadoApiStatusSensor(TadoHubSensor):
                 self._attr_native_value = "unknown"
                 self._attr_available = True
         except Exception:
+            _LOGGER.debug("Failed to update API limit sensor", exc_info=True)
             self._attr_native_value = "error"
             self._attr_available = True
 
@@ -503,6 +506,7 @@ class TadoTokenStatusSensor(TadoHubSensor):
                 self._attr_native_value = "missing"
             self._attr_available = True
         except Exception:
+            _LOGGER.debug("Failed to update token status sensor", exc_info=True)
             self._attr_native_value = "error"
             self._attr_available = True
 
@@ -541,6 +545,7 @@ class TadoZoneCountSensor(TadoHubSensor):
             else:
                 self._attr_available = False
         except Exception:
+            _LOGGER.debug("Failed to update zone count sensor", exc_info=True)
             self._attr_available = False
 
 
@@ -567,6 +572,7 @@ class TadoLastSyncSensor(TadoHubSensor):
             else:
                 self._attr_available = False
         except Exception:
+            _LOGGER.debug("Failed to update last sync sensor", exc_info=True)
             self._attr_available = False
 
 
@@ -809,6 +815,7 @@ class TadoApiHistorySensor(TadoHubSensor):
                 _ed = self.coordinator
                 self._history_period_days = _ed.config_manager.get_api_history_retention_days()
             except (AttributeError, TypeError, KeyError):
+                _LOGGER.debug("Failed to read API history retention config, using default", exc_info=True)
                 self._history_period_days = 14
 
             history_data = (self.coordinator.data or {}).get("api_call_history")

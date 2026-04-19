@@ -16,7 +16,7 @@ from homeassistant.components.climate.const import (
     HVACMode,
 )
 from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
-from homeassistant.core import CALLBACK_TYPE, Event, EventStateChangedData, callback
+from homeassistant.core import CALLBACK_TYPE, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.restore_state import RestoreEntity
@@ -25,7 +25,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .climate_helpers import (
     api_call_with_rollback,
     read_external_sensor,
-    subscribe_external_sensors,
+    setup_climate_external_sensor_subscription,
     unsubscribe_external_sensors,
     update_offset,
     update_preset_mode,
@@ -264,28 +264,8 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity,
     @callback
     def _subscribe_external_sensors(self) -> None:
         """Subscribe to external sensor state changes for real-time updates."""
-        unsubscribe_external_sensors(self._unsub_external_sensors)
-
-        zcm = self.coordinator.zone_config_manager
-
-        @callback
-        def _on_external_sensor_change(event: Event[EventStateChangedData]) -> None:
-            """Handle external sensor state change — update climate entity."""
-            ext_temp = read_external_sensor(self.hass, zcm, self._zone_id, "external_temp_sensor")
-            if ext_temp is not None:
-                self._attr_current_temperature = ext_temp
-                self._temperature_source = "external"
-
-            ext_hum = read_external_sensor(self.hass, zcm, self._zone_id, "external_humidity_sensor")
-            if ext_hum is not None:
-                self._attr_current_humidity = ext_hum
-                self._humidity_source = "external"
-
-            self.async_write_ha_state()
-            _LOGGER.debug("%s: External sensor updated → refreshed climate state", self._zone_name)
-
-        self._unsub_external_sensors = subscribe_external_sensors(
-            self, self._zone_id, _on_external_sensor_change,
+        self._unsub_external_sensors = setup_climate_external_sensor_subscription(
+            self, self._zone_id, self._unsub_external_sensors, label=self._zone_name,
         )
 
     @callback

@@ -85,6 +85,7 @@ def merge_homekit_into_zone_data(
         result = dict(zone_data)
         result["sensorDataPoints"] = sensor_data
     except (TypeError, ValueError, AttributeError):
+        _LOGGER.debug("Failed to merge HomeKit data into zone %s", zone_id, exc_info=True)
         return zone_data
     else:
         return result

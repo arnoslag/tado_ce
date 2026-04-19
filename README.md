@@ -6,7 +6,7 @@
 ![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2025.11%2B-blue?style=for-the-badge&logo=home-assistant) ![Python](https://img.shields.io/badge/Python-3.13%2B-blue?style=for-the-badge&logo=python&logoColor=white) ![Tado](https://img.shields.io/badge/Tado-V2%2FV3%2FV3%2B-orange?style=for-the-badge) ![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg?style=for-the-badge)
 
 <!-- Status Badges -->
-![Version](https://img.shields.io/badge/Version-4.0.0--beta.7-purple?style=for-the-badge) ![License](https://img.shields.io/badge/License-AGPL--3.0-blue?style=for-the-badge) ![Maintained](https://img.shields.io/badge/Maintained-Yes-green.svg?style=for-the-badge) ![Coverage](https://img.shields.io/badge/Coverage-98%25-brightgreen?style=for-the-badge)
+![Version](https://img.shields.io/badge/Version-4.0.0--beta.8-purple?style=for-the-badge) ![License](https://img.shields.io/badge/License-AGPL--3.0-blue?style=for-the-badge) ![Maintained](https://img.shields.io/badge/Maintained-Yes-green.svg?style=for-the-badge) ![Coverage](https://img.shields.io/badge/Coverage-98%25-brightgreen?style=for-the-badge)
 
 <!-- Community Badges -->
 ![GitHub stars](https://img.shields.io/github/stars/hiall-fyi/tado_ce?style=for-the-badge&logo=github) ![GitHub forks](https://img.shields.io/github/forks/hiall-fyi/tado_ce?style=for-the-badge&logo=github) ![GitHub issues](https://img.shields.io/github/issues/hiall-fyi/tado_ce?style=for-the-badge&logo=github) ![GitHub Release Date](https://img.shields.io/github/release-date/hiall-fyi/tado_ce?style=for-the-badge&logo=github)
@@ -149,70 +149,19 @@ Quick overview of entities created by Tado CE (86 entity types — see [ENTITIES
 
 ## Services
 
-| Service | Description |
-|---------|-------------|
-| `set_climate_timer` | Set heating/cooling with timer (min 1 min), until next schedule (`overlay: next_time_block`), or indefinitely (`overlay: manual`). `time_period` optional when `overlay` specified |
-| `set_water_heater_timer` | Turn on hot water with timer (min 1 min) |
-| `resume_schedule` | Delete overlay, return to schedule |
-| `set_climate_temperature_offset` | Calibrate device temperature (-10 to +10°C) |
-| `get_temperature_offset` | Fetch current offset (Tado CE exclusive) |
-| `set_open_window_mode` | Trigger open window mode from external sensors (Zigbee, Z-Wave) with optional duration |
-| `restore_previous_state` | Restore zone to whatever it was doing before the last change |
-| `identify_device` | Flash device LED |
-| `set_away_configuration` | Configure away temperature |
-| `add_meter_reading` | Add Energy IQ reading (supports historical dates) |
+10 services for climate control, hot water timers, open window mode, temperature offsets, and more. All available in **Developer Tools > Services** with full parameter documentation.
 
-All services available in **Developer Tools > Services** with full parameter documentation.
+See [FEATURES_GUIDE.md](FEATURES_GUIDE.md) for service details and usage examples.
 
 ---
 
 ## Smart Polling
 
-**v2.0.0**: Adaptive Smart Polling with Quota Reserve Protection - real-time interval calculation based on remaining API quota.
+Tado CE automatically adjusts how often it checks the cloud based on your remaining API quota. Works for any quota tier (100, 1000, 20,000) — no configuration needed. With HomeKit connected, cloud polling drops further since temperature and humidity come locally.
 
-### The Design Philosophy
+You can override with custom day/night intervals in **Configure > Advanced Settings > Polling & API**.
 
-- **Real-time Adaptive**: Calculates interval before each sync based on remaining quota, distributes remaining calls over remaining time, self-healing for any usage pattern
-- **Universal**: Works for ANY quota tier (100, 1000, 20000) - no hardcoded tiers or special cases
-- **Simple & Predictable**: Easy to understand, transparent through debug logging
-
-### What This Means For You
-
-| Quota | Typical Interval | Daily Utilization |
-|-------|------------------|-------------------|
-| 100 | ~16 min | ~90 calls (90%) |
-| 1000 | ~8 min | ~180 calls |
-| 20000 | 5 min (minimum) | Prevents excessive polling |
-
-**Self-healing**: If you make manual API calls, it automatically slows down. End of day uses remaining quota efficiently.
-
-### Safety Mechanisms
-
-- **Minimum interval**: 5 min (prevents excessive polling even with high quotas)
-- **Maximum interval**: 120 min (ensures reasonable update frequency)
-- **Safety buffer**: 10% reserve for manual operations
-- **Low quota protection**: Automatically slows down when quota is low
-- **Quota Reserve Protection**: Pauses polling when quota critically low (≤5% or ≤5 calls), reserves quota for manual operations (set temperature, etc.), automatically resumes after API reset
-
-### Optional Features Impact
-
-- **Local Control (HomeKit)**: When connected, temperature and humidity come from your local network — the integration checks the cloud less often for data that's already available locally
-- **Weather sensors**: Automatically accounts for extra API call
-- **Mobile device tracking**: Automatically adjusts for additional calls
-- **Smart Comfort**: No impact (local computation only)
-
-### Custom Intervals
-
-Override adaptive polling with fixed intervals in **Settings > Devices & Services > Tado CE > Configure > Polling Schedule**:
-- Custom Day Interval (7am-11pm default)
-- Custom Night Interval (11pm-7am default)
-
-### Monitoring
-
-New sensors let you monitor polling behavior:
-- `sensor.tado_ce_polling_interval` - Current interval with source
-- `sensor.tado_ce_next_sync` - Next sync time with countdown
-- `sensor.tado_ce_call_history` - API call statistics
+See [FEATURES_GUIDE.md](FEATURES_GUIDE.md) for polling details, quota tiers, and monitoring sensors.
 
 ---
 
@@ -234,16 +183,7 @@ Tado X devices use Matter over Thread - use the [Home Assistant Matter integrati
 
 ## Limitations
 
-| Limitation | Description |
-|------------|-------------|
-| Cloud for some data | Heating power, battery, schedules, hot water, and geofencing are only available from Tado's cloud. With HomeKit enabled, temperature and humidity come from your local network. |
-| Humidity resolution | HomeKit provides humidity at 1% resolution (whole numbers) due to the HAP protocol spec. The cloud API returns 0.1% precision. Temperature is unaffected (0.1°C from both sources). Humidity charts may appear flat for hours when the value stays within the same 1% band — this is expected, not a sensor failure. Check the `last_homekit_update` attribute to verify data is flowing. If you need smoother humidity, use the per-zone external sensor feature to point specific zones at a Zigbee humidity sensor. |
-| Wireless Temp Sensors | Standalone temperature sensors (ST01) don't appear as HomeKit accessories — their data always comes from the cloud |
-| Single HomeKit pairing | Your bridge can only be paired with one HomeKit controller at a time. If you're using Apple Home, you'll need to unpair it first. You can re-expose climate entities to Apple Home via the HA HomeKit Bridge integration. |
-| No GPS | Device trackers only show home/not_home status |
-| Rotating Tokens | If token expires, re-authentication required |
-| No Schedule Management | Use Tado app for schedule changes |
-| No Historical Data | Would consume too many API calls |
+See [Known Limitations](FEATURES_GUIDE.md#known-limitations) in the Features Guide.
 
 ---
 

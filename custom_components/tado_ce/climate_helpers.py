@@ -285,3 +285,49 @@ def unsubscribe_external_sensors(unsub_list: list[CALLBACK_TYPE]) -> None:
     for unsub in unsub_list:
         unsub()
     unsub_list.clear()
+
+
+def setup_climate_external_sensor_subscription(
+    entity: Any,
+    zone_id: str,
+    unsub_list: list[CALLBACK_TYPE],
+    *,
+    label: str = "",
+) -> list[CALLBACK_TYPE]:
+    """Subscribe a climate entity to external sensor state changes.
+
+    Shared by TadoClimate (heating) and TadoACClimate (AC). Reads
+    external temp/humidity sensors and updates the entity's
+    current_temperature, current_humidity, and source tracking attrs.
+
+    Args:
+        entity: Climate entity with _attr_current_temperature, _humidity_source, etc.
+        zone_id: Zone ID to look up config for.
+        unsub_list: Existing unsubscribe list to clear first.
+        label: Log prefix (e.g. zone name).
+
+    Returns:
+        New list of unsubscribe callbacks.
+
+    """
+    unsubscribe_external_sensors(unsub_list)
+
+    zcm = entity.coordinator.zone_config_manager
+
+    @callback
+    def _on_external_sensor_change(event: Event[EventStateChangedData]) -> None:
+        """Handle external sensor state change — update climate entity."""
+        ext_temp = read_external_sensor(entity.hass, zcm, zone_id, "external_temp_sensor")
+        if ext_temp is not None:
+            entity._attr_current_temperature = ext_temp
+            entity._temperature_source = "external"
+
+        ext_hum = read_external_sensor(entity.hass, zcm, zone_id, "external_humidity_sensor")
+        if ext_hum is not None:
+            entity._attr_current_humidity = ext_hum
+            entity._humidity_source = "external"
+
+        entity.async_write_ha_state()
+        _LOGGER.debug("%s: External sensor updated → refreshed climate state", label or zone_id)
+
+    return subscribe_external_sensors(entity, zone_id, _on_external_sensor_change)
