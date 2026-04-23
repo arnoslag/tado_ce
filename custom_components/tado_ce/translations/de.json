@@ -967,6 +967,12 @@
       },
       "wc_status": {
         "name": "Wetter Ausgleichsstatus"
+      },
+      "homekit_reads_saved": {
+        "name": "Gespeicherte HomeKit-Lesungen"
+      },
+      "homekit_writes_saved": {
+        "name": "HomeKit schreibt gerettet"
       }
     },
     "select": {
@@ -1465,13 +1471,15 @@
               "use_external_temp": "Externen Temperatursensor verwenden",
               "external_temp_sensor": "Externer Temperatursensor",
               "use_external_humidity": "Externen Luftfeuchtigkeitssensor verwenden",
-              "external_humidity_sensor": "Externer Luftfeuchtigkeitssensor"
+              "external_humidity_sensor": "Externer Luftfeuchtigkeitssensor",
+              "smart_valve_control": "Intelligente Ventilsteuerung"
             },
             "data_description": {
               "use_external_temp": "Ausschalten, um den in Tado integrierten Temperatursensor zu verwenden",
               "external_temp_sensor": "Wählen Sie einen Temperatursensor, um die Tado-Messung zu überschreiben",
               "use_external_humidity": "Schalten Sie den in Tado eingebauten Luftfeuchtigkeitssensor aus, um ihn zu verwenden.",
-              "external_humidity_sensor": "Wählen Sie einen Luftfeuchtigkeitssensor, um die Tado-Messung zu überschreiben"
+              "external_humidity_sensor": "Wählen Sie einen Luftfeuchtigkeitssensor, um die Tado-Messung zu überschreiben",
+              "smart_valve_control": "Automatische Anpassung des TRV-Sollwerts mit Hilfe des externen Temperatursensors, um die ungenauen eingebauten Messwerte des TRV zu kompensieren"
             }
           },
           "overlay_section": {
@@ -1612,42 +1620,6 @@
               "heating_cycle_inertia_threshold": "Eine Temperaturveränderung unterhalb dieses Wertes wird nach Beendigung der Heizung als \"ausgeglichen\" betrachtet (0,05-0,5°C)."
             }
           },
-          "flow_temperature_control": {
-            "name": "Wetterkompensation",
-            "data": {
-              "bridge_enabled": "Internet-Brücke einschalten",
-              "bridge_serial": "Seriennummer der Brücke",
-              "bridge_auth_key": "Bridge Auth Code",
-              "wc_enabled": "Aktivieren der Wetterkompensation",
-              "wc_heating_system_preset": "Heizsystem Typ",
-              "wc_slope": "Steigung der Heizkurve",
-              "wc_design_outdoor_temp": "Auslegung der Außentemperatur",
-              "wc_max_flow_temp": "Maximale Vorlauftemperatur",
-              "wc_min_flow_temp": "Minimale Vorlauftemperatur",
-              "wc_shutoff_temp": "Heizung Abschalttemperatur",
-              "wc_smoothing_method": "Temperatur-Glättungsmethode",
-              "wc_smoothing_window": "Glättungsfenster (Minuten)",
-              "wc_room_compensation_enabled": "Aktivieren der Raumkompensation",
-              "wc_room_compensation_factor": "Raumkompensationsfaktor",
-              "wc_step_size": "Vorlauftemperatur Schrittweite",
-              "wc_hysteresis": "Hysterese ändern"
-            },
-            "data_description": {
-              "bridge_enabled": "Stellen Sie eine Verbindung zu Ihrer Tado Internet Bridge her, um Kesseldaten in Echtzeit zu erhalten. Erfordert eine v3+ Bridge. Durch die Deaktivierung werden die Anmeldedaten und Sensoren der Bridge entfernt",
-              "bridge_serial": "Aufgedruckt auf der Unterseite Ihrer Brücke (beginnt mit IB, z. B. IB0123456789)",
-              "bridge_auth_key": "4-stelliger Code vom Aufkleber auf Ihrer Brücke (vertraulich behandeln)",
-              "wc_slope": "Wie stark die Vorlauftemperatur ansteigt, wenn es draußen kälter wird. Höher = aggressiveres Heizen (0,3-3,0)",
-              "wc_design_outdoor_temp": "Die kälteste Temperatur, die Sie in Ihrem Gebiet erwarten (-30 bis 10°C)",
-              "wc_max_flow_temp": "Höchste Vorlauftemperatur, die Ihr Kessel bei der kältesten Außentemperatur (25-80°C) erreichen sollte",
-              "wc_min_flow_temp": "Niedrigste Vorlauftemperatur - wird auch verwendet, wenn die Heizung abgeschaltet wird (25-60°C)",
-              "wc_shutoff_temp": "Heizen stoppen, wenn die Außentemperatur über diesen Wert steigt (5-30°C)",
-              "wc_smoothing_method": "Wie die Außentemperaturmesswerte gemittelt werden, um plötzliche Änderungen zu vermeiden",
-              "wc_smoothing_window": "Wie lange soll die Außentemperatur gemittelt werden (15-1440 min)",
-              "wc_room_compensation_factor": "Wie stark die Vorlauftemperatur angepasst werden soll, wenn ein Raum kälter oder wärmer als der Sollwert ist (1,0-5,0)",
-              "wc_step_size": "Runden Sie die Vorlauftemperatur auf diese Schrittgröße ab - größere Schritte bedeuten weniger Kesseleinstellungen (0,5-2,0°C)",
-              "wc_hysteresis": "Senden Sie nur dann eine neue Vorlauftemperatur, wenn sie sich von der letzten um mindestens diesen Wert unterscheidet (0,5-3,0°C)"
-            }
-          },
           "mobile_tracking": {
             "name": "Verfolgung von Mobilgeräten",
             "data": {
@@ -1674,8 +1646,8 @@
             "data_description": {
               "day_start_hour": "Wann der Abruf am Tag beginnt (0-23, Standard: 7)",
               "night_start_hour": "Wann die nächtliche Abfrage beginnt - es wird nachts seltener abgefragt (0-23, Standard: 23)",
-              "custom_day_interval": "Aufhebung der automatischen Tagesabfrage mit einem festen Intervall (1-1440 min, 0 für Auto)",
-              "custom_night_interval": "Aufhebung der automatischen Nachtabfrage mit einem festen Intervall (1-1440 min, 0 für Auto)",
+              "custom_day_interval": "Setzen Sie die automatische Tagesabfrage mit einem festen Intervall außer Kraft. Alle Daten (einschließlich Luftfeuchtigkeit und Heizleistung) werden mit diesem Intervall aktualisiert, auch wenn HomeKit verbunden ist (1-1440 min, 0 für Auto)",
+              "custom_night_interval": "Setzen Sie die automatische nächtliche Abfrage mit einem festen Intervall außer Kraft. Alle Daten (einschließlich Luftfeuchtigkeit und Heizleistung) werden mit dieser Rate aktualisiert, auch wenn HomeKit verbunden ist (1-1440 min, 0 für Auto).",
               "refresh_debounce_seconds": "Warte so lange nach einer Änderung, bevor du neue Daten von Tado abrufst (1-60s)",
               "api_history_retention_days": "Wie viele Tage des API-Aufrufverlaufs für das Nutzungsdiagramm aufbewahrt werden sollen (0 = für immer)",
               "quota_reserve_enabled": "Pausieren Sie die Abfrage automatisch, wenn Ihr API-Kontingent zur Neige geht. Nur deaktivieren, wenn Sie wissen, was Sie tun.",
@@ -1693,8 +1665,48 @@
             },
             "data_description": {
               "homekit_status": "Ob die lokale HomeKit-Verbindung zu Ihrer Tado-Bridge aktiv ist",
-              "homekit_cloud_sync_minutes": "Wie oft die Tado-Server auf Heizleistung, Overlay-Status und andere lokal nicht verfügbare Daten überprüft werden sollen (5-120 min)",
+              "homekit_cloud_sync_minutes": "Wie oft Cloud-Daten wie Luftfeuchtigkeit, Heizleistung und Overlay-Status abgerufen werden sollen. Die Temperatur verwendet HomeKit lokal. Niedriger = frischere Luftfeuchtigkeit, aber mehr API-Aufrufe (5-120 min)",
               "homekit_unpair": "Trennen Sie die lokale HomeKit-Verbindung und entfernen Sie die Pairing-Anmeldedaten"
+            }
+          },
+          "internet_bridge": {
+            "name": "Internet-Brücke",
+            "data": {
+              "bridge_serial": "Seriennummer der Brücke",
+              "bridge_auth_key": "Bridge Auth Code"
+            },
+            "data_description": {
+              "bridge_serial": "Aufgedruckt auf der Unterseite Ihrer Brücke (beginnt mit IB, z. B. IB0123456789)",
+              "bridge_auth_key": "4-stelliger Code vom Aufkleber auf Ihrer Brücke (vertraulich behandeln)"
+            }
+          },
+          "weather_compensation": {
+            "name": "Wetterkompensation",
+            "data": {
+              "wc_heating_system_preset": "Heizsystem Typ",
+              "wc_slope": "Steigung der Heizkurve",
+              "wc_design_outdoor_temp": "Auslegung der Außentemperatur",
+              "wc_max_flow_temp": "Maximale Vorlauftemperatur",
+              "wc_min_flow_temp": "Minimale Vorlauftemperatur",
+              "wc_shutoff_temp": "Heizung Abschalttemperatur",
+              "wc_smoothing_method": "Temperatur-Glättungsmethode",
+              "wc_smoothing_window": "Glättungsfenster (Minuten)",
+              "wc_room_compensation_enabled": "Aktivieren der Raumkompensation",
+              "wc_room_compensation_factor": "Raumkompensationsfaktor",
+              "wc_step_size": "Vorlauftemperatur Schrittweite",
+              "wc_hysteresis": "Hysterese ändern"
+            },
+            "data_description": {
+              "wc_slope": "Wie stark die Vorlauftemperatur ansteigt, wenn es draußen kälter wird. Höher = aggressiveres Heizen (0,3-3,0)",
+              "wc_design_outdoor_temp": "Die kälteste Temperatur, die Sie in Ihrem Gebiet erwarten (-30 bis 10°C)",
+              "wc_max_flow_temp": "Höchste Vorlauftemperatur, die Ihr Kessel bei der kältesten Außentemperatur (25-80°C) erreichen sollte",
+              "wc_min_flow_temp": "Niedrigste Vorlauftemperatur - wird auch verwendet, wenn die Heizung abgeschaltet wird (25-60°C)",
+              "wc_shutoff_temp": "Heizen stoppen, wenn die Außentemperatur über diesen Wert steigt (5-30°C)",
+              "wc_smoothing_method": "Wie die Außentemperaturmesswerte gemittelt werden, um plötzliche Änderungen zu vermeiden",
+              "wc_smoothing_window": "Wie lange soll die Außentemperatur gemittelt werden (15-1440 min)",
+              "wc_room_compensation_factor": "Wie stark die Vorlauftemperatur angepasst werden soll, wenn ein Raum kälter oder wärmer als der Sollwert ist (1,0-5,0)",
+              "wc_step_size": "Runden Sie die Vorlauftemperatur auf diese Schrittgröße ab - größere Schritte bedeuten weniger Kesseleinstellungen (0,5-2,0°C)",
+              "wc_hysteresis": "Senden Sie nur dann eine neue Vorlauftemperatur, wenn sie sich von der letzten um mindestens diesen Wert unterscheidet (0,5-3,0°C)"
             }
           }
         }

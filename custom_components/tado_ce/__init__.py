@@ -194,6 +194,9 @@ async def _async_wire_and_start_coordinator(
 
     await coordinator.async_config_entry_first_refresh()
 
+    # Initialize Smart Valve Controllers for eligible zones
+    await coordinator.async_init_valve_controllers()
+
     # Log a user-friendly summary after first successful poll
     zones_info = coordinator.data.get("zones_info") or []
     zone_count = len(zones_info)
@@ -468,6 +471,9 @@ async def _async_shutdown_coordinator(coordinator: TadoDataUpdateCoordinator) ->
 
     # State restore shutdown (clears in-memory state)
     await coordinator.async_shutdown_state_restore()
+
+    # Smart Valve Control shutdown
+    await coordinator.async_shutdown_valve_controllers()
 
 
 def _unregister_all_services(hass: HomeAssistant) -> None:

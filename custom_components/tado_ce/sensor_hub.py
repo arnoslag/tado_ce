@@ -940,3 +940,40 @@ class TadoApiBreakdownSensor(TadoHubSensor):
 
         except Exception:
             _LOGGER.exception("Failed to update API Call Breakdown sensor")
+
+
+# ===================================================================
+# HomeKit Savings Sensors — track API calls saved by local control
+# ===================================================================
+
+
+class TadoHomekitReadsSavedSensor(TadoHubSensor):
+    """Sensor for HomeKit reads saved today."""
+
+    def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
+        """Initialize the TadoHomekitReadsSavedSensor."""
+        super().__init__(coordinator, "sensor_homekit_reads_saved")
+        self._attr_native_unit_of_measurement = "reads"
+        self._attr_state_class = SensorStateClass.TOTAL_INCREASING
+
+    @callback
+    def update(self) -> None:
+        """Update sensor state from coordinator HomeKit savings counter."""
+        self._attr_native_value = self.coordinator._homekit_reads_saved
+        self._attr_available = self.coordinator.homekit_provider is not None
+
+
+class TadoHomekitWritesSavedSensor(TadoHubSensor):
+    """Sensor for HomeKit writes saved today."""
+
+    def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
+        """Initialize the TadoHomekitWritesSavedSensor."""
+        super().__init__(coordinator, "sensor_homekit_writes_saved")
+        self._attr_native_unit_of_measurement = "writes"
+        self._attr_state_class = SensorStateClass.TOTAL_INCREASING
+
+    @callback
+    def update(self) -> None:
+        """Update sensor state from coordinator HomeKit savings counter."""
+        self._attr_native_value = self.coordinator._homekit_writes_saved
+        self._attr_available = self.coordinator.homekit_provider is not None

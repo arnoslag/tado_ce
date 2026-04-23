@@ -261,6 +261,12 @@
       },
       "wc_status": {
         "default": "mdi:thermostat-auto"
+      },
+      "homekit_reads_saved": {
+        "default": "mdi:book-open-outline"
+      },
+      "homekit_writes_saved": {
+        "default": "mdi:pencil-outline"
       }
     },
     "switch": {

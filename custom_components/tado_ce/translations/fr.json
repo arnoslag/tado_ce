@@ -967,6 +967,12 @@
       },
       "wc_status": {
         "name": "Situation de l'indemnisation en fonction des conditions météorologiques"
+      },
+      "homekit_reads_saved": {
+        "name": "HomeKit lit les données enregistrées"
+      },
+      "homekit_writes_saved": {
+        "name": "HomeKit écrit sauvegardé"
       }
     },
     "select": {
@@ -1465,13 +1471,15 @@
               "use_external_temp": "Utiliser un capteur de température externe",
               "external_temp_sensor": "Capteur de température externe",
               "use_external_humidity": "Utiliser un capteur d'humidité externe",
-              "external_humidity_sensor": "Capteur d'humidité externe"
+              "external_humidity_sensor": "Capteur d'humidité externe",
+              "smart_valve_control": "Contrôle intelligent des vannes"
             },
             "data_description": {
               "use_external_temp": "Désactiver pour utiliser le capteur de température intégré de Tado",
               "external_temp_sensor": "Sélectionnez une sonde de température pour remplacer la lecture de Tado",
               "use_external_humidity": "Désactiver pour utiliser le capteur d'humidité intégré de Tado",
-              "external_humidity_sensor": "Sélectionnez un capteur d'humidité pour remplacer la lecture de Tado"
+              "external_humidity_sensor": "Sélectionnez un capteur d'humidité pour remplacer la lecture de Tado",
+              "smart_valve_control": "Ajustement automatique de la cible du TRV à l'aide du capteur de température externe pour compenser l'imprécision de la lecture intégrée du TRV"
             }
           },
           "overlay_section": {
@@ -1612,42 +1620,6 @@
               "heating_cycle_inertia_threshold": "Les variations de température inférieures à cette valeur sont considérées comme \"réglées\" après l'arrêt du chauffage (0,05-0,5°C)."
             }
           },
-          "flow_temperature_control": {
-            "name": "Compensation météorologique",
-            "data": {
-              "bridge_enabled": "Activer le pont Internet",
-              "bridge_serial": "Numéro de série du pont",
-              "bridge_auth_key": "Code d'authentification du pont",
-              "wc_enabled": "Activer la compensation météorologique",
-              "wc_heating_system_preset": "Type de système de chauffage",
-              "wc_slope": "Pente de la courbe de chauffe",
-              "wc_design_outdoor_temp": "Température extérieure de référence",
-              "wc_max_flow_temp": "Température maximale d'écoulement",
-              "wc_min_flow_temp": "Température minimale d'écoulement",
-              "wc_shutoff_temp": "Température d'arrêt du chauffage",
-              "wc_smoothing_method": "Méthode de lissage de la température",
-              "wc_smoothing_window": "Fenêtre de lissage (minutes)",
-              "wc_room_compensation_enabled": "Activer la compensation de la pièce",
-              "wc_room_compensation_factor": "Facteur de compensation de la pièce",
-              "wc_step_size": "Température d'écoulement Taille de l'échelon",
-              "wc_hysteresis": "Modifier l'hystérésis"
-            },
-            "data_description": {
-              "bridge_enabled": "Connectez-vous à votre pont Internet Tado pour obtenir des données en temps réel sur la chaudière. Nécessite un pont v3+. La désactivation supprime les informations d'identification et les capteurs du pont.",
-              "bridge_serial": "Imprimé au bas de votre bridge (commence par IB, par exemple IB0123456789)",
-              "bridge_auth_key": "Code à 4 chiffres figurant sur l'autocollant apposé sur votre pont (à garder confidentiel)",
-              "wc_slope": "Augmentation de la température de départ à mesure que le temps se refroidit à l'extérieur. Plus élevé = chauffage plus agressif (0,3-3,0)",
-              "wc_design_outdoor_temp": "La température la plus froide à laquelle vous vous attendez dans votre région (-30 à 10°C)",
-              "wc_max_flow_temp": "Température de départ la plus élevée que votre chaudière devrait atteindre à la température extérieure la plus froide (25-80°C).",
-              "wc_min_flow_temp": "Température de départ la plus basse - également utilisée lorsque le chauffage s'arrête (25-60°C)",
-              "wc_shutoff_temp": "Arrêt du chauffage lorsque la température extérieure dépasse ce seuil (5-30°C)",
-              "wc_smoothing_method": "Comment la moyenne des relevés de température extérieure est calculée pour éviter les changements soudains ?",
-              "wc_smoothing_window": "Durée de la moyenne de la température extérieure (15-1440 min)",
-              "wc_room_compensation_factor": "De combien ajuster la température de départ lorsqu'une pièce est plus froide ou plus chaude que sa cible (1.0-5.0)",
-              "wc_step_size": "Arrondir la température de départ à cette taille de pas - des pas plus grands signifient moins de réglages de la chaudière (0,5-2,0°C).",
-              "wc_hysteresis": "N'envoyer une nouvelle température de départ que si elle diffère de la précédente d'au moins cette valeur (0,5-3,0 °C)."
-            }
-          },
           "mobile_tracking": {
             "name": "Suivi des appareils mobiles",
             "data": {
@@ -1674,8 +1646,8 @@
             "data_description": {
               "day_start_hour": "Lorsque l'interrogation de jour commence (0-23, par défaut : 7)",
               "night_start_hour": "Quand les sondages nocturnes commencent - les sondages sont moins fréquents la nuit (0-23, valeur par défaut : 23)",
-              "custom_day_interval": "Remplacer l'interrogation automatique de jour par un intervalle fixe (1-1440 min, 0 pour auto)",
-              "custom_night_interval": "Remplacer l'interrogation nocturne automatique par un intervalle fixe (1-1440 min, 0 pour automatique)",
+              "custom_day_interval": "Remplacer l'interrogation automatique pendant la journée par un intervalle fixe. Toutes les données (y compris l'humidité et la puissance de chauffage) sont rafraîchies à ce rythme, même si HomeKit est connecté (1-1440 min, 0 pour auto).",
+              "custom_night_interval": "Remplacer l'interrogation nocturne automatique par un intervalle fixe. Toutes les données (y compris l'humidité et la puissance de chauffage) sont rafraîchies à ce rythme, même si HomeKit est connecté (1-1440 min, 0 pour auto).",
               "refresh_debounce_seconds": "Attendre ce temps après un changement avant de récupérer de nouvelles données de Tado (1-60s)",
               "api_history_retention_days": "Nombre de jours de l'historique des appels API à conserver pour le graphique d'utilisation (0 = pour toujours)",
               "quota_reserve_enabled": "Interrompt automatiquement l'interrogation lorsque votre quota d'API est faible. Ne le désactivez que si vous savez ce que vous faites.",
@@ -1693,8 +1665,48 @@
             },
             "data_description": {
               "homekit_status": "Si la connexion HomeKit locale à votre pont Tado est active.",
-              "homekit_cloud_sync_minutes": "Quelle est la fréquence de vérification des serveurs de Tado pour la puissance de chauffage, l'état de la superposition et d'autres données non disponibles localement (5-120 min) ?",
+              "homekit_cloud_sync_minutes": "Fréquence de récupération des données du nuage, y compris l'humidité, la puissance de chauffage et l'état de la superposition. La température utilise HomeKit localement. Plus bas = humidité plus fraîche mais plus d'appels à l'API (5-120 min)",
               "homekit_unpair": "Déconnecter la connexion HomeKit locale et supprimer les identifiants d'appairage"
+            }
+          },
+          "internet_bridge": {
+            "name": "Pont Internet",
+            "data": {
+              "bridge_serial": "Numéro de série du pont",
+              "bridge_auth_key": "Code d'authentification du pont"
+            },
+            "data_description": {
+              "bridge_serial": "Imprimé au bas de votre bridge (commence par IB, par exemple IB0123456789)",
+              "bridge_auth_key": "Code à 4 chiffres figurant sur l'autocollant apposé sur votre pont (à garder confidentiel)"
+            }
+          },
+          "weather_compensation": {
+            "name": "Compensation météorologique",
+            "data": {
+              "wc_heating_system_preset": "Type de système de chauffage",
+              "wc_slope": "Pente de la courbe de chauffe",
+              "wc_design_outdoor_temp": "Température extérieure de référence",
+              "wc_max_flow_temp": "Température maximale d'écoulement",
+              "wc_min_flow_temp": "Température minimale d'écoulement",
+              "wc_shutoff_temp": "Température d'arrêt du chauffage",
+              "wc_smoothing_method": "Méthode de lissage de la température",
+              "wc_smoothing_window": "Fenêtre de lissage (minutes)",
+              "wc_room_compensation_enabled": "Activer la compensation de la pièce",
+              "wc_room_compensation_factor": "Facteur de compensation de la pièce",
+              "wc_step_size": "Température d'écoulement Taille de l'échelon",
+              "wc_hysteresis": "Modifier l'hystérésis"
+            },
+            "data_description": {
+              "wc_slope": "Augmentation de la température de départ à mesure que le temps se refroidit à l'extérieur. Plus élevé = chauffage plus agressif (0,3-3,0)",
+              "wc_design_outdoor_temp": "La température la plus froide à laquelle vous vous attendez dans votre région (-30 à 10°C)",
+              "wc_max_flow_temp": "Température de départ la plus élevée que votre chaudière devrait atteindre à la température extérieure la plus froide (25-80°C).",
+              "wc_min_flow_temp": "Température de départ la plus basse - également utilisée lorsque le chauffage s'arrête (25-60°C)",
+              "wc_shutoff_temp": "Arrêt du chauffage lorsque la température extérieure dépasse ce seuil (5-30°C)",
+              "wc_smoothing_method": "Comment la moyenne des relevés de température extérieure est calculée pour éviter les changements soudains ?",
+              "wc_smoothing_window": "Durée de la moyenne de la température extérieure (15-1440 min)",
+              "wc_room_compensation_factor": "De combien ajuster la température de départ lorsqu'une pièce est plus froide ou plus chaude que sa cible (1.0-5.0)",
+              "wc_step_size": "Arrondir la température de départ à cette taille de pas - des pas plus grands signifient moins de réglages de la chaudière (0,5-2,0°C).",
+              "wc_hysteresis": "N'envoyer une nouvelle température de départ que si elle diffère de la précédente d'au moins cette valeur (0,5-3,0 °C)."
             }
           }
         }

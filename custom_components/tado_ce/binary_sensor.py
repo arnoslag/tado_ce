@@ -1199,8 +1199,6 @@ class TadoHomeKitConnectedSensor(CoordinatorEntity["TadoDataUpdateCoordinator"],
             "status": self._status,
             "mapped_zones": mapped_zones,
             "unmapped_zones": max(0, unmapped_zones),
-            "reads_saved_today": self.coordinator._homekit_reads_saved,
-            "writes_saved_today": self.coordinator._homekit_writes_saved,
             **self.coordinator.homekit_write_metrics,
         }
 

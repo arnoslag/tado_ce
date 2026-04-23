@@ -345,13 +345,24 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                 {"collapsed": True},
             )
 
-        # --- Weather Compensation (if enabled) ---
-        if opt("wc_enabled", False):
-            sections[vol.Required("flow_temperature_control")] = data_entry_flow.section(
+        # --- Internet Bridge (if credentials exist) ---
+        bridge_enabled = bool(opt("bridge_serial", "")) and bool(opt("bridge_auth_key", ""))
+        if bridge_enabled:
+            sections[vol.Required("internet_bridge")] = data_entry_flow.section(
                 vol.Schema(
                     {
                         vol.Optional("bridge_serial", description={"suggested_value": opt("bridge_serial", "")}): TextSelector(TextSelectorConfig(type=TextSelectorType.TEXT)),
                         vol.Optional("bridge_auth_key", description={"suggested_value": opt("bridge_auth_key", "")}): TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD)),
+                    },
+                ),
+                {"collapsed": True},
+            )
+
+        # --- Weather Compensation (if enabled AND bridge exists) ---
+        if opt("wc_enabled", False) and bridge_enabled:
+            sections[vol.Required("weather_compensation")] = data_entry_flow.section(
+                vol.Schema(
+                    {
                         vol.Optional("wc_heating_system_preset", default=opt("wc_heating_system_preset", "radiators_standard")): SelectSelector(SelectSelectorConfig(options=["radiators_standard", "radiators_low_temp", "underfloor", "custom"], translation_key="wc_heating_system_preset", mode=SelectSelectorMode.DROPDOWN)),
                         vol.Optional("wc_slope", default=opt("wc_slope", 1.5)): NumberSelector(NumberSelectorConfig(min=0.3, max=3.0, step=0.1, mode=NumberSelectorMode.BOX)),
                         vol.Optional("wc_design_outdoor_temp", default=opt("wc_design_outdoor_temp", -5.0)): NumberSelector(NumberSelectorConfig(min=-30, max=10, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="°C")),
@@ -364,18 +375,6 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                         vol.Optional("wc_room_compensation_factor", default=opt("wc_room_compensation_factor", 3.0)): NumberSelector(NumberSelectorConfig(min=1.0, max=5.0, step=0.5, mode=NumberSelectorMode.BOX, unit_of_measurement="°C/°C")),
                         vol.Optional("wc_step_size", default=opt("wc_step_size", 1.0)): NumberSelector(NumberSelectorConfig(min=0.5, max=2.0, step=0.5, mode=NumberSelectorMode.BOX, unit_of_measurement="°C")),
                         vol.Optional("wc_hysteresis", default=opt("wc_hysteresis", 1.0)): NumberSelector(NumberSelectorConfig(min=0.5, max=3.0, step=0.5, mode=NumberSelectorMode.BOX, unit_of_measurement="°C")),
-                    },
-                ),
-                {"collapsed": True},
-            )
-
-        # --- Internet Bridge (if credentials exist) ---
-        elif bool(opt("bridge_serial", "")) and bool(opt("bridge_auth_key", "")):
-            sections[vol.Required("flow_temperature_control")] = data_entry_flow.section(
-                vol.Schema(
-                    {
-                        vol.Optional("bridge_serial", description={"suggested_value": opt("bridge_serial", "")}): TextSelector(TextSelectorConfig(type=TextSelectorType.TEXT)),
-                        vol.Optional("bridge_auth_key", description={"suggested_value": opt("bridge_auth_key", "")}): TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD)),
                     },
                 ),
                 {"collapsed": True},
@@ -568,7 +567,8 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
 
         if user_input is not None:
             processed_input = self._process_advanced_settings_input(user_input, errors)
-            await self._process_flow_temperature_control(user_input, processed_input, errors)
+            self._process_internet_bridge(user_input, processed_input)
+            self._process_weather_compensation(user_input, processed_input, errors)
 
             # Handle HomeKit unpair redirect
             if getattr(self, "_homekit_unpair_requested", False):
@@ -810,59 +810,33 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
             errors["custom_night_interval"] = "interval_out_of_range"
             processed["custom_night_interval"] = None
 
-    async def _process_flow_temperature_control(
+    def _process_internet_bridge(
+        self,
+        user_input: dict[str, Any],
+        processed: dict[str, Any],
+    ) -> None:
+        """Flatten internet_bridge section — bridge credentials with collapsed-section preservation."""
+        if "internet_bridge" not in user_input:
+            return
+        section = user_input["internet_bridge"]
+        existing = self.config_entry.options
+        # Preserve existing credentials if section collapsed (no submitted values)
+        bridge_serial = (section.get("bridge_serial") or "").strip()
+        bridge_auth_key = (section.get("bridge_auth_key") or "").strip()
+        processed["bridge_serial"] = bridge_serial or existing.get("bridge_serial", "")
+        processed["bridge_auth_key"] = bridge_auth_key or existing.get("bridge_auth_key", "")
+
+    def _process_weather_compensation(
         self,
         user_input: dict[str, Any],
         processed: dict[str, Any],
         errors: dict[str, str],
     ) -> None:
-        """Flatten flow_temperature_control section (bridge + weather compensation)."""
-        if "flow_temperature_control" not in user_input:
+        """Flatten weather_compensation section — 12 WC tuning fields with min/max validation."""
+        if "weather_compensation" not in user_input:
             return
-        section = user_input["flow_temperature_control"]
-
-        # Bridge credential handling.
-        # The bridge_enabled toggle only exists in the bridge-only section
-        # (no WC). The WC section has bridge_serial/bridge_auth_key fields
-        # directly without a toggle. We must distinguish three cases:
-        #   1. bridge_enabled present AND True  → use submitted credentials
-        #   2. bridge_enabled present AND False → user disabled bridge, clear
-        #   3. bridge_enabled absent (WC path)  → preserve submitted or existing
-        if "bridge_enabled" in section:
-            # Case 1 & 2: bridge-only section with explicit toggle
-            if section["bridge_enabled"]:
-                bridge_serial = (section.get("bridge_serial") or "").strip()
-                bridge_auth_key = (section.get("bridge_auth_key") or "").strip()
-                processed["bridge_serial"] = bridge_serial
-                processed["bridge_auth_key"] = bridge_auth_key
-
-                if bridge_serial and bridge_auth_key:
-                    if not bridge_serial.upper().startswith("IB"):
-                        errors["flow_temperature_control"] = "bridge_serial_invalid"
-                    else:
-                        from .bridge_api import TadoBridgeApiClient
-
-                        session = async_get_clientsession(self.hass)
-                        bridge_client = TadoBridgeApiClient(session, bridge_serial, bridge_auth_key)
-                        if not await bridge_client.async_validate_credentials():
-                            errors["flow_temperature_control"] = "bridge_auth_failed"
-            else:
-                # Toggle explicitly off — clear credentials
-                processed["bridge_serial"] = ""
-                processed["bridge_auth_key"] = ""
-        else:
-            # Case 3: WC path — no toggle, preserve credentials from form
-            # or fall back to existing options (collapsed section won't
-            # submit Optional fields without a default value).
-            existing = self.config_entry.options
-            bridge_serial = (section.get("bridge_serial") or "").strip()
-            bridge_auth_key = (section.get("bridge_auth_key") or "").strip()
-            processed["bridge_serial"] = bridge_serial or existing.get("bridge_serial", "")
-            processed["bridge_auth_key"] = bridge_auth_key or existing.get("bridge_auth_key", "")
-
-        # Weather compensation settings
-        for key in [
-            "wc_enabled",
+        section = user_input["weather_compensation"]
+        for key in (
             "wc_heating_system_preset",
             "wc_slope",
             "wc_design_outdoor_temp",
@@ -875,7 +849,7 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
             "wc_room_compensation_factor",
             "wc_step_size",
             "wc_hysteresis",
-        ]:
+        ):
             if key in section:
                 processed[key] = section[key]
 
@@ -883,7 +857,7 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
         wc_min = processed.get("wc_min_flow_temp", 25.0)
         wc_max = processed.get("wc_max_flow_temp", 65.0)
         if wc_min > wc_max:
-            errors["flow_temperature_control"] = "wc_min_exceeds_max"
+            errors["weather_compensation"] = "wc_min_exceeds_max"
 
     async def _load_zones_with_heating_power(self) -> list[dict[str, str]]:
         """Load zones that have heatingPower for thermal analytics multi-select."""
@@ -990,6 +964,9 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                 )
             else:
                 all_values["external_humidity_sensor"] = ""
+            # Smart Valve Control toggle (only present for HEATING zones with external sensor)
+            if "smart_valve_control" in s:
+                all_values["smart_valve_control"] = bool(s["smart_valve_control"])
 
         if "overlay_section" in user_input:
             s = user_input["overlay_section"]
@@ -1031,15 +1008,17 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
         # Load current values
         config = zone_config_manager.get_zone_config(zone_id)
 
-        # Get zone name for description placeholder
+        # Get zone name and type for description placeholder
         data_loader = coordinator.data_loader
         zones_info = await self.hass.async_add_executor_job(data_loader.load_zones_info_file)
         zone_name = zone_id
+        zone_type = ""
         if zones_info:
-            zone_name = next(
-                (z.get("name", zone_id) for z in zones_info if str(z.get("id")) == zone_id),
-                zone_id,
-            )
+            for z in zones_info:
+                if str(z.get("id")) == zone_id:
+                    zone_name = z.get("name", zone_id)
+                    zone_type = z.get("type", "")
+                    break
 
         # Current values with display-friendly transforms
         cur_heating = config.get("heating_type", HEATING_TYPE_RADIATOR).capitalize()
@@ -1062,6 +1041,7 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
         )
         cur_temp_sensor = config.get("external_temp_sensor", "")
         cur_humidity_sensor = config.get("external_humidity_sensor", "")
+        cur_smart_valve = config.get("smart_valve_control", False)
         cur_use_ext_temp = bool(cur_temp_sensor)
         cur_use_ext_humidity = bool(cur_humidity_sensor)
         cur_overlay = OVERLAY_MODE_REVERSE_MAP.get(
@@ -1179,6 +1159,15 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                                     EntitySelectorConfig(
                                         domain="sensor", device_class="humidity",
                                     ),
+                                ),
+                                **(
+                                    {
+                                        vol.Optional(
+                                            "smart_valve_control", default=cur_smart_valve,
+                                        ): BooleanSelector(),
+                                    }
+                                    if zone_type == "HEATING" and cur_temp_sensor
+                                    else {}
                                 ),
                             },
                         ),

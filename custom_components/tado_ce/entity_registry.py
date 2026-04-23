@@ -457,6 +457,23 @@ ENTITY_REGISTRY: dict[str, EntityMeta] = {
         icon=None,  # uses device_class CONNECTIVITY
         feature_group="homekit",
     ),
+    # HomeKit savings sensors — track API calls saved by local control
+    "sensor_homekit_reads_saved": EntityMeta(
+        translation_key="homekit_reads_saved",
+        unique_id_suffix="homekit_reads_saved",  # hub-level
+        entity_category="diagnostic",
+        icon="mdi:book-open-outline",
+        enabled_default=False,
+        feature_group="homekit",
+    ),
+    "sensor_homekit_writes_saved": EntityMeta(
+        translation_key="homekit_writes_saved",
+        unique_id_suffix="homekit_writes_saved",  # hub-level
+        entity_category="diagnostic",
+        icon="mdi:pencil-outline",
+        enabled_default=False,
+        feature_group="homekit",
+    ),
 
     # ===================================================================
     # Buttons (button.py) — 6 entries

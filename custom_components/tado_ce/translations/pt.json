@@ -967,6 +967,12 @@
       },
       "wc_status": {
         "name": "Estado de compensação meteorológica"
+      },
+      "homekit_reads_saved": {
+        "name": "Leituras do HomeKit guardadas"
+      },
+      "homekit_writes_saved": {
+        "name": "HomeKit escreve guardado"
       }
     },
     "select": {
@@ -1465,13 +1471,15 @@
               "use_external_temp": "Utilizar sensor de temperatura externo",
               "external_temp_sensor": "Sensor de temperatura externo",
               "use_external_humidity": "Utilizar um sensor de humidade externo",
-              "external_humidity_sensor": "Sensor de humidade externo"
+              "external_humidity_sensor": "Sensor de humidade externo",
+              "smart_valve_control": "Controlo inteligente de válvulas"
             },
             "data_description": {
               "use_external_temp": "Desativar para utilizar o sensor de temperatura incorporado no Tado",
               "external_temp_sensor": "Selecionar um sensor de temperatura para anular a leitura do Tado",
               "use_external_humidity": "Desligue para utilizar o sensor de humidade incorporado no Tado",
-              "external_humidity_sensor": "Selecionar um sensor de humidade para substituir a leitura do Tado"
+              "external_humidity_sensor": "Selecionar um sensor de humidade para substituir a leitura do Tado",
+              "smart_valve_control": "Ajustar automaticamente o objetivo do TRV utilizando o sensor de temperatura externo para compensar a leitura incorporada imprecisa do TRV"
             }
           },
           "overlay_section": {
@@ -1612,42 +1620,6 @@
               "heating_cycle_inertia_threshold": "A variação de temperatura abaixo deste valor é considerada \"estabilizada\" após a paragem do aquecimento (0,05-0,5°C)"
             }
           },
-          "flow_temperature_control": {
-            "name": "Compensação meteorológica",
-            "data": {
-              "bridge_enabled": "Ativar a ponte Internet",
-              "bridge_serial": "Número de série da ponte",
-              "bridge_auth_key": "Código de autenticação da ponte",
-              "wc_enabled": "Ativar a compensação meteorológica",
-              "wc_heating_system_preset": "Tipo de sistema de aquecimento",
-              "wc_slope": "Inclinação da curva de aquecimento",
-              "wc_design_outdoor_temp": "Temperatura exterior de projeto",
-              "wc_max_flow_temp": "Temperatura máxima do fluxo",
-              "wc_min_flow_temp": "Temperatura mínima do caudal",
-              "wc_shutoff_temp": "Temperatura de fecho do aquecimento",
-              "wc_smoothing_method": "Método de suavização da temperatura",
-              "wc_smoothing_window": "Janela de alisamento (minutos)",
-              "wc_room_compensation_enabled": "Ativar a compensação de divisão",
-              "wc_room_compensation_factor": "Fator de compensação da sala",
-              "wc_step_size": "Temperatura do caudal Tamanho do passo",
-              "wc_hysteresis": "Alterar histerese"
-            },
-            "data_description": {
-              "bridge_enabled": "Ligue-se à sua Tado Internet Bridge para obter dados da caldeira em tempo real. Requer uma ponte v3+. A desativação remove as credenciais e os sensores da ponte",
-              "bridge_serial": "Impresso na parte inferior da ponte (começa por IB, por exemplo, IB0123456789)",
-              "bridge_auth_key": "Código de 4 dígitos do autocolante na sua ponte (manter confidencial)",
-              "wc_slope": "A intensidade com que a temperatura do fluxo aumenta à medida que fica mais frio no exterior. Maior = aquecimento mais agressivo (0,3-3,0)",
-              "wc_design_outdoor_temp": "A temperatura mais fria que espera na sua região (-30 a 10°C)",
-              "wc_max_flow_temp": "A temperatura de caudal mais elevada que a caldeira deve atingir à temperatura exterior mais fria (25-80°C)",
-              "wc_min_flow_temp": "Temperatura de caudal mais baixa - também utilizada quando o aquecimento é desligado (25-60°C)",
-              "wc_shutoff_temp": "Parar o aquecimento quando a temperatura exterior subir acima deste valor (5-30°C)",
-              "wc_smoothing_method": "Como se calcula a média das leituras da temperatura exterior para evitar alterações súbitas",
-              "wc_smoothing_window": "Quanto tempo para calcular a média da temperatura exterior (15-1440 min)",
-              "wc_room_compensation_factor": "Quanto ajustar a temperatura do fluxo quando uma divisão está mais fria ou mais quente do que o seu objetivo (1,0-5,0)",
-              "wc_step_size": "Arredondar a temperatura do caudal para este tamanho de passo - passos maiores significam menos ajustes da caldeira (0,5-2,0°C)",
-              "wc_hysteresis": "Só envia uma nova temperatura de fluxo quando esta difere da última em pelo menos este valor (0,5-3,0°C)"
-            }
-          },
           "mobile_tracking": {
             "name": "Rastreio de dispositivos móveis",
             "data": {
@@ -1674,8 +1646,8 @@
             "data_description": {
               "day_start_hour": "Quando se inicia a sondagem diurna (0-23, pré-definição: 7)",
               "night_start_hour": "Quando começa a sondagem nocturna - sondagens menos frequentes à noite (0-23, predefinição: 23)",
-              "custom_day_interval": "Anular a sondagem diurna automática com um intervalo fixo (1-1440 min, 0 para automático)",
-              "custom_night_interval": "Anular a sondagem nocturna automática com um intervalo fixo (1-1440 min, 0 para automático)",
+              "custom_day_interval": "Substituir a sondagem diurna automática por um intervalo fixo. Todos os dados (incluindo a humidade e a potência de aquecimento) são actualizados a esta taxa, mesmo com o HomeKit ligado (1-1440 min, 0 para automático)",
+              "custom_night_interval": "Substituir a sondagem nocturna automática por um intervalo fixo. Todos os dados (incluindo a humidade e a potência de aquecimento) são actualizados a esta taxa, mesmo com o HomeKit ligado (1-1440 min, 0 para automático)",
               "refresh_debounce_seconds": "Esperar este tempo após uma alteração antes de ir buscar novos dados ao Tado (1-60s)",
               "api_history_retention_days": "Quantos dias do histórico de chamadas da API devem ser mantidos para o gráfico de utilização (0 = para sempre)",
               "quota_reserve_enabled": "Pausa automaticamente a sondagem quando a quota da API está a ficar baixa. Desativar apenas se souber o que está a fazer.",
@@ -1693,8 +1665,48 @@
             },
             "data_description": {
               "homekit_status": "Se a ligação local do HomeKit à sua ponte Tado está ativa",
-              "homekit_cloud_sync_minutes": "Com que frequência verificar os servidores do Tado relativamente à potência de aquecimento, ao estado da sobreposição e a outros dados não disponíveis localmente (5-120 min)",
+              "homekit_cloud_sync_minutes": "Com que frequência obter dados da nuvem, incluindo humidade, potência de aquecimento e estado da sobreposição. A temperatura utiliza o HomeKit localmente. Mais baixo = humidade mais fresca, mas mais chamadas à API (5-120 min)",
               "homekit_unpair": "Desligar a ligação local do HomeKit e remover as credenciais de emparelhamento"
+            }
+          },
+          "internet_bridge": {
+            "name": "Ponte Internet",
+            "data": {
+              "bridge_serial": "Número de série da ponte",
+              "bridge_auth_key": "Código de autenticação da ponte"
+            },
+            "data_description": {
+              "bridge_serial": "Impresso na parte inferior da ponte (começa por IB, por exemplo, IB0123456789)",
+              "bridge_auth_key": "Código de 4 dígitos do autocolante na sua ponte (manter confidencial)"
+            }
+          },
+          "weather_compensation": {
+            "name": "Compensação meteorológica",
+            "data": {
+              "wc_heating_system_preset": "Tipo de sistema de aquecimento",
+              "wc_slope": "Inclinação da curva de aquecimento",
+              "wc_design_outdoor_temp": "Temperatura exterior de projeto",
+              "wc_max_flow_temp": "Temperatura máxima do fluxo",
+              "wc_min_flow_temp": "Temperatura mínima do caudal",
+              "wc_shutoff_temp": "Temperatura de fecho do aquecimento",
+              "wc_smoothing_method": "Método de suavização da temperatura",
+              "wc_smoothing_window": "Janela de alisamento (minutos)",
+              "wc_room_compensation_enabled": "Ativar a compensação de divisão",
+              "wc_room_compensation_factor": "Fator de compensação da sala",
+              "wc_step_size": "Temperatura do caudal Tamanho do passo",
+              "wc_hysteresis": "Alterar histerese"
+            },
+            "data_description": {
+              "wc_slope": "A intensidade com que a temperatura do fluxo aumenta à medida que fica mais frio no exterior. Maior = aquecimento mais agressivo (0,3-3,0)",
+              "wc_design_outdoor_temp": "A temperatura mais fria que espera na sua região (-30 a 10°C)",
+              "wc_max_flow_temp": "A temperatura de caudal mais elevada que a caldeira deve atingir à temperatura exterior mais fria (25-80°C)",
+              "wc_min_flow_temp": "Temperatura de caudal mais baixa - também utilizada quando o aquecimento é desligado (25-60°C)",
+              "wc_shutoff_temp": "Parar o aquecimento quando a temperatura exterior subir acima deste valor (5-30°C)",
+              "wc_smoothing_method": "Como se calcula a média das leituras da temperatura exterior para evitar alterações súbitas",
+              "wc_smoothing_window": "Quanto tempo para calcular a média da temperatura exterior (15-1440 min)",
+              "wc_room_compensation_factor": "Quanto ajustar a temperatura do fluxo quando uma divisão está mais fria ou mais quente do que o seu objetivo (1,0-5,0)",
+              "wc_step_size": "Arredondar a temperatura do caudal para este tamanho de passo - passos maiores significam menos ajustes da caldeira (0,5-2,0°C)",
+              "wc_hysteresis": "Só envia uma nova temperatura de fluxo quando esta difere da última em pelo menos este valor (0,5-3,0°C)"
             }
           }
         }

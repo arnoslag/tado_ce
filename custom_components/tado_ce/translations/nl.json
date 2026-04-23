@@ -967,6 +967,12 @@
       },
       "wc_status": {
         "name": "Weer Compensatie Status"
+      },
+      "homekit_reads_saved": {
+        "name": "HomeKit leest opgeslagen"
+      },
+      "homekit_writes_saved": {
+        "name": "HomeKit schrijft opgeslagen"
       }
     },
     "select": {
@@ -1465,13 +1471,15 @@
               "use_external_temp": "Externe temperatuursensor gebruiken",
               "external_temp_sensor": "Externe temperatuursensor",
               "use_external_humidity": "Externe vochtigheidssensor gebruiken",
-              "external_humidity_sensor": "Externe vochtigheidssensor"
+              "external_humidity_sensor": "Externe vochtigheidssensor",
+              "smart_valve_control": "Slimme klepbediening"
             },
             "data_description": {
               "use_external_temp": "Uitschakelen om de ingebouwde temperatuursensor van Tado te gebruiken",
               "external_temp_sensor": "Selecteer een temperatuursensor om de meting van Tado te overschrijven",
               "use_external_humidity": "Uitschakelen om de ingebouwde vochtigheidssensor van Tado te gebruiken",
-              "external_humidity_sensor": "Selecteer een vochtigheidssensor om de uitlezing van Tado te overschrijven"
+              "external_humidity_sensor": "Selecteer een vochtigheidssensor om de uitlezing van Tado te overschrijven",
+              "smart_valve_control": "TRV-doel automatisch aanpassen met de externe temperatuursensor ter compensatie van de onnauwkeurige ingebouwde TRV-aflezing"
             }
           },
           "overlay_section": {
@@ -1612,42 +1620,6 @@
               "heating_cycle_inertia_threshold": "Temperatuurverandering lager dan dit wordt beschouwd als 'geregeld' nadat verwarming stopt (0,05-0,5°C)"
             }
           },
-          "flow_temperature_control": {
-            "name": "Weercompensatie",
-            "data": {
-              "bridge_enabled": "Internetbrug inschakelen",
-              "bridge_serial": "Serienummer brug",
-              "bridge_auth_key": "Brug Auth Code",
-              "wc_enabled": "Weercompensatie inschakelen",
-              "wc_heating_system_preset": "Type verwarmingssysteem",
-              "wc_slope": "Helling verwarmingscurve",
-              "wc_design_outdoor_temp": "Ontwerp Buitentemperatuur",
-              "wc_max_flow_temp": "Maximale stromingstemperatuur",
-              "wc_min_flow_temp": "Minimale stromingstemperatuur",
-              "wc_shutoff_temp": "Uitschakeltemperatuur verwarming",
-              "wc_smoothing_method": "Afvlakmethode voor temperatuur",
-              "wc_smoothing_window": "Afvlakvenster (minuten)",
-              "wc_room_compensation_enabled": "Kamercompensatie inschakelen",
-              "wc_room_compensation_factor": "Compensatiefactor kamer",
-              "wc_step_size": "Stromingstemperatuur Stapgrootte",
-              "wc_hysteresis": "Hysterese wijzigen"
-            },
-            "data_description": {
-              "bridge_enabled": "Maak verbinding met je Tado Internet Bridge voor real-time boilergegevens. Vereist een v3+ bridge. Uitschakelen verwijdert bridgegegevens en sensoren",
-              "bridge_serial": "Afgedrukt op de onderkant van je brug (begint met IB, bijv. IB0123456789)",
-              "bridge_auth_key": "4-cijferige code van de sticker op je brug (vertrouwelijk bewaren)",
-              "wc_slope": "Hoe sterk de stromingstemperatuur stijgt als het buiten kouder wordt. Hoger = agressievere verwarming (0,3-3,0)",
-              "wc_design_outdoor_temp": "De koudste temperatuur die je verwacht in jouw gebied (-30 tot 10°C)",
-              "wc_max_flow_temp": "Hoogste aanvoertemperatuur die uw ketel moet bereiken bij de koudste buitentemperatuur (25-80°C)",
-              "wc_min_flow_temp": "Laagste aanvoertemperatuur - ook gebruikt wanneer de verwarming wordt uitgeschakeld (25-60°C)",
-              "wc_shutoff_temp": "Stop met verwarmen wanneer de buitentemperatuur boven deze waarde stijgt (5-30°C)",
-              "wc_smoothing_method": "Hoe buitentemperatuurmetingen worden gemiddeld om plotselinge veranderingen te voorkomen",
-              "wc_smoothing_window": "Hoe lang gemiddelde buitentemperatuur over (15-1440 min)",
-              "wc_room_compensation_factor": "Hoeveel moet de aanvoertemperatuur worden aangepast als een kamer kouder of warmer is dan de doelstelling (1,0-5,0)?",
-              "wc_step_size": "Rond de aanvoertemperatuur af op deze stapgrootte - grotere stappen betekenen minder aanpassingen aan de ketel (0,5-2,0°C)",
-              "wc_hysteresis": "Verstuur alleen een nieuwe aanvoertemperatuur als deze ten minste zoveel verschilt van de vorige (0,5-3,0°C)."
-            }
-          },
           "mobile_tracking": {
             "name": "Traceren van mobiele apparaten",
             "data": {
@@ -1674,8 +1646,8 @@
             "data_description": {
               "day_start_hour": "Wanneer de polling overdag start (0-23, standaard: 7)",
               "night_start_hour": "Wanneer de nachtpeiling begint - peilt 's nachts minder vaak (0-23, standaard: 23)",
-              "custom_day_interval": "Automatische polling overdag opheffen met een vast interval (1-1440 min, 0 voor automatisch)",
-              "custom_night_interval": "Automatische polling 's nachts opheffen met een vast interval (1-1440 min, 0 voor automatisch)",
+              "custom_day_interval": "Automatische polling overdag opheffen met een vast interval. Alle gegevens (inclusief vochtigheid en verwarmingsvermogen) worden met deze snelheid vernieuwd, zelfs als HomeKit is aangesloten (1-1440 min, 0 voor auto)",
+              "custom_night_interval": "Automatische nachtelijke polling opheffen met een vast interval. Alle gegevens (inclusief vochtigheid en verwarmingsvermogen) worden met deze snelheid vernieuwd, zelfs als HomeKit is aangesloten (1-1440 min, 0 voor automatisch)",
               "refresh_debounce_seconds": "Wacht zo lang na een wijziging voordat nieuwe gegevens van Tado worden opgehaald (1-60s)",
               "api_history_retention_days": "Hoeveel dagen API oproepgeschiedenis bij te houden voor de gebruiksgrafiek (0 = voor altijd)",
               "quota_reserve_enabled": "Pauzeer polling automatisch wanneer je API-quota bijna op is. Alleen uitschakelen als je weet wat je doet.",
@@ -1693,8 +1665,48 @@
             },
             "data_description": {
               "homekit_status": "Of de lokale HomeKit-verbinding met je Tado bridge actief is",
-              "homekit_cloud_sync_minutes": "Hoe vaak de servers van Tado controleren op verwarmingsvermogen, overlay-status en andere gegevens die lokaal niet beschikbaar zijn (5-120 min)",
+              "homekit_cloud_sync_minutes": "Hoe vaak cloudgegevens moeten worden opgehaald, inclusief vochtigheid, verwarmingsvermogen en overlaystatus. Temperatuur gebruikt HomeKit lokaal. Lager = frissere luchtvochtigheid maar meer API-oproepen (5-120 min)",
               "homekit_unpair": "Verbreek de verbinding met de lokale HomeKit-verbinding en verwijder de koppelingsgegevens"
+            }
+          },
+          "internet_bridge": {
+            "name": "Internet Brug",
+            "data": {
+              "bridge_serial": "Serienummer brug",
+              "bridge_auth_key": "Brug Auth Code"
+            },
+            "data_description": {
+              "bridge_serial": "Afgedrukt op de onderkant van je brug (begint met IB, bijv. IB0123456789)",
+              "bridge_auth_key": "4-cijferige code van de sticker op je brug (vertrouwelijk bewaren)"
+            }
+          },
+          "weather_compensation": {
+            "name": "Weercompensatie",
+            "data": {
+              "wc_heating_system_preset": "Type verwarmingssysteem",
+              "wc_slope": "Helling verwarmingscurve",
+              "wc_design_outdoor_temp": "Ontwerp Buitentemperatuur",
+              "wc_max_flow_temp": "Maximale stromingstemperatuur",
+              "wc_min_flow_temp": "Minimale stromingstemperatuur",
+              "wc_shutoff_temp": "Uitschakeltemperatuur verwarming",
+              "wc_smoothing_method": "Afvlakmethode voor temperatuur",
+              "wc_smoothing_window": "Afvlakvenster (minuten)",
+              "wc_room_compensation_enabled": "Kamercompensatie inschakelen",
+              "wc_room_compensation_factor": "Compensatiefactor kamer",
+              "wc_step_size": "Stromingstemperatuur Stapgrootte",
+              "wc_hysteresis": "Hysterese wijzigen"
+            },
+            "data_description": {
+              "wc_slope": "Hoe sterk de stromingstemperatuur stijgt als het buiten kouder wordt. Hoger = agressievere verwarming (0,3-3,0)",
+              "wc_design_outdoor_temp": "De koudste temperatuur die je verwacht in jouw gebied (-30 tot 10°C)",
+              "wc_max_flow_temp": "Hoogste aanvoertemperatuur die uw ketel moet bereiken bij de koudste buitentemperatuur (25-80°C)",
+              "wc_min_flow_temp": "Laagste aanvoertemperatuur - ook gebruikt wanneer de verwarming wordt uitgeschakeld (25-60°C)",
+              "wc_shutoff_temp": "Stop met verwarmen wanneer de buitentemperatuur boven deze waarde stijgt (5-30°C)",
+              "wc_smoothing_method": "Hoe buitentemperatuurmetingen worden gemiddeld om plotselinge veranderingen te voorkomen",
+              "wc_smoothing_window": "Hoe lang gemiddelde buitentemperatuur over (15-1440 min)",
+              "wc_room_compensation_factor": "Hoeveel moet de aanvoertemperatuur worden aangepast als een kamer kouder of warmer is dan de doelstelling (1,0-5,0)?",
+              "wc_step_size": "Rond de aanvoertemperatuur af op deze stapgrootte - grotere stappen betekenen minder aanpassingen aan de ketel (0,5-2,0°C)",
+              "wc_hysteresis": "Verstuur alleen een nieuwe aanvoertemperatuur als deze ten minste zoveel verschilt van de vorige (0,5-3,0°C)."
             }
           }
         }

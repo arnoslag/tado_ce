@@ -32,7 +32,7 @@ from .sensor_environment import (
     TadoSurfaceTemperatureSensor,
 )
 
-# Hub sensors (12 classes)
+# Hub sensors (14 classes)
 from .sensor_hub import (
     TadoApiBreakdownSensor,
     TadoApiHistorySensor,
@@ -41,6 +41,8 @@ from .sensor_hub import (
     TadoApiStatusSensor,
     TadoApiUsageSensor,
     TadoHomeIdSensor,
+    TadoHomekitReadsSavedSensor,
+    TadoHomekitWritesSavedSensor,
     TadoLastSyncSensor,
     TadoNextSyncSensor,
     TadoPollingIntervalSensor,
@@ -374,6 +376,11 @@ async def async_setup_entry(
         sensors.append(TadoOutsideTemperatureSensor(coordinator))
         sensors.append(TadoSolarIntensitySensor(coordinator))
         sensors.append(TadoWeatherStateSensor(coordinator))
+
+    # HomeKit savings sensors (optional)
+    if config_manager.get_homekit_enabled():
+        sensors.append(TadoHomekitReadsSavedSensor(coordinator))
+        sensors.append(TadoHomekitWritesSavedSensor(coordinator))
 
     # Zone sensors
     try:

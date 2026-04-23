@@ -1,6 +1,6 @@
-# Tado CE — Entity Reference (v4.0.0-beta.7)
+# Tado CE — Entity Reference (v4.0.0-beta.9)
 
-This document lists all 86 entity types in Tado CE, organised by function.
+This document lists all 88 entity types in Tado CE, organised by function.
 
 > **v3.1.0 change:** Per-zone configuration (overlay mode, timer, min/max temp, temp offset, heating type, window type, sensitivity, external sensors, etc.) moved from 11 HA entities per zone to a centralised Options Flow menu. Zero config entities are created — settings live in **Settings → Tado CE → Configure → Zone Configuration**.
 
@@ -48,29 +48,31 @@ This document lists all 86 entity types in Tado CE, organised by function.
 
 ---
 
-## Hub Sensors (17 entities)
+## Hub Sensors (19 entities)
 
 ### Friendly Names
 
-| # | Function | CE? | v2.3.1 Name | v3.0 Name |
-|---|----------|-----|-------------|-----------|
-| 1 | Outdoor temperature | | Outside Temperature | Outside Temp |
-| 2 | Solar radiation | | Solar Intensity | Solar Intensity |
-| 3 | Weather condition | | Weather | Weather |
-| 4 | Boiler flow temp | ✓ | Boiler Flow Temperature | Boiler Flow Temp |
-| 5 | Home identifier | ✓ | Home ID | Home ID |
-| 6 | API calls used | ✓ | API Usage | API Usage |
-| 7 | API reset countdown | ✓ | API Reset | API Reset |
-| 8 | Daily API limit | ✓ | API Limit | API Limit |
-| 9 | API health | ✓ | API Status | API Status |
-| 10 | Auth token health | ✓ | Token Status | Token Status |
-| 11 | Zone count | ✓ | Zone Count | Zone Count |
-| 12 | Last sync time | ✓ | Last Sync | Last Sync |
-| 13 | Next sync time | ✓ | Next Sync | Next Sync |
-| 14 | Polling interval | ✓ | Polling Interval | Polling Interval |
-| 15 | API call history | ✓ | Call History | Call History |
-| 16 | API call breakdown | ✓ | API Call Breakdown | API Breakdown |
-| 17 | Home-wide insights | ✓ | Home Insights | Home Insights |
+| # | Function | CE? | v2.3.1 Name | v3.0 Name | v4.0 Name |
+|---|----------|-----|-------------|-----------|-----------|
+| 1 | Outdoor temperature | | Outside Temperature | Outside Temp | — |
+| 2 | Solar radiation | | Solar Intensity | Solar Intensity | — |
+| 3 | Weather condition | | Weather | Weather | — |
+| 4 | Boiler flow temp | ✓ | Boiler Flow Temperature | Boiler Flow Temp | — |
+| 5 | Home identifier | ✓ | Home ID | Home ID | — |
+| 6 | API calls used | ✓ | API Usage | API Usage | — |
+| 7 | API reset countdown | ✓ | API Reset | API Reset | — |
+| 8 | Daily API limit | ✓ | API Limit | API Limit | — |
+| 9 | API health | ✓ | API Status | API Status | — |
+| 10 | Auth token health | ✓ | Token Status | Token Status | — |
+| 11 | Zone count | ✓ | Zone Count | Zone Count | — |
+| 12 | Last sync time | ✓ | Last Sync | Last Sync | — |
+| 13 | Next sync time | ✓ | Next Sync | Next Sync | — |
+| 14 | Polling interval | ✓ | Polling Interval | Polling Interval | — |
+| 15 | API call history | ✓ | Call History | Call History | — |
+| 16 | API call breakdown | ✓ | API Call Breakdown | API Breakdown | — |
+| 17 | Home-wide insights | ✓ | Home Insights | Home Insights | — |
+| 18 | HomeKit reads saved | ✓ | — | — | HomeKit Reads Saved |
+| 19 | HomeKit writes saved | ✓ | — | — | HomeKit Writes Saved |
 
 ### Entity IDs
 
@@ -93,6 +95,8 @@ This document lists all 86 entity types in Tado CE, organised by function.
 | 15 | `sensor.tado_ce_call_history` | `sensor.tado_ce_hub_ce_call_history` |
 | 16 | `sensor.tado_ce_api_call_breakdown` | `sensor.tado_ce_hub_ce_api_breakdown` |
 | 17 | `sensor.tado_ce_home_insights` | `sensor.tado_ce_hub_ce_home_insights` |
+| 18 | — | — | `sensor.tado_ce_hub_ce_homekit_reads_saved` |
+| 19 | — | — | `sensor.tado_ce_hub_ce_homekit_writes_saved` |
 
 ---
 
@@ -164,9 +168,9 @@ This document lists all 86 entity types in Tado CE, organised by function.
 
 > HomeKit Connected (#84) only appears when HomeKit local control is enabled. Attributes include uptime, reconnect count, and mapped/unmapped zone counts.
 >
-> **Savings counters** (`reads_saved_today`, `writes_saved_today`) — survive HA restarts so your daily total stays accurate. Reset when your API quota resets.
+> **Savings counters** — HomeKit Reads Saved (#18) and Writes Saved (#19) are standalone diagnostic sensors (disabled by default). They track how many API calls HomeKit local control has saved you today. Enable them in **Settings → Devices → Tado CE Hub → "X entities not shown"**. Counters survive HA restarts and reset when your API quota resets.
 >
-> **Write performance metrics** (`write_attempts`, `write_successes`, `write_fallbacks`, `write_avg_latency_ms`) — reset on every HA restart, API quota reset, and HomeKit reconnect. These reflect current network conditions, not historical data. All zeros means no writes have happened since the last restart.
+> **Write performance metrics** (`write_attempts`, `write_successes`, `write_fallbacks`, `write_avg_latency_ms`) — attributes on the HomeKit Connected sensor. Reset on every HA restart, API quota reset, and HomeKit reconnect. These reflect current network conditions, not historical data. All zeros means no writes have happened since the last restart.
 
 ### Entity IDs
 
@@ -486,7 +490,7 @@ This document lists all 86 entity types in Tado CE, organised by function.
 
 | Category | Count | CE ✓ | Enhanced ⬆ | Standard |
 |----------|-------|------|-----------|----------|
-| Hub Sensors | 17 | 14 | 0 | 3 |
+| Hub Sensors | 19 | 16 | 0 | 3 |
 | Bridge API — Dynamic Discovery | up to 15 | 15 | 0 | 0 |
 | Hub Controls | 5 | 5 | 0 | 0 |
 | Hub Binary Sensors | 2 (+1 optional) | 2 | 0 | 0 |
@@ -505,4 +509,4 @@ This document lists all 86 entity types in Tado CE, organised by function.
 | Zone Config | ~~11 /zone~~ 0 (Options Flow) | — | — | — |
 | Device Tracker | 1 /device | 1 | 0 | 0 |
 | Weather Compensation | 2 | 2 | 0 | 0 |
-| **Total unique types** | **87** | **~69** | **4** | **~12** |
+| **Total unique types** | **88** | **~70** | **4** | **~12** |

@@ -332,6 +332,14 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity,
         )
         if scheduled_temp is not None:
             attrs["scheduled_target_temperature"] = scheduled_temp
+
+        # Smart Valve Control attributes
+        controller = self.coordinator.valve_controllers.get(self._zone_id)
+        if controller is not None:
+            attrs.update(controller.get_attributes())
+        else:
+            attrs["valve_control_active"] = False
+
         return attrs
 
     @callback
@@ -408,7 +416,8 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity,
             self._schedule_heating_cycle_update(temp)
             return HVACMode.HEAT if self._overlay_type == "MANUAL" else HVACMode.AUTO
 
-        # Power is OFF — update target temp to scheduled value when in Auto mode
+        # Power is OFF — show scheduled target for context, but mode is OFF
+        # regardless of whether it's a manual overlay, schedule block, or Away mode
         if self._overlay_type != "MANUAL":
             scheduled = get_current_schedule_target(
                 self._zone_id, data_loader=self.coordinator.data_loader,
@@ -416,7 +425,7 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity,
             if scheduled is not None:
                 self._attr_target_temperature = scheduled
 
-        return HVACMode.OFF if self._overlay_type == "MANUAL" else HVACMode.AUTO
+        return HVACMode.OFF
 
     def _schedule_heating_cycle_update(self, temp: float | None) -> None:
         """Schedule async heating cycle coordinator update if applicable."""

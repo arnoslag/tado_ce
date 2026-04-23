@@ -967,6 +967,12 @@
       },
       "wc_status": {
         "name": "Weather Compensation Status"
+      },
+      "homekit_reads_saved": {
+        "name": "HomeKit Reads Saved"
+      },
+      "homekit_writes_saved": {
+        "name": "HomeKit Writes Saved"
       }
     },
     "select": {
@@ -1524,13 +1530,20 @@
               "heating_cycle_inertia_threshold": "Temperature change below this is considered 'settled' after heating stops (0.05–0.5°C)"
             }
           },
-          "flow_temperature_control": {
+          "internet_bridge": {
+            "name": "Internet Bridge",
+            "data": {
+              "bridge_serial": "Bridge Serial Number",
+              "bridge_auth_key": "Bridge Auth Code"
+            },
+            "data_description": {
+              "bridge_serial": "Printed on the bottom of your bridge (starts with IB, e.g. IB0123456789)",
+              "bridge_auth_key": "4-digit code from the sticker on your bridge (keep confidential)"
+            }
+          },
+          "weather_compensation": {
             "name": "Weather Compensation",
             "data": {
-              "bridge_enabled": "Enable Internet Bridge",
-              "bridge_serial": "Bridge Serial Number",
-              "bridge_auth_key": "Bridge Auth Code",
-              "wc_enabled": "Enable Weather Compensation",
               "wc_heating_system_preset": "Heating System Type",
               "wc_slope": "Heating Curve Slope",
               "wc_design_outdoor_temp": "Design Outdoor Temperature",
@@ -1545,9 +1558,6 @@
               "wc_hysteresis": "Change Hysteresis"
             },
             "data_description": {
-              "bridge_enabled": "Connect to your Tado Internet Bridge for real-time boiler data. Requires a v3+ bridge. Disabling removes bridge credentials and sensors",
-              "bridge_serial": "Printed on the bottom of your bridge (starts with IB, e.g. IB0123456789)",
-              "bridge_auth_key": "4-digit code from the sticker on your bridge (keep confidential)",
               "wc_slope": "How steeply flow temperature rises as it gets colder outside. Higher = more aggressive heating (0.3–3.0)",
               "wc_design_outdoor_temp": "The coldest temperature you expect in your area (-30 to 10°C)",
               "wc_max_flow_temp": "Highest flow temperature your boiler should reach at the coldest outdoor temp (25–80°C)",
@@ -1578,7 +1588,7 @@
             },
             "data_description": {
               "homekit_status": "Whether the local HomeKit connection to your Tado bridge is active",
-              "homekit_cloud_sync_minutes": "How often to check Tado's servers for heating power, overlay status, and other data not available locally (5–120 min)",
+              "homekit_cloud_sync_minutes": "How often to fetch cloud data including humidity, heating power, and overlay status. Temperature uses HomeKit locally. Lower = fresher humidity but more API calls (5–120 min)",
               "homekit_unpair": "Disconnect the local HomeKit connection and remove pairing credentials"
             }
           },
@@ -1599,8 +1609,8 @@
             "data_description": {
               "day_start_hour": "When daytime polling starts (0–23, default: 7)",
               "night_start_hour": "When nighttime polling starts — polls less often at night (0–23, default: 23)",
-              "custom_day_interval": "Override automatic daytime polling with a fixed interval (1–1440 min, 0 for auto)",
-              "custom_night_interval": "Override automatic nighttime polling with a fixed interval (1–1440 min, 0 for auto)",
+              "custom_day_interval": "Override automatic daytime polling with a fixed interval. All data (including humidity and heating power) refreshes at this rate, even with HomeKit connected (1–1440 min, 0 for auto)",
+              "custom_night_interval": "Override automatic nighttime polling with a fixed interval. All data (including humidity and heating power) refreshes at this rate, even with HomeKit connected (1–1440 min, 0 for auto)",
               "refresh_debounce_seconds": "Wait this long after a change before fetching fresh data from Tado (1–60s)",
               "api_history_retention_days": "How many days of API call history to keep for the usage chart (0 = forever)",
               "quota_reserve_enabled": "Automatically pause polling when your API quota is running low. Only disable if you know what you're doing.",
@@ -1689,13 +1699,15 @@
               "use_external_temp": "Use External Temperature Sensor",
               "external_temp_sensor": "External Temperature Sensor",
               "use_external_humidity": "Use External Humidity Sensor",
-              "external_humidity_sensor": "External Humidity Sensor"
+              "external_humidity_sensor": "External Humidity Sensor",
+              "smart_valve_control": "Smart Valve Control"
             },
             "data_description": {
               "use_external_temp": "Turn off to use Tado's built-in temperature sensor",
               "external_temp_sensor": "Select a temperature sensor to override Tado's reading",
               "use_external_humidity": "Turn off to use Tado's built-in humidity sensor",
-              "external_humidity_sensor": "Select a humidity sensor to override Tado's reading"
+              "external_humidity_sensor": "Select a humidity sensor to override Tado's reading",
+              "smart_valve_control": "Automatically adjust TRV target using the external temperature sensor to compensate for the TRV's inaccurate built-in reading"
             }
           },
           "overlay_section": {

@@ -58,6 +58,7 @@ if TYPE_CHECKING:
     from .smart_comfort import SmartComfortManager
     from .state_reconciler import StateReconciler
     from .state_restore_manager import CapturedState, StateRestoreManager
+    from .valve_controller import SmartValveController
     from .zone_config_manager import ZoneConfigManager
 
 _LOGGER = logging.getLogger(__name__)
@@ -194,6 +195,9 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         # Write-side circuit breaker (initialized when HomeKit is enabled)
         self.write_health_tracker: WriteHealthTracker | None = None
+
+        # Smart Valve Control — per-zone proportional offset controllers
+        self.valve_controllers: dict[str, SmartValveController] = {}
 
         # Weather compensation mutable runtime state (persists across polls)
         self._wc_state = WeatherCompensationState()
@@ -381,6 +385,16 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # State restore: Away → Home clears captured states, then detect timer expiration
         await self._handle_state_restore_updates(home_state_data, result)
 
+        # Smart Valve Control: evaluate all active controllers after poll
+        for controller in self.valve_controllers.values():
+            try:
+                await controller.async_evaluate()
+            except Exception:
+                _LOGGER.debug(
+                    "Smart Valve: evaluation error for zone %s",
+                    controller._zone_id, exc_info=True,
+                )
+
         return result
 
     async def _async_update_data(self) -> dict[str, Any]:
@@ -430,17 +444,28 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         # 2c. Compute skip_zone_states
         cm = self.config_manager
+
+        # If user explicitly set a custom polling interval, respect it —
+        # fetch all data every cycle so humidity/heating power/weather stay
+        # fresh at the user's chosen rate. Only use HomeKit skip logic when
+        # polling is automatic (no custom interval).
+        user_has_custom = (
+            cm.get_custom_day_interval() is not None
+            or cm.get_custom_night_interval() is not None
+        )
+
         skip_zone_states = False
         if force_zone_fetch:
             skip_zone_states = False
-        elif homekit_connected and self._last_cloud_zone_fetch is not None:
+        elif homekit_connected and self._last_cloud_zone_fetch is not None and not user_has_custom:
             cloud_sync_minutes = cm.get_homekit_cloud_sync_minutes()
             elapsed = (dt_util.utcnow() - self._last_cloud_zone_fetch).total_seconds() / 60
             skip_zone_states = elapsed < cloud_sync_minutes
 
         # Weather fetch frequency reduction when HomeKit connected
+        # Same principle as skip_zone_states: respect user's custom interval
         skip_weather = False
-        if homekit_connected and self._last_weather_fetch is not None:
+        if homekit_connected and self._last_weather_fetch is not None and not user_has_custom:
             weather_age = (dt_util.utcnow() - self._last_weather_fetch).total_seconds() / 60
             skip_weather = weather_age < HOMEKIT_WEATHER_SKIP_MINUTES
 
@@ -861,4 +886,89 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Persist and shut down state restore manager (null-safe)."""
         if self._sr_manager is not None:
             await self._sr_manager.async_shutdown()
+
+    # ------------------------------------------------------------------
+    # Smart Valve Control lifecycle
+    # ------------------------------------------------------------------
+
+    async def async_init_valve_controllers(self) -> None:
+        """Initialize SmartValveController for zones with smart_valve_control enabled."""
+        from .valve_controller import SmartValveController
+
+        zones_info = self.data_loader.get_cached("zones_info")
+        if not zones_info or not isinstance(zones_info, list):
+            return
+
+        for zone in zones_info:
+            zone_id = str(zone.get("id", ""))
+            zone_type = zone.get("type", "")
+
+            if zone_type != "HEATING":
+                continue
+
+            config = self.zone_config_manager.get_zone_config(zone_id)
+            if not config.get("smart_valve_control", False):
+                continue
+
+            ext_sensor = config.get("external_temp_sensor", "")
+            if not ext_sensor:
+                continue
+
+            controller = SmartValveController(self.hass, self, zone_id)
+            await controller.async_activate()
+            self.valve_controllers[zone_id] = controller
+            _LOGGER.debug("Smart Valve: initialized controller for zone %s", zone_id)
+
+        # Listen for runtime config changes
+        self.zone_config_manager.add_listener(self._on_zone_config_change)
+
+    async def async_shutdown_valve_controllers(self) -> None:
+        """Deactivate and clean up all valve controllers."""
+        for zone_id, controller in list(self.valve_controllers.items()):
+            try:
+                await controller.async_deactivate()
+            except Exception:
+                _LOGGER.warning(
+                    "Smart Valve: error deactivating controller for zone %s",
+                    zone_id, exc_info=True,
+                )
+        self.valve_controllers.clear()
+
+    def _on_zone_config_change(self, zone_id: str, key: str, value: Any) -> None:
+        """Handle zone config changes — activate/deactivate controllers dynamically."""
+        if key != "smart_valve_control":
+            return
+
+        if value and zone_id not in self.valve_controllers:
+            # Check prerequisites
+            config = self.zone_config_manager.get_zone_config(zone_id)
+            ext_sensor = config.get("external_temp_sensor", "")
+            if not ext_sensor:
+                return
+
+            # Check zone type
+            zones_info = self.data_loader.get_cached("zones_info")
+            if zones_info and isinstance(zones_info, list):
+                zone_type = next(
+                    (z.get("type") for z in zones_info if str(z.get("id")) == zone_id),
+                    None,
+                )
+                if zone_type != "HEATING":
+                    _LOGGER.warning(
+                        "Smart Valve: zone %s is %s, not HEATING — skipping",
+                        zone_id, zone_type,
+                    )
+                    return
+
+            from .valve_controller import SmartValveController
+
+            controller = SmartValveController(self.hass, self, zone_id)
+            self.valve_controllers[zone_id] = controller
+            self.hass.async_create_task(controller.async_activate())
+            _LOGGER.debug("Smart Valve: activated controller for zone %s", zone_id)
+
+        elif not value and zone_id in self.valve_controllers:
+            controller = self.valve_controllers.pop(zone_id)
+            self.hass.async_create_task(controller.async_deactivate())
+            _LOGGER.debug("Smart Valve: deactivated controller for zone %s", zone_id)
 

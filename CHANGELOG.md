@@ -2,11 +2,25 @@
 
 All notable changes to Tado CE will be documented in this file.
 
+## [4.0.0-beta.9] - 2026-04-23
+
+### Features
+- **Smart Valve Control** ([Discussion #231](https://github.com/hiall-fyi/tado_ce/discussions/231) - @Si-Hill, @wrowlands3) — If you have an external temperature sensor configured for a heating zone, you can now let Tado CE automatically keep the valve open until your room actually reaches the target temperature. The TRV's built-in sensor sits on the radiator and reads high, so it shuts the valve while the room is still cold. Smart Valve Control compensates by adjusting the TRV target based on the gap between your external sensor and the desired temperature. Adjustments go through HomeKit when available (zero API cost), with cloud as fallback. The controller backs off when you manually change the temperature, and resumes on the next schedule block. If the external sensor goes offline, it automatically resumes the Tado schedule. Enable it per zone in **Settings → Tado CE → Configure → zone → External Sensors → Smart Valve Control**. See [FEATURES_GUIDE.md](FEATURES_GUIDE.md#-smart-valve-control) for details.
+
+### Improvements
+- **Custom polling interval now also keeps weather data fresh** — The beta.8 fix for custom polling overriding HomeKit cloud sync only applied to zone data. Weather data could still go stale if HomeKit was connected and your custom interval was shorter than the weather skip window. Both zone and weather data now refresh at your chosen rate.
+- **Bridge credentials now have their own settings section** ([#240](https://github.com/hiall-fyi/tado_ce/issues/240) - @ChrisMarriott38) — If you have an Internet Bridge but don't use Weather Compensation, your bridge serial and auth code used to appear under a "Weather Compensation" heading. They now live in their own "Internet Bridge" section, and Weather Compensation tuning has its own separate section that only appears when both features are active. No settings are lost — this is purely a UI reorganisation.
+- **HomeKit savings now tracked as standalone sensors** — Reads Saved and Writes Saved are now their own diagnostic sensor entities (disabled by default) instead of just attributes on the HomeKit Connected sensor. This means HA records their history, so you can add sparkline trends to your dashboard. Enable them in **Settings → Devices → Tado CE Hub → "X entities not shown"**.
+
+### Bug Fixes
+- **Climate card now shows "off" when heating is off via schedule or Away mode** ([Discussion #219](https://github.com/hiall-fyi/tado_ce/discussions/219) - @dragorex71) — If your Tado schedule had a time block with heating off, or you set Away mode and your away schedule turns off heating, the climate card still showed "auto" instead of "off". It now shows "off" whenever the zone isn't heating, regardless of whether it was turned off manually, by the schedule, or by Away mode.
+
 ## [4.0.0-beta.8] - 2026-04-19
 
 ### Improvements
 - **Boiler flow temperature now updates every 60 seconds** ([#237](https://github.com/hiall-fyi/tado_ce/issues/237) - @ChrisMarriott38) — The boiler flow temperature sensor was tied to your cloud polling interval, so if you set polling to 30 minutes, flow temperature data went stale for 30 minutes too — even though the bridge API doesn't count toward your Tado API quota. It now polls the bridge independently every 60 seconds, giving you smooth flow temperature charts regardless of your cloud polling settings. Weather Compensation also benefits from fresher flow data.
 - **Temperature sensors now display with consistent precision** — All temperature sensors (zone, outdoor, boiler flow, dew point, surface, weather compensation) now explicitly request one decimal place in the dashboard. Previously this relied on HA's default, which was usually correct but not guaranteed.
+- **Custom polling interval now overrides HomeKit cloud sync** ([#239](https://github.com/hiall-fyi/tado_ce/issues/239) - @ChrisMarriott38) — If you set a custom day or night polling interval, all data (including humidity, heating power, and weather) now refreshes at that rate. Previously, HomeKit's Cloud Data Refresh setting (default 30 min) would override your custom interval for zone data, meaning humidity could lag behind even with 5-minute polling. Auto polling users are unaffected — the cloud sync interval still applies when no custom interval is set.
 
 ### Bug Fixes
 - **Fixed false HomeKit write failures triggering circuit breaker** — After a HomeKit temperature or mode change, the integration checks that Tado's cloud servers received the change. But the cloud can take 3–5 minutes to sync from the bridge, while the verification window was only 17 seconds. This caused every HomeKit write to be counted as a "failure" even though the bridge accepted it, eventually tripping the circuit breaker and forcing all writes through the slower cloud API. The verification now retries multiple times over a longer window before giving up, and cloud sync delays are no longer counted as write failures.

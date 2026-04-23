@@ -21,6 +21,13 @@ Thank you to everyone who supported the project through [Buy Me a Coffee](https:
 
 Community contributors who helped shape each release through bug reports, feature requests, testing, and feedback.
 
+### v4.0.0-beta.9
+
+- **[@Si-Hill](https://github.com/Si-Hill)** — Asked the question that started it all: "how do I get the TRV to keep heating until the room actually reaches target?" Shared detailed experience with RoomMind and BetterThermostat, explaining why simple "set to 25°C" automations don't work well with modulating boilers. This directly shaped the proportional offset approach used in Smart Valve Control ([Discussion #231](https://github.com/hiall-fyi/tado_ce/discussions/231))
+- **[@wrowlands3](https://github.com/wrowlands3)** — Shared real-world experience using Better Thermostat with Tado, including screenshots showing how it adjusts valve targets and the API call cost. Confirmed that Better Thermostat doesn't work with Tado schedules, which validated the need for a native solution ([Discussion #231](https://github.com/hiall-fyi/tado_ce/discussions/231))
+- **[@dragorex71](https://github.com/dragorex71)** — Reported that climate entities showed "auto" instead of "off" when Away mode turned off heating via the schedule. Provided the debug log that confirmed the root cause — the integration was only checking manual overlays, not the actual power state ([Discussion #219](https://github.com/hiall-fyi/tado_ce/discussions/219))
+- **[@ChrisMarriott38](https://github.com/ChrisMarriott38)** — Reported that bridge credentials appeared under "Weather Compensation" heading when WC wasn't enabled, and identified that custom polling intervals weren't keeping weather data fresh when HomeKit was connected ([#240](https://github.com/hiall-fyi/tado_ce/issues/240), [#239](https://github.com/hiall-fyi/tado_ce/issues/239))
+
 ### v4.0.0-beta.8
 
 - **[@ChrisMarriott38](https://github.com/ChrisMarriott38)** — Spotted that the boiler flow temperature sensor was tied to the cloud polling interval, with a side-by-side chart comparing Tado CE (200-minute steps) against his own REST sensor (60-second updates) that made the problem immediately clear. This led to decoupling the bridge API fetch onto its own 60-second timer ([#237](https://github.com/hiall-fyi/tado_ce/issues/237))

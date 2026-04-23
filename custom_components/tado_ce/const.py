@@ -196,6 +196,7 @@ DEFAULT_ZONE_CONFIG = {
     "min_temp": 5.0,  # 5-25°C (Heating + AC)
     "max_temp": 25.0,  # 15-30°C (Heating + AC)
     "surface_temp_offset": 0.0,  # -5.0 to +5.0°C offset for mold risk calculation
+    "smart_valve_control": False,  # Per-zone Smart Valve Control toggle (Heating only)
 }
 
 # Surface temperature offset limits (for mold risk calibration)
@@ -251,6 +252,15 @@ WINDOW_DETECTION_MODE_DEFAULT = "auto"
 # that is almost certainly a bad API response or automation feedback loop.
 DEVICE_OFFSET_MIN: float = -10.0
 DEVICE_OFFSET_MAX: float = 10.0
+
+# =============================================================================
+# Smart Valve Control Constants
+# =============================================================================
+
+SMART_VALVE_HYSTERESIS: Final[float] = 0.3       # °C dead zone around target
+SMART_VALVE_MIN_CHANGE: Final[float] = 0.5       # °C minimum write threshold
+SMART_VALVE_CLOUD_RATE_LIMIT: Final[float] = 300.0  # seconds (5 minutes)
+SMART_VALVE_DEBOUNCE_WINDOW: Final[float] = 3.0  # seconds (ActionDebouncer window)
 
 # =============================================================================
 # API Write Optimization Constants

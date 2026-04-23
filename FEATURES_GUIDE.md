@@ -19,12 +19,13 @@ Complete guide to all Tado CE exclusive features, configurations, and usage scen
 10. [Bridge API Integration](#-bridge-api-integration)
 11. [HomeKit Local Control](#-homekit-local-control)
 12. [Weather Compensation](#-weather-compensation)
-13. [Optional Features](#-optional-features)
-14. [Per-Zone Configuration](#-per-zone-configuration)
-15. [Zone Features Toggles](#-zone-features-toggles)
-16. [Configuration Scenarios](#-configuration-scenarios)
-17. [Actionable Insights](#-actionable-insights)
-18. [Troubleshooting](#-troubleshooting)
+13. [Smart Valve Control](#-smart-valve-control)
+14. [Optional Features](#-optional-features)
+15. [Per-Zone Configuration](#-per-zone-configuration)
+16. [Zone Features Toggles](#-zone-features-toggles)
+17. [Configuration Scenarios](#-configuration-scenarios)
+18. [Actionable Insights](#-actionable-insights)
+19. [Troubleshooting](#-troubleshooting)
 
 ---
 
@@ -1075,7 +1076,7 @@ Pair your Tado bridge via HomeKit to control heating and AC directly on your loc
 | Cloud-only data | Heating power, battery status, schedules, hot water, and geofencing are only available from Tado's cloud. HomeKit provides temperature and HVAC mode locally. |
 | Wireless Temp Sensors | Standalone temperature sensors (ST01) don't appear as HomeKit accessories — their data always comes from the cloud. |
 | Single pairing | The bridge can only be paired with one HomeKit controller at a time. |
-| External sensors don't control TRV valve | Per-zone external sensors change the displayed room temperature, but the TRV still uses its own sensor to control the valve. Use an automation or temperature offsets to compensate. See [Smart Valve Control](ROADMAP.md) for the planned solution. |
+| External sensors don't control TRV valve | Per-zone external sensors change the displayed room temperature, but the TRV still uses its own sensor to control the valve. Enable **Smart Valve Control** in zone settings to automatically compensate — see [Smart Valve Control](#-smart-valve-control). |
 
 ### General Limitations
 
@@ -1100,7 +1101,7 @@ Pair your Tado bridge via HomeKit to control heating and AC directly on your loc
 | Setting | Location | Default | Description |
 |---------|----------|---------|-------------|
 | HomeKit Local Control | General Settings | Off | Enable/disable HomeKit pairing |
-| Cloud Sync Interval | Advanced Settings → HomeKit | 30 min | How often to check Tado's servers for cloud-only data (schedules, geofencing, etc.) when HomeKit is connected |
+| Cloud Sync Interval | Advanced Settings → HomeKit | 30 min | How often to fetch cloud data (humidity, heating power, overlays) when HomeKit is connected. Temperature uses HomeKit locally. **Note:** If you set a custom polling interval in Polling & API, all data refreshes at your custom rate instead — this setting only applies when using automatic polling. |
 | Unpair | Advanced Settings → HomeKit | — | Remove the HomeKit pairing without removing the integration |
 
 ### Entities
@@ -1275,6 +1276,80 @@ entities:
 
 ---
 
+## 🎯 Smart Valve Control
+
+**Available:** v4.0.0-beta.9 | **Requirement:** Heating zone + external temperature sensor + HomeKit (recommended) | **Per-Zone Opt-in**
+
+Automatically adjusts TRV target temperatures using external sensor readings so your room — not the TRV — reaches the desired temperature.
+
+### The Problem
+
+Tado TRVs have a built-in temperature sensor that sits right on the radiator. It reads significantly higher than the actual room temperature (e.g. TRV reads 22°C while the room is only 17°C). The TRV thinks the room is warm and closes the valve, but you're still cold.
+
+External sensors in Tado CE fix what you *see* in HA, but the TRV still uses its own sensor to control the valve.
+
+### How It Works
+
+Smart Valve Control calculates a proportional offset and writes an adjusted target directly to the TRV:
+
+```
+valve_target = TRV_reading + (desired_target − external_sensor)
+```
+
+**Example:** Schedule says 20°C, external sensor reads 17°C, TRV reads 22°C → controller writes `22 + (20 − 17) = 25°C` to the TRV. The valve stays open until the room reaches 20°C.
+
+The controller uses a hysteresis band (±0.3°C) around the target to prevent oscillation, and a minimum change guard (0.5°C) to avoid unnecessary writes.
+
+### Setup
+
+1. Configure an **external temperature sensor** for the zone (any HA temperature sensor — Zigbee, Aqara, etc.)
+2. Go to **Settings → Tado CE → Configure → pick a zone → External Sensors section**
+3. Toggle on **Smart Valve Control**
+
+The toggle only appears for heating zones that have an external temperature sensor configured.
+
+### Write Path
+
+- **HomeKit first** — adjustments go through the local bridge with zero API cost
+- **Cloud fallback** — if HomeKit is unavailable, writes go through the Tado cloud API (rate-limited to 1 write per zone per 5 minutes to protect your quota)
+- Writes are debounced (3-second window) to batch rapid sensor updates into a single write
+
+### Climate Entity Attributes
+
+When Smart Valve Control is active, the climate entity exposes additional attributes:
+
+| Attribute | Value | Description |
+|-----------|-------|-------------|
+| `valve_control_active` | `true` / `false` | Whether the controller is actively adjusting the TRV |
+| `valve_target` | e.g. `24.8` | The actual temperature written to the TRV (only when active) |
+| `valve_control_backed_off` | `true` | Shown when the controller has backed off due to manual override |
+
+The climate card's target temperature always shows your desired temperature (from the schedule or manual setting), never the inflated valve target.
+
+### Safety Features
+
+| Scenario | Behaviour |
+|----------|-----------|
+| You manually change the temperature | Controller backs off until the next schedule block |
+| External sensor goes offline while active | Resumes Tado schedule (deletes overlay), transitions to idle |
+| TRV reading unavailable | Bang-bang fallback — sets TRV to max_temp to keep heating |
+| Both sensors unavailable | Resumes schedule, stays idle |
+| Valve target exceeds min/max bounds | Clamped to zone's configured min_temp / max_temp |
+
+### State Persistence
+
+Controller state (active/idle/backed-off, last valve target) persists across HA restarts. On restart, the controller recalculates before writing to avoid stale overlays.
+
+### Limitations
+
+| Limitation | Detail |
+|------------|--------|
+| Heating zones only | AC zones are not supported in this release |
+| Schedule resume is cloud-only | Deleting overlays requires the Tado cloud API (no HomeKit equivalent) |
+| TRV precision | HomeKit rounds to 0.1°C; cloud API accepts 0.01°C |
+
+---
+
 ## 🔧 Optional Features
 
 **Available:** Various versions | **Requirement:** Varies | **Opt-in Configuration**
@@ -1394,6 +1469,7 @@ Customize settings for each individual zone via **Settings → Tado CE → Confi
 | Window Predicted Sensitivity | Low, Medium, or High | All zones |
 | External Temperature Sensor | Use any HA sensor instead of Tado's built-in | All zones |
 | External Humidity Sensor | Use any HA sensor instead of Tado's built-in | All zones |
+| Smart Valve Control | Automatically adjust TRV target using external sensor | Heating zones (with external temp sensor) |
 
 ### Zone Overlay Mode Options
 
@@ -1789,4 +1865,4 @@ Look for `Bridge API full response` in logs to verify the API is returning data.
 
 ---
 
-**Last Updated:** v4.0.0-beta.2 (2026-04-14)
+**Last Updated:** v4.0.0-beta.8 (2026-04-20)
