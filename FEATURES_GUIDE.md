@@ -1306,6 +1306,8 @@ The controller uses a hysteresis band (±0.3°C) around the target to prevent os
 2. Go to **Settings → Tado CE → Configure → pick a zone → External Sensors section**
 3. Toggle on **Smart Valve Control**
 
+> **Important:** If your TRV has a non-zero temperature offset (from a previous automation or manual setting in the Tado app), reset it to 0 before enabling Smart Valve Control. The controller reads the offset-adjusted temperature from the TRV, so a fixed offset would cause double compensation and overshoot. The controller warns you on startup if it detects a non-zero offset.
+
 The toggle only appears for heating zones that have an external temperature sensor configured.
 
 ### Write Path
@@ -1330,15 +1332,18 @@ The climate card's target temperature always shows your desired temperature (fro
 
 | Scenario | Behaviour |
 |----------|-----------|
-| You manually change the temperature | Controller backs off until the next schedule block |
+| You manually change the temperature | Controller backs off until the next schedule block change or overlay change |
 | External sensor goes offline while active | Resumes Tado schedule (deletes overlay), transitions to idle |
 | TRV reading unavailable | Bang-bang fallback — sets TRV to max_temp to keep heating |
 | Both sensors unavailable | Resumes schedule, stays idle |
 | Valve target exceeds min/max bounds | Clamped to zone's configured min_temp / max_temp |
+| HA crashes while controller is active | Stale overlay is cleaned up automatically on next startup |
+| TRV has a non-zero temperature offset | Warning logged on startup — reset offset to 0 to avoid double compensation |
+| All Tado schedule blocks are OFF | Controller recovers from backed-off state when overlay changes (e.g. HA automation sets a new temperature) |
 
 ### State Persistence
 
-Controller state (active/idle/backed-off, last valve target) persists across HA restarts. On restart, the controller recalculates before writing to avoid stale overlays.
+Controller state (active/idle/backed-off, last valve target, overlay ownership) persists across HA restarts. On restart, the controller recalculates before writing and cleans up any stale overlays from a previous session.
 
 ### Limitations
 

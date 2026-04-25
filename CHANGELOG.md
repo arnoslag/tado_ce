@@ -2,6 +2,20 @@
 
 All notable changes to Tado CE will be documented in this file.
 
+## [4.0.0-beta.10] - 2026-04-25
+
+### Bug Fixes
+- **Fixed bridge sensors (wiring state, boiler temperature, etc.) showing "unavailable" after HA restart** — The bridge API sensors rely on data from the bridge poll loop, but the poll loop started as a background task that raced with the sensor platform setup. If the first bridge fetch hadn't completed by the time sensors were created, they'd never get data and stay unavailable until the next full reload. The first bridge fetch now runs synchronously during startup so the data is ready before sensors are created.
+- **Fixed translated placeholder names in 6 language files causing HA startup errors** — DeepL had translated placeholder names inside curly braces (e.g. `{zone_name}` became `{nome_zona}` in Italian, `{Dauer}` in German). HA requires placeholder names to match the English source exactly. Fixed across German, Spanish, French, Italian, Dutch, and Portuguese.
+- **Fixed Smart Valve Control getting permanently stuck after a manual temperature change** ([#221](https://github.com/hiall-fyi/tado_ce/issues/221) - @simonotter, [Discussion #219](https://github.com/hiall-fyi/tado_ce/discussions/219) - @wrowlands3) — If you changed the temperature manually (from HA, the Tado app, or an automation) while Smart Valve Control was active, the controller would back off and wait for the next Tado schedule block change before resuming. But if your Tado schedule blocks were all set to OFF (common when using HA automations instead of Tado schedules), the controller would never detect a schedule change and stay backed off permanently. It now also watches for overlay changes — when your automation sets a new temperature or resumes the schedule, the controller picks up and starts adjusting again.
+- **Fixed Smart Valve Control leaving a stale temperature override after HA crash** — If HA crashed or lost power while Smart Valve Control had an active temperature override on a zone, the override would persist on Tado's servers indefinitely. On restart, the zone could be stuck at whatever temperature the controller last wrote. The controller now detects and cleans up stale overrides from a previous session on startup.
+
+### Improvements
+- **Device and bridge serial numbers are now masked in logs** — All log messages that previously showed full serial numbers (bridge serial, TRV serials, HomeKit mapping) now show only the first 6 characters followed by "…". This prevents accidental exposure of bridge credentials when sharing debug logs — the bridge serial is printed on the device and the auth code is only 4 digits, so a full serial in a shared log could enable brute-force access.
+- **Smart Valve Control now warns if your TRV has a temperature offset** ([#221](https://github.com/hiall-fyi/tado_ce/issues/221) - @simonotter) — If you enable Smart Valve Control on a zone where the TRV still has a non-zero temperature offset (from a previous automation or manual setting in the Tado app), the controller's compensation would stack on top of the existing offset, causing the room to overshoot. The controller now checks for this on startup and logs a warning telling you to reset the offset to zero.
+- **Smart Valve Control now logs what it's doing in your normal logs** — State changes (activating, backing off, resuming), temperature writes, and schedule resumes now appear at info level instead of debug. You no longer need to enable debug logging to see whether the controller is working.
+- **Selecting an external temperature sensor no longer requires toggling a separate switch first** ([#221](https://github.com/hiall-fyi/tado_ce/issues/221) - @simonotter) — Previously, configuring an external sensor for a zone required five steps across two separate toggles, and forgetting the first toggle would silently discard your sensor selection. The sensor picker now works on its own — select a sensor and it's saved. The toggle is only needed if you want to disable an already-configured sensor.
+
 ## [4.0.0-beta.9] - 2026-04-23
 
 ### Features

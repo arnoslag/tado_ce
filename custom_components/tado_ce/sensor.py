@@ -329,7 +329,7 @@ def _create_bridge_sensors(
     _LOGGER.debug("Bridge meta sensors created (capabilities + schema version)")
 
     if not bridge_data:
-        _LOGGER.info("Bridge credentials found but no bridge data yet — sensors will appear after first data refresh")
+        _LOGGER.info("Bridge credentials found but no bridge data yet — dynamic sensors will be created on next reload")
 
 
 async def async_setup_entry(

@@ -34,7 +34,7 @@ from .const import (
     is_climate_zone,
 )
 from .exceptions import TadoAuthError, TadoSyncError
-from .helpers import parse_iso_datetime, retry_delay
+from .helpers import mask_serial, parse_iso_datetime, retry_delay
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
@@ -743,7 +743,7 @@ class TadoApiClient(TadoAuthMixin):
             full_url=url,
         )
         if result is not None:
-            _LOGGER.info("Set offset %s°C for device %s", offset, serial)
+            _LOGGER.info("Set offset %s°C for device %s", offset, mask_serial(serial))
             return True
         return False
 
@@ -766,7 +766,7 @@ class TadoApiClient(TadoAuthMixin):
         )
         if result is not None:
             state_str = "enabled" if enabled else "disabled"
-            _LOGGER.info("Child lock %s for device %s", state_str, serial)
+            _LOGGER.info("Child lock %s for device %s", state_str, mask_serial(serial))
             return True
         return False
 
@@ -1016,7 +1016,7 @@ class TadoApiClient(TadoAuthMixin):
                                 _LOGGER.debug("Offset for zone %s: %s°C", zone_id, offset)
                         break  # Only need first device per zone
                     except (KeyError, TypeError, ValueError) as e:
-                        _LOGGER.warning("Failed to fetch offset for device %s: %s", serial, e)
+                        _LOGGER.warning("Failed to fetch offset for device %s: %s", mask_serial(serial), e)
 
         if offsets:
             if self._data_loader is not None:
@@ -1110,7 +1110,7 @@ class TadoApiClient(TadoAuthMixin):
             full_url=url,
         )
         if result is not None:
-            _LOGGER.info("Identify command sent to device %s", device_serial)
+            _LOGGER.info("Identify command sent to device %s", mask_serial(device_serial))
             return True
         return False
 

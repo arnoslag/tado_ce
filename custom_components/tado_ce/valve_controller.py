@@ -50,6 +50,7 @@ class ValveControllerRuntime:
     last_cloud_write_ts: float | None = None
     pending_cloud_target: float | None = None
     overlay_set_by_controller: bool = False
+    backed_off_overlay_target: float | None = None  # overlay target when entering backed-off
     unsub_external_sensors: list[CALLBACK_TYPE] = field(default_factory=list)
 
 
@@ -201,6 +202,36 @@ class SmartValveController:
             return True
         return abs(current_schedule_target - last) >= 0.1
 
+    def detect_overlay_change_while_backed_off(
+        self, zone_data: dict[str, Any],
+    ) -> bool:
+        """Check if the overlay changed or was deleted since entering backed-off.
+
+        Covers the case where all schedule blocks are OFF (schedule target is
+        always None) and the user's HA automation sets a new overlay or resumes
+        the schedule. Without this, backed-off state would be permanent.
+        """
+        overlay = zone_data.get("overlay")
+
+        # Overlay deleted — user or automation resumed schedule
+        if overlay is None:
+            return self._runtime.backed_off_overlay_target is not None
+
+        overlay_temp = (
+            overlay.get("setting", {})
+            .get("temperature", {})
+            .get("celsius")
+        )
+        if overlay_temp is None:
+            return True
+
+        saved = self._runtime.backed_off_overlay_target
+        if saved is None:
+            # No saved target — overlay appeared while backed off
+            return True
+
+        return abs(float(overlay_temp) - saved) >= 0.1
+
     # ------------------------------------------------------------------
     # Write operations
     # ------------------------------------------------------------------
@@ -218,7 +249,7 @@ class SmartValveController:
                     self._zone_id, valve_target,
                 )
                 if success:
-                    _LOGGER.debug(
+                    _LOGGER.info(
                         "Smart Valve: zone %s set TRV to %s°C via homekit",
                         self._zone_id, valve_target,
                     )
@@ -259,7 +290,7 @@ class SmartValveController:
                 self._zone_id, setting, termination,
             )
             if success:
-                _LOGGER.debug(
+                _LOGGER.info(
                     "Smart Valve: zone %s set TRV to %s°C via cloud",
                     self._zone_id, valve_target,
                 )
@@ -288,7 +319,7 @@ class SmartValveController:
         try:
             success = await self._api_client.delete_zone_overlay(self._zone_id)
             if success:
-                _LOGGER.debug(
+                _LOGGER.info(
                     "Smart Valve: zone %s resumed schedule (overlay deleted)",
                     self._zone_id,
                 )
@@ -355,19 +386,37 @@ class SmartValveController:
         # Handle backed-off state
         if current_state == ControllerState.BACKED_OFF:
             if self.detect_schedule_block_change(schedule_target):
-                _LOGGER.debug(
-                    "Smart Valve: zone %s schedule block changed, exiting backed-off",
+                _LOGGER.info(
+                    "Smart Valve: zone %s schedule block changed, resuming from backed-off",
                     self._zone_id,
                 )
                 self._runtime.state = ControllerState.IDLE
                 self._runtime.last_schedule_target = schedule_target
+                self._runtime.backed_off_overlay_target = None
+            elif self.detect_overlay_change_while_backed_off(zone_data):
+                _LOGGER.info(
+                    "Smart Valve: zone %s overlay changed externally, resuming from backed-off",
+                    self._zone_id,
+                )
+                self._runtime.state = ControllerState.IDLE
+                self._runtime.backed_off_overlay_target = None
             # No further action while backed off
             return
 
         # Check manual override (only when active)
         if current_state == ControllerState.ACTIVE:
             if self.detect_manual_override(zone_data):
-                _LOGGER.debug(
+                # Save current overlay target for overlay-change detection
+                overlay = zone_data.get("overlay")
+                if overlay is not None:
+                    self._runtime.backed_off_overlay_target = (
+                        overlay.get("setting", {})
+                        .get("temperature", {})
+                        .get("celsius")
+                    )
+                else:
+                    self._runtime.backed_off_overlay_target = None
+                _LOGGER.info(
                     "Smart Valve: zone %s manual override detected, backing off",
                     self._zone_id,
                 )
@@ -378,7 +427,7 @@ class SmartValveController:
         # Handle sensor unavailability
         if external_temp is None:
             if current_state == ControllerState.ACTIVE:
-                _LOGGER.warning(
+                _LOGGER.info(
                     "Smart Valve: zone %s external sensor unavailable while active, resuming schedule",
                     self._zone_id,
                 )
@@ -394,7 +443,7 @@ class SmartValveController:
         if new_state is not None:
             if new_state == ControllerState.IDLE and current_state == ControllerState.ACTIVE:
                 # Active → Idle: resume schedule
-                _LOGGER.debug(
+                _LOGGER.info(
                     "Smart Valve: zone %s room warm (%.1f°C ≥ %.1f°C + %.1f), resuming schedule",
                     self._zone_id, external_temp, desired_target, self._hysteresis,
                 )
@@ -509,6 +558,18 @@ class SmartValveController:
         """Activate controller: subscribe to sensors, load persisted state."""
         await self.async_load_state()
 
+        # Finding 3: Clean up stale overlay from previous crash
+        if self._runtime.overlay_set_by_controller and self._runtime.state == ControllerState.IDLE:
+            _LOGGER.info(
+                "Smart Valve: zone %s cleaning up stale overlay from previous session",
+                self._zone_id,
+            )
+            await self._async_resume_schedule()
+            self._runtime.overlay_set_by_controller = False
+
+        # Finding 2: Warn if device has a non-zero temperature offset
+        await self._async_check_device_offset()
+
         # Subscribe to external sensor state changes
         from .climate_helpers import subscribe_external_sensors
 
@@ -532,7 +593,7 @@ class SmartValveController:
         if self._runtime.state == ControllerState.ACTIVE:
             await self.async_evaluate()
 
-        _LOGGER.debug(
+        _LOGGER.info(
             "Smart Valve: zone %s controller activated (state=%s)",
             self._zone_id, self._runtime.state,
         )
@@ -553,9 +614,42 @@ class SmartValveController:
         # Persist final state
         await self.async_persist_state()
 
-        _LOGGER.debug(
+        _LOGGER.info(
             "Smart Valve: zone %s controller deactivated", self._zone_id,
         )
+
+    async def _async_check_device_offset(self) -> None:
+        """Warn if any device in this zone has a non-zero temperature offset.
+
+        A non-zero device offset causes double compensation because the Tado API
+        returns offset-adjusted temperatures in sensorDataPoints.insideTemperature.
+        Smart Valve Control reads that adjusted value and adds its own compensation
+        on top, resulting in overshoot.
+        """
+        try:
+            zone_data = self._get_zone_data()
+            if zone_data is None:
+                return
+
+            devices = zone_data.get("devices", [])
+            if not devices:
+                return
+
+            for device in devices:
+                serial = device.get("serialNo", "")
+                offset = device.get("temperatureOffset", {}).get("celsius")
+                if offset is not None and abs(float(offset)) >= 0.1:
+                    _LOGGER.warning(
+                        "Smart Valve: zone %s device %s…  has a temperature offset of %.1f°C — "
+                        "this will cause double compensation. Reset the device offset to 0 "
+                        "for accurate Smart Valve Control",
+                        self._zone_id, serial[:6], float(offset),
+                    )
+        except Exception:
+            _LOGGER.debug(
+                "Smart Valve: zone %s could not check device offset",
+                self._zone_id, exc_info=True,
+            )
 
     def _on_external_sensor_change(self, _event: Any) -> None:
         """Handle external sensor state change — debounce and evaluate."""
@@ -590,6 +684,8 @@ class SmartValveController:
             "last_valve_target": self._runtime.last_valve_target,
             "last_evaluation_ts": self._runtime.last_evaluation_ts,
             "last_schedule_target": self._runtime.last_schedule_target,
+            "overlay_set_by_controller": self._runtime.overlay_set_by_controller,
+            "backed_off_overlay_target": self._runtime.backed_off_overlay_target,
         }
         await self._zcm.async_set_zone_value(
             self._zone_id, "svc_state", state_dict,
@@ -612,6 +708,10 @@ class SmartValveController:
             self._runtime.last_valve_target = raw.get("last_valve_target")
             self._runtime.last_evaluation_ts = raw.get("last_evaluation_ts")
             self._runtime.last_schedule_target = raw.get("last_schedule_target")
+            self._runtime.overlay_set_by_controller = bool(
+                raw.get("overlay_set_by_controller", False),
+            )
+            self._runtime.backed_off_overlay_target = raw.get("backed_off_overlay_target")
             _LOGGER.debug(
                 "Smart Valve: zone %s restored state=%s, last_target=%s",
                 self._zone_id, self._runtime.state, self._runtime.last_valve_target,

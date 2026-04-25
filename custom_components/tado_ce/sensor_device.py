@@ -20,6 +20,7 @@ from .format_helpers import (
 from .format_helpers import (
     strip_zone_prefix as _strip_zone_prefix,
 )
+from .helpers import mask_serial
 from .insights_device import (
     calculate_battery_recommendation,
 )
@@ -132,5 +133,5 @@ class TadoBatterySensor(CoordinatorEntity["TadoDataUpdateCoordinator"], SensorEn
                             return
             self._attr_available = False
         except (KeyError, TypeError, AttributeError) as err:
-            _LOGGER.debug("Battery sensor update failed for %s: %s", self._device_serial, err)
+            _LOGGER.debug("Battery sensor update failed for %s: %s", mask_serial(self._device_serial), err)
             self._attr_available = False

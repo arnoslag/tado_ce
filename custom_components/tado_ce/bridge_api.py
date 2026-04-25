@@ -8,7 +8,7 @@ import logging
 import aiohttp
 
 from .exceptions import TadoBridgeApiError
-from .helpers import async_retry_with_backoff
+from .helpers import async_retry_with_backoff, mask_serial
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -55,7 +55,7 @@ class TadoBridgeApiClient:
         """Fetch boiler wiring installation state from Bridge API."""
         url = f"{self._base_url}/boilerWiringInstallationState"
         params = {"authKey": self._auth_key}
-        _LOGGER.debug("Bridge API GET request - URL: %s", url.replace(self._auth_key, "[AUTH_KEY]"))
+        _LOGGER.debug("Bridge API GET request - URL: %s", url.replace(self._bridge_serial, mask_serial(self._bridge_serial)).replace(self._auth_key, "[AUTH_KEY]"))
 
         async def _do_get() -> dict[str, object]:
             async with self._session.get(url, params=params, timeout=_BRIDGE_API_TIMEOUT) as resp:
@@ -64,7 +64,7 @@ class TadoBridgeApiClient:
                     msg = "Bridge API GET wiring state failed: HTTP %s"
                     raise TadoBridgeApiError(msg % resp.status)
                 result = await resp.json()
-                _LOGGER.debug("Bridge API full response: %s", result)
+                _LOGGER.debug("Bridge API response: %d fields", len(result))
                 return result  # type: ignore[no-any-return]
 
         try:

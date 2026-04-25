@@ -105,7 +105,7 @@
         }
       },
       "connection_suffixed": {
-        "name": "Connessione{dispositivo_suffisso}",
+        "name": "Connessione{device_suffix}",
         "state_attributes": {
           "device_serial": {
             "name": "Dispositivo seriale"
@@ -1299,7 +1299,7 @@
       "message": "Nessuna voce Tado CE caricata per {entity_id} (config_entry_id={config_entry_id})"
     },
     "device_entry_not_loaded": {
-      "message": "Il dispositivo {dispositivo_seriale} è stato trovato ma la sua voce di configurazione non è stata caricata"
+      "message": "Il dispositivo {device_serial} è stato trovato ma la sua voce di configurazione non è stata caricata"
     },
     "device_not_found": {
       "message": "Il dispositivo {device_serial} non è stato trovato nel registro dei dispositivi. Controllare che il numero di serie sia corretto."
@@ -1317,7 +1317,7 @@
       "message": "Entità scaldabagno non trovata: {entity_id}"
     },
     "timer_set_failed": {
-      "message": "Impossibile impostare il timer {durata}min per {nome_zona}: {errore}"
+      "message": "Impossibile impostare il timer {duration}min per {zone_name}: {error}"
     },
     "bridge_auth_failed": {
       "message": "Codice seriale o di autenticazione del ponte non valido"
@@ -1434,7 +1434,7 @@
         }
       },
       "zone_sensor_config": {
-        "title": "Configurazione della zona - {nome_zona}",
+        "title": "Configurazione della zona - {zone_name}",
         "description": "Configurare le impostazioni per zona. Le sezioni possono essere espanse per visualizzare ulteriori opzioni.",
         "sections": {
           "heating_section": {

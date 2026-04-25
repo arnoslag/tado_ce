@@ -29,7 +29,7 @@ from .const import (
     SERVICE_SET_TEMP_OFFSET,
     SERVICE_SET_WATER_HEATER_TIMER,
 )
-from .helpers import async_trigger_immediate_refresh, build_timer_termination
+from .helpers import async_trigger_immediate_refresh, build_timer_termination, mask_serial
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant, ServiceCall
@@ -744,7 +744,7 @@ async def handle_identify_device(hass: HomeAssistant, call: ServiceCall) -> None
     success = await _coord.api_client.identify_device(device_serial)  # type: ignore[arg-type]
 
     if not success:
-        _LOGGER.error("Failed to identify device: %s", device_serial)
+        _LOGGER.error("Failed to identify device: %s", mask_serial(device_serial or ""))
 
 
 async def handle_set_away_config(hass: HomeAssistant, call: ServiceCall) -> None:

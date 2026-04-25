@@ -105,7 +105,7 @@
         }
       },
       "connection_suffixed": {
-        "name": "Verbindung{Gerät_suffix}",
+        "name": "Verbindung{device_suffix}",
         "state_attributes": {
           "device_serial": {
             "name": "Gerät seriell"
@@ -1317,7 +1317,7 @@
       "message": "Wassererhitzer Entität nicht gefunden: {entity_id}"
     },
     "timer_set_failed": {
-      "message": "Der Zeitgeber {Dauer}min für {Zone_Name} konnte nicht gesetzt werden: {Fehler}"
+      "message": "Der Zeitgeber {duration}min für {zone_name} konnte nicht gesetzt werden: {error}"
     },
     "bridge_auth_failed": {
       "message": "Ungültiger Serien- oder Authentifizierungscode der Brücke"

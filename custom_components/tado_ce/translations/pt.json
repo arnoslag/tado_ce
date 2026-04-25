@@ -1317,7 +1317,7 @@
       "message": "Entidade do aquecedor de água não encontrada: {entity_id}"
     },
     "timer_set_failed": {
-      "message": "Falha na definição do temporizador {duração}min para {nome_da_zona}: {erro}"
+      "message": "Falha na definição do temporizador {duration}min para {zone_name}: {error}"
     },
     "bridge_auth_failed": {
       "message": "Série de ponte ou código de autenticação inválidos"
@@ -1434,7 +1434,7 @@
         }
       },
       "zone_sensor_config": {
-        "title": "Configuração da zona - {nome_da_zona}",
+        "title": "Configuração da zona - {zone_name}",
         "description": "Configurar definições por zona. As secções podem ser expandidas para revelar mais opções.",
         "sections": {
           "heating_section": {

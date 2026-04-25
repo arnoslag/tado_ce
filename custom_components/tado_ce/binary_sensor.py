@@ -46,7 +46,7 @@ from .format_helpers import (
 from .format_helpers import (
     strip_zone_prefix as _strip_zone_prefix,
 )
-from .helpers import get_zone_state, get_zone_states, merge_homekit_into_zone_data, parse_iso_datetime
+from .helpers import get_zone_state, get_zone_states, mask_serial, merge_homekit_into_zone_data, parse_iso_datetime
 from .insights_device import calculate_connection_recommendation
 from .insights_models import (
     COOLDOWN_READINGS,
@@ -1090,7 +1090,7 @@ class TadoDeviceConnectionBinarySensor(CoordinatorEntity["TadoDataUpdateCoordina
                             return
             self._attr_available = False
         except (KeyError, TypeError, AttributeError) as err:
-            _LOGGER.debug("Connection binary sensor update failed for %s: %s", self._device_serial, err)
+            _LOGGER.debug("Connection binary sensor update failed for %s: %s", mask_serial(self._device_serial), err)
             self._attr_available = False
 
 

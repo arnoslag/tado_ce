@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from .helpers import mask_serial
+
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
@@ -325,4 +327,4 @@ def register_bridge_devices(
                     name=device.get("serialNo", serial),
                     sw_version=device.get("currentFwVersion"),
                 )
-                _LOGGER.debug("Pre-registered Tado bridge: %s (%s)", serial, device_type)
+                _LOGGER.debug("Pre-registered Tado bridge: %s (%s)", mask_serial(serial), device_type)

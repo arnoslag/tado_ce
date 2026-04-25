@@ -30,6 +30,7 @@ from .const import (
     TIMER_DURATION_DEFAULT,
 )
 from .exceptions import TadoAuthError, TadoBridgeApiError, TadoSyncError
+from .helpers import mask_serial
 from .insight_history import InsightHistoryTracker
 from .polling import get_polling_interval, should_pause_polling
 from .ratelimit import _sanitize_retry_after
@@ -342,7 +343,11 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if self.api_tracker.needs_save:
             await self.api_tracker.async_save_if_dirty()
 
-        # Bridge API data (from independent poll loop — not fetched here)
+        # Bridge API data — seed on first poll so sensor platform has data at setup
+        if self._cached_bridge_data is None:
+            first_bridge = await self._async_fetch_bridge_data()
+            if first_bridge is not None:
+                self._cached_bridge_data = first_bridge
         bridge_data = self._cached_bridge_data
         # Start independent bridge poll if credentials present and not yet running
         self._ensure_bridge_poll_running()
@@ -666,7 +671,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
             session = async_get_clientsession(self.hass)
             self.bridge_api_client = TadoBridgeApiClient(session, bridge_serial, bridge_auth_key)
-            _LOGGER.debug("Bridge: API client initialized for serial %s...", bridge_serial[:8])
+            _LOGGER.debug("Bridge: API client initialized for serial %s…", mask_serial(bridge_serial))
 
         try:
             start_time = time.monotonic()

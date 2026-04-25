@@ -21,6 +21,12 @@ Thank you to everyone who supported the project through [Buy Me a Coffee](https:
 
 Community contributors who helped shape each release through bug reports, feature requests, testing, and feedback.
 
+### v4.0.0-beta.10
+
+- **[@simonotter](https://github.com/simonotter)** — Spent weeks testing Smart Valve Control end-to-end, from the original offset automation through to the native controller. His detailed graphs and debug logs across multiple iterations uncovered the double-compensation issue with non-zero TRV offsets and the config flow UX problem where forgetting the external sensor toggle silently discarded the sensor selection ([#221](https://github.com/hiall-fyi/tado_ce/issues/221))
+- **[@wrowlands3](https://github.com/wrowlands3)** — Flagged the "all schedule blocks OFF" scenario during beta.9 testing, where Smart Valve Control would get permanently stuck after a manual temperature change because it was waiting for a schedule block change that would never come ([Discussion #219](https://github.com/hiall-fyi/tado_ce/discussions/219))
+- **[@driagi](https://github.com/driagi)** — Shared a full debug log from an Italian HA installation that revealed DeepL had translated placeholder names inside curly braces across all 6 non-English language files. Also raised the log masking concern about bridge serial numbers being exposed in debug logs ([Discussion #219](https://github.com/hiall-fyi/tado_ce/discussions/219))
+
 ### v4.0.0-beta.9
 
 - **[@Si-Hill](https://github.com/Si-Hill)** — Asked the question that started it all: "how do I get the TRV to keep heating until the room actually reaches target?" Shared detailed experience with RoomMind and BetterThermostat, explaining why simple "set to 25°C" automations don't work well with modulating boilers. This directly shaped the proportional offset approach used in Smart Valve Control ([Discussion #231](https://github.com/hiall-fyi/tado_ce/discussions/231))

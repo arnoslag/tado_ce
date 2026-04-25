@@ -1434,7 +1434,7 @@
         }
       },
       "zone_sensor_config": {
-        "title": "Configuración de Zona - {nombre_zona}",
+        "title": "Configuración de Zona - {zone_name}",
         "description": "Configure los ajustes por zona. Las secciones pueden ampliarse para mostrar más opciones.",
         "sections": {
           "heating_section": {

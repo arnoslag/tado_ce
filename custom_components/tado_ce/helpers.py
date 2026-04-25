@@ -18,6 +18,27 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
+# Serial number masking — keep prefix + first few chars for debugging, mask the rest.
+# Bridge serials (IB...) are especially sensitive: combined with the 4-digit auth
+# code printed on the bridge, a full serial in shared logs enables brute-force.
+_SERIAL_VISIBLE_CHARS: int = 6
+
+
+def mask_serial(serial: str) -> str:
+    """Mask a device or bridge serial for safe logging.
+
+    Keeps the first few characters visible for debugging (e.g. 'VA0315...',
+    'IB0123...') and replaces the rest with '…'.
+    """
+    if not serial or len(serial) <= _SERIAL_VISIBLE_CHARS:
+        return serial
+    return serial[:_SERIAL_VISIBLE_CHARS] + "…"
+
+
+def mask_serial_dict(d: dict[str, str]) -> dict[str, str]:
+    """Mask all keys (serials) in a serial-to-zone mapping dict."""
+    return {mask_serial(k): v for k, v in d.items()}
+
 
 def get_zone_states(coord_data: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
     """Extract zone states dict from coordinator data.

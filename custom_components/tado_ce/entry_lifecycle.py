@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from .helpers import mask_serial_dict
+
 if TYPE_CHECKING:
     from collections.abc import Callable
 
@@ -119,7 +121,7 @@ async def async_create_entry_components(
                 _LOGGER.info("Tado CE: HomeKit zone mapping loaded (%d zones)", len(serial_to_zone))
                 _LOGGER.debug(
                     "HomeKit: Mapping detail — serial_to_zone=%s, zone_to_aids=%s",
-                    mapping.get("serial_to_zone", {}),  # type: ignore[union-attr]
+                    mask_serial_dict(mapping.get("serial_to_zone", {})),  # type: ignore[union-attr]
                     mapping.get("zone_to_aids", {}),  # type: ignore[union-attr]
                 )
 

@@ -105,7 +105,7 @@
         }
       },
       "connection_suffixed": {
-        "name": "Verbinding{apparaat_suffix}",
+        "name": "Verbinding{device_suffix}",
         "state_attributes": {
           "device_serial": {
             "name": "Serieel apparaat"
@@ -1317,7 +1317,7 @@
       "message": "Waterverwarmer entiteit niet gevonden: {entity_id}"
     },
     "timer_set_failed": {
-      "message": "Faalde bij het instellen van {duur}min timer voor {zone_naam}: {fout}"
+      "message": "Faalde bij het instellen van {duration}min timer voor {zone_name}: {error}"
     },
     "bridge_auth_failed": {
       "message": "Ongeldige bridge-serienummer of auth-code"
@@ -1434,7 +1434,7 @@
         }
       },
       "zone_sensor_config": {
-        "title": "Zone configureren - {zone_naam}",
+        "title": "Zone configureren - {zone_name}",
         "description": "Instellingen per zone configureren. Secties kunnen worden uitgebreid om meer opties weer te geven.",
         "sections": {
           "heating_section": {

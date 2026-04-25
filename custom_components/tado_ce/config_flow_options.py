@@ -950,17 +950,29 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
             s = user_input["sensor_section"]
             # When toggle is ON but entity field is missing (collapsed section),
             # preserve existing value instead of clearing it.
-            if s.get("use_external_temp", False):
-                submitted = (s.get("external_temp_sensor") or "").strip()
+            # Auto-enable toggle when user selects a sensor entity but forgets
+            # the toggle — only when toggle key is absent (collapsed section).
+            # When toggle is explicitly False, respect the user's intent.
+            submitted_temp = (s.get("external_temp_sensor") or "").strip()
+            if "use_external_temp" in s:
+                use_ext_temp = s["use_external_temp"]
+            else:
+                # Toggle not in form (collapsed) — auto-enable if entity present
+                use_ext_temp = bool(submitted_temp) or bool(existing.get("external_temp_sensor", ""))
+            if use_ext_temp:
                 all_values["external_temp_sensor"] = (
-                    submitted or existing.get("external_temp_sensor", "")
+                    submitted_temp or existing.get("external_temp_sensor", "")
                 )
             else:
                 all_values["external_temp_sensor"] = ""
-            if s.get("use_external_humidity", False):
-                submitted = (s.get("external_humidity_sensor") or "").strip()
+            submitted_hum = (s.get("external_humidity_sensor") or "").strip()
+            if "use_external_humidity" in s:
+                use_ext_hum = s["use_external_humidity"]
+            else:
+                use_ext_hum = bool(submitted_hum) or bool(existing.get("external_humidity_sensor", ""))
+            if use_ext_hum:
                 all_values["external_humidity_sensor"] = (
-                    submitted or existing.get("external_humidity_sensor", "")
+                    submitted_hum or existing.get("external_humidity_sensor", "")
                 )
             else:
                 all_values["external_humidity_sensor"] = ""
@@ -1166,7 +1178,7 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                                             "smart_valve_control", default=cur_smart_valve,
                                         ): BooleanSelector(),
                                     }
-                                    if zone_type == "HEATING" and cur_temp_sensor
+                                    if zone_type == "HEATING" and (cur_temp_sensor or cur_use_ext_temp)
                                     else {}
                                 ),
                             },

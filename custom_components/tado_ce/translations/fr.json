@@ -105,7 +105,7 @@
         }
       },
       "connection_suffixed": {
-        "name": "Connexion{suffixe_du_dispositif}",
+        "name": "Connexion{device_suffix}",
         "state_attributes": {
           "device_serial": {
             "name": "Série d'appareils"
@@ -1287,7 +1287,7 @@
   },
   "exceptions": {
     "entity_not_found": {
-      "message": "L'entité {entité_id} n'a pas été trouvée dans le registre des entités"
+      "message": "L'entité {entity_id} n'a pas été trouvée dans le registre des entités"
     },
     "entity_not_tado_ce": {
       "message": "L'entité {entity_id} n'est pas une entité Tado CE (platform={platform})"
@@ -1317,7 +1317,7 @@
       "message": "L'entité chauffe-eau n'a pas été trouvée : {entity_id}"
     },
     "timer_set_failed": {
-      "message": "Échec de la mise en place de la minuterie {durée}min pour {nom_de_zone} : {erreur}"
+      "message": "Échec de la mise en place de la minuterie {duration}min pour {zone_name} : {error}"
     },
     "bridge_auth_failed": {
       "message": "Code de série ou d'authentification du pont non valide"
@@ -1434,7 +1434,7 @@
         }
       },
       "zone_sensor_config": {
-        "title": "Configuration de la zone - {nom_de_la_zone}",
+        "title": "Configuration de la zone - {zone_name}",
         "description": "Configurer les paramètres par zone. Les sections peuvent être développées pour révéler plus d'options.",
         "sections": {
           "heating_section": {
