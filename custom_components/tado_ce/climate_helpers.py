@@ -94,6 +94,32 @@ def update_preset_mode(coordinator: TadoDataUpdateCoordinator) -> str | None:
     return None
 
 
+def inject_presence_state(
+    coordinator: TadoDataUpdateCoordinator,
+    presence: str,
+    locked: bool,
+) -> None:
+    """Inject presence state into coordinator data after a local API write.
+
+    When the user changes presence via the select entity or climate preset,
+    the API call succeeds but the coordinator may not fetch home_state on
+    the next poll (Home State Sync disabled). This injects the known state
+    so all entities pick it up on the next coordinator update.
+
+    Args:
+        coordinator: The data update coordinator
+        presence: "HOME" or "AWAY"
+        locked: Whether presence is manually locked (True for home/away, False for auto)
+
+    """
+    if coordinator.data is None:
+        coordinator.data = {}
+    coordinator.data["home_state"] = {
+        "presence": presence,
+        "presenceLocked": locked,
+    }
+
+
 def read_external_sensor(
     hass: HomeAssistant,
     zone_config_manager: ZoneConfigManager | None,

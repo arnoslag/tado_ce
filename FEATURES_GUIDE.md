@@ -1293,10 +1293,10 @@ External sensors in Tado CE fix what you *see* in HA, but the TRV still uses its
 Smart Valve Control calculates a proportional offset and writes an adjusted target directly to the TRV:
 
 ```
-valve_target = TRV_reading + (desired_target − external_sensor)
+valve_target = min(TRV_reading + (desired_target − external_sensor), 30°C)
 ```
 
-**Example:** Schedule says 20°C, external sensor reads 17°C, TRV reads 22°C → controller writes `22 + (20 − 17) = 25°C` to the TRV. The valve stays open until the room reaches 20°C.
+**Example:** Schedule says 20°C, external sensor reads 17°C, TRV reads 22°C → controller writes `min(22 + (20 − 17), 30) = 25°C` to the TRV. The valve stays open until the room reaches 20°C.
 
 The controller uses a hysteresis band (±0.3°C) around the target to prevent oscillation, and a minimum change guard (0.5°C) to avoid unnecessary writes.
 
@@ -1324,6 +1324,7 @@ When Smart Valve Control is active, the climate entity exposes additional attrib
 |-----------|-------|-------------|
 | `valve_control_active` | `true` / `false` | Whether the controller is actively adjusting the TRV |
 | `valve_target` | e.g. `24.8` | The actual temperature written to the TRV (only when active) |
+| `desired_target` | e.g. `21.0` | Your desired temperature captured when the controller activated (only when active) |
 | `valve_control_backed_off` | `true` | Shown when the controller has backed off due to manual override |
 
 The climate card's target temperature always shows your desired temperature (from the schedule or manual setting), never the inflated valve target.
@@ -1336,14 +1337,15 @@ The climate card's target temperature always shows your desired temperature (fro
 | External sensor goes offline while active | Resumes Tado schedule (deletes overlay), transitions to idle |
 | TRV reading unavailable | Bang-bang fallback — sets TRV to max_temp to keep heating |
 | Both sensors unavailable | Resumes schedule, stays idle |
-| Valve target exceeds min/max bounds | Clamped to zone's configured min_temp / max_temp |
+| Valve target exceeds min/max bounds | Clamped to zone's configured min_temp / max_temp, then hard-capped at 30°C |
+| HomeKit write followed by cloud check | 60-second grace period after each write before checking for manual overrides — prevents false back-offs during HomeKit-to-cloud sync |
 | HA crashes while controller is active | Stale overlay is cleaned up automatically on next startup |
 | TRV has a non-zero temperature offset | Warning logged on startup — reset offset to 0 to avoid double compensation |
 | All Tado schedule blocks are OFF | Controller recovers from backed-off state when overlay changes (e.g. HA automation sets a new temperature) |
 
 ### State Persistence
 
-Controller state (active/idle/backed-off, last valve target, overlay ownership) persists across HA restarts. On restart, the controller recalculates before writing and cleans up any stale overlays from a previous session.
+Controller state (active/idle/backed-off, last valve target, desired target, overlay ownership) persists across HA restarts. On restart, the controller recalculates before writing and cleans up any stale overlays from a previous session. If the controller was active but the desired target wasn't saved (e.g. upgrading from an older version), it resets to idle and re-captures a fresh desired target on the next heating cycle.
 
 ### Limitations
 

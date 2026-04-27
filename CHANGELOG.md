@@ -2,6 +2,18 @@
 
 All notable changes to Tado CE will be documented in this file.
 
+## [4.0.0-beta.11] - 2026-04-27
+
+### Bug Fixes
+- **Fixed Smart Valve Control temperature escalation caused by feedback loop** — When Smart Valve Control was actively adjusting a zone, it would re-read the temperature overlay it had just written and treat it as the user's desired temperature. Each evaluation cycle compounded the error, causing the valve target to climb toward the zone's maximum temperature. The controller now captures your desired temperature when it starts adjusting and uses that stored value for all calculations, preventing the runaway escalation.
+- **Fixed Smart Valve Control cloud writes ignoring your overlay mode setting** — When Smart Valve Control fell back to cloud writes (no HomeKit available), it always set the overlay to "Manual" mode regardless of your zone's overlay mode configuration. If you had "Next Time Block" or "Timer" mode configured, the override would persist indefinitely instead of expiring as expected. Cloud writes now respect your per-zone overlay mode setting.
+- **Fixed Smart Valve Control backing off immediately after a HomeKit write** — After writing a temperature adjustment via HomeKit, the controller would check the cloud overlay data within seconds. Since HomeKit writes take up to 60 seconds to sync to Tado's cloud, the overlay still showed the old temperature, and the controller mistakenly thought you had manually changed it. There's now a 60-second grace period after each write before checking for manual overrides.
+- **Fixed Smart Valve Control allowing valve targets above 30°C** — If a zone's maximum temperature was configured above 30°C (which shouldn't normally happen but could via manual config editing), the valve target could exceed 30°C. There's now a hard safety cap at 30°C regardless of zone configuration.
+- **Fixed presence mode not syncing to climate entities when Home State Sync is disabled** ([Discussion #219](https://github.com/hiall-fyi/tado_ce/discussions/219) - @dragorex71) — When you changed presence to Away (from the Tado CE Hub select or a climate card's preset dropdown), the API call went through but the climate entities' `preset_mode` stayed on "home". This happened because the integration only fetched the home state from Tado's servers when Home State Sync was enabled. The integration now updates all climate entities and the presence select locally after a successful presence change, without needing an extra API call or the Home State Sync toggle.
+
+### Improvements
+- **Smart Valve Control now uses real-time TRV readings when HomeKit is connected** — Previously, the controller always used cloud-polled TRV temperatures, which could be 5–30 minutes stale depending on your polling interval. It now uses the same HomeKit real-time data that your climate entities show, so valve target calculations respond to temperature changes within seconds instead of waiting for the next cloud poll.
+
 ## [4.0.0-beta.10] - 2026-04-25
 
 ### Bug Fixes

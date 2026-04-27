@@ -24,6 +24,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .climate_helpers import (
     api_call_with_rollback,
+    inject_presence_state,
     read_external_sensor,
     setup_climate_external_sensor_subscription,
     unsubscribe_external_sensors,
@@ -637,6 +638,9 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity,
 
         if api_success:
             _LOGGER.info("Set %s preset mode to %s", self._zone_name, preset_mode)
+            # Inject home_state locally so all climate entities update preset_mode
+            # even when Home State Sync is disabled
+            inject_presence_state(self.coordinator, state, locked=True)
             await async_trigger_immediate_refresh(self.hass, self.entity_id, "preset_mode_change")
         else:
             _LOGGER.warning("%s: preset mode change failed, reverted", self._zone_name)

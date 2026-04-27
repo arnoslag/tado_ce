@@ -17,6 +17,8 @@ import time
 from typing import TYPE_CHECKING, Any
 
 from .const import (
+    ABSOLUTE_MAX_VALVE_TARGET,
+    HOMEKIT_WRITE_GRACE_SECONDS,
     SMART_VALVE_CLOUD_RATE_LIMIT,
     SMART_VALVE_DEBOUNCE_WINDOW,
     SMART_VALVE_HYSTERESIS,
@@ -27,6 +29,8 @@ if TYPE_CHECKING:
     from homeassistant.core import CALLBACK_TYPE, HomeAssistant
 
     from .coordinator import TadoDataUpdateCoordinator
+
+from .helpers import get_zone_overlay_termination
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -51,6 +55,7 @@ class ValveControllerRuntime:
     pending_cloud_target: float | None = None
     overlay_set_by_controller: bool = False
     backed_off_overlay_target: float | None = None  # overlay target when entering backed-off
+    desired_target: float | None = None  # user's desired temp captured at IDLE→ACTIVE transition
     unsub_external_sensors: list[CALLBACK_TYPE] = field(default_factory=list)
 
 
@@ -119,13 +124,16 @@ class SmartValveController:
         """Calculate clamped valve target from proportional offset.
 
         Pure function — no side effects, fully testable.
+        Applies absolute safety cap after min/max clamp.
 
         Returns:
-            clamp(trv_reading + (desired_target - external_temp), min_temp, max_temp)
+            min(clamp(trv_reading + (desired_target - external_temp), min_temp, max_temp),
+                ABSOLUTE_MAX_VALVE_TARGET)
         """
         offset = desired_target - external_temp
         raw = trv_reading + offset
-        return max(min_temp, min(raw, max_temp))
+        clamped = max(min_temp, min(raw, max_temp))
+        return min(clamped, ABSOLUTE_MAX_VALVE_TARGET)
 
     def should_write(self, new_valve_target: float) -> bool:
         """Check minimum change guard: |new - last_written| >= min_change.
@@ -168,9 +176,17 @@ class SmartValveController:
 
         Compares zone's current overlay target against last written valve_target.
         Returns True if mismatch or overlay deleted externally.
+        Suppresses detection within HOMEKIT_WRITE_GRACE_SECONDS of last write
+        to avoid false positives during HomeKit-to-cloud sync delay.
         """
         if not self._runtime.overlay_set_by_controller:
             return False
+
+        # Grace period: suppress false override detection after recent write
+        last_ts = self._runtime.last_evaluation_ts
+        if last_ts is not None:
+            if time.monotonic() - last_ts < HOMEKIT_WRITE_GRACE_SECONDS:
+                return False
 
         overlay = zone_data.get("overlay")
         if overlay is None:
@@ -285,7 +301,10 @@ class SmartValveController:
 
         try:
             setting = {"type": "HEATING", "temperature": {"celsius": valve_target}}
-            termination = {"type": "MANUAL"}
+            entry_id = self._coordinator.config_entry.entry_id
+            termination = get_zone_overlay_termination(
+                self._hass, self._zone_id, entry_id=entry_id,
+            )
             success = await self._api_client.set_zone_overlay(
                 self._zone_id, setting, termination,
             )
@@ -372,9 +391,6 @@ class SmartValveController:
 
         trv_reading = self._read_trv_temperature(zone_data)
 
-        # Desired target: overlay target if present, else schedule target
-        desired_target = self._read_desired_target(zone_data)
-
         schedule_target = get_current_schedule_target(
             self._zone_id, data_loader=self._coordinator.data_loader,
         )
@@ -393,6 +409,7 @@ class SmartValveController:
                 self._runtime.state = ControllerState.IDLE
                 self._runtime.last_schedule_target = schedule_target
                 self._runtime.backed_off_overlay_target = None
+                self._runtime.desired_target = None
             elif self.detect_overlay_change_while_backed_off(zone_data):
                 _LOGGER.info(
                     "Smart Valve: zone %s overlay changed externally, resuming from backed-off",
@@ -400,6 +417,7 @@ class SmartValveController:
                 )
                 self._runtime.state = ControllerState.IDLE
                 self._runtime.backed_off_overlay_target = None
+                self._runtime.desired_target = None
             # No further action while backed off
             return
 
@@ -435,12 +453,22 @@ class SmartValveController:
                 self._runtime.state = ControllerState.IDLE
             return
 
+        # Read desired_target: use stored value while ACTIVE, fresh read otherwise
+        desired_target: float | None
+        if current_state == ControllerState.ACTIVE and self._runtime.desired_target is not None:
+            desired_target = self._runtime.desired_target
+        else:
+            desired_target = self._read_desired_target(zone_data)
+
         if desired_target is None:
             return
 
         # Evaluate state transition
         new_state = self.should_transition(external_temp, desired_target)
         if new_state is not None:
+            if new_state == ControllerState.ACTIVE and current_state == ControllerState.IDLE:
+                # IDLE → ACTIVE: capture desired_target at transition
+                self._runtime.desired_target = desired_target
             if new_state == ControllerState.IDLE and current_state == ControllerState.ACTIVE:
                 # Active → Idle: resume schedule
                 _LOGGER.info(
@@ -453,7 +481,7 @@ class SmartValveController:
         # If active, calculate and write
         if self._runtime.state == ControllerState.ACTIVE:
             if trv_reading is None:
-                # TRV unavailable — bang-bang fallback
+                # TRV unavailable — bang-bang fallback (doesn't need desired_target)
                 _LOGGER.warning(
                     "Smart Valve: zone %s TRV reading unavailable, bang-bang fallback to %.1f°C",
                     self._zone_id, max_temp,
@@ -462,8 +490,13 @@ class SmartValveController:
                     await self._async_debounced_write(max_temp)
                 return
 
+            # Use stored desired_target for calculations
+            active_desired = self._runtime.desired_target
+            if active_desired is None:
+                return
+
             valve_target = self.calculate_valve_target(
-                trv_reading, desired_target, external_temp, min_temp, max_temp,
+                trv_reading, active_desired, external_temp, min_temp, max_temp,
             )
 
             if self.should_write(valve_target):
@@ -504,15 +537,26 @@ class SmartValveController:
     # ------------------------------------------------------------------
 
     def _get_zone_data(self) -> dict[str, Any] | None:
-        """Read zone data from coordinator."""
+        """Read zone data from coordinator, merged with fresh HomeKit readings.
+
+        Merges HomeKit temperature into sensorDataPoints so that
+        _read_trv_temperature() uses the freshest available TRV reading
+        instead of potentially stale cloud-polled data.
+        """
+        from .helpers import merge_homekit_into_zone_data
+
         data = self._coordinator.data
         if data is None:
             return None
         zones = data.get("zones")
         if not isinstance(zones, dict):
             return None
-        result: dict[str, Any] | None = zones.get(self._zone_id)
-        return result
+        zone_data: dict[str, Any] | None = zones.get(self._zone_id)
+        if zone_data is None:
+            return None
+        return merge_homekit_into_zone_data(
+            zone_data, self._zone_id, self._coordinator,
+        )
 
     @staticmethod
     def _read_trv_temperature(zone_data: dict[str, Any]) -> float | None:
@@ -557,6 +601,17 @@ class SmartValveController:
     async def async_activate(self) -> None:
         """Activate controller: subscribe to sensors, load persisted state."""
         await self.async_load_state()
+
+        # Safety: if restored as ACTIVE but desired_target is missing (upgrade
+        # from older version without this field), reset to IDLE so the next
+        # evaluation captures a fresh desired_target instead of reading the
+        # controller's own inflated overlay.
+        if self._runtime.state == ControllerState.ACTIVE and self._runtime.desired_target is None:
+            _LOGGER.info(
+                "Smart Valve: zone %s restored ACTIVE without desired_target, resetting to IDLE",
+                self._zone_id,
+            )
+            self._runtime.state = ControllerState.IDLE
 
         # Finding 3: Clean up stale overlay from previous crash
         if self._runtime.overlay_set_by_controller and self._runtime.state == ControllerState.IDLE:
@@ -671,6 +726,8 @@ class SmartValveController:
             attrs["valve_control_backed_off"] = True
         if state == ControllerState.ACTIVE and self._runtime.last_valve_target is not None:
             attrs["valve_target"] = self._runtime.last_valve_target
+        if state == ControllerState.ACTIVE and self._runtime.desired_target is not None:
+            attrs["desired_target"] = self._runtime.desired_target
         return attrs
 
     # ------------------------------------------------------------------
@@ -686,6 +743,7 @@ class SmartValveController:
             "last_schedule_target": self._runtime.last_schedule_target,
             "overlay_set_by_controller": self._runtime.overlay_set_by_controller,
             "backed_off_overlay_target": self._runtime.backed_off_overlay_target,
+            "desired_target": self._runtime.desired_target,
         }
         await self._zcm.async_set_zone_value(
             self._zone_id, "svc_state", state_dict,
@@ -712,6 +770,7 @@ class SmartValveController:
                 raw.get("overlay_set_by_controller", False),
             )
             self._runtime.backed_off_overlay_target = raw.get("backed_off_overlay_target")
+            self._runtime.desired_target = raw.get("desired_target")
             _LOGGER.debug(
                 "Smart Valve: zone %s restored state=%s, last_target=%s",
                 self._zone_id, self._runtime.state, self._runtime.last_valve_target,
