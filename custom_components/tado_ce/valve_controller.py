@@ -274,7 +274,7 @@ class SmartValveController:
                     self._runtime.last_evaluation_ts = time.monotonic()
                     return True
             except Exception:
-                _LOGGER.debug(
+                _LOGGER.info(
                     "Smart Valve: HomeKit write failed for zone %s, trying cloud",
                     self._zone_id, exc_info=True,
                 )
@@ -293,7 +293,7 @@ class SmartValveController:
         if last_cloud is not None and (now - last_cloud) < self._cloud_rate_limit_seconds:
             # Rate limited — queue latest target
             self._runtime.pending_cloud_target = valve_target
-            _LOGGER.debug(
+            _LOGGER.info(
                 "Smart Valve: zone %s cloud write rate limited, queued %.1f°C",
                 self._zone_id, valve_target,
             )
@@ -754,7 +754,7 @@ class SmartValveController:
         config = self._zcm.get_zone_config(self._zone_id)
         raw = config.get("svc_state")
         if not isinstance(raw, dict):
-            _LOGGER.debug(
+            _LOGGER.info(
                 "Smart Valve: zone %s no persisted state, starting fresh",
                 self._zone_id,
             )
@@ -771,12 +771,12 @@ class SmartValveController:
             )
             self._runtime.backed_off_overlay_target = raw.get("backed_off_overlay_target")
             self._runtime.desired_target = raw.get("desired_target")
-            _LOGGER.debug(
+            _LOGGER.info(
                 "Smart Valve: zone %s restored state=%s, last_target=%s",
                 self._zone_id, self._runtime.state, self._runtime.last_valve_target,
             )
         except (ValueError, KeyError):
-            _LOGGER.debug(
+            _LOGGER.warning(
                 "Smart Valve: zone %s corrupt persisted state, starting fresh",
                 self._zone_id,
             )

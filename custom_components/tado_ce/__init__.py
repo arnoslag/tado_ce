@@ -315,9 +315,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Check if config data exists (either from Store or migrated from JSON)
     config_cached = data_loader.get_cached("config")
     if not config_cached:
-        _LOGGER.warning(
-            "Tado CE config file not found for home %s. "
-            "Use Settings > Devices & Services > Add Integration > Tado CE to authenticate.",
+        _LOGGER.debug(
+            "Tado CE config cache empty for home %s — will populate on first sync",
             home_id or "default",
         )
 

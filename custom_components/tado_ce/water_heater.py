@@ -173,8 +173,11 @@ class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeate
         _LOGGER.debug("TadoWaterHeater.update() called for %s (zone %s)", self._zone_name, self._zone_id)
 
         if self.coordinator.is_entity_fresh(self.entity_id):
-            _LOGGER.debug("Hot water %s: Skipping update (entity is fresh)", self._zone_name)
-            return
+            # Safety net: never skip if entity has no data yet (#246 — boot freshness false positive)
+            if self._attr_current_operation is not None:
+                _LOGGER.debug("Hot water %s: Skipping update (entity is fresh)", self._zone_name)
+                return
+            _LOGGER.debug("Hot water %s: Entity marked fresh but has no data — updating anyway", self._zone_name)
 
         try:
             zone_data = self._extract_zone_data()

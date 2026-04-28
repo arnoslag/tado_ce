@@ -123,6 +123,50 @@ def _map_overlay_to_api(mode: str) -> str:
     return _OVERLAY_API_MAP.get(mode, mode)
 
 
+def should_use_homekit_for_overlay(hass: HomeAssistant, zone_id: str, entry_id: str | None = None) -> bool:
+    """Check if HomeKit local write is safe for this zone's overlay mode.
+
+    HomeKit writes don't carry overlay termination information — the TRV just
+    turns on/off and Tado's servers decide the termination type. This is only
+    correct when the user's overlay mode is "Tado Default" (TADO_MODE), because
+    that's exactly what Tado's servers would do anyway.
+
+    For any other overlay mode (Manual, Next Time Block, Timer), we must use
+    the cloud API so the explicit termination type is sent with the request.
+
+    Returns True if HomeKit is safe to use, False if cloud API is required.
+    """
+    # Check per-zone overlay mode first, then global
+    if entry_id:
+        try:
+            coordinator = _get_coordinator(hass, entry_id)
+            if coordinator and coordinator.zone_config_manager:
+                zone_mode = coordinator.zone_config_manager.get_zone_value(
+                    zone_id, "overlay_mode", None,
+                )
+                # Per-zone override takes priority
+                if zone_mode and zone_mode != OVERLAY_MODE_DEFAULT:
+                    _LOGGER.debug(
+                        "Zone %s has per-zone overlay mode %s — skipping HomeKit, using cloud API",
+                        zone_id, zone_mode,
+                    )
+                    return False
+
+            # Check global overlay mode
+            if coordinator:
+                global_mode = coordinator.overlay_mode or OVERLAY_MODE_DEFAULT
+                if global_mode != OVERLAY_MODE_DEFAULT:
+                    _LOGGER.debug(
+                        "Global overlay mode is %s — skipping HomeKit, using cloud API",
+                        global_mode,
+                    )
+                    return False
+        except (AttributeError, TypeError):
+            pass
+
+    return True
+
+
 def retry_delay(attempt: int, base_delay: float = RETRY_BASE_DELAY) -> float:
     """Calculate jittered retry delay for the given attempt number.
 

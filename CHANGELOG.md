@@ -2,6 +2,17 @@
 
 All notable changes to Tado CE will be documented in this file.
 
+## [4.0.0-beta.12] - 2026-04-28
+
+### Bug Fixes
+- **Fixed overlay mode not being respected when changing HVAC mode** ([Discussion #219](https://github.com/hiall-fyi/tado_ce/discussions/219) - @mpartington) — If you set your overlay mode to "Manual" (or any non-default mode) and then used `climate.set_hvac_mode` to turn heating on or off, the override would still expire based on whatever Tado's servers remembered from the app. This happened because the HomeKit local write path doesn't carry overlay termination information — it just tells the TRV to turn on or off, and Tado's servers decide the rest. Now, when your overlay mode is anything other than "Tado Default", the integration skips the HomeKit path and uses the cloud API where the termination type is sent explicitly. Per-zone overlay mode settings in **Settings → Tado CE → Configure → zone → Overlay section** are now respected.
+- **Fixed climate entities stuck at null temperature for up to 3 hours after HA restart** ([#246](https://github.com/hiall-fyi/tado_ce/issues/246) - @Newreader) — If an automation fired during startup and wrote to a climate entity before the first API sync completed, the entity would be marked as "fresh" with no data. The freshness check then blocked subsequent updates from populating the entity, leaving `current_temperature`, `heating_power`, and `offset_celsius` at null until the freshness expired. The freshness check now allows updates through when an entity has no data yet, regardless of the freshness timestamp.
+- **Fixed "Invalid repairs platform" error on startup** ([#221](https://github.com/hiall-fyi/tado_ce/issues/221) - @simonotter) — HA was trying to register our repairs helper module as a repairs platform, which requires a specific interface we don't implement. Renamed the module so HA no longer auto-discovers it.
+- **Reduced misleading "config file not found" warning on startup** ([#246](https://github.com/hiall-fyi/tado_ce/issues/246) - @Newreader) — A warning appeared in the logs on every HA restart saying the config file wasn't found and suggesting re-authentication. The config data is fetched on the first API sync a few seconds later, so the warning was harmless but confusing. Downgraded to debug level with a clearer message.
+
+### Improvements
+- **Smart Valve Control now logs what's happening during startup** ([#221](https://github.com/hiall-fyi/tado_ce/issues/221) - @simonotter) — If the controller can't start (missing zone data, no external sensor configured), you'll now see a clear warning in the logs explaining why. After initialization, an info-level summary shows how many controllers were activated.
+
 ## [4.0.0-beta.11] - 2026-04-27
 
 ### Bug Fixes

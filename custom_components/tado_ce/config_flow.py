@@ -358,7 +358,7 @@ class TadoCEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         _LOGGER.info("Reauth successful, saved new credentials for home ID: %s", home_id)
 
         # Dismiss auth repair issue
-        from .repairs import async_dismiss_auth_issue
+        from .repair_helpers import async_dismiss_auth_issue
 
         async_dismiss_auth_issue(self.hass, home_id)
 
@@ -434,7 +434,7 @@ class TadoCEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         _LOGGER.info("Re-authentication successful, saved new credentials for home ID: %s", home_id)
 
         # Dismiss auth repair issue on successful re-auth
-        from .repairs import async_dismiss_auth_issue
+        from .repair_helpers import async_dismiss_auth_issue
 
         async_dismiss_auth_issue(self.hass, home_id)
 

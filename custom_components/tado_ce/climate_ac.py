@@ -732,8 +732,11 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
     def update(self) -> None:
         """Update AC climate state from JSON file."""
         if self.coordinator.is_entity_fresh(self.entity_id):
-            _LOGGER.debug("AC %s: Skipping update (entity is fresh)", self._zone_name)
-            return
+            # Safety net: never skip if entity has no data yet (#246 — boot freshness false positive)
+            if self._attr_current_temperature is not None:
+                _LOGGER.debug("AC %s: Skipping update (entity is fresh)", self._zone_name)
+                return
+            _LOGGER.debug("AC %s: Entity marked fresh but has no data — updating anyway", self._zone_name)
 
         try:
             coord_data = self.coordinator.data or {}

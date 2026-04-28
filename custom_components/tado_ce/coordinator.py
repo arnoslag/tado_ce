@@ -486,7 +486,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 home_state_sync_enabled=cm.get_home_state_sync_enabled(),
             )
         except TadoAuthError as e:
-            from .repairs import async_create_auth_issue
+            from .repair_helpers import async_create_auth_issue
 
             async_create_auth_issue(self.hass, self.home_id)
             raise ConfigEntryAuthFailed(
@@ -902,7 +902,11 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         zones_info = self.data_loader.get_cached("zones_info")
         if not zones_info or not isinstance(zones_info, list):
+            _LOGGER.warning("Smart Valve: zones_info not available — skipping controller initialization")
             return
+
+        _LOGGER.debug("Smart Valve: checking %s zones for eligible controllers", len(zones_info))
+        initialized_count = 0
 
         for zone in zones_info:
             zone_id = str(zone.get("id", ""))
@@ -912,17 +916,23 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 continue
 
             config = self.zone_config_manager.get_zone_config(zone_id)
-            if not config.get("smart_valve_control", False):
+            svc_enabled = config.get("smart_valve_control", False)
+            ext_sensor = config.get("external_temp_sensor", "")
+
+            if not svc_enabled:
                 continue
 
-            ext_sensor = config.get("external_temp_sensor", "")
             if not ext_sensor:
+                _LOGGER.debug("Smart Valve: zone %s has SVC enabled but no external sensor — skipped", zone_id)
                 continue
 
             controller = SmartValveController(self.hass, self, zone_id)
             await controller.async_activate()
             self.valve_controllers[zone_id] = controller
+            initialized_count += 1
             _LOGGER.debug("Smart Valve: initialized controller for zone %s", zone_id)
+
+        _LOGGER.info("Smart Valve: initialized %s controller(s)", initialized_count)
 
         # Listen for runtime config changes
         self.zone_config_manager.add_listener(self._on_zone_config_change)
@@ -949,6 +959,10 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             config = self.zone_config_manager.get_zone_config(zone_id)
             ext_sensor = config.get("external_temp_sensor", "")
             if not ext_sensor:
+                _LOGGER.info(
+                    "Smart Valve: zone %s toggle on but no external sensor configured — skipped",
+                    zone_id,
+                )
                 return
 
             # Check zone type
@@ -970,10 +984,10 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             controller = SmartValveController(self.hass, self, zone_id)
             self.valve_controllers[zone_id] = controller
             self.hass.async_create_task(controller.async_activate())
-            _LOGGER.debug("Smart Valve: activated controller for zone %s", zone_id)
+            _LOGGER.info("Smart Valve: activated controller for zone %s", zone_id)
 
         elif not value and zone_id in self.valve_controllers:
             controller = self.valve_controllers.pop(zone_id)
             self.hass.async_create_task(controller.async_deactivate())
-            _LOGGER.debug("Smart Valve: deactivated controller for zone %s", zone_id)
+            _LOGGER.info("Smart Valve: deactivated controller for zone %s", zone_id)
 

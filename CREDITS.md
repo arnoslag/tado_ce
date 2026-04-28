@@ -21,6 +21,12 @@ Thank you to everyone who supported the project through [Buy Me a Coffee](https:
 
 Community contributors who helped shape each release through bug reports, feature requests, testing, and feedback.
 
+### v4.0.0-beta.12
+
+- **[@mpartington](https://github.com/mpartington)** — Tested all three overlay mode workarounds and reported back with clear results, confirming that `climate.set_hvac_mode` wasn't respecting the configured overlay mode. His systematic testing (global Manual, `set_climate_timer` with manual, `set_climate_timer` with next_time_block) directly led to discovering the HomeKit write path was bypassing overlay termination entirely ([Discussion #219](https://github.com/hiall-fyi/tado_ce/discussions/219))
+- **[@Newreader](https://github.com/Newreader)** — Provided an exceptionally detailed startup analysis across multiple rounds, narrowing down the null temperature issue from "4 out of 7 zones affected" to the exact root cause: `"Skipping update (entity is fresh)"` false positives at boot. His correlation between `overlay_type: Manual` zones and delayed recovery, plus the `"Marked entity fresh"` grep that confirmed the trigger timing, made the fix straightforward ([#246](https://github.com/hiall-fyi/tado_ce/issues/246))
+- **[@simonotter](https://github.com/simonotter)** — Continued debugging Smart Valve Control not starting despite correct config, going through multiple rounds of log searches and config file checks. His log showing the `Invalid repairs platform` error led to fixing the repairs module, and his report of "valve" appearing briefly then disappearing from logs led to upgrading all SVC logging to info level ([#221](https://github.com/hiall-fyi/tado_ce/issues/221))
+
 ### v4.0.0-beta.10
 
 - **[@simonotter](https://github.com/simonotter)** — Spent weeks testing Smart Valve Control end-to-end, from the original offset automation through to the native controller. His detailed graphs and debug logs across multiple iterations uncovered the double-compensation issue with non-zero TRV offsets and the config flow UX problem where forgetting the external sensor toggle silently discarded the sensor selection ([#221](https://github.com/hiall-fyi/tado_ce/issues/221))

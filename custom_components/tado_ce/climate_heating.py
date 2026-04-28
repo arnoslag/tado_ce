@@ -42,6 +42,7 @@ from .helpers import (
     build_timer_termination,
     get_zone_overlay_termination,
     get_zone_state,
+    should_use_homekit_for_overlay,
 )
 from .optimistic_helpers import (
     OptimisticUpdateResult,
@@ -540,8 +541,11 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity,
     def update(self) -> None:
         """Update climate state from JSON file."""
         if self.coordinator.is_entity_fresh(self.entity_id):
-            _LOGGER.debug("%s: Skipping update (entity is fresh)", self._zone_name)
-            return
+            # Safety net: never skip if entity has no data yet (#246 — boot freshness false positive)
+            if self._attr_current_temperature is not None:
+                _LOGGER.debug("%s: Skipping update (entity is fresh)", self._zone_name)
+                return
+            _LOGGER.debug("%s: Entity marked fresh but has no data — updating anyway", self._zone_name)
 
         try:
             coord_data = self.coordinator.data or {}
@@ -662,10 +666,14 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity,
     ) -> None:
         """Execute set_zone_overlay API call with rollback on failure."""
         # Local-first: try HomeKit write before cloud API
+        # Only when overlay mode is Tado Default — HomeKit writes don't carry
+        # termination info, so non-default overlay modes must use cloud (#219)
         local_success = False
+        use_homekit = should_use_homekit_for_overlay(self.hass, self._zone_id, entry_id=self._entry_id)
         write_tracker = self.coordinator.write_health_tracker
         if (
-            self.coordinator.homekit_provider
+            use_homekit
+            and self.coordinator.homekit_provider
             and self.coordinator.homekit_provider.is_connected
             and write_tracker is not None
             and write_tracker.should_try_homekit()
@@ -849,11 +857,14 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity,
         client = self.coordinator.api_client
 
         if hvac_mode == HVACMode.HEAT:
-            # Local-first: try HomeKit write
+            # Local-first: try HomeKit write (only when overlay mode is Tado Default,
+            # because HomeKit writes don't carry termination info — #219 mpartington)
             local_success = False
+            use_homekit = should_use_homekit_for_overlay(self.hass, self._zone_id, entry_id=self._entry_id)
             write_tracker = self.coordinator.write_health_tracker
             if (
-                self.coordinator.homekit_provider
+                use_homekit
+                and self.coordinator.homekit_provider
                 and self.coordinator.homekit_provider.is_connected
                 and write_tracker is not None
                 and write_tracker.should_try_homekit()
@@ -913,11 +924,14 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity,
             self._last_write_source = "cloud"
 
         elif hvac_mode == HVACMode.OFF:
-            # Local-first: try HomeKit write
+            # Local-first: try HomeKit write (only when overlay mode is Tado Default,
+            # because HomeKit writes don't carry termination info — #219 mpartington)
             local_success = False
+            use_homekit = should_use_homekit_for_overlay(self.hass, self._zone_id, entry_id=self._entry_id)
             write_tracker = self.coordinator.write_health_tracker
             if (
-                self.coordinator.homekit_provider
+                use_homekit
+                and self.coordinator.homekit_provider
                 and self.coordinator.homekit_provider.is_connected
                 and write_tracker is not None
                 and write_tracker.should_try_homekit()

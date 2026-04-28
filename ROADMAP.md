@@ -10,8 +10,8 @@ For completed features, see [CHANGELOG.md](CHANGELOG.md).
 
 **HomeKit Local Control — GA Release**
 
-v4.0.0-beta.11 is the latest beta — eleven releases since beta.1 introduced HomeKit local control. The beta cycle has addressed humidity source accuracy, cleaned up verbose logging, removed Test Mode, fixed multiple settings and data persistence issues, improved HomeKit write verification, added Smart Valve Control for TRV offset compensation using external sensors, hardened SVC for edge cases (all-OFF schedules, crash recovery, device offset warnings), and fixed a critical SVC feedback loop that caused temperature escalation. Currently in final testing. Next steps:
-- Monitor beta.11 feedback, particularly Smart Valve Control stability over multi-day runs
+v4.0.0-beta.12 is the latest beta — twelve releases since beta.1 introduced HomeKit local control. The beta cycle has addressed humidity source accuracy, cleaned up verbose logging, removed Test Mode, fixed multiple settings and data persistence issues, improved HomeKit write verification, added Smart Valve Control for TRV offset compensation using external sensors, hardened SVC for edge cases (all-OFF schedules, crash recovery, device offset warnings), fixed a critical SVC feedback loop that caused temperature escalation, and resolved overlay mode, startup freshness, and repairs platform issues. Currently in final testing. Next steps:
+- Monitor beta.12 feedback, particularly Smart Valve Control stability over multi-day runs
 - Target: GA release in May 2026 if no blockers found
 
 ## Future Consideration
