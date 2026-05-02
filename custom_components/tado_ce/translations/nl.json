@@ -980,8 +980,8 @@
         "name": "Aanwezigheidsmodus",
         "state": {
           "auto": "Auto (Geofencing)",
-          "home": "Home",
-          "away": "Weg"
+          "home": "Thuis",
+          "away": "Afwezig"
         },
         "state_attributes": {
           "presence": {
@@ -1410,7 +1410,8 @@
       "cannot_connect": "Verbinding met Tado mislukt. Controleer je internetverbinding.",
       "invalid_token": "Ongeldig of verlopen vernieuwingstoken. Controleer het token en probeer het opnieuw.",
       "auth_pending": "Autorisatie nog niet voltooid. Autoriseer eerst op de website van Tado en klik dan opnieuw op Verzenden.",
-      "authorization_failed": "Autorisatie mislukt. Probeer het opnieuw vanaf het begin."
+      "authorization_failed": "Autorisatie mislukt. Probeer het opnieuw vanaf het begin.",
+      "rate_limited": "De servers van Tado beperken momenteel het aantal verzoeken. Wacht een paar minuten en probeer het dan opnieuw."
     }
   },
   "options": {

@@ -300,7 +300,7 @@ class SmartValveController:
             return False
 
         try:
-            setting = {"type": "HEATING", "temperature": {"celsius": valve_target}}
+            setting = {"type": "HEATING", "power": "ON", "temperature": {"celsius": valve_target}}
             entry_id = self._coordinator.config_entry.entry_id
             termination = get_zone_overlay_termination(
                 self._hass, self._zone_id, entry_id=entry_id,
@@ -370,6 +370,10 @@ class SmartValveController:
 
         zone_data = self._get_zone_data()
         if zone_data is None:
+            _LOGGER.warning(
+                "Smart Valve: zone %s has no zone data — skipping evaluation",
+                self._zone_id,
+            )
             return
 
         # Read inputs
@@ -543,15 +547,9 @@ class SmartValveController:
         _read_trv_temperature() uses the freshest available TRV reading
         instead of potentially stale cloud-polled data.
         """
-        from .helpers import merge_homekit_into_zone_data
+        from .helpers import get_zone_state, merge_homekit_into_zone_data
 
-        data = self._coordinator.data
-        if data is None:
-            return None
-        zones = data.get("zones")
-        if not isinstance(zones, dict):
-            return None
-        zone_data: dict[str, Any] | None = zones.get(self._zone_id)
+        zone_data = get_zone_state(self._coordinator.data, self._zone_id)
         if zone_data is None:
             return None
         return merge_homekit_into_zone_data(

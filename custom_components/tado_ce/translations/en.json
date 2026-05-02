@@ -1410,7 +1410,8 @@
       "cannot_connect": "Failed to connect to Tado. Please check your internet connection.",
       "invalid_token": "Invalid or expired refresh token. Please check the token and try again.",
       "auth_pending": "Authorization not yet complete. Please authorize on Tado's website first, then click Submit again.",
-      "authorization_failed": "Authorization failed. Please try again from the beginning."
+      "authorization_failed": "Authorization failed. Please try again from the beginning.",
+      "rate_limited": "Tado's servers are temporarily limiting requests. Please wait a few minutes and try again."
     }
   },
   "options": {

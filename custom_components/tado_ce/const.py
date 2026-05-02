@@ -13,6 +13,9 @@ MANUFACTURER = "Joe Yiu (@hiall-fyi)"
 # Dispatcher signal for HomeKit real-time entity updates
 SIGNAL_HOMEKIT_UPDATE = "tado_ce_homekit_update_{home_id}"
 
+# Bus event fired after first successful API sync and entity population (#246)
+EVENT_READY: Final[str] = "tado_ce_ready"
+
 # Tado bridge device models (Internet Bridge hardware)
 # Used for pre-registering bridge devices in the device registry before platform setup
 TADO_BRIDGE_MODELS = ["IB01", "IB02"]

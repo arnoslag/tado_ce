@@ -980,8 +980,8 @@
         "name": "Mode présence",
         "state": {
           "auto": "Auto (Geofencing)",
-          "home": "Accueil",
-          "away": "L'éloignement"
+          "home": "Maison",
+          "away": "Absent"
         },
         "state_attributes": {
           "presence": {
@@ -1410,7 +1410,8 @@
       "cannot_connect": "Échec de la connexion à Tado. Veuillez vérifier votre connexion internet.",
       "invalid_token": "Jeton de rafraîchissement invalide ou expiré. Veuillez vérifier le jeton et réessayer.",
       "auth_pending": "L'autorisation n'est pas encore terminée. Veuillez d'abord procéder à l'autorisation sur le site web de Tado, puis cliquez à nouveau sur Soumettre.",
-      "authorization_failed": "L'autorisation a échoué. Veuillez réessayer depuis le début."
+      "authorization_failed": "L'autorisation a échoué. Veuillez réessayer depuis le début.",
+      "rate_limited": "Les serveurs de Tado limitent temporairement le nombre de requêtes. Veuillez patienter quelques minutes, puis réessayer."
     }
   },
   "options": {

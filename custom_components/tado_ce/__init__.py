@@ -13,6 +13,7 @@ from .config_manager import ConfigurationManager
 from .const import (
     DATA_DIR,
     DOMAIN,
+    EVENT_READY,
     SERVICE_ACTIVATE_OPEN_WINDOW,
     SERVICE_ADD_METER_READING,
     SERVICE_DEACTIVATE_OPEN_WINDOW,
@@ -374,6 +375,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
 
     await _async_finalize_entry(hass, entry, coordinator, config_manager)
+
+    # Fire ready event — entities are populated with real data from the API (#246)
+    zones_info = coordinator.data.get("zones_info") or []
+    hass.bus.async_fire(EVENT_READY, {
+        "home_id": coordinator.home_id,
+        "entry_id": entry.entry_id,
+        "zone_count": len(zones_info),
+    })
 
     _LOGGER.info("Tado CE: Integration loaded successfully")
     return True

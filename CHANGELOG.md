@@ -2,6 +2,23 @@
 
 All notable changes to Tado CE will be documented in this file.
 
+## [4.0.0-beta.13] - 2026-05-02
+
+### Features
+- **Integration now fires a `tado_ce_ready` event after startup** ([#246](https://github.com/hiall-fyi/tado_ce/issues/246) - @Newreader) — If you have automations that need to act on Tado CE entities right after HA starts, you can now trigger on the `tado_ce_ready` event instead of guessing timing with delays or `wait_template` chains. The event fires once all climate entities have real data from the API — temperature, offset, overlay mode, everything. The event payload includes `home_id`, `entry_id`, and `zone_count` for multi-home filtering.
+
+### Bug Fixes
+- **Fixed Smart Valve Control cloud writes silently failing every cycle** ([#221](https://github.com/hiall-fyi/tado_ce/issues/221) - @simonotter) — If you had Smart Valve Control enabled on a zone without HomeKit, the controller would try to adjust your TRV via the cloud API every 5 minutes but fail every time with "cloud write failed" in the logs. The API request was missing a required field, so Tado's servers rejected it. Your TRV was never actually adjusted despite the controller being active. Fixed — cloud writes now go through correctly.
+- **Fixed setup failing with a misleading "Authorization failed" error when Tado's API is rate limiting** ([#246](https://github.com/hiall-fyi/tado_ce/issues/246) - @Newreader) — If Tado's servers returned HTTP 429 (Too Many Requests) during the initial setup or re-authentication, the config flow showed "Authorization failed" or "Failed to connect" — neither of which was true. The setup now retries automatically with backoff, and if the rate limit persists, shows a clear message telling you to wait a few minutes before trying again.
+- **Fixed presence changes not reaching climate cards** ([Discussion #219](https://github.com/hiall-fyi/tado_ce/discussions/219) - @dragorex71) — When you changed presence to Away via the Tado CE Hub select (or a climate card's preset dropdown), the API call went through but the climate cards snapped back to "Home" within seconds. The integration was injecting the new state correctly, but the automatic refresh that fires right after was overwriting it with stale cached data. Both the Hub select and climate card preset paths now update the internal cache so the refresh reads the correct value.
+- **Fixed presence mode showing different labels on the Hub select and climate cards** ([Discussion #219](https://github.com/hiall-fyi/tado_ce/discussions/219) - @dragorex71) — If you run HA in a non-English language, the Tado CE Hub presence select showed one translation (e.g. "Casa" / "Via" in Italian) while the climate card's preset mode showed a different one ("In casa" / "Fuori casa"). The presence labels now match what HA uses on climate cards across all 6 supported languages.
+
+### Internal
+- Smart Valve Control now logs a warning when zone data is missing during evaluation, instead of silently skipping.
+- Smart Valve Control zone data lookup consolidated to use the shared `get_zone_state()` helper.
+- Diagnostics now includes a `TO_REDACT_DATA` set covering Tado API PII fields as defense-in-depth.
+- API client 403 retry no longer clears the access token on each attempt — token reused across retries, only cleared after exhaustion.
+
 ## [4.0.0-beta.12] - 2026-04-28
 
 ### Bug Fixes

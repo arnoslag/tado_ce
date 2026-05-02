@@ -2,6 +2,7 @@
 
 - TadoAuthError → ConfigEntryAuthFailed (triggers HA reauth flow)
 - TadoSyncError → UpdateFailed (coordinator retries on next poll)
+- TadoRateLimitError → "rate_limited" error in config flow UI
 """
 
 from __future__ import annotations
@@ -30,4 +31,12 @@ class TadoBridgeApiError(HomeAssistantError):
 
     Bridge API errors are isolated from the main cloud API — they never
     trigger OAuth reauth or affect coordinator cloud data.
+    """
+
+
+class TadoRateLimitError(HomeAssistantError):
+    """Raised when the Tado API returns HTTP 429 and retries are exhausted.
+
+    The config flow catches this and shows a "rate_limited" error message,
+    telling the user to wait before trying again (#246).
     """

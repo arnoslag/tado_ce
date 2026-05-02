@@ -106,18 +106,28 @@ def inject_presence_state(
     the next poll (Home State Sync disabled). This injects the known state
     so all entities pick it up on the next coordinator update.
 
+    Updates both coordinator.data (for immediate reads) AND the DataLoader
+    cache (so _async_post_sync_processing doesn't overwrite the injected
+    value when it rebuilds coordinator.data from cache).
+
     Args:
         coordinator: The data update coordinator
         presence: "HOME" or "AWAY"
         locked: Whether presence is manually locked (True for home/away, False for auto)
 
     """
-    if coordinator.data is None:
-        coordinator.data = {}
-    coordinator.data["home_state"] = {
+    home_state = {
         "presence": presence,
         "presenceLocked": locked,
     }
+    if coordinator.data is None:
+        coordinator.data = {}
+    coordinator.data["home_state"] = home_state
+
+    # Also update DataLoader cache so the next _async_post_sync_processing
+    # reads the injected value instead of the stale cached one.
+    if coordinator.data_loader is not None:
+        coordinator.data_loader.update_cache("home_state", home_state)
 
 
 def read_external_sensor(

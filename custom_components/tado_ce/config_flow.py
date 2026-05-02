@@ -7,6 +7,7 @@ from http import HTTPStatus
 import logging
 from typing import TYPE_CHECKING, Any
 
+import aiohttp
 from homeassistant import config_entries
 from homeassistant.core import callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -19,7 +20,11 @@ from .const import (
     AUTH_ENDPOINT_TOKEN,
     CLIENT_ID,
     DOMAIN,
+    MAX_RETRY_ATTEMPTS,
+    RETRY_BASE_DELAY,
 )
+from .exceptions import TadoRateLimitError
+from .helpers import retry_delay
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry, ConfigFlowResult
@@ -113,6 +118,9 @@ class TadoCEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         else:
                             _LOGGER.error("Manual token refresh failed: %s", resp.status)
                             errors["base"] = "invalid_token"
+                except TadoRateLimitError:
+                    _LOGGER.warning("Manual token: Tado API rate limited")
+                    errors["base"] = "rate_limited"
                 except Exception:
                     _LOGGER.exception("Manual token validation error")
                     errors["base"] = "cannot_connect"
@@ -181,6 +189,8 @@ class TadoCEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["base"] = "auth_pending"
             elif result == "expired":
                 return self.async_abort(reason="timeout")
+            elif result == "rate_limited":
+                errors["base"] = "rate_limited"
             else:
                 errors["base"] = "authorization_failed"
 
@@ -235,23 +245,78 @@ class TadoCEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     return "error"
                 return "error"
 
+        except TadoRateLimitError:
+            _LOGGER.warning("Authorization check: Tado API rate limited")
+            return "rate_limited"
+
         except Exception:
             _LOGGER.exception("Authorization check error")
             return "error"
 
     async def _fetch_homes(self) -> None:
-        """Fetch available homes from Tado API."""
+        """Fetch available homes from Tado API with retry on transient errors.
+
+        Retries on HTTP 429, 5xx, TimeoutError, and ClientConnectionError
+        using exponential backoff with jitter. Raises TadoRateLimitError on
+        429 exhaustion so callers can surface a specific error message (#246).
+        """
         session = async_get_clientsession(self.hass)
+        last_status: int | None = None
+        last_error: Exception | None = None
 
-        async with session.get(
-            API_ENDPOINT_ME,
-            headers={"Authorization": f"Bearer {self._access_token}"},
-        ) as resp:
-            if resp.status != HTTPStatus.OK:
-                raise Exception(f"Failed to fetch homes: {resp.status}")
+        for attempt in range(1, MAX_RETRY_ATTEMPTS + 1):
+            try:
+                async with session.get(
+                    API_ENDPOINT_ME,
+                    headers={"Authorization": f"Bearer {self._access_token}"},
+                ) as resp:
+                    if resp.status == HTTPStatus.OK:
+                        data = await resp.json()
+                        self._homes = data.get("homes", [])
+                        return
 
-            data = await resp.json()
-            self._homes = data.get("homes", [])
+                    last_status = resp.status
+
+                    # Transient: 429 or 5xx → retry
+                    if resp.status == HTTPStatus.TOO_MANY_REQUESTS or 500 <= resp.status < 600:
+                        if attempt < MAX_RETRY_ATTEMPTS:
+                            delay = retry_delay(attempt, RETRY_BASE_DELAY)
+                            _LOGGER.debug(
+                                "Fetch homes HTTP %s (attempt %s/%s), retrying in %.1fs",
+                                resp.status,
+                                attempt,
+                                MAX_RETRY_ATTEMPTS,
+                                delay,
+                            )
+                            await asyncio.sleep(delay)
+                            continue
+
+                        # Exhausted — distinguish 429 from other transient errors
+                        if resp.status == HTTPStatus.TOO_MANY_REQUESTS:
+                            raise TadoRateLimitError(
+                                f"Tado API rate limited after {MAX_RETRY_ATTEMPTS} attempts"
+                            )
+                        raise Exception(f"Failed to fetch homes: {resp.status}")
+
+                    # Non-transient (401, 400, etc.) — fail fast, no retry
+                    raise Exception(f"Failed to fetch homes: {resp.status}")
+
+            except TadoRateLimitError:
+                raise  # propagate rate limit error to caller
+            except (TimeoutError, aiohttp.ClientConnectionError) as err:
+                last_error = err
+                if attempt < MAX_RETRY_ATTEMPTS:
+                    delay = retry_delay(attempt, RETRY_BASE_DELAY)
+                    _LOGGER.debug(
+                        "Fetch homes network error (attempt %s/%s): %s, retrying in %.1fs",
+                        attempt,
+                        MAX_RETRY_ATTEMPTS,
+                        err,
+                        delay,
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+                raise  # exhausted — propagate network error
 
     async def async_step_select_home(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Handle home selection (if multiple homes)."""
@@ -338,6 +403,8 @@ class TadoCEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["base"] = "auth_pending"
             elif result == "expired":
                 return self.async_abort(reason="timeout")
+            elif result == "rate_limited":
+                errors["base"] = "rate_limited"
             else:
                 errors["base"] = "authorization_failed"
 
@@ -406,6 +473,8 @@ class TadoCEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["base"] = "auth_pending"
             elif result == "expired":
                 return self.async_abort(reason="timeout")
+            elif result == "rate_limited":
+                errors["base"] = "rate_limited"
             else:
                 errors["base"] = "authorization_failed"
 

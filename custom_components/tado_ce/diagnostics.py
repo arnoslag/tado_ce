@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
-# Keys to redact from config entry data / coordinator data
+# Keys to redact from config entry data
 TO_REDACT_CONFIG = {
     "home_id",
     "token",
@@ -23,6 +23,35 @@ TO_REDACT_CONFIG = {
     "username",
     "password",
     "email",
+}
+
+# Keys to redact from coordinator / API response data (defense-in-depth).
+# Even though diagnostics currently only dumps safe summaries, this set
+# ensures PII is auto-redacted if future code exposes raw API data.
+TO_REDACT_DATA = {
+    # User PII
+    "users",
+    "firstName",
+    "lastName",
+    "email",
+    "phoneNumber",
+    "identifiers",
+    # Device / location identifiers
+    "serialNo",
+    "serialNumber",
+    "macAddress",
+    "shortSerialNo",
+    # Home identifiers
+    "homeId",
+    "home_id",
+    "name",
+    # Network / security
+    "authKey",
+    "bridge_auth_key",
+    # Mobile device PII
+    "deviceMetadata",
+    "location",
+    "geoTrackingEnabled",
 }
 
 
@@ -51,11 +80,11 @@ async def async_get_config_entry_diagnostics(
     redacted_coord["zones_info_count"] = len(zones_info)
     redacted_coord["zone_types"] = _summarise_zone_types(zones_info)
 
-    # Config manager settings (no PII)
-    config_summary = {}
+    # Config manager settings (redact any PII that might leak through)
+    config_summary: dict[str, Any] = {}
     if coordinator.config_manager:
         config_summary = coordinator.config_manager.get_all_config()
-    redacted_coord["config_settings"] = config_summary
+    redacted_coord["config_settings"] = async_redact_data(config_summary, TO_REDACT_DATA)
 
     # Coordinator metadata
     redacted_coord["update_interval_seconds"] = (

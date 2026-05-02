@@ -980,8 +980,8 @@
         "name": "Anwesenheitsmodus",
         "state": {
           "auto": "Auto (Geofencing)",
-          "home": "Startseite",
-          "away": "Auswärts"
+          "home": "Zuhause",
+          "away": "Abwesend"
         },
         "state_attributes": {
           "presence": {
@@ -1410,7 +1410,8 @@
       "cannot_connect": "Die Verbindung zu Tado konnte nicht hergestellt werden. Bitte überprüfen Sie Ihre Internetverbindung.",
       "invalid_token": "Ungültiges oder abgelaufenes Refresh-Token. Bitte überprüfen Sie das Token und versuchen Sie es erneut.",
       "auth_pending": "Die Autorisierung ist noch nicht abgeschlossen. Bitte autorisieren Sie zuerst auf der Tado-Website und klicken Sie dann erneut auf Senden.",
-      "authorization_failed": "Autorisierung fehlgeschlagen. Bitte versuchen Sie es noch einmal von Anfang an."
+      "authorization_failed": "Autorisierung fehlgeschlagen. Bitte versuchen Sie es noch einmal von Anfang an.",
+      "rate_limited": "Die Server von Tado beschränken vorübergehend die Anzahl der Anfragen. Bitte warten Sie einige Minuten und versuchen Sie es erneut."
     }
   },
   "options": {

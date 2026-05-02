@@ -980,8 +980,8 @@
         "name": "Modalità Presenza",
         "state": {
           "auto": "Auto (Geofencing)",
-          "home": "Casa",
-          "away": "Via"
+          "home": "In casa",
+          "away": "Fuori casa"
         },
         "state_attributes": {
           "presence": {
@@ -1410,7 +1410,8 @@
       "cannot_connect": "Impossibile connettersi a Tado. Verificare la connessione a Internet.",
       "invalid_token": "Token di aggiornamento non valido o scaduto. Controllare il token e riprovare.",
       "auth_pending": "L'autorizzazione non è ancora stata completata. Si prega di autorizzare prima il sito web di Tado, quindi di cliccare nuovamente su Invia.",
-      "authorization_failed": "Autorizzazione fallita. Riprovare dall'inizio."
+      "authorization_failed": "Autorizzazione fallita. Riprovare dall'inizio.",
+      "rate_limited": "I server di Tado stanno limitando temporaneamente il numero di richieste. Attendi qualche minuto e riprova."
     }
   },
   "options": {

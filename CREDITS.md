@@ -21,6 +21,12 @@ Thank you to everyone who supported the project through [Buy Me a Coffee](https:
 
 Community contributors who helped shape each release through bug reports, feature requests, testing, and feedback.
 
+### v4.0.0-beta.13
+
+- **[@simonotter](https://github.com/simonotter)** — Persisted through seven rounds of debugging Smart Valve Control across three weeks, from config checks to log searches to file replacements. His final screenshot showing "cloud write failed" repeating every 5 minutes was the evidence that confirmed the controller was running but every cloud write was being rejected by Tado's API ([#221](https://github.com/hiall-fyi/tado_ce/issues/221))
+- **[@Newreader](https://github.com/Newreader)** — Provided the 429 rate limit traceback that exposed the config flow's missing retry logic, then delivered an exceptionally thorough startup analysis that pinpointed the "entity is fresh" false positive. When the `tado_ce_ready` event was proposed, added a key refinement: the event should fire only when all climate entities have real data, not just when the coordinator has run ([#246](https://github.com/hiall-fyi/tado_ce/issues/246))
+- **[@dragorex71](https://github.com/dragorex71)** — Spotted that changing presence via the Tado CE Hub didn't update the climate card's preset mode, and provided Developer Tools screenshots showing the actual state values that confirmed the internal cache wasn't being updated. Also flagged the Italian translation mismatch between the Hub select ("Casa"/"Via") and climate card presets ("In casa"/"Fuori casa") ([Discussion #219](https://github.com/hiall-fyi/tado_ce/discussions/219))
+
 ### v4.0.0-beta.12
 
 - **[@mpartington](https://github.com/mpartington)** — Tested all three overlay mode workarounds and reported back with clear results, confirming that `climate.set_hvac_mode` wasn't respecting the configured overlay mode. His systematic testing (global Manual, `set_climate_timer` with manual, `set_climate_timer` with next_time_block) directly led to discovering the HomeKit write path was bypassing overlay termination entirely ([Discussion #219](https://github.com/hiall-fyi/tado_ce/discussions/219))

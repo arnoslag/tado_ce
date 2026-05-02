@@ -508,9 +508,12 @@ class TadoApiClient(TadoAuthMixin):
     async def _handle_403(
         self, method: str, endpoint: str, attempt: int,
     ) -> bool:
-        """Handle 403 Forbidden with retry. Returns True if should retry (continue loop)."""
-        self._access_token = None
-        self._token_expiry = None
+        """Handle 403 Forbidden with retry. Returns True if should retry (continue loop).
+
+        403 is typically a transient WAF/CDN block, not a token issue.
+        Token is only cleared after retries are exhausted, as a last resort
+        to force a fresh token on the next api_call invocation.
+        """
         if attempt < MAX_RETRY_ATTEMPTS:
             _LOGGER.debug(
                 "API 403 on %s %s, retry %s/%s",
@@ -519,6 +522,9 @@ class TadoApiClient(TadoAuthMixin):
             delay = retry_delay(attempt)
             await asyncio.sleep(delay)
             return True
+        # Exhausted — clear token as last resort and give up
+        self._access_token = None
+        self._token_expiry = None
         _LOGGER.error("API 403 after %s retries: %s %s", MAX_RETRY_ATTEMPTS, method, endpoint)
         return False
 

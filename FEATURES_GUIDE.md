@@ -21,11 +21,13 @@ Complete guide to all Tado CE exclusive features, configurations, and usage scen
 12. [Weather Compensation](#-weather-compensation)
 13. [Smart Valve Control](#-smart-valve-control)
 14. [Optional Features](#-optional-features)
-15. [Per-Zone Configuration](#-per-zone-configuration)
-16. [Zone Features Toggles](#-zone-features-toggles)
-17. [Configuration Scenarios](#-configuration-scenarios)
-18. [Actionable Insights](#-actionable-insights)
-19. [Troubleshooting](#-troubleshooting)
+15. [Automation Events](#-automation-events)
+16. [Multi-TRV Zones](#-multi-trv-zones)
+17. [Per-Zone Configuration](#-per-zone-configuration)
+18. [Zone Features Toggles](#-zone-features-toggles)
+19. [Configuration Scenarios](#-configuration-scenarios)
+20. [Actionable Insights](#-actionable-insights)
+21. [Troubleshooting](#-troubleshooting)
 
 ---
 
@@ -1327,7 +1329,111 @@ When Smart Valve Control is active, the climate entity exposes additional attrib
 | `desired_target` | e.g. `21.0` | Your desired temperature captured when the controller activated (only when active) |
 | `valve_control_backed_off` | `true` | Shown when the controller has backed off due to manual override |
 
-The climate card's target temperature always shows your desired temperature (from the schedule or manual setting), never the inflated valve target.
+> **Note:** While Smart Valve Control is active, the climate card's target temperature shows the **valve target** (the inflated value written to the TRV), not your desired temperature. This is because Tado's API reports the overlay temperature, and the climate entity displays what the API returns. Your actual desired temperature is available in the `desired_target` attribute. If you want to display the desired temperature on your dashboard, create a template sensor:
+>
+> ```yaml
+> template:
+>   - sensor:
+>       - name: "Living Room Desired Temperature"
+>         unit_of_measurement: "°C"
+>         state: >
+>           {% set desired = state_attr('climate.living_room', 'desired_target') %}
+>           {% if desired is not none %}
+>             {{ desired }}
+>           {% else %}
+>             {{ state_attr('climate.living_room', 'temperature') }}
+>           {% endif %}
+> ```
+
+### How the Offset Calculation Works
+
+Smart Valve Control uses **target manipulation**, not calibration offset. It doesn't change what the TRV reads — it changes what the TRV is aiming for.
+
+**The formula:**
+```
+valve_target = TRV_reading + (desired_target − external_sensor)
+```
+
+The `(desired_target − external_sensor)` part is the gap between where you want the room and where it actually is. Adding that gap to the TRV's own reading gives a target that keeps the valve open until the room reaches your desired temperature.
+
+**Worked example — cold room, heating up:**
+
+| Time | External Sensor | TRV Reading | Desired | Offset | Valve Target | TRV Action |
+|------|----------------|-------------|---------|--------|-------------|------------|
+| 08:00 | 17.0°C | 22.0°C | 20.0°C | +3.0 | 25.0°C | Valve open (22 < 25) |
+| 08:30 | 18.5°C | 22.5°C | 20.0°C | +1.5 | 24.0°C | Valve open (22.5 < 24) |
+| 09:00 | 19.5°C | 22.8°C | 20.0°C | +0.5 | 23.3°C | Valve open (22.8 < 23.3) |
+| 09:15 | 20.0°C | 23.0°C | 20.0°C | 0.0 | 23.0°C | Valve closing (23 = 23) |
+| 09:30 | 20.3°C | 23.0°C | 20.0°C | — | — | Controller deactivates (20.3 ≥ 20.3) |
+
+As the room warms up, the offset shrinks and the valve target drops toward the TRV's own reading. When the external sensor reaches `desired + 0.3°C` (hysteresis), the controller deactivates and resumes the Tado schedule.
+
+**What happens without Smart Valve Control:**
+
+At 08:00, the TRV reads 22°C and the schedule target is 20°C. The TRV thinks the room is already 2°C above target and closes the valve. The room stays at 17°C.
+
+**Comparison with offset calibration (e.g. `set_climate_temperature_offset`):**
+
+| | Smart Valve Control | Offset Calibration |
+|---|---|---|
+| What changes | TRV's target temperature | TRV's internal temperature reading |
+| TRV internal reading | Unchanged (still reads 22°C) | Corrected (reads 17°C after offset) |
+| Climate card shows | Valve target (e.g. 25°C) | Your desired target (e.g. 20°C) |
+| API cost per adjustment | 0 (HomeKit) or 1 (cloud) | 1 per TRV + 1 readback |
+| Adjustment speed | Instant (target change takes effect immediately) | Depends on TRV firmware applying the offset |
+| Works with HomeKit | Yes — zero API cost | No — offset is a device-level API call |
+
+Both approaches keep the valve open until the room reaches your desired temperature. Smart Valve Control trades a less intuitive climate card display for zero API cost and instant adjustments.
+
+### Usage Scenarios
+
+#### Scenario 1: Single Room with External Sensor
+
+You have a living room with one TRV and an Aqara temperature sensor on the bookshelf. The TRV reads 3–4°C higher than the room.
+
+1. Add the Aqara sensor as the zone's external temperature sensor
+2. Enable Smart Valve Control for the zone
+3. The controller automatically compensates — no automations needed
+
+Your climate card will show a higher target temperature while the controller is active (e.g. 24°C instead of 20°C). The `desired_target` attribute shows your actual target (20°C). When the room reaches temperature, the controller deactivates and the climate card returns to showing the schedule target.
+
+#### Scenario 2: Large Room with Multiple TRVs
+
+You have a living room with 3 radiators (3 TRVs in one Tado zone) and one external sensor. Smart Valve Control writes a single zone overlay — all 3 TRVs receive the same adjusted target. The TRV reading used for the offset calculation is Tado's zone-level `insideTemperature`, which comes from the zone's measuring device (typically the first TRV assigned to the zone).
+
+No special configuration needed — multi-TRV zones work the same as single-TRV zones.
+
+#### Scenario 3: Running Offset Automations Alongside SVC
+
+If you have existing automations that call `set_climate_temperature_offset`, you should **disable them for zones where Smart Valve Control is enabled**. Running both creates double compensation — SVC pushes the target up while the offset pulls the TRV reading down, causing the room to overshoot significantly.
+
+Pick one approach per zone:
+- **Smart Valve Control** — zero API cost (HomeKit), automatic, but climate card shows inflated target
+- **Offset automations** — costs API calls per TRV, manual automation, but climate card shows your real target
+
+#### Scenario 4: Monitoring SVC Behaviour on Your Dashboard
+
+Add a Markdown card to see what the controller is doing:
+
+```yaml
+type: markdown
+content: >
+  {% set c = 'climate.living_room' %}
+  {% if state_attr(c, 'valve_control_active') %}
+    🔥 SVC Active — valve target {{ state_attr(c, 'valve_target') }}°C,
+    desired {{ state_attr(c, 'desired_target') }}°C
+  {% elif state_attr(c, 'valve_control_backed_off') %}
+    ⏸️ SVC Backed Off (manual override detected)
+  {% else %}
+    ✅ SVC Idle — room at temperature
+  {% endif %}
+```
+
+#### Scenario 5: Night Mode with Reduced Heating
+
+Your schedule drops to 16°C at night. The external sensor reads 18°C (room is still warm from the evening). SVC sees `external (18) > desired (16) + hysteresis (0.3)` and stays idle — no valve adjustment needed. The TRV follows the schedule normally.
+
+SVC only activates when the room is **colder** than your desired temperature. It never fights against the schedule to cool a room down.
 
 ### Safety Features
 
@@ -1449,6 +1555,106 @@ Home → Away → Auto = Stays Away     ✅ CORRECT
 ```
 
 When geofencing is disabled, "Auto" just removes the lock — it doesn't change state. Use "Home"/"Away" directly, or use HA automations with other presence detection.
+
+---
+
+## 📡 Automation Events
+
+**Available:** Various versions | **Requirement:** None | **Automatic**
+
+Tado CE fires HA bus events at key moments — you can use these as automation triggers without polling entity states.
+
+### Startup Ready Event
+
+Fires once after the integration finishes loading and all entities have real data from the Tado API. Use this instead of `homeassistant.start` with delays or `wait_template` chains when your boot automations need to act on Tado CE entities.
+
+| Event | When | Payload |
+|-------|------|---------|
+| `tado_ce_ready` | First API sync complete, all entities populated | `home_id`, `entry_id`, `zone_count` |
+
+```yaml
+# Example: align TRV states to boiler switch after boot
+automation:
+  - alias: "Tado CE Boot Sync"
+    trigger:
+      - platform: event
+        event_type: tado_ce_ready
+    condition:
+      - condition: state
+        entity_id: switch.boiler
+        state: "off"
+    action:
+      - service: climate.set_hvac_mode
+        target:
+          entity_id: all
+        data:
+          hvac_mode: "off"
+```
+
+The event also fires after an integration reload, so your automations work correctly if you reconfigure Tado CE without restarting HA.
+
+### Window Detection Events
+
+Fires when the passive window detection algorithm detects a temperature drop consistent with an open window, or when the detection clears. See [Window Detection Events](#window-detection-events-v330) for details.
+
+| Event | When | Payload |
+|-------|------|---------|
+| `tado_ce_window_predicted` | Window open detected | `zone_id`, `zone_name`, `confidence`, `temp_drop`, `detection_mode`, `recommendation` |
+| `tado_ce_window_predicted_cleared` | Detection cleared | `zone_id`, `zone_name` |
+
+### State Restoration Event
+
+Fires when a zone's previous state becomes available for restoration after an overlay change. Used by the Restore Previous State service.
+
+| Event | When | Payload |
+|-------|------|---------|
+| `tado_ce_state_restoration_available` | Previous state captured and ready to restore | `zone_id`, `zone_name`, `entity_type`, `captured_temperature`, `captured_hvac_mode` |
+
+### Schedule Updated Event
+
+Fires when a zone's schedule is refreshed from the Tado API (e.g. after pressing the Refresh Schedule button).
+
+| Event | When | Payload |
+|-------|------|---------|
+| `tado_ce_schedule_updated` | Schedule data refreshed | `zone_id`, `zone_name` |
+
+---
+
+## 🔗 Multi-TRV Zones
+
+**Available:** All versions | **Requirement:** Zone with 2+ TRVs | **Automatic**
+
+If you have a room with multiple radiators, Tado lets you assign multiple TRVs to the same zone. Tado CE handles this correctly — here's how each feature behaves.
+
+### What Works Automatically
+
+| Feature | How It Works | Details |
+|---------|-------------|---------|
+| **Temperature & mode control** | Zone-level | Setting a temperature or HVAC mode applies to all TRVs in the zone via a single API call. Tado's servers distribute the target to every device. |
+| **Smart Valve Control** | Zone-level | SVC writes a single zone overlay — all TRVs in the zone receive the same valve target. The TRV reading used for offset calculation comes from Tado's zone-level `insideTemperature`, which is the measuring device's reading. |
+| **HomeKit writes** | Zone-level | Writing a temperature via HomeKit targets one TRV, but the Tado bridge syncs the zone overlay to all TRVs automatically. |
+| **HomeKit event subscription** | All devices | Temperature and humidity events from every TRV in the zone are received and processed. |
+| **Temperature offset** | Per-device | The `set_climate_temperature_offset` service writes the same offset value to every TRV in the zone individually. A zone with 2 TRVs uses 2 API calls (plus 1 readback). |
+| **Child lock** | Per-device | Each TRV gets its own child lock switch — you can lock some TRVs and leave others unlocked. |
+| **Early start** | Zone-level | One switch per zone, applies to all TRVs. |
+
+### Things to Know
+
+**Temperature offset readback reads from one device.** After writing an offset to all TRVs, the integration reads back the actual value from the first device to verify it was applied. The `offset_celsius` attribute on your climate entity reflects that one device's value. In practice all TRVs in a zone accept the same offset, so this matches. But if you manually set different offsets per TRV in the Tado app, only the first device's offset is shown.
+
+**HomeKit temperature shows the last reporting device.** When HomeKit is connected, temperature events from all TRVs in a zone update the same cache entry. If two TRVs report slightly different temperatures (common — they're on different radiators), the displayed value is whichever TRV reported most recently, not an average. The difference is typically small (< 0.5°C) since they're in the same room.
+
+**API cost scales with device count for offsets only.** Most operations (set temperature, set mode, resume schedule) are zone-level and cost 1 API call regardless of TRV count. The exception is `set_climate_temperature_offset`, which makes 1 call per TRV plus 1 readback. For a zone with 3 TRVs, that's 4 API calls per offset write.
+
+### API Cost Per Operation
+
+| Operation | API Calls (1 TRV) | API Calls (2 TRVs) | API Calls (3 TRVs) |
+|-----------|-------------------|--------------------|--------------------|
+| Set temperature | 1 | 1 | 1 |
+| Set HVAC mode | 1 | 1 | 1 |
+| Set temperature offset | 2 (1 write + 1 readback) | 3 (2 writes + 1 readback) | 4 (3 writes + 1 readback) |
+| Resume schedule | 1 | 1 | 1 |
+| Smart Valve Control write | 0 (HomeKit) or 1 (cloud) | 0 or 1 | 0 or 1 |
 
 ---
 
@@ -1810,9 +2016,9 @@ automation:
 
 ### API Rate Limit Exceeded
 
-**Causes:** Too many manual actions, polling too short, too many optional features, multiple HA instances.
+**Causes:** Too many manual actions, polling too short, too many optional features, multiple HA instances, or Tado's servers temporarily limiting requests during setup.
 
-**Solution:** Increase polling intervals, disable optional features (Weather, Mobile Tracking), wait for reset (`sensor.tado_ce_api_reset`), ensure single HA instance.
+**Solution:** Increase polling intervals, disable optional features (Weather, Mobile Tracking), wait for reset (`sensor.tado_ce_api_reset`), ensure single HA instance. If you see "Tado's servers are temporarily limiting requests" during setup, wait a few minutes and try again — the integration retries automatically with backoff.
 
 ### Schedule Calendar Not Showing Events
 
