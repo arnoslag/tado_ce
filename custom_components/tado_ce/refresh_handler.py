@@ -97,18 +97,13 @@ class RefreshHandler:
     async def _get_rate_limit_info(self) -> dict[str, Any]:
         """Get current rate limit information.
 
-        Direct coordinator.data_loader access.
+        Direct coordinator.data_loader access (pure in-memory cache read).
 
         Returns:
             Dictionary with rate limit info, or empty dict if unavailable
         """
         try:
-            return (
-                await self.hass.async_add_executor_job(
-                    self._coordinator.data_loader.load_ratelimit_file,
-                )
-                or {}
-            )
+            return self._coordinator.data_loader.load_ratelimit_file() or {}
         except Exception as e:
             _LOGGER.debug("Failed to read rate limit file: %s", e)
         return {}

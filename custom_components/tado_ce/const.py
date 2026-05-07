@@ -199,7 +199,7 @@ DEFAULT_ZONE_CONFIG = {
     "min_temp": 5.0,  # 5-25°C (Heating + AC)
     "max_temp": 25.0,  # 15-30°C (Heating + AC)
     "surface_temp_offset": 0.0,  # -5.0 to +5.0°C offset for mold risk calculation
-    "smart_valve_control": False,  # Per-zone Smart Valve Control toggle (Heating only)
+    "svc_mode": "off",  # off / valve_target / offset_sync (Heating only)
 }
 
 # Surface temperature offset limits (for mold risk calibration)
@@ -266,6 +266,14 @@ SMART_VALVE_CLOUD_RATE_LIMIT: Final[float] = 300.0  # seconds (5 minutes)
 SMART_VALVE_DEBOUNCE_WINDOW: Final[float] = 3.0  # seconds (ActionDebouncer window)
 ABSOLUTE_MAX_VALVE_TARGET: Final[float] = 30.0   # °C absolute upper bound for valve target
 HOMEKIT_WRITE_GRACE_SECONDS: Final[float] = 60.0  # suppress manual override detection after write
+
+# SVC operating mode (per-zone select — mutually exclusive)
+SVC_MODE_OFF: Final[str] = "off"
+SVC_MODE_VALVE_TARGET: Final[str] = "valve_target"
+SVC_MODE_OFFSET_SYNC: Final[str] = "offset_sync"
+
+# Offset Sync — minimum offset change before writing to device
+SVC_OFFSET_MIN_CHANGE: Final[float] = 0.5  # °C
 
 # =============================================================================
 # API Write Optimization Constants

@@ -48,7 +48,7 @@ class ZoneConfigManager:
         else:
             self._config = {}
 
-        # Cumulative migration: adaptive_preheat bool → str (persisted)
+        # Cumulative migration (persisted)
         migrated = False
         for zone_cfg in self._config.values():
             ap = zone_cfg.get("adaptive_preheat")
@@ -59,9 +59,15 @@ class ZoneConfigManager:
             if "temp_offset" in zone_cfg:
                 del zone_cfg["temp_offset"]
                 migrated = True
+            # smart_valve_control bool → svc_mode str
+            svc_bool = zone_cfg.pop("smart_valve_control", None)
+            if svc_bool is not None:
+                migrated = True  # key removed — always persist
+                if "svc_mode" not in zone_cfg:
+                    zone_cfg["svc_mode"] = "valve_target" if svc_bool else "off"
         if migrated:
             await self.async_save()
-            _LOGGER.info("Migrated zone config (adaptive_preheat bool→str, removed dead temp_offset)")
+            _LOGGER.info("Migrated zone config (cumulative migrations applied)")
         _LOGGER.debug("Loaded zone config for %s zones", len(self._config))
 
     async def async_save(self) -> None:

@@ -34,6 +34,9 @@ _MIN_HOLD_SECONDS: float = 600.0
 # Stale reading threshold in seconds (60 min)
 _STALE_READING_SECONDS: float = 3600.0
 
+# Grace period for missing outdoor temp — use last known value (30 min)
+_OUTDOOR_TEMP_GRACE_SECONDS: float = 1800.0
+
 
 # ---------------------------------------------------------------------------
 # Data classes
@@ -308,9 +311,20 @@ def evaluate(
 
     # --- Step 1: outdoor temp availability ---
     if outdoor_temp_raw is None:
-        state.status = "paused"
-        base.status = "paused"
-        return base
+        # Grace period: use last known smoothed value if available and fresh
+        if (
+            state.ema_outdoor_temp is not None
+            and state.last_outdoor_reading_time > 0
+            and (now_mono - state.last_outdoor_reading_time) <= _OUTDOOR_TEMP_GRACE_SECONDS
+        ):
+            outdoor_temp_raw = state.ema_outdoor_temp
+        elif state.ema_outdoor_temp is not None and state.last_outdoor_reading_time == 0.0:
+            # First poll after restart — persisted EMA available, no timing info
+            outdoor_temp_raw = state.ema_outdoor_temp
+        else:
+            state.status = "paused"
+            base.status = "paused"
+            return base
 
     # --- Step 2: stale reading check ---
     if (

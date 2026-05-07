@@ -261,8 +261,6 @@ class TadoCEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         429 exhaustion so callers can surface a specific error message (#246).
         """
         session = async_get_clientsession(self.hass)
-        last_status: int | None = None
-        last_error: Exception | None = None
 
         for attempt in range(1, MAX_RETRY_ATTEMPTS + 1):
             try:
@@ -274,8 +272,6 @@ class TadoCEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         data = await resp.json()
                         self._homes = data.get("homes", [])
                         return
-
-                    last_status = resp.status
 
                     # Transient: 429 or 5xx → retry
                     if resp.status == HTTPStatus.TOO_MANY_REQUESTS or 500 <= resp.status < 600:
@@ -304,7 +300,6 @@ class TadoCEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             except TadoRateLimitError:
                 raise  # propagate rate limit error to caller
             except (TimeoutError, aiohttp.ClientConnectionError) as err:
-                last_error = err
                 if attempt < MAX_RETRY_ATTEMPTS:
                     delay = retry_delay(attempt, RETRY_BASE_DELAY)
                     _LOGGER.debug(

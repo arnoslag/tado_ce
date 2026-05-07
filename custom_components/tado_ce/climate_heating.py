@@ -62,6 +62,14 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
+# HomeKit Target Heating State → HA HVACMode mapping
+# 0=Off, 1=Heat, 2=Cool (not applicable for heating), 3=Auto
+_HOMEKIT_TARGET_STATE_TO_HVAC: dict[int, HVACMode] = {
+    0: HVACMode.OFF,
+    1: HVACMode.HEAT,
+    3: HVACMode.AUTO,
+}
+
 
 class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity, RestoreEntity):
     """Tado CE Heating Climate Entity."""
@@ -282,12 +290,46 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity,
             return
         if self.coordinator.is_entity_fresh(self.entity_id):
             return
+
         zone_data = get_zone_state(self.coordinator.data, self._zone_id) or {}
         self._update_sensor_data(zone_data)
+
+        # Merge target temperature and HVAC mode from HomeKit (if fresh)
+        reconciler = self.coordinator.state_reconciler
+        provider = self.coordinator.homekit_provider
+        if reconciler and provider and provider.is_connected:
+            reconciler.local_provider = provider
+
+            # Target temperature
+            cloud_target = self._attr_target_temperature
+            merged_target, target_src = reconciler.merge_zone_target_temperature(
+                self._zone_id, cloud_target,
+            )
+            if merged_target is not None and merged_target != self._attr_target_temperature:
+                self._attr_target_temperature = merged_target
+                _LOGGER.debug(
+                    "%s: HomeKit target temp update: %s → %s (%s)",
+                    self._zone_name, cloud_target, merged_target, target_src,
+                )
+
+            # HVAC mode (target heating state)
+            merged_state, state_src = reconciler.merge_zone_target_heating_state(
+                self._zone_id, None,  # No cloud value in real-time path
+            )
+            if merged_state is not None and state_src == "homekit":
+                new_mode = _HOMEKIT_TARGET_STATE_TO_HVAC.get(merged_state)
+                if new_mode is not None and new_mode != self._attr_hvac_mode:
+                    old_mode = self._attr_hvac_mode
+                    self._attr_hvac_mode = new_mode
+                    self._attr_hvac_action = self._calculate_hvac_action()
+                    _LOGGER.debug(
+                        "%s: HomeKit HVAC mode update: %s → %s (%s)",
+                        self._zone_name, old_mode, new_mode, state_src,
+                    )
+
         self.async_write_ha_state()
 
-        # Record temperature for heating cycle analysis (real-time HomeKit data
-        # gives denser readings → more accurate heating rate/acceleration)
+        # Record temperature for heating cycle analysis with fresh target
         if self._attr_target_temperature is not None:
             self._schedule_heating_cycle_update(self._attr_target_temperature)
 
@@ -340,7 +382,11 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity,
         if controller is not None:
             attrs.update(controller.get_attributes())
         else:
-            attrs["valve_control_active"] = False
+            os_controller = self.coordinator.offset_sync_controllers.get(self._zone_id)
+            if os_controller is not None:
+                attrs.update(os_controller.get_attributes())
+            else:
+                attrs["valve_control_active"] = False
 
         return attrs
 

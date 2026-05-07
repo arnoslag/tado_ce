@@ -154,6 +154,18 @@ class HomeKitLocalProvider:
             return None, None
         return entry
 
+    def get_target_heating_state(self, zone_id: str) -> tuple[int | None, datetime | None]:
+        """Get target heating/cooling state for a zone.
+
+        Returns:
+            (state_int, timestamp) or (None, None) if unavailable.
+            State: 0=Off, 1=Heat, 2=Cool, 3=Auto.
+        """
+        entry = self._cache.get(zone_id, {}).get(CHAR_TARGET_HEATING_STATE)
+        if entry is None:
+            return None, None
+        return entry
+
     async def set_temperature(self, zone_id: str, temperature: float) -> bool:
         """Set target temperature for a zone via HomeKit.
 

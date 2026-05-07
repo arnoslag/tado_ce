@@ -976,9 +976,9 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                 )
             else:
                 all_values["external_humidity_sensor"] = ""
-            # Smart Valve Control toggle (only present for HEATING zones with external sensor)
-            if "smart_valve_control" in s:
-                all_values["smart_valve_control"] = bool(s["smart_valve_control"])
+            # SVC Mode select (only present for HEATING zones with external sensor)
+            if "svc_mode" in s:
+                all_values["svc_mode"] = s["svc_mode"]
 
         if "overlay_section" in user_input:
             s = user_input["overlay_section"]
@@ -1053,7 +1053,7 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
         )
         cur_temp_sensor = config.get("external_temp_sensor", "")
         cur_humidity_sensor = config.get("external_humidity_sensor", "")
-        cur_smart_valve = config.get("smart_valve_control", False)
+        cur_svc_mode = config.get("svc_mode", "off")
         cur_use_ext_temp = bool(cur_temp_sensor)
         cur_use_ext_humidity = bool(cur_humidity_sensor)
         cur_overlay = OVERLAY_MODE_REVERSE_MAP.get(
@@ -1175,8 +1175,14 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                                 **(
                                     {
                                         vol.Optional(
-                                            "smart_valve_control", default=cur_smart_valve,
-                                        ): BooleanSelector(),
+                                            "svc_mode", default=cur_svc_mode,
+                                        ): SelectSelector(
+                                            SelectSelectorConfig(
+                                                options=["off", "valve_target", "offset_sync"],
+                                                translation_key="svc_mode",
+                                                mode=SelectSelectorMode.DROPDOWN,
+                                            ),
+                                        ),
                                     }
                                     if zone_type == "HEATING" and (cur_temp_sensor or cur_use_ext_temp)
                                     else {}

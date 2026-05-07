@@ -56,6 +56,7 @@ if TYPE_CHECKING:
     from .heating_coordinator import HeatingCycleCoordinator
     from .homekit_client import HomeKitClient
     from .homekit_provider import HomeKitLocalProvider
+    from .offset_sync_controller import OffsetSyncController
     from .smart_comfort import SmartComfortManager
     from .state_reconciler import StateReconciler
     from .state_restore_manager import CapturedState, StateRestoreManager
@@ -199,6 +200,9 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         # Smart Valve Control — per-zone proportional offset controllers
         self.valve_controllers: dict[str, SmartValveController] = {}
+
+        # Offset Sync — per-zone device offset controllers
+        self.offset_sync_controllers: dict[str, OffsetSyncController] = {}
 
         # Weather compensation mutable runtime state (persists across polls)
         self._wc_state = WeatherCompensationState()
@@ -395,9 +399,19 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             try:
                 await controller.async_evaluate()
             except Exception:
-                _LOGGER.debug(
+                _LOGGER.info(
                     "Smart Valve: evaluation error for zone %s",
                     controller._zone_id, exc_info=True,
+                )
+
+        # Offset Sync: evaluate all active offset sync controllers after poll
+        for controller_os in self.offset_sync_controllers.values():
+            try:
+                await controller_os.async_evaluate()
+            except Exception:
+                _LOGGER.info(
+                    "Offset Sync: evaluation error for zone %s",
+                    controller_os.zone_id, exc_info=True,
                 )
 
         return result
@@ -897,7 +911,8 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     # ------------------------------------------------------------------
 
     async def async_init_valve_controllers(self) -> None:
-        """Initialize SmartValveController for zones with smart_valve_control enabled."""
+        """Initialize valve controllers for zones based on svc_mode setting."""
+        from .offset_sync_controller import OffsetSyncController
         from .valve_controller import SmartValveController
 
         zones_info = self.data_loader.get_cached("zones_info")
@@ -905,7 +920,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             _LOGGER.warning("Smart Valve: zones_info not available — skipping controller initialization")
             return
 
-        _LOGGER.debug("Smart Valve: checking %s zones for eligible controllers", len(zones_info))
+        _LOGGER.info("Smart Valve: checking %s zones for eligible controllers", len(zones_info))
         initialized_count = 0
 
         for zone in zones_info:
@@ -916,21 +931,28 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 continue
 
             config = self.zone_config_manager.get_zone_config(zone_id)
-            svc_enabled = config.get("smart_valve_control", False)
+            svc_mode = config.get("svc_mode", "off")
             ext_sensor = config.get("external_temp_sensor", "")
 
-            if not svc_enabled:
+            if svc_mode == "off":
                 continue
 
             if not ext_sensor:
-                _LOGGER.debug("Smart Valve: zone %s has SVC enabled but no external sensor — skipped", zone_id)
+                _LOGGER.info("Smart Valve: zone %s has svc_mode=%s but no external sensor — skipped", zone_id, svc_mode)
                 continue
 
-            controller = SmartValveController(self.hass, self, zone_id)
-            await controller.async_activate()
-            self.valve_controllers[zone_id] = controller
-            initialized_count += 1
-            _LOGGER.debug("Smart Valve: initialized controller for zone %s", zone_id)
+            if svc_mode == "valve_target":
+                controller = SmartValveController(self.hass, self, zone_id)
+                await controller.async_activate()
+                self.valve_controllers[zone_id] = controller
+                initialized_count += 1
+                _LOGGER.info("Smart Valve: initialized valve_target controller for zone %s", zone_id)
+            elif svc_mode == "offset_sync":
+                controller_os = OffsetSyncController(self.hass, self, zone_id)
+                await controller_os.async_activate()
+                self.offset_sync_controllers[zone_id] = controller_os
+                initialized_count += 1
+                _LOGGER.info("Offset Sync: initialized controller for zone %s", zone_id)
 
         _LOGGER.info("Smart Valve: initialized %s controller(s)", initialized_count)
 
@@ -938,7 +960,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.zone_config_manager.add_listener(self._on_zone_config_change)
 
     async def async_shutdown_valve_controllers(self) -> None:
-        """Deactivate and clean up all valve controllers."""
+        """Deactivate and clean up all valve and offset sync controllers."""
         for zone_id, controller in list(self.valve_controllers.items()):
             try:
                 await controller.async_deactivate()
@@ -949,45 +971,86 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 )
         self.valve_controllers.clear()
 
+        for zone_id, controller_os in list(self.offset_sync_controllers.items()):
+            try:
+                await controller_os.async_deactivate()
+            except Exception:
+                _LOGGER.warning(
+                    "Offset Sync: error deactivating controller for zone %s",
+                    zone_id, exc_info=True,
+                )
+        self.offset_sync_controllers.clear()
+
     def _on_zone_config_change(self, zone_id: str, key: str, value: Any) -> None:
         """Handle zone config changes — activate/deactivate controllers dynamically."""
-        if key != "smart_valve_control":
+        if key != "svc_mode":
             return
 
-        if value and zone_id not in self.valve_controllers:
-            # Check prerequisites
-            config = self.zone_config_manager.get_zone_config(zone_id)
-            ext_sensor = config.get("external_temp_sensor", "")
-            if not ext_sensor:
-                _LOGGER.info(
-                    "Smart Valve: zone %s toggle on but no external sensor configured — skipped",
-                    zone_id,
+        from .const import SVC_MODE_OFFSET_SYNC, SVC_MODE_VALVE_TARGET
+
+        # Check prerequisites
+        config = self.zone_config_manager.get_zone_config(zone_id)
+        ext_sensor = config.get("external_temp_sensor", "")
+
+        # Check zone type
+        zones_info = self.data_loader.get_cached("zones_info")
+        if zones_info and isinstance(zones_info, list):
+            zone_type = next(
+                (z.get("type") for z in zones_info if str(z.get("id")) == zone_id),
+                None,
+            )
+            if zone_type != "HEATING":
+                _LOGGER.warning(
+                    "Smart Valve: zone %s is %s, not HEATING — skipping",
+                    zone_id, zone_type,
                 )
                 return
 
-            # Check zone type
-            zones_info = self.data_loader.get_cached("zones_info")
-            if zones_info and isinstance(zones_info, list):
-                zone_type = next(
-                    (z.get("type") for z in zones_info if str(z.get("id")) == zone_id),
-                    None,
-                )
-                if zone_type != "HEATING":
-                    _LOGGER.warning(
-                        "Smart Valve: zone %s is %s, not HEATING — skipping",
-                        zone_id, zone_type,
-                    )
-                    return
-
-            from .valve_controller import SmartValveController
-
-            controller = SmartValveController(self.hass, self, zone_id)
-            self.valve_controllers[zone_id] = controller
-            self.hass.async_create_task(controller.async_activate())
-            _LOGGER.info("Smart Valve: activated controller for zone %s", zone_id)
-
-        elif not value and zone_id in self.valve_controllers:
+        # Deactivate existing controllers for this zone (if any)
+        if zone_id in self.valve_controllers:
             controller = self.valve_controllers.pop(zone_id)
             self.hass.async_create_task(controller.async_deactivate())
-            _LOGGER.info("Smart Valve: deactivated controller for zone %s", zone_id)
+            _LOGGER.info("Smart Valve: deactivated valve_target controller for zone %s", zone_id)
+
+        if zone_id in self.offset_sync_controllers:
+            # Warn about double compensation risk when switching offset_sync → valve_target
+            if value == SVC_MODE_VALVE_TARGET:
+                _LOGGER.warning(
+                    "Smart Valve: zone %s switching from offset_sync to valve_target — "
+                    "existing non-zero device offset may cause double compensation. "
+                    "Consider resetting offset to 0 via set_temperature_offset service",
+                    zone_id,
+                )
+            controller_os = self.offset_sync_controllers.pop(zone_id)
+            self.hass.async_create_task(controller_os.async_deactivate())
+            _LOGGER.info("Offset Sync: deactivated controller for zone %s", zone_id)
+
+        # Activate new controller based on svc_mode
+        if value == SVC_MODE_VALVE_TARGET:
+            if not ext_sensor:
+                _LOGGER.info(
+                    "Smart Valve: zone %s svc_mode=valve_target but no external sensor — skipped",
+                    zone_id,
+                )
+                return
+            from .valve_controller import SmartValveController
+
+            new_controller = SmartValveController(self.hass, self, zone_id)
+            self.valve_controllers[zone_id] = new_controller
+            self.hass.async_create_task(new_controller.async_activate())
+            _LOGGER.info("Smart Valve: activated valve_target controller for zone %s", zone_id)
+
+        elif value == SVC_MODE_OFFSET_SYNC:
+            if not ext_sensor:
+                _LOGGER.info(
+                    "Offset Sync: zone %s svc_mode=offset_sync but no external sensor — skipped",
+                    zone_id,
+                )
+                return
+            from .offset_sync_controller import OffsetSyncController
+
+            new_controller_os = OffsetSyncController(self.hass, self, zone_id)
+            self.offset_sync_controllers[zone_id] = new_controller_os
+            self.hass.async_create_task(new_controller_os.async_activate())
+            _LOGGER.info("Offset Sync: activated controller for zone %s", zone_id)
 

@@ -23,6 +23,7 @@ TO_REDACT_CONFIG = {
     "username",
     "password",
     "email",
+    "bridge_serial",
 }
 
 # Keys to redact from coordinator / API response data (defense-in-depth).

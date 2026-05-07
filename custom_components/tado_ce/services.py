@@ -685,7 +685,7 @@ async def handle_set_temp_offset(hass: HomeAssistant, call: ServiceCall) -> None
                         cached_offsets = {}
                     cached_offsets[zone_id] = cache_value
                     _coord.data_loader.update_cache("offsets", cached_offsets)
-                    _coord.data_loader.save_auxiliary("offsets", cached_offsets)
+                    await _coord.data_loader.async_update_store("offsets", cached_offsets)
 
                     if _coord.data and isinstance(_coord.data, dict):
                         _coord.data["offsets"] = cached_offsets
@@ -694,6 +694,10 @@ async def handle_set_temp_offset(hass: HomeAssistant, call: ServiceCall) -> None
 
                 # Trigger a coordinator refresh so entities pick up the change
                 await _coord.async_request_refresh()
+
+                # Notify offset sync controller (if active) about external write
+                if zone_id in _coord.offset_sync_controllers:
+                    _coord.offset_sync_controllers[zone_id].on_external_offset_write()
             else:
                 _LOGGER.warning("No devices found for %s", entity_id)
 

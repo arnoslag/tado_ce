@@ -1283,6 +1283,13 @@
         "polling_api": "Abfrage & API",
         "homekit": "HomeKit"
       }
+    },
+    "svc_mode": {
+      "options": {
+        "off": "Aus",
+        "valve_target": "Ventilziel",
+        "offset_sync": "Offset-Synchronisation"
+      }
     }
   },
   "exceptions": {
@@ -1473,14 +1480,14 @@
               "external_temp_sensor": "Externer Temperatursensor",
               "use_external_humidity": "Externen Luftfeuchtigkeitssensor verwenden",
               "external_humidity_sensor": "Externer Luftfeuchtigkeitssensor",
-              "smart_valve_control": "Intelligente Ventilsteuerung"
+              "svc_mode": "Intelligenter Ventilsteuerungsmodus"
             },
             "data_description": {
               "use_external_temp": "Ausschalten, um den in Tado integrierten Temperatursensor zu verwenden",
               "external_temp_sensor": "Wählen Sie einen Temperatursensor, um die Tado-Messung zu überschreiben",
               "use_external_humidity": "Schalten Sie den in Tado eingebauten Luftfeuchtigkeitssensor aus, um ihn zu verwenden.",
               "external_humidity_sensor": "Wählen Sie einen Luftfeuchtigkeitssensor, um die Tado-Messung zu überschreiben",
-              "smart_valve_control": "Automatische Anpassung des TRV-Sollwerts mit Hilfe des externen Temperatursensors, um die ungenauen eingebauten Messwerte des TRV zu kompensieren"
+              "svc_mode": "Wählen Sie aus, wie der externe Sensor Ihr Thermostatventil steuert: „Valve Target“ passt den Sollwert des Thermostatventils an, „Offset Sync“ korrigiert den Temperaturmesswert des Thermostatventils"
             }
           },
           "overlay_section": {

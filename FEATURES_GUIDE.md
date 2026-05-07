@@ -1078,7 +1078,7 @@ Pair your Tado bridge via HomeKit to control heating and AC directly on your loc
 | Cloud-only data | Heating power, battery status, schedules, hot water, and geofencing are only available from Tado's cloud. HomeKit provides temperature and HVAC mode locally. |
 | Wireless Temp Sensors | Standalone temperature sensors (ST01) don't appear as HomeKit accessories — their data always comes from the cloud. |
 | Single pairing | The bridge can only be paired with one HomeKit controller at a time. |
-| External sensors don't control TRV valve | Per-zone external sensors change the displayed room temperature, but the TRV still uses its own sensor to control the valve. Enable **Smart Valve Control** in zone settings to automatically compensate — see [Smart Valve Control](#-smart-valve-control). |
+| External sensors don't control TRV valve | Per-zone external sensors change the displayed room temperature, but the TRV still uses its own sensor to control the valve. Enable **Smart Valve Control** (Offset Sync or Valve Target) in zone settings to automatically compensate — see [Smart Valve Control](#-smart-valve-control). |
 
 ### General Limitations
 
@@ -1280,9 +1280,9 @@ entities:
 
 ## 🎯 Smart Valve Control
 
-**Available:** v4.0.0-beta.9 | **Requirement:** Heating zone + external temperature sensor + HomeKit (recommended) | **Per-Zone Opt-in**
+**Available:** v4.0.0-beta.9 | **Requirement:** Heating zone + external temperature sensor + HomeKit (recommended for Valve Target) | **Per-Zone Opt-in**
 
-Automatically adjusts TRV target temperatures using external sensor readings so your room — not the TRV — reaches the desired temperature.
+Automatically uses your external sensor to make the TRV heat your room correctly — instead of relying on the TRV's inaccurate built-in sensor.
 
 ### The Problem
 
@@ -1290,9 +1290,68 @@ Tado TRVs have a built-in temperature sensor that sits right on the radiator. It
 
 External sensors in Tado CE fix what you *see* in HA, but the TRV still uses its own sensor to control the valve.
 
-### How It Works
+### Two Modes — Pick One Per Zone
 
-Smart Valve Control calculates a proportional offset and writes an adjusted target directly to the TRV:
+Smart Valve Control offers two approaches to solve this problem. You choose one per zone:
+
+| | Offset Sync | Valve Target |
+|---|---|---|
+| **What it does** | Corrects the TRV's temperature reading so Tado sees the right number | Overrides the TRV's target temperature to force the valve open/closed |
+| **How it works** | Writes a device offset → Tado app and Tado's own algorithm both use the corrected temperature | Calculates a boosted target and writes it directly to the TRV, bypassing Tado's logic |
+| **Tado app shows** | ✅ Your external sensor's temperature (accurate) | ⚠️ An inflated target (e.g. 25°C when you want 20°C) |
+| **Who decides when to heat** | Tado's built-in algorithm (using corrected data) | The integration (actively monitors and adjusts) |
+| **Best for** | Most setups — TRV reads 1-5°C off, Tado's algorithm works fine with correct data | Difficult rooms where Tado still undershoots even with correct temperature data |
+| **API cost** | 1 call per adjustment per TRV (device offset write) | 0 (HomeKit) or 1 (cloud overlay write) |
+| **Complexity** | Simple — just a number correction, no state machine | More complex — active state machine (idle/active/backed-off) |
+
+**Which should you choose?**
+
+- **Start with Offset Sync** if you just want things to work correctly. It feeds Tado accurate temperature data and lets Tado's own modulation algorithm handle the rest. The Tado app stays accurate, and you don't need to understand what the integration is doing behind the scenes.
+
+- **Use Valve Target** if you've tried Offset Sync and the room still doesn't reach temperature — for example, a large room with poor insulation, a TRV in an awkward position, or a zone where Tado's PID controller consistently undershoots. Valve Target takes full control and forces the valve open until your external sensor confirms the room is warm.
+
+> **Important:** Don't run both modes on the same zone. They're mutually exclusive — the mode selector only lets you pick one.
+
+### Setup
+
+1. Configure an **external temperature sensor** for the zone (any HA temperature sensor — Zigbee, Aqara, etc.)
+2. Go to **Settings → Tado CE → Configure → pick a zone → External Sensors section**
+3. Set **Smart Valve Control Mode** to either **Offset Sync** or **Valve Target**
+
+The mode selector only appears for heating zones that have an external temperature sensor configured.
+
+---
+
+### Offset Sync Mode
+
+Offset Sync writes a device temperature offset to your TRV so that the Tado API (and app) displays your external sensor's reading. With accurate temperature data, Tado's own modulation algorithm works correctly without needing external compensation.
+
+**How it works:**
+```
+desired_offset = external_sensor − (TRV_reported_temp − current_offset)
+```
+
+**Example:** Your external sensor reads 19.4°C, the TRV reports 19.8°C with a current offset of 0. The integration writes an offset of −0.4°C to the TRV. Now Tado sees 19.4°C and makes heating decisions based on the real room temperature.
+
+**Key behaviours:**
+- Updates automatically whenever your external sensor changes (debounced to avoid spamming)
+- Rate-limited to one write per 5 minutes per device (Tado's API limit for device offsets)
+- Offset is clamped to ±10°C (Tado's hardware limit)
+- Only writes when the change is ≥ 0.5°C (avoids unnecessary API calls)
+- If your external sensor goes offline, the last offset is preserved (no sudden jump)
+
+**Offset Sync + the Tado app:**
+The Tado app will show your external sensor's temperature as the room temperature. Schedules, geofencing, and Tado's own heating logic all use this corrected reading. You don't need to change anything in the Tado app.
+
+> **Note:** If you previously had a manual offset set in the Tado app or via an automation, Offset Sync will overwrite it. That's intentional — it keeps the offset in sync with your external sensor continuously.
+
+> **Important:** If you switch from Offset Sync to Off or Valve Target, the last written offset remains on the device. Reset it manually in the Tado app if you want to return to the TRV's uncorrected reading.
+
+---
+
+### Valve Target Mode
+
+Valve Target calculates a proportional offset and writes an adjusted target directly to the TRV:
 
 ```
 valve_target = min(TRV_reading + (desired_target − external_sensor), 30°C)
@@ -1302,15 +1361,9 @@ valve_target = min(TRV_reading + (desired_target − external_sensor), 30°C)
 
 The controller uses a hysteresis band (±0.3°C) around the target to prevent oscillation, and a minimum change guard (0.5°C) to avoid unnecessary writes.
 
-### Setup
+### Setup (Valve Target)
 
-1. Configure an **external temperature sensor** for the zone (any HA temperature sensor — Zigbee, Aqara, etc.)
-2. Go to **Settings → Tado CE → Configure → pick a zone → External Sensors section**
-3. Toggle on **Smart Valve Control**
-
-> **Important:** If your TRV has a non-zero temperature offset (from a previous automation or manual setting in the Tado app), reset it to 0 before enabling Smart Valve Control. The controller reads the offset-adjusted temperature from the TRV, so a fixed offset would cause double compensation and overshoot. The controller warns you on startup if it detects a non-zero offset.
-
-The toggle only appears for heating zones that have an external temperature sensor configured.
+> **Important:** If your TRV has a non-zero temperature offset (from a previous automation or manual setting in the Tado app), reset it to 0 before enabling Valve Target. The controller reads the offset-adjusted temperature from the TRV, so a fixed offset would cause double compensation and overshoot. The controller warns you on startup if it detects a non-zero offset.
 
 ### Write Path
 
@@ -1392,7 +1445,7 @@ Both approaches keep the valve open until the room reaches your desired temperat
 You have a living room with one TRV and an Aqara temperature sensor on the bookshelf. The TRV reads 3–4°C higher than the room.
 
 1. Add the Aqara sensor as the zone's external temperature sensor
-2. Enable Smart Valve Control for the zone
+2. Set **Smart Valve Control Mode** to **Valve Target** for the zone
 3. The controller automatically compensates — no automations needed
 
 Your climate card will show a higher target temperature while the controller is active (e.g. 24°C instead of 20°C). The `desired_target` attribute shows your actual target (20°C). When the room reaches temperature, the controller deactivates and the climate card returns to showing the schedule target.
@@ -1405,7 +1458,9 @@ No special configuration needed — multi-TRV zones work the same as single-TRV 
 
 #### Scenario 3: Running Offset Automations Alongside SVC
 
-If you have existing automations that call `set_climate_temperature_offset`, you should **disable them for zones where Smart Valve Control is enabled**. Running both creates double compensation — SVC pushes the target up while the offset pulls the TRV reading down, causing the room to overshoot significantly.
+If you have existing automations that call `set_climate_temperature_offset`, you should **disable them for zones where Valve Target mode is enabled**. Running both creates double compensation — Valve Target pushes the target up while the offset pulls the TRV reading down, causing the room to overshoot significantly.
+
+> **Note:** If you want to keep your offset automations, use **Offset Sync** instead — it replaces your automation with a built-in equivalent that stays in sync automatically.
 
 Pick one approach per zone:
 - **Smart Valve Control** — zero API cost (HomeKit), automatic, but climate card shows inflated target

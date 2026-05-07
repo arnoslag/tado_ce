@@ -30,6 +30,7 @@ if TYPE_CHECKING:
 
     from .coordinator import TadoDataUpdateCoordinator
 
+from .climate_helpers import SensorProxy, subscribe_external_sensors
 from .helpers import get_zone_overlay_termination
 
 _LOGGER = logging.getLogger(__name__)
@@ -133,7 +134,7 @@ class SmartValveController:
         offset = desired_target - external_temp
         raw = trv_reading + offset
         clamped = max(min_temp, min(raw, max_temp))
-        return min(clamped, ABSOLUTE_MAX_VALVE_TARGET)
+        return round(min(clamped, ABSOLUTE_MAX_VALVE_TARGET), 1)
 
     def should_write(self, new_valve_target: float) -> bool:
         """Check minimum change guard: |new - last_written| >= min_change.
@@ -195,9 +196,8 @@ class SmartValveController:
 
         overlay_temp = (
             overlay.get("setting", {})
-            .get("temperature", {})
-            .get("celsius")
-        )
+            .get("temperature") or {}
+        ).get("celsius")
         if overlay_temp is None:
             return True
 
@@ -210,13 +210,19 @@ class SmartValveController:
     def detect_schedule_block_change(
         self, current_schedule_target: float | None,
     ) -> bool:
-        """Check if the schedule block has changed since backed-off state began."""
+        """Check if the schedule block has changed since last recorded.
+
+        Detects ON→OFF, OFF→ON, and target temperature changes.
+        """
+        last = self._runtime.last_schedule_target
+        # None↔value transitions are always a change (ON↔OFF)
+        if (current_schedule_target is None) != (last is None):
+            return True
+        # Both None — no change (still OFF)
         if current_schedule_target is None:
             return False
-        last = self._runtime.last_schedule_target
-        if last is None:
-            return True
-        return abs(current_schedule_target - last) >= 0.1
+        # Both have values — check if target changed
+        return abs(current_schedule_target - last) >= 0.1  # type: ignore[operator]
 
     def detect_overlay_change_while_backed_off(
         self, zone_data: dict[str, Any],
@@ -235,9 +241,8 @@ class SmartValveController:
 
         overlay_temp = (
             overlay.get("setting", {})
-            .get("temperature", {})
-            .get("celsius")
-        )
+            .get("temperature") or {}
+        ).get("celsius")
         if overlay_temp is None:
             return True
 
@@ -403,6 +408,17 @@ class SmartValveController:
 
         current_state = self._runtime.state
 
+        # Diagnostic summary — one line per evaluation cycle for remote debugging
+        _LOGGER.info(
+            "Smart Valve: zone %s eval — state=%s, ext=%s, trv=%s, schedule=%s, desired=%s",
+            self._zone_id,
+            self._runtime.state.value,
+            f"{external_temp:.1f}" if external_temp is not None else "None",
+            f"{trv_reading:.1f}" if trv_reading is not None else "None",
+            f"{schedule_target:.1f}" if schedule_target is not None else "None",
+            f"{self._runtime.desired_target:.1f}" if self._runtime.desired_target is not None else "None",
+        )
+
         # Handle backed-off state
         if current_state == ControllerState.BACKED_OFF:
             if self.detect_schedule_block_change(schedule_target):
@@ -433,9 +449,8 @@ class SmartValveController:
                 if overlay is not None:
                     self._runtime.backed_off_overlay_target = (
                         overlay.get("setting", {})
-                        .get("temperature", {})
-                        .get("celsius")
-                    )
+                        .get("temperature") or {}
+                    ).get("celsius")
                 else:
                     self._runtime.backed_off_overlay_target = None
                 _LOGGER.info(
@@ -445,6 +460,31 @@ class SmartValveController:
                 self._runtime.state = ControllerState.BACKED_OFF
                 self._runtime.last_schedule_target = schedule_target
                 return
+
+        # Check schedule changes while ACTIVE (FR-1 + FR-2)
+        if current_state == ControllerState.ACTIVE:
+            if schedule_target is None:
+                # Schedule went OFF — respect it immediately
+                _LOGGER.info(
+                    "Smart Valve: zone %s schedule is OFF, resuming schedule",
+                    self._zone_id,
+                )
+                await self._async_resume_schedule()
+                self._runtime.state = ControllerState.IDLE
+                self._runtime.desired_target = None
+                self._runtime.last_schedule_target = schedule_target
+                return
+            if (
+                self._runtime.desired_target is not None
+                and abs(schedule_target - self._runtime.desired_target) >= 0.1
+            ):
+                # Schedule target changed (e.g. 19°C → 21°C) — update in-place
+                _LOGGER.info(
+                    "Smart Valve: zone %s schedule target changed (%.1f → %.1f), updating",
+                    self._zone_id, self._runtime.desired_target, schedule_target,
+                )
+                self._runtime.desired_target = schedule_target
+                self._runtime.last_schedule_target = schedule_target
 
         # Handle sensor unavailability
         if external_temp is None:
@@ -578,9 +618,8 @@ class SmartValveController:
         if overlay is not None:
             overlay_temp = (
                 overlay.get("setting", {})
-                .get("temperature", {})
-                .get("celsius")
-            )
+                .get("temperature") or {}
+            ).get("celsius")
             if overlay_temp is not None:
                 try:
                     return float(overlay_temp)
@@ -624,16 +663,7 @@ class SmartValveController:
         await self._async_check_device_offset()
 
         # Subscribe to external sensor state changes
-        from .climate_helpers import subscribe_external_sensors
-
-        class _SensorProxy:
-            """Minimal proxy to satisfy subscribe_external_sensors interface."""
-
-            def __init__(self, hass: HomeAssistant, coordinator: TadoDataUpdateCoordinator) -> None:
-                self.hass = hass
-                self.coordinator = coordinator
-
-        proxy = _SensorProxy(self._hass, self._coordinator)
+        proxy = SensorProxy(self._hass, self._coordinator)
         unsubs = subscribe_external_sensors(
             proxy,
             self._zone_id,
@@ -699,7 +729,7 @@ class SmartValveController:
                         self._zone_id, serial[:6], float(offset),
                     )
         except Exception:
-            _LOGGER.debug(
+            _LOGGER.info(
                 "Smart Valve: zone %s could not check device offset",
                 self._zone_id, exc_info=True,
             )
@@ -718,6 +748,7 @@ class SmartValveController:
         """Return attributes for climate entity extra_state_attributes."""
         state = self._runtime.state
         attrs: dict[str, Any] = {
+            "valve_control_enabled": True,
             "valve_control_active": state == ControllerState.ACTIVE,
         }
         if state == ControllerState.BACKED_OFF:

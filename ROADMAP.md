@@ -10,13 +10,17 @@ For completed features, see [CHANGELOG.md](CHANGELOG.md).
 
 **HomeKit Local Control — GA Release**
 
-v4.0.0-beta.13 is the latest beta — thirteen releases since beta.1 introduced HomeKit local control. The beta cycle has addressed humidity source accuracy, cleaned up verbose logging, removed Test Mode, fixed multiple settings and data persistence issues, improved HomeKit write verification, added Smart Valve Control for TRV offset compensation using external sensors, hardened SVC for edge cases (all-OFF schedules, crash recovery, device offset warnings), fixed a critical SVC feedback loop that caused temperature escalation, resolved overlay mode, startup freshness, and repairs platform issues, added a `tado_ce_ready` event for boot automations, fixed config flow rate limiting, fixed presence sync, and fixed SVC cloud writes. Currently in final testing. Next steps:
-- Monitor beta.13 feedback, particularly Smart Valve Control cloud-only stability
+v4.0.0-beta.14 is the latest beta — fourteen releases since beta.1 introduced HomeKit local control. The beta cycle has addressed humidity source accuracy, cleaned up verbose logging, removed Test Mode, fixed multiple settings and data persistence issues, improved HomeKit write verification, added Smart Valve Control for TRV offset compensation using external sensors, added Offset Sync as a second SVC mode, hardened SVC for edge cases (all-OFF schedules, crash recovery, device offset warnings, schedule-aware active state), fixed a critical SVC feedback loop that caused temperature escalation, resolved overlay mode, startup freshness, and repairs platform issues, added real-time HomeKit target temperature and mode updates, added a `tado_ce_ready` event for boot automations, fixed config flow rate limiting, fixed presence sync, fixed SVC cloud writes, improved Weather Compensation resilience to brief outdoor sensor outages. Currently in final testing. Next steps:
+- Monitor beta.14 feedback
 - Target: GA release in May 2026 if no blockers found
 
 ## Future Consideration
 
-### Next Heating Season
+### Smart Valve Control
+
+- **Automation-Friendly Temperature Override** ([#256](https://github.com/hiall-fyi/tado_ce/issues/256) - @apilone) — A new service that sets a zone's target temperature without triggering SVC back-off. Designed for holiday/calendar automations that override the Tado schedule — currently these are indistinguishable from manual changes, so SVC stops compensating exactly when you need it most. No timeline yet.
+
+- **External Flow Temperature Sensor** ([#254](https://github.com/hiall-fyi/tado_ce/issues/254) - @apilone) — Let Weather Compensation read your boiler's actual flow temperature from any HA sensor entity (e.g. myVaillant, ebusd, OTGW) instead of requiring Tado's own OpenTherm bridge. Same "external sensor" pattern already used for room temperature and humidity — just a new config option pointing at your boiler integration's flow temp sensor. Would work for anyone whose boiler integration exposes flow temperature in HA. No timeline yet — post-GA.
 
 - **Exponential Heating Curve** ([#187](https://github.com/hiall-fyi/tado_ce/issues/187) - @driagi) — Non-linear heating curve for weather compensation, using a building thermal sensitivity coefficient (`k` factor). Better models real-world heat loss in well-insulated vs poorly-insulated buildings compared to the current linear approach. Would sit alongside the existing linear presets as an "Expert" option. Deferred for real-world validation during the next heating season.
 

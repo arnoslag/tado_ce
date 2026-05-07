@@ -1283,6 +1283,13 @@
         "polling_api": "Polling & API",
         "homekit": "HomeKit"
       }
+    },
+    "svc_mode": {
+      "options": {
+        "off": "Off",
+        "valve_target": "Valve Target",
+        "offset_sync": "Offset Sync"
+      }
     }
   },
   "exceptions": {
@@ -1473,14 +1480,14 @@
               "external_temp_sensor": "External Temperature Sensor",
               "use_external_humidity": "Use External Humidity Sensor",
               "external_humidity_sensor": "External Humidity Sensor",
-              "smart_valve_control": "Smart Valve Control"
+              "svc_mode": "Smart Valve Control Mode"
             },
             "data_description": {
               "use_external_temp": "Turn off to use Tado's built-in temperature sensor",
               "external_temp_sensor": "Select a temperature sensor to override Tado's reading",
               "use_external_humidity": "Turn off to use Tado's built-in humidity sensor",
               "external_humidity_sensor": "Select a humidity sensor to override Tado's reading",
-              "smart_valve_control": "Automatically adjust TRV target using the external temperature sensor to compensate for the TRV's inaccurate built-in reading"
+              "svc_mode": "Choose how the external sensor controls your TRV: Valve Target adjusts the TRV setpoint, Offset Sync corrects the TRV's temperature reading"
             }
           },
           "overlay_section": {

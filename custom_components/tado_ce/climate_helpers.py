@@ -254,6 +254,19 @@ async def api_call_with_rollback(
     return api_success
 
 
+class SensorProxy:
+    """Proxy object satisfying the subscribe_external_sensors interface.
+
+    Provides `hass` and `coordinator` attributes required by
+    subscribe_external_sensors without needing a full entity instance.
+    """
+
+    def __init__(self, hass: HomeAssistant, coordinator: TadoDataUpdateCoordinator) -> None:
+        """Initialize the SensorProxy."""
+        self.hass = hass
+        self.coordinator = coordinator
+
+
 def subscribe_external_sensors(
     entity: Any,
     zone_id: str,

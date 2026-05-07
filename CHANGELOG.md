@@ -2,6 +2,36 @@
 
 All notable changes to Tado CE will be documented in this file.
 
+## [4.0.0-beta.14] - 2026-05-07
+
+### Features
+- **Offset Sync — a new Smart Valve Control mode that corrects your TRV's temperature reading** ([#221](https://github.com/hiall-fyi/tado_ce/issues/221) - @simonotter) — Instead of adjusting the TRV's target temperature (what Valve Target mode does), Offset Sync writes a device temperature offset so the Tado app displays your external sensor's reading. With accurate temperature data, Tado's own modulation algorithm works correctly without needing external compensation. Choose between Off, Valve Target, and Offset Sync in **Settings → Tado CE → Configure → Zone Configuration → External Sensors → Smart Valve Control Mode**. The two active modes are mutually exclusive — you pick one per zone.
+
+### Bug Fixes
+- **Fixed Weather Compensation target showing "Unknown" after restarts and brief weather service outages** ([#249](https://github.com/hiall-fyi/tado_ce/issues/249) - @driagi) — If your outdoor temperature source was briefly unavailable (even for a single poll cycle during an HA restart), the Weather Compensation engine immediately paused and the flow temperature target went blank. It now holds the last known outdoor temperature for up to 30 minutes before pausing, so brief gaps no longer interrupt your heating curve.
+- **Fixed Smart Valve Control showing excessive decimal places in the valve target attribute** ([pulse-card#45](https://github.com/hiall-fyi/pulse-card/issues/45) - @Si-Hill) — The `valve_target` attribute on your climate card could show values like `18.700000000000003°C` instead of `18.7°C`. This was a floating point arithmetic artifact from the offset calculation. Both Smart Valve Control and Offset Sync now round to 0.1°C precision (matching what Tado's API accepts).
+- **Fixed Smart Valve Control overriding your schedule when it switches to OFF** ([#251](https://github.com/hiall-fyi/tado_ce/issues/251) - @Si-Hill) — If you had Smart Valve Control active on a zone and the Tado schedule switched to OFF (e.g. bedroom heating turns off at 8am), the controller kept heating the zone anyway. The Tado app showed "Frost protection" correctly, but HA showed the zone still heating at the old target. The controller now checks for schedule changes while active — it stops immediately when the schedule goes to OFF, and picks up the new target if the schedule changes to a different temperature.
+- **Fixed Smart Valve Control crashing the integration on startup** ([#252](https://github.com/hiall-fyi/tado_ce/issues/252) - @wrowlands3) — If a zone with Smart Valve Control had its schedule set to OFF, the overlay data from Tado's API contained a null temperature value. The controller didn't handle that and crashed during startup, preventing the entire integration from loading. Fixed across all overlay reads.
+- **Fixed HomeKit not updating target temperature or mode when changed in the Tado app** ([#253](https://github.com/hiall-fyi/tado_ce/issues/253) - @apilone) — If you changed the temperature or switched between heating/off in the Tado phone app, the climate card in HA wouldn't update for several minutes (until the next cloud API poll). The HomeKit bridge was receiving the changes instantly, but only the room temperature reading was being applied — the target temperature and mode were ignored. Now both update within seconds of the change.
+
+### Improvements
+- **Smart Valve Control now reports its state even when idle** ([pulse-card#45](https://github.com/hiall-fyi/pulse-card/issues/45) - @Si-Hill) — Zones with Smart Valve Control enabled now expose a `valve_control_enabled` attribute so your dashboard card can distinguish "SVC is on but not intervening" from "SVC is not configured". Pulse Card will use this to optionally show a subtle idle indicator.
+- **Smart Valve Control logging is now visible without debug mode** — Initialization, evaluation summaries, and errors are now logged at info level so you can see what the controller is doing in **Settings → System → Logs** without enabling debug logging.
+- **Your bridge serial number is now redacted from diagnostics** — If you share diagnostics for a bug report, your bridge serial is now hidden alongside other sensitive data. Previously it was exposed in the options dump.
+
+### Known Issues
+- **"register_detection_callback() is deprecated" warning in logs** — If you have HomeKit enabled, you may see a deprecation warning from `habluetooth.wrappers` pointing at `homekit_client.py`. This comes from the `aiohomekit` library's internal BLE scanning code, not from Tado CE. It does not affect functionality — HomeKit works normally. The warning will disappear when `aiohomekit` releases an update. You can safely ignore it.
+
+### Internal
+- Cleaned up duplicate code shared between Valve Target and Offset Sync controllers.
+- Offset Sync now batches rapid sensor updates instead of reacting to every single one — reduces unnecessary processing when your sensor reports frequently.
+- Offset Sync zones now report their status to your dashboard card, so Pulse Card can show "offset sync active" instead of treating it as unconfigured.
+- Removed unused variables in the setup retry logic.
+- Offset persistence now saves immediately instead of waiting for the next debounce cycle.
+- The quota check before refreshing data no longer uses a background thread for what's a simple memory lookup.
+- Diagnostics downloads now redact additional sensitive fields from the Tado API response as a precaution.
+- Token refresh retries no longer discard your access token between attempts — fewer unnecessary re-authentications when Tado's servers are slow.
+
 ## [4.0.0-beta.13] - 2026-05-02
 
 ### Features

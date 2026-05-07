@@ -1283,6 +1283,13 @@
         "polling_api": "Interrogation et API",
         "homekit": "HomeKit"
       }
+    },
+    "svc_mode": {
+      "options": {
+        "off": "Désactivé",
+        "valve_target": "Cible de la valve",
+        "offset_sync": "Synchronisation par décalage"
+      }
     }
   },
   "exceptions": {
@@ -1473,14 +1480,14 @@
               "external_temp_sensor": "Capteur de température externe",
               "use_external_humidity": "Utiliser un capteur d'humidité externe",
               "external_humidity_sensor": "Capteur d'humidité externe",
-              "smart_valve_control": "Contrôle intelligent des vannes"
+              "svc_mode": "Mode de commande intelligent de la vanne"
             },
             "data_description": {
               "use_external_temp": "Désactiver pour utiliser le capteur de température intégré de Tado",
               "external_temp_sensor": "Sélectionnez une sonde de température pour remplacer la lecture de Tado",
               "use_external_humidity": "Désactiver pour utiliser le capteur d'humidité intégré de Tado",
               "external_humidity_sensor": "Sélectionnez un capteur d'humidité pour remplacer la lecture de Tado",
-              "smart_valve_control": "Ajustement automatique de la cible du TRV à l'aide du capteur de température externe pour compenser l'imprécision de la lecture intégrée du TRV"
+              "svc_mode": "Choisissez comment le capteur externe contrôle votre robinet thermostatique : « Valve Target » règle la consigne du robinet thermostatique, tandis que « Offset Sync » corrige la mesure de température du robinet thermostatique"
             }
           },
           "overlay_section": {

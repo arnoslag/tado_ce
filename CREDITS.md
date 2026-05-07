@@ -21,6 +21,13 @@ Thank you to everyone who supported the project through [Buy Me a Coffee](https:
 
 Community contributors who helped shape each release through bug reports, feature requests, testing, and feedback.
 
+### v4.0.0-beta.14
+
+- **[@Si-Hill](https://github.com/Si-Hill)** — Spotted that Smart Valve Control was overriding the Tado schedule when it switched to OFF. Provided clear side-by-side screenshots showing the Tado app at "Frost protection" while HA still showed the zone heating at the old target, which immediately confirmed the controller wasn't detecting schedule transitions ([#251](https://github.com/hiall-fyi/tado_ce/issues/251))
+- **[@wrowlands3](https://github.com/wrowlands3)** — Reported that the integration failed to set up entirely after a restart, with debug logs attached. The logs revealed Smart Valve Control was crashing on a null temperature value in the overlay data — a scenario that only occurs when a zone's schedule is OFF and the controller was previously active ([#252](https://github.com/hiall-fyi/tado_ce/issues/252))
+- **[@apilone](https://github.com/apilone)** — Reported that HomeKit wasn't updating target temperature or mode when changed in the Tado app, with debug logs showing the exact characteristics being received but not applied ([#253](https://github.com/hiall-fyi/tado_ce/issues/253))
+- **[@driagi](https://github.com/driagi)** — Persisted through multiple rounds of debugging the Weather Compensation "Unknown" issue, providing screenshots of the WC config, history graphs, and debug logs across several weeks. His data confirmed the engine was pausing too aggressively when the outdoor temperature source had brief gaps ([#249](https://github.com/hiall-fyi/tado_ce/issues/249))
+
 ### v4.0.0-beta.13
 
 - **[@simonotter](https://github.com/simonotter)** — Persisted through seven rounds of debugging Smart Valve Control across three weeks, from config checks to log searches to file replacements. His final screenshot showing "cloud write failed" repeating every 5 minutes was the evidence that confirmed the controller was running but every cloud write was being rejected by Tado's API ([#221](https://github.com/hiall-fyi/tado_ce/issues/221))

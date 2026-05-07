@@ -64,7 +64,10 @@ class StateReconciler:
         if not self._local_provider or not self._local_provider.is_connected:
             return None, False
         method = getattr(self._local_provider, getter)
-        value, timestamp = method(zone_id)
+        result = method(zone_id)
+        if not isinstance(result, tuple) or len(result) != 2:
+            return None, False
+        value, timestamp = result
         if value is None or timestamp is None:
             return None, False
         age = dt_util.utcnow() - timestamp
@@ -182,6 +185,25 @@ class StateReconciler:
             return int(local_val), "homekit"
 
         self._log_source_transition(zone_id, "hvac_state", "cloud", cloud_value)
+        return cloud_value, "cloud"
+
+    def merge_zone_target_heating_state(
+        self,
+        zone_id: str,
+        cloud_value: int | None,
+    ) -> tuple[int | None, str]:
+        """Return (merged_value, source_name).
+
+        Priority: homekit (if fresh) > cloud. 0=Off, 1=Heat, 2=Cool, 3=Auto.
+        Uses target heating state (char 33) — what the user requested,
+        as opposed to current heating state (char 0F) — what the TRV is doing.
+        """
+        local_val, is_fresh = self._get_fresh_local_value(zone_id, "get_target_heating_state")
+        if is_fresh and local_val is not None:
+            self._log_source_transition(zone_id, "target_hvac", "homekit", int(local_val))
+            return int(local_val), "homekit"
+
+        self._log_source_transition(zone_id, "target_hvac", "cloud", cloud_value)
         return cloud_value, "cloud"
 
     def should_accept_cloud_value(self, zone_id: str) -> bool:
