@@ -5,10 +5,12 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 from datetime import timedelta
+import json
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
@@ -135,14 +137,31 @@ class StateRestoreManager:
 
     async def async_setup(self) -> None:
         """Load persisted state from Store and purge stale entries."""
-        raw: dict[str, Any] | list[Any] | None = await self._store.async_load()
+        try:
+            raw: dict[str, Any] | list[Any] | None = await self._store.async_load()
+        except (HomeAssistantError, OSError, json.JSONDecodeError) as e:
+            # Corrupt storage file should not block integration setup.
+            # Log and start with empty captured state — same pattern used in
+            # DataLoader.async_load_* auxiliary methods.
+            _LOGGER.warning(
+                "State Restore: failed to load persisted state (%s) — "
+                "starting with empty state", e,
+            )
+            return
 
         if raw is None:
             # Try migrating from old JSON file
-            raw = await async_migrate_json_to_store(
-                self._hass, self._old_storage_path, self._store,
-                label="state_restore",
-            )
+            try:
+                raw = await async_migrate_json_to_store(
+                    self._hass, self._old_storage_path, self._store,
+                    label="state_restore",
+                )
+            except (HomeAssistantError, OSError, json.JSONDecodeError) as e:
+                _LOGGER.warning(
+                    "State Restore: failed to migrate legacy JSON (%s) — "
+                    "starting with empty state", e,
+                )
+                return
 
         if not raw or not isinstance(raw, dict):
             _LOGGER.debug("State Restore: No persisted state found")
@@ -178,7 +197,8 @@ class StateRestoreManager:
 
     async def async_shutdown(self) -> None:
         """Persist state to Store on HA shutdown / config entry unload."""
-        data = {key: _state_to_dict(state) for key, state in self._captured.items()}
+        async with self._lock:
+            data = {key: _state_to_dict(state) for key, state in self._captured.items()}
         await self._store.async_save(data)
         _LOGGER.debug("State Restore: Shutdown — state persisted")
 
@@ -200,7 +220,7 @@ class StateRestoreManager:
         key = _make_store_key(zone_id, entity_type)
 
         async with self._lock:
-            # Overwrite rule (EC2): preserve existing capture
+            # Overwrite rule: preserve existing capture (original pre-overlay state wins)
             if key in self._captured:
                 _LOGGER.debug(
                     "State Restore: Existing capture preserved for %s (source=%s)",

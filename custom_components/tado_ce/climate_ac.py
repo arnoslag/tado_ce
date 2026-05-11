@@ -345,6 +345,7 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
         self._optimistic_preserved: dict[str, Any] | None = None
         self._expected_hvac_mode: HVACMode | None = None
         self._expected_hvac_action: HVACAction | None = None
+        self._expected_target_temperature: float | None = None
 
         # Unsubscribe callback for zones_updated signal
         self._unsub_zones_updated = None
@@ -360,6 +361,25 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
 
         # Unsubscribe callback for HomeKit dispatcher signal
         self._unsub_homekit_signal: Callable[[], None] | None = None
+
+    # ------------------------------------------------------------------
+    # Public API (TadoZoneEntity Protocol — see entity_types.py)
+    # ------------------------------------------------------------------
+
+    @property
+    def zone_id(self) -> str:
+        """Return the Tado zone ID as a string."""
+        return str(self._zone_id)
+
+    @property
+    def zone_type(self) -> str:
+        """Return the zone type — always AIR_CONDITIONING for this entity."""
+        return "AIR_CONDITIONING"
+
+    @property
+    def entity_type(self) -> str:
+        """Return the entity type tag for state-capture routing."""
+        return self._entity_type
 
     def _calculate_hvac_action(self, hvac_mode: HVACMode | None = None, ac_power_on: bool | None = None) -> HVACAction:
         """Calculate hvac_action for AC zone.
@@ -526,20 +546,23 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
                     self._zone_name, cloud_target, merged_target, target_src,
                 )
 
-            # HVAC mode (target heating state)
-            merged_state, state_src = reconciler.merge_zone_target_heating_state(
-                self._zone_id, None,  # No cloud value in real-time path
-            )
-            if merged_state is not None and state_src == "homekit":
-                new_mode = _HOMEKIT_TARGET_STATE_TO_HVAC_AC.get(merged_state)
-                if new_mode is not None and new_mode != self._attr_hvac_mode:
-                    old_mode = self._attr_hvac_mode
-                    self._attr_hvac_mode = new_mode
-                    self._attr_hvac_action = self._calculate_hvac_action(hvac_mode=new_mode)
-                    _LOGGER.debug(
-                        "AC %s: HomeKit HVAC mode update: %s → %s (%s)",
-                        self._zone_name, old_mode, new_mode, state_src,
-                    )
+            # HVAC mode (target heating state) — skip merge when zone is OFF
+            # (cloud is authoritative for mode transitions; HomeKit bridge
+            # may report stale target_heating_state after user set OFF)
+            if self._attr_hvac_mode != HVACMode.OFF:
+                merged_state, state_src = reconciler.merge_zone_target_heating_state(
+                    self._zone_id, None,  # No cloud value in real-time path
+                )
+                if merged_state is not None and state_src == "homekit":
+                    new_mode = _HOMEKIT_TARGET_STATE_TO_HVAC_AC.get(merged_state)
+                    if new_mode is not None and new_mode != self._attr_hvac_mode:
+                        old_mode = self._attr_hvac_mode
+                        self._attr_hvac_mode = new_mode
+                        self._attr_hvac_action = self._calculate_hvac_action(hvac_mode=new_mode)
+                        _LOGGER.debug(
+                            "AC %s: HomeKit HVAC mode update: %s → %s (%s)",
+                            self._zone_name, old_mode, new_mode, state_src,
+                        )
 
         self.async_write_ha_state()
 
@@ -652,8 +675,8 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
     ) -> None:
         """Extract AC power-on state from zone data into entity attributes."""
         # Temperature
-        temp = (setting.get("temperature") or {}).get("celsius")
-        self._attr_target_temperature = temp
+        api_target_temp = (setting.get("temperature") or {}).get("celsius")
+        self._attr_target_temperature = api_target_temp
 
         # Mode
         tado_mode = setting.get("mode")
@@ -684,29 +707,73 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
         ac_power_on = ac_power_value == "ON"
         api_hvac_action = self._calculate_hvac_action(hvac_mode=self._attr_hvac_mode, ac_power_on=ac_power_on)
 
+        # Build api_values for optimistic resolution. Include
+        # target_temperature so that a user's recent set_temperature call
+        # stays visible until the API propagates the new target.
+        api_values: dict[str, Any] = {
+            "hvac_mode": self._attr_hvac_mode,
+            "hvac_action": api_hvac_action,
+        }
+        if api_target_temp is not None:
+            api_values["target_temperature"] = api_target_temp
+
         # Sequence-based optimistic state handling
         result = resolve_optimistic_update(
             self,
-            api_values={"hvac_mode": self._attr_hvac_mode, "hvac_action": api_hvac_action},
+            api_values=api_values,
             entry_id=self._entry_id,
         )
 
         if result == OptimisticUpdateResult.PRESERVE_OPTIMISTIC:
             self._attr_hvac_mode = self._expected_hvac_mode
             self._attr_hvac_action = self._expected_hvac_action
+            if self._expected_target_temperature is not None:
+                self._attr_target_temperature = self._expected_target_temperature
             if self._optimistic_preserved:
                 if self._optimistic_preserved.get("fan_mode") is not None:
                     self._attr_fan_mode = self._optimistic_preserved["fan_mode"]
                 if self._optimistic_preserved.get("swing_mode") is not None:
                     self._attr_swing_mode = self._optimistic_preserved["swing_mode"]
             _LOGGER.debug(
-                "AC %s: Using optimistic state: mode=%s, action=%s",
+                "AC %s: Using optimistic state: mode=%s, action=%s, target=%s",
                 self._zone_name,
                 self._attr_hvac_mode,
                 self._attr_hvac_action,
+                self._attr_target_temperature,
             )
         else:
+            self._update_write_tracker_from_result(result)
             self._attr_hvac_action = api_hvac_action
+
+    def _update_write_tracker_from_result(self, result: OptimisticUpdateResult) -> None:
+        """Update WriteHealthTracker based on optimistic-state resolution.
+
+        Mirrors TadoClimate._apply_optimistic_or_api_state (heating path):
+          - ACCEPT_API + last write was HomeKit → record_success
+          - EXPIRED + last write was HomeKit → record_failure
+          - PRESERVE_OPTIMISTIC → no-op (wait for next poll)
+
+        _last_write_source is cleared after the tracker update so the
+        accounting doesn't double-count on subsequent polls.
+        """
+        if self._last_write_source != "homekit":
+            return
+        write_tracker = self.coordinator.write_health_tracker
+        if write_tracker is None:
+            self._last_write_source = ""
+            return
+        if result == OptimisticUpdateResult.ACCEPT_API:
+            write_tracker.record_success()
+            self._last_write_source = ""
+        elif result == OptimisticUpdateResult.EXPIRED:
+            _LOGGER.warning(
+                "AC %s: HomeKit change was not confirmed by the Tado API within "
+                "the expected time window — recording as a failed write",
+                self._zone_name,
+            )
+            write_tracker.record_failure()
+            self._last_write_source = ""
+        # PRESERVE_OPTIMISTIC: no-op
 
     def _handle_ac_off_state(self) -> None:
         """Handle AC power-off state with optimistic state resolution."""
@@ -725,6 +792,7 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
                 self._attr_hvac_mode = self._expected_hvac_mode
                 self._attr_hvac_action = self._expected_hvac_action
             else:
+                self._update_write_tracker_from_result(result)
                 self._attr_hvac_mode = HVACMode.OFF
                 self._attr_hvac_action = HVACAction.OFF
         else:
@@ -892,7 +960,11 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
         self._overlay_type = "MANUAL"  # type: ignore[assignment]
         await set_optimistic_fields(
             self, self.coordinator,
-            expected={"hvac_mode": self._attr_hvac_mode, "hvac_action": new_hvac_action},
+            expected={
+                "hvac_mode": self._attr_hvac_mode,
+                "hvac_action": new_hvac_action,
+                "target_temperature": temperature,
+            },
             preserved_attrs={"fan_mode": self._attr_fan_mode, "swing_mode": self._attr_swing_mode},
         )
         self.async_write_ha_state()
@@ -952,7 +1024,7 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
             self.coordinator._homekit_write_latency_sum += elapsed_ms
             self.coordinator._homekit_write_latency_count += 1
             if local_success:
-                write_tracker.record_success()
+                # Don't record_success yet — deferred to cloud verification
                 self.coordinator._homekit_write_successes += 1
             else:
                 write_tracker.record_failure()
@@ -976,6 +1048,9 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
 
         if api_success:
             self._last_write_source = "cloud"
+            # Write protection: prevent HomeKit bridge from overwriting with stale values
+            if self.coordinator.state_reconciler:
+                self.coordinator.state_reconciler.record_local_write(self._zone_id)
             _LOGGER.info("AC Set %s to %s°C", self._zone_name, temperature)
             await async_trigger_immediate_refresh(self.hass, self.entity_id, "temperature_change")
         else:
@@ -1095,6 +1170,9 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
 
             if api_success:
                 self._last_write_source = "cloud"
+                # Write protection: prevent HomeKit bridge from overwriting with stale values
+                if self.coordinator.state_reconciler:
+                    self.coordinator.state_reconciler.record_local_write(self._zone_id)
                 _LOGGER.info("AC Set %s to %s mode", self._zone_name, hvac_mode)
                 await async_trigger_immediate_refresh(self.hass, self.entity_id, "hvac_mode_change")
             else:

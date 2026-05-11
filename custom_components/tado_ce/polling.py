@@ -436,11 +436,12 @@ def get_polling_interval(
     except (ValueError, TypeError, AttributeError) as e:
         _LOGGER.debug("Could not calculate adaptive polling interval, using default: %s", e)
 
-    # Decision logic - respect user custom override for high-quota users
-    # Custom intervals below 5 min were being ignored because adaptive
-    # interval is clamped to MIN_POLLING_INTERVAL (5 min) by default.
-    # Fix: When user explicitly sets custom interval, use it directly unless
-    # quota is actually insufficient (not just because of MIN_POLLING_INTERVAL clamp).
+    # When the user has explicitly set a custom interval, honour it even below
+    # MIN_POLLING_INTERVAL (5 min). Adaptive interval is normally clamped to
+    # MIN_POLLING_INTERVAL, so without this branch, high-quota users would see
+    # their custom <5min intervals silently overridden. Only override the custom
+    # value when adaptive indicates the quota is *genuinely* insufficient
+    # (adaptive > custom AND adaptive > MIN_POLLING_INTERVAL, i.e. not just hitting the clamp).
     if user_set_custom and custom_interval is not None:
         # User explicitly set custom interval - check if quota is actually sufficient
         if adaptive_interval is not None:

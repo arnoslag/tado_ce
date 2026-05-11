@@ -84,6 +84,7 @@ _ALL_STORES: dict[str, int] = {
     "overlay_mode": 5,
     "timer_duration": 5,
     "homekit_savings": 10,
+    "insight_runtime_state": 30,
 }
 
 STORE_VERSION = 1
@@ -256,9 +257,12 @@ class DataLoader:
     # === Auxiliary Data — Store-backed with debounced writes ===
 
     def _old_auxiliary_path(self, name: str) -> Path:
-        """Get the old JSON file path for an auxiliary file.
+        """Get the pre-Store JSON path for an auxiliary file (migration lookup only).
 
-        Special case: overlay_mode and timer_duration were shared (no home_id suffix).
+        In the legacy v3.5.3 JSON format, overlay_mode and timer_duration were
+        shared across homes (no home_id suffix). All other files were home-scoped.
+        Current Store keys are home-scoped uniformly; this path is only used when
+        migrating old on-disk JSON into the new Store.
         """
         if name in ("overlay_mode", "timer_duration"):
             return DATA_DIR / f"{name}.json"
@@ -423,7 +427,11 @@ class DataLoader:
         Returns:
             Parsed dict, or None if not found.
         """
-        data = await self.async_load_auxiliary("wc_state")
+        try:
+            data = await self.async_load_auxiliary("wc_state")
+        except (HomeAssistantError, OSError) as e:
+            _LOGGER.warning("Failed to load wc_state: %s", e)
+            return None
         if data is not None and isinstance(data, dict):
             return data
         return None
@@ -448,7 +456,11 @@ class DataLoader:
         Returns:
             Parsed dict, or None if not found.
         """
-        data = await self.async_load_auxiliary("bridge_health")
+        try:
+            data = await self.async_load_auxiliary("bridge_health")
+        except (HomeAssistantError, OSError) as e:
+            _LOGGER.warning("Failed to load bridge_health: %s", e)
+            return None
         if data is not None and isinstance(data, dict):
             return data
         return None
@@ -473,7 +485,11 @@ class DataLoader:
         Returns:
             Dict with reads_saved, writes_saved, last_reset_utc, or None if not found.
         """
-        data = await self.async_load_auxiliary("homekit_savings")
+        try:
+            data = await self.async_load_auxiliary("homekit_savings")
+        except (HomeAssistantError, OSError) as e:
+            _LOGGER.warning("Failed to load homekit_savings: %s", e)
+            return None
         if data is not None and isinstance(data, dict):
             return data
         return None
@@ -498,7 +514,11 @@ class DataLoader:
         Returns:
             Parsed dict with per-zone detection state, or None if not found.
         """
-        data = await self.async_load_auxiliary("window_detection")
+        try:
+            data = await self.async_load_auxiliary("window_detection")
+        except (HomeAssistantError, OSError) as e:
+            _LOGGER.warning("Failed to load window_detection: %s", e)
+            return None
         if data is not None and isinstance(data, dict):
             return data
         return None

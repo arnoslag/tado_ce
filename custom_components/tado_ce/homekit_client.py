@@ -122,6 +122,11 @@ class HomeKitClient:
         """
         self._on_reconnect_callbacks.append(callback)
 
+    @property
+    def zone_aid_map(self) -> dict[str, list[int]]:
+        """Return the full zone-to-accessory-IDs mapping."""
+        return dict(self._zone_to_aids)
+
     def get_aids_for_zone(self, zone_id: str) -> list[int]:
         """Return accessory IDs for a given zone."""
         return self._zone_to_aids.get(zone_id, [])
@@ -309,10 +314,15 @@ class HomeKitClient:
         """Remove pairing and delete stored credentials."""
         if self._pairing:
             try:
-                pairing_id = self._pairing._pairing_data.get("iOSPairingId", "")
+                pairing_data = getattr(self._pairing, "pairing_data", None) or getattr(
+                    self._pairing, "_pairing_data", None
+                )
+                pairing_id = pairing_data.get("iOSPairingId", "") if pairing_data else ""
                 if pairing_id:
                     await self._pairing.remove_pairing(pairing_id)
                     _LOGGER.info("HomeKit: Removed pairing from bridge")
+                elif pairing_data is None:
+                    _LOGGER.warning("HomeKit: Could not access pairing data — bridge may retain stale pairing")
             except Exception:
                 _LOGGER.warning("HomeKit: Failed to remove pairing from bridge — you may need to reset the bridge")
                 _LOGGER.debug("HomeKit unpair error details", exc_info=True)
@@ -375,15 +385,16 @@ async def async_step_homekit_pairing(
                 home_id = flow.config_entry.data.get("home_id") or "default"
                 client = HomeKitClient(flow.hass, home_id)
 
-                await client.async_pair(pin)
+                try:
+                    await client.async_pair(pin)
 
-                # Build serial-to-zone mapping
-                accessories = await client.async_list_accessories()
-                zones_info = flow.config_entry.runtime_data.data.get("zones_info") or []
-                mapping = build_serial_mapping(accessories, zones_info)
-                await save_device_mapping(flow.hass, home_id, mapping)
-
-                await client.async_disconnect()
+                    # Build serial-to-zone mapping
+                    accessories = await client.async_list_accessories()
+                    zones_info = flow.config_entry.runtime_data.data.get("zones_info") or []
+                    mapping = build_serial_mapping(accessories, zones_info)
+                    await save_device_mapping(flow.hass, home_id, mapping)
+                finally:
+                    await client.async_disconnect()
 
                 _LOGGER.info("HomeKit: Pairing and mapping complete")
 

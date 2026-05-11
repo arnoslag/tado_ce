@@ -154,7 +154,7 @@ class HeatingCycleCoordinator(DataUpdateCoordinator):
             # Step 3: Check if cycle completed
             completed_cycle = detector.check_cycle_complete()
             if completed_cycle:
-                await self._storage.save_cycle(zone_id, completed_cycle)
+                await self._storage.save_cycle(zone_id, completed_cycle, window_days=self._config.rolling_window_days)
                 _LOGGER.info(
                     "Zone %s: Cycle completed and saved",
                     zone_id,

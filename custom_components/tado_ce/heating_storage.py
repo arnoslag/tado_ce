@@ -109,7 +109,7 @@ class HeatingCycleStorage:
         """Schedule a debounced save to Store."""
         self._store.async_delay_save(lambda: self._data, SAVE_DELAY)
 
-    async def save_cycle(self, zone_id: str, cycle: HeatingCycle) -> None:
+    async def save_cycle(self, zone_id: str, cycle: HeatingCycle, *, window_days: int = 7) -> None:
         """Save completed cycle for a zone."""
         if zone_id not in self._data["zones"]:
             self._data["zones"][zone_id] = {"cycles": []}
@@ -125,8 +125,8 @@ class HeatingCycleStorage:
             cycle.interrupted,
         )
 
-        # Cleanup old cycles (keep 2x rolling window)
-        await self._cleanup_old_cycles(zone_id)
+        # Cleanup old cycles (keep 2x configured rolling window)
+        await self._cleanup_old_cycles(zone_id, window_days)
 
         # Schedule debounced save
         self._schedule_save()
@@ -170,9 +170,9 @@ class HeatingCycleStorage:
         """Get all zone IDs with stored cycle data."""
         return list(self._data["zones"].keys())
 
-    async def _cleanup_old_cycles(self, zone_id: str) -> None:
-        """Remove cycles older than 2x rolling window."""
-        cutoff = dt_util.utcnow() - timedelta(days=14)  # 2x default window
+    async def _cleanup_old_cycles(self, zone_id: str, window_days: int = 7) -> None:
+        """Remove cycles older than 2x configured rolling window."""
+        cutoff = dt_util.utcnow() - timedelta(days=window_days * 2)
 
         cycles = self._data["zones"][zone_id]["cycles"]
         original_count = len(cycles)

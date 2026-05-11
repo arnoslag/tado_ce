@@ -186,20 +186,21 @@ def _collect_boiler_flow_insight(
 
 
 def _collect_humidity_trend_insight(
+    zone_id: str,
     zone_name: str,
     humidity: float,
     humidity_histories: dict[str, list[Any]],
     insights: list[Any],
 ) -> None:
     """Collect humidity trend insight, maintaining per-zone history."""
-    if zone_name not in humidity_histories:
-        humidity_histories[zone_name] = []
-    humidity_histories[zone_name].append(humidity)
-    if len(humidity_histories[zone_name]) > _HUMIDITY_HISTORY_MAX_SAMPLES:
-        humidity_histories[zone_name] = humidity_histories[zone_name][-_HUMIDITY_HISTORY_MAX_SAMPLES:]
+    if zone_id not in humidity_histories:
+        humidity_histories[zone_id] = []
+    humidity_histories[zone_id].append(humidity)
+    if len(humidity_histories[zone_id]) > _HUMIDITY_HISTORY_MAX_SAMPLES:
+        humidity_histories[zone_id] = humidity_histories[zone_id][-_HUMIDITY_HISTORY_MAX_SAMPLES:]
     insight = calculate_humidity_trend_insight(
         current_humidity=humidity,
-        humidity_history=humidity_histories[zone_name],
+        humidity_history=humidity_histories[zone_id],
         zone_name=zone_name,
     )
     if insight:
@@ -231,7 +232,7 @@ def _collect_optional_zone_insights(
             insights.append(insight)
 
     if ctx.environment_enabled and humidity_histories is not None and humidity is not None:
-        _collect_humidity_trend_insight(zone_name, humidity, humidity_histories, insights)
+        _collect_humidity_trend_insight(zone_id, zone_name, humidity, humidity_histories, insights)
 
 
 def collect_single_zone_insights(
@@ -248,9 +249,8 @@ def collect_single_zone_insights(
 ) -> list[Any]:
     """Collect all insights for a single zone.
 
-    Shared by both TadoHomeInsightsSensor (via collect_zone_insights)
-    and TadoZoneInsightsSensor (direct call). This eliminates the
-    "改啲唔改啲" risk of duplicated insight logic.
+    Shared by both TadoHomeInsightsSensor (via collect_zone_insights) and
+    TadoZoneInsightsSensor (direct call) so insight logic stays in one place.
 
     Args:
         hass: Home Assistant instance.
@@ -461,6 +461,7 @@ def _collect_preheat_insight(
 
 def _collect_heating_anomaly_insight(
     zone_data: dict[str, Any],
+    zone_id: str,
     zone_name: str,
     inside_temp: float | None,
     anomaly_start_times: dict[str, datetime],
@@ -480,9 +481,9 @@ def _collect_heating_anomaly_insight(
             return
         temp_delta = abs(inside_temp - target)
         if power_pct >= _HEATING_ANOMALY_POWER_PCT and temp_delta < _HEATING_ANOMALY_TEMP_DELTA:
-            if zone_name not in anomaly_start_times:
-                anomaly_start_times[zone_name] = dt_util.utcnow()
-            elapsed = (dt_util.utcnow() - anomaly_start_times[zone_name]).total_seconds() / 60
+            if zone_id not in anomaly_start_times:
+                anomaly_start_times[zone_id] = dt_util.utcnow()
+            elapsed = (dt_util.utcnow() - anomaly_start_times[zone_id]).total_seconds() / 60
             ha_insight = calculate_heating_anomaly_insight(
                 heating_power_pct=power_pct,
                 temp_delta=temp_delta,
@@ -492,7 +493,7 @@ def _collect_heating_anomaly_insight(
             if ha_insight:
                 insights.append(ha_insight)
         else:
-            anomaly_start_times.pop(zone_name, None)
+            anomaly_start_times.pop(zone_id, None)
     except (ValueError, TypeError):
         pass
 
@@ -522,7 +523,7 @@ def _collect_ha_entity_insights(
         _collect_preheat_insight(coordinator, zone_id, zone_name, zone_data, insights)
 
     if ctx.thermal_enabled:
-        _collect_heating_anomaly_insight(zone_data, zone_name, inside_temp, anomaly_start_times, insights)
+        _collect_heating_anomaly_insight(zone_data, zone_id, zone_name, inside_temp, anomaly_start_times, insights)
 
 
 def _check_thermal_efficiency(

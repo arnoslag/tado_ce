@@ -66,7 +66,6 @@ class ConfigurationManager:
         self._config_entry = config_entry
         self._options: Mapping[str, Any] = config_entry.options or {}
         self._hass = hass
-        # Don't sync on init to avoid blocking - will be synced when needed
 
     def _get_option(self, key: str, default: Any) -> Any:
         """Get option value with real-time update support.

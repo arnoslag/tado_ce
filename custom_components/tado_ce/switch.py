@@ -103,11 +103,9 @@ async def async_setup_entry(
 
 
 class TadoEarlyStartSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], SwitchEntity):
-    """TadoEarlyStartSwitch."""
+    """Tado CE Early Start Switch Entity."""
 
     _attr_has_entity_name = True
-
-    """Tado CE Early Start Switch Entity."""
 
     def __init__(
         self,
@@ -267,11 +265,9 @@ class TadoEarlyStartSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switc
 
 
 class TadoChildLockSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], SwitchEntity):
-    """TadoChildLockSwitch."""
+    """Tado CE Child Lock Switch Entity."""
 
     _attr_has_entity_name = True
-
-    """Tado CE Child Lock Switch Entity."""
 
     def __init__(
         self,

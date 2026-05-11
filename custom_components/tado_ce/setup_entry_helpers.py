@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from homeassistant.util import slugify
+
 from .helpers import mask_serial
 
 if TYPE_CHECKING:
@@ -101,7 +103,7 @@ async def async_init_smart_comfort(
 
     if zones_info:
         entity_to_zone_id = {
-            zone.get("name", "").lower().replace(" ", "_"): str(zone.get("id"))
+            slugify(zone.get("name", "")): str(zone.get("id"))
             for zone in zones_info
             if zone.get("name") and zone.get("id")
         }
@@ -120,7 +122,7 @@ async def async_init_smart_comfort(
 
         # Tier 3: Load baseline rates from long-term statistics (7 days hourly)
         zone_sensor_mapping = {
-            str(zone.get("id")): f"sensor.{zone.get('name', '').lower().replace(' ', '_')}_temperature"
+            str(zone.get("id")): f"sensor.{slugify(zone.get('name', ''))}_temperature"
             for zone in zones_info
             if zone.get("name") and zone.get("id")
         }

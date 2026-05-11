@@ -147,8 +147,18 @@ class TadoAuthMixin:
             await self._save_config(config)
             _LOGGER.debug("Refresh token rotated and saved to ConfigEntry")
 
-        self._token_expiry = datetime.now(UTC) + timedelta(seconds=self.TOKEN_CACHE_DURATION)
-        _LOGGER.debug("Access token refreshed successfully")
+        # Honor expires_in from OAuth response (RFC 6749 §5.1). Fall back to
+        # TOKEN_CACHE_DURATION if missing, malformed, or unreasonably short.
+        expires_in_raw = data.get("expires_in")
+        try:
+            expires_in = int(expires_in_raw) if expires_in_raw is not None else self.TOKEN_CACHE_DURATION
+        except (ValueError, TypeError):
+            expires_in = self.TOKEN_CACHE_DURATION
+        if expires_in < 60:
+            expires_in = self.TOKEN_CACHE_DURATION
+
+        self._token_expiry = datetime.now(UTC) + timedelta(seconds=expires_in)
+        _LOGGER.debug("Access token refreshed, expires in %ss", expires_in)
         return self._access_token
 
     async def _attempt_token_refresh(
@@ -183,8 +193,9 @@ class TadoAuthMixin:
             # 401 / invalid_grant = real auth failure — no retry
             if resp.status == HTTPStatus.UNAUTHORIZED or "invalid_grant" in error_text:
                 _LOGGER.error("Token refresh auth failure: %s - %s", resp.status, error_text)
-                config["refresh_token"] = None
-                await self._save_config(config)
+                # Don't null refresh_token — let HA's reauth flow handle it.
+                # A transient 401 (server glitch) would otherwise permanently
+                # invalidate a working token, forcing unnecessary re-login.
                 raise TadoAuthError("Refresh token invalid (auth failure)")
 
             # 403 = likely transient CDN/WAF block — retry via loop

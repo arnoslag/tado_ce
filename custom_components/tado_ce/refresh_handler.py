@@ -45,11 +45,8 @@ class RefreshHandler:
         """
         self._coordinator = coordinator
         self.hass = coordinator.hass
-        # Per-entity rate limiting
-        self._last_refresh_per_entity: dict[str, datetime] = {}
         self._global_last_refresh: datetime | None = None
         self._min_global_interval = 2
-        self._min_per_entity_interval = 2  # Per-entity minimum (seconds)
         self._consecutive_failures = 0
         self._max_backoff_interval = 300  # Max 5 minutes backoff
 
@@ -255,7 +252,6 @@ class RefreshHandler:
             self._debounce_task = None
 
         self._pending_refresh = True
-        self._last_refresh_per_entity[entity_id] = dt_util.utcnow()
         self._pending_zone_only = zone_only
         self._pending_force_zone_fetch = True
 

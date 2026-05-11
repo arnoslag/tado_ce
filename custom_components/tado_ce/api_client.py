@@ -32,6 +32,7 @@ from .const import (
     QUOTA_WARNING_PERCENTAGE,
     TADO_API_BASE,
     is_climate_zone,
+    is_valid_device_offset,
 )
 from .exceptions import TadoAuthError, TadoSyncError
 from .helpers import mask_serial, parse_iso_datetime, retry_delay
@@ -178,10 +179,17 @@ class TadoApiClient(TadoAuthMixin):
             with suppress(ValueError, IndexError):
                 self._rate_limit["remaining"] = int(ratelimit.split("r=")[1].split(";")[0])
 
-        # Tado API's t= header is unreliable (points to midnight UTC, not actual reset ~11:24 UTC).
-        # w=86400 is the window size, not time until reset.
-        # Clear stale reset_seconds so save_ratelimit uses Strategy 2/3/4.
-        self._rate_limit.pop("reset_seconds", None)
+        # On 200 responses, Tado's RateLimit t= header is unreliable (often points to
+        # midnight UTC rather than the actual ~11:24 UTC reset) and w=86400 is the
+        # window size, not time-to-reset. Clear any stale reset_seconds so
+        # save_ratelimit falls back to Strategy 2/3/4. The one exception: if a prior
+        # 429 Retry-After set reset_seconds (_from_429 flag), preserve it — 429
+        # Retry-After is reliable per RFC 6585 and must not be clobbered by a later 200.
+        if not self._rate_limit.get("_from_429"):
+            self._rate_limit.pop("reset_seconds", None)
+        else:
+            # Consume the flag — next successful parse will clear it
+            del self._rate_limit["_from_429"]
 
         _LOGGER.debug("Parsed rate limit: %s", self._rate_limit)
 
@@ -495,8 +503,8 @@ class TadoApiClient(TadoAuthMixin):
         self, method: str, endpoint: str, attempt: int,
     ) -> bool:
         """Handle 401 Unauthorized. Returns True if should retry (continue loop)."""
-        if method == "GET" and attempt == 1:
-            _LOGGER.debug("Token expired mid-call, refreshing: %s", endpoint)
+        if method in _RETRYABLE_METHODS and attempt == 1:
+            _LOGGER.debug("Token expired mid-call, refreshing: %s %s", method, endpoint)
             self._access_token = None
             self._token_expiry = None
             return True
@@ -659,6 +667,7 @@ class TadoApiClient(TadoAuthMixin):
                 if retry_after_header:
                     try:
                         self._rate_limit["reset_seconds"] = int(float(retry_after_header))
+                        self._rate_limit["_from_429"] = True
                     except (ValueError, TypeError):
                         pass
 
@@ -684,7 +693,8 @@ class TadoApiClient(TadoAuthMixin):
 
         GET/PUT/DELETE are idempotent — safe to retry on 403.
         POST is not retried on 403 (non-idempotent).
-        401 on GET triggers one token refresh + retry; on other methods just logs.
+        401 on idempotent methods (GET/PUT/DELETE) triggers one token refresh +
+        retry on the first attempt; on POST or subsequent attempts it just logs.
         """
         url = await self._resolve_api_url(endpoint, full_url)
         if url is None:
@@ -735,7 +745,7 @@ class TadoApiClient(TadoAuthMixin):
 
     async def set_device_offset(self, serial: str, offset: float) -> bool:
         """Set temperature offset for a specific device."""
-        if not (DEVICE_OFFSET_MIN <= offset <= DEVICE_OFFSET_MAX):
+        if not is_valid_device_offset(offset):
             _LOGGER.warning(
                 "Offset %s°C for device %s rejected: outside valid range [%s, %s]",
                 offset, serial, DEVICE_OFFSET_MIN, DEVICE_OFFSET_MAX,
@@ -1012,7 +1022,7 @@ class TadoApiClient(TadoAuthMixin):
                     try:
                         offset = await self.get_device_offset(serial)
                         if offset is not None:
-                            if not (DEVICE_OFFSET_MIN <= offset <= DEVICE_OFFSET_MAX):
+                            if not is_valid_device_offset(offset):
                                 _LOGGER.warning(
                                     "Offset for zone %s rejected: %s°C outside valid range [%s, %s]",
                                     zone_id, offset, DEVICE_OFFSET_MIN, DEVICE_OFFSET_MAX,

@@ -31,9 +31,6 @@ _API_MAX_FLOW: float = 80.0
 # Minimum seconds between Bridge API adjustments (10 min)
 _MIN_HOLD_SECONDS: float = 600.0
 
-# Stale reading threshold in seconds (60 min)
-_STALE_READING_SECONDS: float = 3600.0
-
 # Grace period for missing outdoor temp — use last known value (30 min)
 _OUTDOOR_TEMP_GRACE_SECONDS: float = 1800.0
 
@@ -325,16 +322,6 @@ def evaluate(
             state.status = "paused"
             base.status = "paused"
             return base
-
-    # --- Step 2: stale reading check ---
-    if (
-        state.last_outdoor_reading_time > 0
-        and (now_mono - state.last_outdoor_reading_time) > _STALE_READING_SECONDS
-    ):
-        state.status = "paused"
-        base.status = "paused"
-        base.raw_outdoor_temp = outdoor_temp_raw
-        return base
 
     state.last_raw_outdoor_temp = outdoor_temp_raw
     state.last_outdoor_reading_time = now_mono

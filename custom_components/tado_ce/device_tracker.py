@@ -12,6 +12,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .device_manager import get_hub_device_info
 from .entity_registry import ENTITY_REGISTRY, get_entity_category
+from .helpers import mask_serial
 
 if TYPE_CHECKING:
     from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
@@ -120,7 +121,7 @@ class TadoDeviceTracker(CoordinatorEntity["TadoDataUpdateCoordinator"], TrackerE
         """Return extra state attributes."""
         metadata = self._device_data.get("deviceMetadata") or {}
         return {
-            "device_id": self._device_id,
+            "device_id": mask_serial(str(self._device_id)),
             "platform": metadata.get("platform"),
             "os_version": metadata.get("osVersion"),
             "model": metadata.get("model"),

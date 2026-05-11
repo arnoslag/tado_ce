@@ -26,6 +26,10 @@ _LOGGER = logging.getLogger(__name__)
 STORAGE_VERSION = "1.0"
 # Grace period: if an insight disappears for less than this, treat as same occurrence
 REAPPEARANCE_GRACE_HOURS = 1
+# Debounce delay for Store writes — coalesces per-poll `last_seen` updates to
+# reduce SD flash wear on HA OS installs. HA's EVENT_HOMEASSISTANT_FINAL_WRITE
+# flushes pending writes on shutdown, so no data loss.
+SAVE_DELAY_SECONDS = 60
 
 
 class InsightHistoryTracker:
@@ -106,31 +110,37 @@ class InsightHistoryTracker:
             self._entries = {}
             return 0
 
+    def _serialize(self) -> dict[str, Any]:
+        """Serialise entries for Store write. Called by async_delay_save at write time."""
+        return {
+            "version": STORAGE_VERSION,
+            "saved_at": dt_util.utcnow().isoformat(),
+            "entries": self._entries,
+        }
+
     async def async_save(self) -> bool:
-        """Save history to Store. Only writes if dirty.
+        """Schedule a debounced save to Store. Only schedules if dirty.
+
+        Uses async_delay_save so rapid per-poll `last_seen` updates coalesce
+        into one disk write per SAVE_DELAY_SECONDS. HA flushes pending writes
+        on EVENT_HOMEASSISTANT_FINAL_WRITE — no data loss on shutdown.
 
         Returns:
-            True if saved successfully (or not dirty), False on error.
+            True if scheduled (or not dirty), False on error.
         """
         if not self._dirty:
             return True
 
         try:
-            data = {
-                "version": STORAGE_VERSION,
-                "saved_at": dt_util.utcnow().isoformat(),
-                "entries": self._entries,
-            }
-            await self._store.async_save(data)
-
+            self._store.async_delay_save(self._serialize, SAVE_DELAY_SECONDS)
             self._dirty = False
             _LOGGER.debug(
-                "Saved insight history: %d entries",
+                "Scheduled delayed insight history save: %d entries",
                 len(self._entries),
             )
             return True
         except (OSError, HomeAssistantError):
-            _LOGGER.exception("Failed to save insight history")
+            _LOGGER.exception("Failed to schedule insight history save")
             return False
 
     def update(self, current_insights: list[Insight], now: datetime) -> None:

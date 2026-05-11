@@ -160,8 +160,15 @@ class StateReconciler:
     ) -> tuple[float | None, str]:
         """Return (merged_value, source_name).
 
-        Priority: homekit (if fresh) > cloud. No external sensor for target temp.
+        Priority: homekit (if fresh AND no recent write) > cloud.
+        During write protection window, the entity's optimistic value is
+        authoritative — HomeKit bridge may still report stale target.
         """
+        if not self.should_accept_cloud_value(zone_id):
+            # Write protection active — trust optimistic/cloud value
+            self._log_source_transition(zone_id, "target_temp", "cloud", cloud_value)
+            return cloud_value, "cloud"
+
         local_val, is_fresh = self._get_fresh_local_value(zone_id, "get_target_temperature")
         if is_fresh and local_val is not None:
             self._log_source_transition(zone_id, "target_temp", "homekit", local_val)
@@ -194,10 +201,14 @@ class StateReconciler:
     ) -> tuple[int | None, str]:
         """Return (merged_value, source_name).
 
-        Priority: homekit (if fresh) > cloud. 0=Off, 1=Heat, 2=Cool, 3=Auto.
-        Uses target heating state (char 33) — what the user requested,
-        as opposed to current heating state (char 0F) — what the TRV is doing.
+        Priority: homekit (if fresh AND no recent write) > cloud.
+        During write protection window, the entity's optimistic value is
+        authoritative — HomeKit bridge may still report stale mode.
         """
+        if not self.should_accept_cloud_value(zone_id):
+            self._log_source_transition(zone_id, "target_hvac", "cloud", cloud_value)
+            return cloud_value, "cloud"
+
         local_val, is_fresh = self._get_fresh_local_value(zone_id, "get_target_heating_state")
         if is_fresh and local_val is not None:
             self._log_source_transition(zone_id, "target_hvac", "homekit", int(local_val))

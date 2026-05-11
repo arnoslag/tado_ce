@@ -76,16 +76,19 @@ def build_serial_mapping(
         for svc in acc.get("services", []):
             for char in svc.get("characteristics", []):
                 # aiohomekit normalizes types to full UUID: 0000XXXX-0000-1000-8000-0026BB765291
-                # Extract short form by taking chars [4:8] or stripping the base UUID suffix
+                # Extract short form and compare as integers to handle leading zeros
                 raw_type = char.get("type", "")
                 if "-" in raw_type:
-                    # Full UUID — extract short form (hex digits before first dash, strip leading zeros)
-                    ctype = raw_type.split("-")[0].lstrip("0").upper()
+                    ctype = raw_type.split("-")[0].upper()
                 else:
-                    ctype = raw_type.upper().lstrip("0")
-                if ctype == CHAR_SERIAL_NUMBER.upper():
+                    ctype = raw_type.upper()
+                try:
+                    ctype_int = int(ctype, 16)
+                except (ValueError, TypeError):
+                    continue
+                if ctype_int == int(CHAR_SERIAL_NUMBER, 16):
                     serial = char.get("value")
-                elif ctype == CHAR_MODEL.upper():
+                elif ctype_int == int(CHAR_MODEL, 16):
                     model = char.get("value")
 
         # Skip bridge accessory

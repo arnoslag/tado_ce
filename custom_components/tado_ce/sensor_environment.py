@@ -137,10 +137,6 @@ def _extract_mold_risk_data(
 
 
 class TadoMoldRiskSensor(TadoZoneSensor):
-    """Represent a Tado mold risk level sensor."""
-
-    _attr_has_entity_name = True
-
     """Mold risk indicator sensor.
 
     Enhanced with 2-tier temperature source strategy:
@@ -158,6 +154,8 @@ class TadoMoldRiskSensor(TadoZoneSensor):
 
     State: Risk level text (Critical/High/Medium/Low)
     """
+
+    _attr_has_entity_name = True
 
     def __init__(
         self, coordinator: TadoDataUpdateCoordinator, zone_id: str, zone_name: str, zone_type: str = "HEATING",
@@ -280,10 +278,6 @@ class TadoMoldRiskSensor(TadoZoneSensor):
 
 
 class TadoMoldRiskPercentageSensor(TadoZoneSensor):
-    """Represent a Tado mold risk percentage sensor."""
-
-    _attr_has_entity_name = True
-
     """Mold risk percentage sensor - surface relative humidity.
 
     Exposes the mold risk percentage (surface RH) as a dedicated sensor
@@ -297,6 +291,8 @@ class TadoMoldRiskPercentageSensor(TadoZoneSensor):
 
     Mold typically grows when surface RH exceeds ~70-80%.
     """
+
+    _attr_has_entity_name = True
 
     def __init__(
         self, coordinator: TadoDataUpdateCoordinator, zone_id: str, zone_name: str, zone_type: str = "HEATING",
@@ -386,10 +382,6 @@ class TadoMoldRiskPercentageSensor(TadoZoneSensor):
 
 
 class TadoCondensationRiskSensor(TadoZoneSensor):
-    """Represent a Tado condensation risk sensor."""
-
-    _attr_has_entity_name = True
-
     """Condensation risk sensor for all climate zones.
 
     AC zones — condensation on window exterior when AC cools room.
@@ -409,6 +401,8 @@ class TadoCondensationRiskSensor(TadoZoneSensor):
 
     State: Risk level text (Critical/High/Medium/Low/None)
     """
+
+    _attr_has_entity_name = True
 
     def __init__(
         self, coordinator: TadoDataUpdateCoordinator, zone_id: str, zone_name: str, zone_type: str = "AIR_CONDITIONING",
@@ -716,10 +710,6 @@ class TadoCondensationRiskSensor(TadoZoneSensor):
 
 
 class TadoSurfaceTemperatureSensor(TadoZoneSensor):
-    """Represent a Tado estimated surface temperature sensor."""
-
-    _attr_has_entity_name = True
-
     """Surface temperature sensor for calibration workflows.
 
     Exposes calculated cold spot temperature as standalone sensor.
@@ -734,6 +724,8 @@ class TadoSurfaceTemperatureSensor(TadoZoneSensor):
 
     State: Calculated surface temperature in °C
     """
+
+    _attr_has_entity_name = True
 
     def __init__(
         self, coordinator: TadoDataUpdateCoordinator, zone_id: str, zone_name: str, zone_type: str = "HEATING",
@@ -873,10 +865,6 @@ class TadoSurfaceTemperatureSensor(TadoZoneSensor):
 
 
 class TadoDewPointSensor(TadoZoneSensor):
-    """Represent a Tado dew point temperature sensor."""
-
-    _attr_has_entity_name = True
-
     """Dew point temperature sensor for automation workflows.
 
     Exposes calculated dew point as standalone sensor.
@@ -891,6 +879,8 @@ class TadoDewPointSensor(TadoZoneSensor):
 
     State: Calculated dew point temperature in °C
     """
+
+    _attr_has_entity_name = True
 
     def __init__(
         self, coordinator: TadoDataUpdateCoordinator, zone_id: str, zone_name: str, zone_type: str = "HEATING",
@@ -955,10 +945,6 @@ class TadoDewPointSensor(TadoZoneSensor):
 
 
 class TadoComfortLevelSensor(TadoZoneSensor):
-    """Represent a Tado comfort level sensor."""
-
-    _attr_has_entity_name = True
-
     """Comfort level sensor using Adaptive Comfort model.
 
     Based on ASHRAE 55 adaptive comfort standard, which adjusts comfort
@@ -976,6 +962,8 @@ class TadoComfortLevelSensor(TadoZoneSensor):
 
     State: Combined comfort text (e.g., "Comfortable", "Cool Dry")
     """
+
+    _attr_has_entity_name = True
 
     def __init__(
         self, coordinator: TadoDataUpdateCoordinator, zone_id: str, zone_name: str, zone_type: str = "HEATING",

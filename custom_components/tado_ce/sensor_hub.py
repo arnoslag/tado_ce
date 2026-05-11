@@ -27,6 +27,10 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
+# Cap history-list attributes to reduce recorder DB bloat.
+# Dashboards typically render only the last few entries.
+_ATTR_HISTORY_CAP = 10
+
 
 def _format_recent_calls(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Format recent call entries with local timestamps."""
@@ -191,7 +195,7 @@ class TadoApiUsageSensor(TadoHubSensor):
         }
 
         if self._call_history:
-            attrs["call_history"] = self._call_history
+            attrs["call_history"] = self._call_history[:_ATTR_HISTORY_CAP]
 
         return attrs
 
@@ -378,7 +382,7 @@ class TadoApiLimitSensor(TadoHubSensor):
                         all_calls.extend(calls)
 
                     all_calls.sort(key=lambda x: x["timestamp"], reverse=True)
-                    raw_recent_calls = all_calls[:100]
+                    raw_recent_calls = all_calls[:_ATTR_HISTORY_CAP]
 
                     recent_calls = []
                     for call in raw_recent_calls:
@@ -839,7 +843,7 @@ class TadoApiHistorySensor(TadoHubSensor):
 
             self._attr_native_value = len(all_calls)
             self._attr_available = True
-            self._history = _format_recent_calls(all_calls[:100])
+            self._history = _format_recent_calls(all_calls[:_ATTR_HISTORY_CAP])
             self._oldest_call, self._newest_call = _parse_call_time_range(all_calls)
             self._calls_per_hour = _calculate_calls_per_hour(all_calls)
             self._calls_today = _calculate_calls_today(history_data)
@@ -959,7 +963,7 @@ class TadoHomekitReadsSavedSensor(TadoHubSensor):
     @callback
     def update(self) -> None:
         """Update sensor state from coordinator HomeKit savings counter."""
-        self._attr_native_value = self.coordinator._homekit_reads_saved
+        self._attr_native_value = self.coordinator.homekit_reads_saved
         self._attr_available = self.coordinator.homekit_provider is not None
 
 
@@ -975,5 +979,5 @@ class TadoHomekitWritesSavedSensor(TadoHubSensor):
     @callback
     def update(self) -> None:
         """Update sensor state from coordinator HomeKit savings counter."""
-        self._attr_native_value = self.coordinator._homekit_writes_saved
+        self._attr_native_value = self.coordinator.homekit_writes_saved
         self._attr_available = self.coordinator.homekit_provider is not None

@@ -200,12 +200,17 @@ DEFAULT_ZONE_CONFIG = {
     "max_temp": 25.0,  # 15-30°C (Heating + AC)
     "surface_temp_offset": 0.0,  # -5.0 to +5.0°C offset for mold risk calculation
     "svc_mode": "off",  # off / valve_target / offset_sync (Heating only)
+    "svc_offset_min_change": 0.5,  # 0.5-3.0°C — minimum offset change before writing (Offset Sync)
 }
 
 # Surface temperature offset limits (for mold risk calibration)
 SURFACE_TEMP_OFFSET_MIN = -5.0
 SURFACE_TEMP_OFFSET_MAX = 5.0
 SURFACE_TEMP_OFFSET_STEP = 0.1
+
+# Per-zone temperature limits (user-configurable min/max setpoint bounds)
+ZONE_TEMP_MIN_FLOOR = 5.0    # Absolute minimum — frost protection
+ZONE_TEMP_MAX_CEILING = 30.0  # Absolute maximum — Tado hardware limit
 
 # Heating type values
 HEATING_TYPE_RADIATOR = "radiator"
@@ -256,6 +261,25 @@ WINDOW_DETECTION_MODE_DEFAULT = "auto"
 DEVICE_OFFSET_MIN: float = -10.0
 DEVICE_OFFSET_MAX: float = 10.0
 
+
+# Insight runtime state (coordinator anomaly + humidity history persistence)
+INSIGHT_RUNTIME_STATE_KEY = "insight_runtime_state"
+
+
+def is_valid_device_offset(value: float | None) -> bool:
+    """Return True if value is a finite number within the valid offset range.
+
+    Consolidates the DEVICE_OFFSET_MIN <= x <= DEVICE_OFFSET_MAX check that
+    was duplicated at write, read, sync, and readback sites.
+    """
+    if value is None:
+        return False
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return False
+    return DEVICE_OFFSET_MIN <= f <= DEVICE_OFFSET_MAX
+
 # =============================================================================
 # Smart Valve Control Constants
 # =============================================================================
@@ -273,7 +297,10 @@ SVC_MODE_VALVE_TARGET: Final[str] = "valve_target"
 SVC_MODE_OFFSET_SYNC: Final[str] = "offset_sync"
 
 # Offset Sync — minimum offset change before writing to device
-SVC_OFFSET_MIN_CHANGE: Final[float] = 0.5  # °C
+SVC_OFFSET_MIN_CHANGE: Final[float] = 0.5  # °C (default)
+SVC_OFFSET_MIN_CHANGE_MIN: Final[float] = 0.5  # °C — lower bound for config
+SVC_OFFSET_MIN_CHANGE_MAX: Final[float] = 3.0  # °C — upper bound for config
+SVC_OFFSET_MIN_CHANGE_STEP: Final[float] = 0.5  # °C — step size in UI
 
 # =============================================================================
 # API Write Optimization Constants

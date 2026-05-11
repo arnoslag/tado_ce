@@ -41,10 +41,14 @@ class OffsetSyncRuntime:
     """Runtime state for OffsetSyncController (not persisted directly)."""
 
     last_written_offset: float | None = None
-    last_offset_write_ts: float | None = None  # time.time() wall clock
+    last_offset_write_ts: float | None = None  # time.monotonic() clock
     pending_offset: float | None = None  # queued when rate-limited
-    paused_until_ts: float | None = None  # manual override pause expiry
+    paused_until_ts: float | None = None  # manual override pause expiry (monotonic)
     unsub_external_sensors: list[CALLBACK_TYPE] = field(default_factory=list)
+    # Lifecycle flag — set in async_deactivate before unsub/cancel so any
+    # in-flight sensor callbacks or scheduled debounce timers short-circuit
+    # instead of writing to a deactivated controller.
+    deactivated: bool = False
 
 
 class OffsetSyncController:
@@ -118,21 +122,21 @@ class OffsetSyncController:
         last_ts = self._runtime.last_offset_write_ts
         if last_ts is None:
             return False
-        return (time.time() - last_ts) < SMART_VALVE_CLOUD_RATE_LIMIT
+        return (time.monotonic() - last_ts) < SMART_VALVE_CLOUD_RATE_LIMIT
 
     def is_paused(self) -> bool:
         """Return True if within manual override pause window."""
         paused_until = self._runtime.paused_until_ts
         if paused_until is None:
             return False
-        return time.time() < paused_until
+        return time.monotonic() < paused_until
 
     def on_external_offset_write(self) -> None:
         """Handle external offset write — pause sync for one rate limit window.
 
         Called when handle_set_temp_offset writes to this zone.
         """
-        self._runtime.paused_until_ts = time.time() + _EXTERNAL_WRITE_PAUSE
+        self._runtime.paused_until_ts = time.monotonic() + _EXTERNAL_WRITE_PAUSE
         _LOGGER.info(
             "Offset Sync: zone %s paused for %ss due to external offset write",
             self._zone_id, int(_EXTERNAL_WRITE_PAUSE),
@@ -144,6 +148,9 @@ class OffsetSyncController:
 
     async def async_evaluate(self) -> None:
         """Run evaluation: read inputs → calculate → threshold → rate limit → write."""
+        if self._runtime.deactivated:
+            return
+
         from .climate_helpers import read_external_sensor
         from .helpers import get_zone_state
 
@@ -163,19 +170,31 @@ class OffsetSyncController:
             )
         except (KeyError, TypeError, ValueError):
             _LOGGER.warning(
-                "Offset Sync: zone %s missing insideTemperature — skipping",
+                "Offset Sync: zone %s could not read TRV temperature from "
+                "Tado API — skipping this cycle, will retry on next poll",
                 self._zone_id,
             )
             return
 
-        # Skip evaluation when zone is not actively heating — avoids unnecessary
-        # device offset writes that cause TRV motor noise (recalibration) while
-        # the valve is closed.
+        # Gate on the schedule/overlay having a heating target (setting.power == "ON").
+        # This is a *schedule-level* gate — it's True whenever the current
+        # schedule block or overlay has a temperature target, regardless of
+        # whether the valve is physically open right now. A 17°C overnight
+        # block still counts as ON; only an explicit OFF block / overlay sets
+        # power to OFF.
+        #
+        # Rationale: offset changes trigger TRV motor recalibration (noise),
+        # and the offset has no effect anyway when the schedule has no target
+        # (no heating decisions to influence). So we only skip during truly
+        # inactive schedule blocks — not just because the valve happens to be
+        # closed at this instant.
         zone_setting = zone_data.get("setting") or {}
-        if zone_setting.get("power", "OFF") != "ON":
+        power = zone_setting.get("power", "OFF")
+        if power != "ON":
             _LOGGER.debug(
-                "Offset Sync: zone %s heating is OFF — skipping offset write",
-                self._zone_id,
+                "Offset Sync: zone %s schedule has no heating target "
+                "(setting.power=%s) — skipping offset write",
+                self._zone_id, power,
             )
             return
 
@@ -214,13 +233,30 @@ class OffsetSyncController:
             inside_temperature, current_device_offset, external_temp,
         )
 
-        # Minimum change threshold
+        # Minimum change threshold (per-zone configurable)
+        zone_config = self._zcm.get_zone_config(self._zone_id)
+        min_change = float(zone_config.get("svc_offset_min_change", SVC_OFFSET_MIN_CHANGE))
         effective_current = (
             self._runtime.last_written_offset
             if self._runtime.last_written_offset is not None
             else current_device_offset
         )
-        if not self.should_write(desired_offset, effective_current):
+
+        # Diagnostic summary — one line per evaluation for remote debugging.
+        # Visible at DEBUG level. Mirrors the format used by SmartValveController
+        # so that "Offset Sync: eval" and "Smart Valve: eval" both answer the
+        # same question: what inputs did the controller see this cycle?
+        target = (zone_setting.get("temperature") or {}).get("celsius")
+        _LOGGER.debug(
+            "Offset Sync: zone %s eval — power=%s, target=%s, ext=%.1f, "
+            "trv=%.1f, current_offset=%.1f, desired=%.1f, min_change=%.1f",
+            self._zone_id, power,
+            f"{target:.1f}" if target is not None else "None",
+            external_temp, inside_temperature,
+            current_device_offset, desired_offset, min_change,
+        )
+
+        if not self.should_write(desired_offset, effective_current, min_change):
             return
 
         # Rate limit check
@@ -269,6 +305,7 @@ class OffsetSyncController:
             return
 
         device_sync_queue = self._coordinator.device_sync_queue
+        any_enqueued = False
 
         for serial in serials:
             async def _do_write(s: str = serial, o: float = offset) -> bool:
@@ -282,16 +319,39 @@ class OffsetSyncController:
                 entity_id=f"offset_sync.zone_{self._zone_id}",
             )
             enqueued = await device_sync_queue.enqueue(operation)
-            if not enqueued:
+            if enqueued:
+                any_enqueued = True
+            else:
                 _LOGGER.warning(
-                    "Offset Sync: zone %s device %s queue full — offset write dropped",
+                    "Offset Sync: zone %s device %s could not be scheduled for "
+                    "offset write (too many pending writes) — dropping this update",
                     self._zone_id, serial[:6],
                 )
 
+        # If every write was dropped, the TRVs never received the update — do
+        # not update internal state or cache, otherwise the next correction
+        # attempt would be suppressed as if the write had succeeded.
+        if not any_enqueued:
+            _LOGGER.warning(
+                "Offset Sync: zone %s could not schedule offset write for any "
+                "device — leaving state unchanged, will retry on next sensor change",
+                self._zone_id,
+            )
+            return
+
         # Update runtime state
         self._runtime.last_written_offset = offset
-        self._runtime.last_offset_write_ts = time.time()
+        self._runtime.last_offset_write_ts = time.monotonic()
         self._runtime.pending_offset = None
+
+        # Update coordinator offsets cache so next evaluation uses correct
+        # current_device_offset (prevents oscillation from stale cache)
+        raw_offsets = self._coordinator.data_loader.get_cached("offsets")
+        cached_offsets: dict[str, float] = raw_offsets if isinstance(raw_offsets, dict) else {}
+        cached_offsets[self._zone_id] = offset
+        self._coordinator.data_loader.update_cache("offsets", cached_offsets)
+        if self._coordinator.data and isinstance(self._coordinator.data, dict):
+            self._coordinator.data["offsets"] = cached_offsets
 
         # Persist state
         await self.async_persist_state()
@@ -343,13 +403,16 @@ class OffsetSyncController:
 
     async def async_deactivate(self) -> None:
         """Deactivate: unsubscribe sensors, persist state. Does NOT reset offset."""
-        # Clean up sensor subscriptions
+        # Order: flag → cancel → unsub → persist.
+        # Flag first so any sensor event that slips through short-circuits.
+        # Cancel before unsub so a pending debounce callback firing between
+        # these steps also sees the flag.
+        self._runtime.deactivated = True
+        self._action_debouncer.cancel(f"offset_sync_{self._zone_id}")
+
         for unsub in self._runtime.unsub_external_sensors:
             unsub()
         self._runtime.unsub_external_sensors.clear()
-
-        # Cancel pending debounce
-        self._action_debouncer.cancel(f"offset_sync_{self._zone_id}")
 
         # Persist final state
         await self.async_persist_state()
@@ -365,10 +428,17 @@ class OffsetSyncController:
     # ------------------------------------------------------------------
 
     async def async_persist_state(self) -> None:
-        """Persist last_written_offset and last_offset_write_ts to zone config."""
+        """Persist last_written_offset to zone config.
+
+        last_offset_write_ts is intentionally not persisted — it's a monotonic
+        clock value that is meaningless across process restarts.
+
+        Note: async_set_zone_value replaces the entire offset_sync_state dict,
+        so any stale last_offset_write_ts left over from older versions is
+        cleaned up automatically on the first persist after upgrade.
+        """
         state_dict: dict[str, float | None] = {
             "last_written_offset": self._runtime.last_written_offset,
-            "last_offset_write_ts": self._runtime.last_offset_write_ts,
         }
         await self._zcm.async_set_zone_value(
             self._zone_id, "offset_sync_state", state_dict,
@@ -388,15 +458,25 @@ class OffsetSyncController:
             return
 
         try:
-            self._runtime.last_written_offset = raw.get("last_written_offset")
-            self._runtime.last_offset_write_ts = raw.get("last_offset_write_ts")
+            offset_raw = raw.get("last_written_offset")
+            # Cast inside try so a non-numeric value (e.g. "not-a-float" from
+            # a manual edit or schema change) triggers the except fallback
+            # rather than leaking a string into runtime.
+            self._runtime.last_written_offset = (
+                float(offset_raw) if offset_raw is not None else None
+            )
+            # Do NOT restore last_offset_write_ts — it's a monotonic clock value
+            # that is meaningless across process restarts (monotonic resets on
+            # boot). Persisting it would cause is_rate_limited() to compare
+            # current-monotonic against a pre-restart-monotonic, which can
+            # block writes for as long as the previous HA uptime.
+            self._runtime.last_offset_write_ts = None
             _LOGGER.info(
-                "Offset Sync: zone %s restored state (offset=%s, ts=%s)",
+                "Offset Sync: zone %s restored state (offset=%s)",
                 self._zone_id,
                 self._runtime.last_written_offset,
-                self._runtime.last_offset_write_ts,
             )
-        except (ValueError, KeyError):
+        except (ValueError, TypeError, KeyError):
             _LOGGER.warning(
                 "Offset Sync: zone %s corrupt persisted state, starting fresh",
                 self._zone_id,
@@ -429,6 +509,8 @@ class OffsetSyncController:
 
     def _on_external_sensor_change(self, _event: Any) -> None:
         """Handle external sensor state change — debounce and evaluate."""
+        if self._runtime.deactivated:
+            return
         self._hass.async_create_task(
             self._action_debouncer.debounce(
                 f"offset_sync_{self._zone_id}",
@@ -443,7 +525,8 @@ class OffsetSyncController:
 
     def get_attributes(self) -> dict[str, Any]:
         """Return attributes for climate entity extra_state_attributes."""
+        active = not self._runtime.deactivated and not self.is_paused()
         return {
-            "valve_control_active": True,
+            "valve_control_active": active,
             "valve_control_mode": "offset_sync",
         }

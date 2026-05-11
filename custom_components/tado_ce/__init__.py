@@ -179,6 +179,10 @@ async def _async_wire_and_start_coordinator(
     coordinator._outdoor_temp_loaded = True
     _LOGGER.debug("Outdoor temp history loaded: %d readings", len(loaded_history))
 
+    # Eager-load insight runtime state (anomaly timers + humidity history)
+    # so Home Insights duration counters survive HA restarts
+    await coordinator.async_load_insight_runtime_state()
+
     # Load persisted HomeKit savings counters
     saved = await coordinator.data_loader.async_load_homekit_savings()
     if saved and isinstance(saved, dict):
@@ -465,7 +469,7 @@ async def _async_shutdown_coordinator(coordinator: TadoDataUpdateCoordinator) ->
 
     coordinator.action_debouncer.cancel_all()
     coordinator.refresh_coalescer.cancel()
-    coordinator.cancel_bridge_poll()
+    await coordinator.cancel_bridge_poll()
     await coordinator.device_sync_queue.shutdown()
     _LOGGER.debug("Cleaned up write optimization components")
 
@@ -482,6 +486,11 @@ async def _async_shutdown_coordinator(coordinator: TadoDataUpdateCoordinator) ->
 
     # Smart Valve Control shutdown
     await coordinator.async_shutdown_valve_controllers()
+
+    # Flush insight runtime state (anomaly timers, humidity history) to disk
+    # — uses async_update_store directly to bypass the debouncer which may
+    # not fire before the Store is torn down during unload.
+    await coordinator.async_shutdown_insight_state()
 
 
 def _unregister_all_services(hass: HomeAssistant) -> None:

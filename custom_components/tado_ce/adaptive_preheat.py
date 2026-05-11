@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.util import dt as dt_util
+from homeassistant.util import slugify
 
 from .const import ENTITY_DATA_PREHEAT_ADVISOR, ENTITY_DATA_PREHEAT_NOW
 from .helpers import build_timer_termination, get_zone_states
@@ -112,7 +113,7 @@ class AdaptivePreheatManager:
                 continue
 
             # Build entity IDs
-            zone_slug = zone_name.lower().replace(" ", "_")
+            zone_slug = slugify(zone_name)
             self._zone_info[zone_id] = {
                 "name": zone_name,
                 "slug": zone_slug,

@@ -58,6 +58,10 @@ class ValveControllerRuntime:
     backed_off_overlay_target: float | None = None  # overlay target when entering backed-off
     desired_target: float | None = None  # user's desired temp captured at IDLE→ACTIVE transition
     unsub_external_sensors: list[CALLBACK_TYPE] = field(default_factory=list)
+    # Lifecycle flag — set in async_deactivate before unsub/cancel so any
+    # in-flight sensor callbacks or scheduled debounce timers short-circuit
+    # instead of writing to a deactivated controller.
+    deactivated: bool = False
 
 
 
@@ -99,6 +103,11 @@ class SmartValveController:
     # ------------------------------------------------------------------
     # Properties
     # ------------------------------------------------------------------
+
+    @property
+    def zone_id(self) -> str:
+        """Return the zone ID (public API — matches OffsetSyncController)."""
+        return self._zone_id
 
     @property
     def state(self) -> ControllerState:
@@ -370,6 +379,9 @@ class SmartValveController:
 
         Called on external sensor change (debounced) and coordinator poll update.
         """
+        if self._runtime.deactivated:
+            return
+
         from .climate_helpers import read_external_sensor
         from .schedule_helpers import get_current_schedule_target
 
@@ -389,7 +401,9 @@ class SmartValveController:
         # Ensure min <= max
         if min_temp > max_temp:
             _LOGGER.warning(
-                "Smart Valve: zone %s min_temp (%.1f) > max_temp (%.1f), using defaults",
+                "Smart Valve: zone %s has invalid temperature limits "
+                "(min=%.1f°C > max=%.1f°C) — falling back to defaults (5.0–25.0°C). "
+                "Fix this in Zone Configuration → Temperature Limits.",
                 self._zone_id, min_temp, max_temp,
             )
             min_temp, max_temp = 5.0, 25.0
@@ -409,7 +423,7 @@ class SmartValveController:
         current_state = self._runtime.state
 
         # Diagnostic summary — one line per evaluation cycle for remote debugging
-        _LOGGER.info(
+        _LOGGER.debug(
             "Smart Valve: zone %s eval — state=%s, ext=%s, trv=%s, schedule=%s, desired=%s",
             self._zone_id,
             self._runtime.state.value,
@@ -423,7 +437,7 @@ class SmartValveController:
         if current_state == ControllerState.BACKED_OFF:
             if self.detect_schedule_block_change(schedule_target):
                 _LOGGER.info(
-                    "Smart Valve: zone %s schedule block changed, resuming from backed-off",
+                    "Smart Valve: zone %s schedule changed, re-enabling Smart Valve Control",
                     self._zone_id,
                 )
                 self._runtime.state = ControllerState.IDLE
@@ -432,13 +446,13 @@ class SmartValveController:
                 self._runtime.desired_target = None
             elif self.detect_overlay_change_while_backed_off(zone_data):
                 _LOGGER.info(
-                    "Smart Valve: zone %s overlay changed externally, resuming from backed-off",
+                    "Smart Valve: zone %s manual change cleared, re-enabling Smart Valve Control",
                     self._zone_id,
                 )
                 self._runtime.state = ControllerState.IDLE
                 self._runtime.backed_off_overlay_target = None
                 self._runtime.desired_target = None
-            # No further action while backed off
+            # No further action while paused
             return
 
         # Check manual override (only when active)
@@ -454,7 +468,8 @@ class SmartValveController:
                 else:
                     self._runtime.backed_off_overlay_target = None
                 _LOGGER.info(
-                    "Smart Valve: zone %s manual override detected, backing off",
+                    "Smart Valve: zone %s manual change detected (Tado app or device), "
+                    "pausing Smart Valve Control until schedule changes or the override is cleared",
                     self._zone_id,
                 )
                 self._runtime.state = ControllerState.BACKED_OFF
@@ -464,9 +479,10 @@ class SmartValveController:
         # Check schedule changes while ACTIVE (FR-1 + FR-2)
         if current_state == ControllerState.ACTIVE:
             if schedule_target is None:
-                # Schedule went OFF — respect it immediately
+                # Schedule block is OFF (no target) — stop compensating and let Tado run
                 _LOGGER.info(
-                    "Smart Valve: zone %s schedule is OFF, resuming schedule",
+                    "Smart Valve: zone %s schedule block is OFF (no heating target), "
+                    "handing back to Tado schedule",
                     self._zone_id,
                 )
                 await self._async_resume_schedule()
@@ -480,7 +496,8 @@ class SmartValveController:
             ):
                 # Schedule target changed (e.g. 19°C → 21°C) — update in-place
                 _LOGGER.info(
-                    "Smart Valve: zone %s schedule target changed (%.1f → %.1f), updating",
+                    "Smart Valve: zone %s schedule target changed (%.1f → %.1f°C), "
+                    "adjusting valve target to match",
                     self._zone_id, self._runtime.desired_target, schedule_target,
                 )
                 self._runtime.desired_target = schedule_target
@@ -490,7 +507,8 @@ class SmartValveController:
         if external_temp is None:
             if current_state == ControllerState.ACTIVE:
                 _LOGGER.info(
-                    "Smart Valve: zone %s external sensor unavailable while active, resuming schedule",
+                    "Smart Valve: zone %s external sensor unavailable, "
+                    "handing back to Tado schedule",
                     self._zone_id,
                 )
                 await self._async_resume_schedule()
@@ -525,9 +543,13 @@ class SmartValveController:
         # If active, calculate and write
         if self._runtime.state == ControllerState.ACTIVE:
             if trv_reading is None:
-                # TRV unavailable — bang-bang fallback (doesn't need desired_target)
+                # TRV temperature unreadable — without a TRV reading we can't
+                # calculate a precise offset, so we set the valve target to
+                # max_temp (open valve fully) as a safe fallback until the
+                # next poll brings a reading back.
                 _LOGGER.warning(
-                    "Smart Valve: zone %s TRV reading unavailable, bang-bang fallback to %.1f°C",
+                    "Smart Valve: zone %s could not read TRV temperature — "
+                    "opening valve fully (target=%.1f°C) until sensor returns",
                     self._zone_id, max_temp,
                 )
                 if self.should_write(max_temp):
@@ -686,15 +708,17 @@ class SmartValveController:
         if self._runtime.state == ControllerState.ACTIVE and self._runtime.overlay_set_by_controller:
             await self._async_resume_schedule()
 
-        # Clean up sensor subscriptions
+        # Order: flag → cancel → unsub → persist.
+        # Flag first so any sensor event that slips through the subscription
+        # path sees it and short-circuits. Cancel before unsub so a pending
+        # debounce callback firing between these steps also sees the flag.
+        self._runtime.deactivated = True
+        self._action_debouncer.cancel(f"svc_{self._zone_id}")
+
         for unsub in self._runtime.unsub_external_sensors:
             unsub()
         self._runtime.unsub_external_sensors.clear()
 
-        # Cancel pending debounce
-        self._action_debouncer.cancel(f"svc_{self._zone_id}")
-
-        # Persist final state
         await self.async_persist_state()
 
         _LOGGER.info(
@@ -723,9 +747,10 @@ class SmartValveController:
                 offset = device.get("temperatureOffset", {}).get("celsius")
                 if offset is not None and abs(float(offset)) >= 0.1:
                     _LOGGER.warning(
-                        "Smart Valve: zone %s device %s…  has a temperature offset of %.1f°C — "
-                        "this will cause double compensation. Reset the device offset to 0 "
-                        "for accurate Smart Valve Control",
+                        "Smart Valve: zone %s device %s has a temperature offset of "
+                        "%.1f°C set in Tado — this will cause double compensation with "
+                        "Smart Valve Control. Reset the device offset to 0 in the Tado "
+                        "app for accurate results.",
                         self._zone_id, serial[:6], float(offset),
                     )
         except Exception:
@@ -736,6 +761,8 @@ class SmartValveController:
 
     def _on_external_sensor_change(self, _event: Any) -> None:
         """Handle external sensor state change — debounce and evaluate."""
+        if self._runtime.deactivated:
+            return
         self._hass.async_create_task(
             self._action_debouncer.debounce(
                 f"svc_{self._zone_id}",
@@ -764,11 +791,14 @@ class SmartValveController:
     # ------------------------------------------------------------------
 
     async def async_persist_state(self) -> None:
-        """Persist controller state via ZoneConfigManager."""
+        """Persist controller state via ZoneConfigManager.
+
+        last_evaluation_ts is intentionally not persisted — it's a monotonic
+        clock value that is meaningless across process restarts.
+        """
         state_dict = {
             "state": self._runtime.state.value,
             "last_valve_target": self._runtime.last_valve_target,
-            "last_evaluation_ts": self._runtime.last_evaluation_ts,
             "last_schedule_target": self._runtime.last_schedule_target,
             "overlay_set_by_controller": self._runtime.overlay_set_by_controller,
             "backed_off_overlay_target": self._runtime.backed_off_overlay_target,
@@ -789,22 +819,35 @@ class SmartValveController:
             )
             return
 
+        def _optional_float(key: str) -> float | None:
+            """Cast persisted field to float, or None if absent.
+
+            Raises on malformed scalars (e.g. strings) so the
+            except-fallback fires.
+            """
+            value = raw.get(key)
+            return float(value) if value is not None else None
+
         try:
             state_str = raw.get("state", "idle")
             self._runtime.state = ControllerState(state_str)
-            self._runtime.last_valve_target = raw.get("last_valve_target")
-            self._runtime.last_evaluation_ts = raw.get("last_evaluation_ts")
-            self._runtime.last_schedule_target = raw.get("last_schedule_target")
+            self._runtime.last_valve_target = _optional_float("last_valve_target")
+            # Do NOT restore last_evaluation_ts — it's a monotonic clock value
+            # that is meaningless across process restarts. Leaving it as None
+            # means detect_manual_override's grace period won't suppress a
+            # legitimate post-restart override.
+            self._runtime.last_evaluation_ts = None
+            self._runtime.last_schedule_target = _optional_float("last_schedule_target")
             self._runtime.overlay_set_by_controller = bool(
                 raw.get("overlay_set_by_controller", False),
             )
-            self._runtime.backed_off_overlay_target = raw.get("backed_off_overlay_target")
-            self._runtime.desired_target = raw.get("desired_target")
+            self._runtime.backed_off_overlay_target = _optional_float("backed_off_overlay_target")
+            self._runtime.desired_target = _optional_float("desired_target")
             _LOGGER.info(
                 "Smart Valve: zone %s restored state=%s, last_target=%s",
                 self._zone_id, self._runtime.state, self._runtime.last_valve_target,
             )
-        except (ValueError, KeyError):
+        except (ValueError, TypeError, KeyError):
             _LOGGER.warning(
                 "Smart Valve: zone %s corrupt persisted state, starting fresh",
                 self._zone_id,

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from datetime import datetime, timedelta
 import logging
 import sys
@@ -157,6 +158,13 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Insight history tracker (persistent insight duration tracking)
         self.insight_history = InsightHistoryTracker(hass, self.home_id)
 
+        # Insight collector mutable state — owned by coordinator so duration
+        # tracking survives individual sensor entities being disabled by the user.
+        # anomaly_start_times drives "heating anomaly for N minutes"; humidity
+        # histories drive humidity-trend insights.
+        self._insight_anomaly_start_times: dict[str, datetime] = {}
+        self._insight_humidity_histories: dict[str, list[Any]] = {}
+
         # Full sync tracking
         self._last_full_sync: datetime | None = None
         self._cached_ratelimit: dict[str, Any] | None = None
@@ -203,6 +211,14 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         # Offset Sync — per-zone device offset controllers
         self.offset_sync_controllers: dict[str, OffsetSyncController] = {}
+
+        # Per-zone transition locks serialize controller lifecycle changes
+        # (see .kiro/specs/svc-lifecycle-hardening/ for the design).
+        self._zone_transition_locks: dict[str, asyncio.Lock] = {}
+
+        # Set by async_shutdown_valve_controllers to prevent queued transitions
+        # from installing/activating controllers after shutdown begins.
+        self._shutting_down: bool = False
 
         # Weather compensation mutable runtime state (persists across polls)
         self._wc_state = WeatherCompensationState()
@@ -391,6 +407,37 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if wc_data is not None:
             result["weather_compensation"] = wc_data
 
+        # Compute zone insights once per poll so all sensors read from one
+        # pre-built map, and advance insight history so duration tracking runs
+        # regardless of whether the home insights sensor entity is enabled.
+        # collect_zone_insights and its transitive callees read coordinator.data
+        # at ~8 sites (plus coordinator.get_entity_data / heating_cycle_coordinator
+        # not reachable via result dict), so we temporarily publish result as
+        # self.data instead of plumbing a coord_data arg through every function.
+        # Framework assigns self.data = result on return, so this just anticipates
+        # that by a few lines; finally restores on any exception.
+        previous_data = self.data
+        self.data = result
+        try:
+            from .sensor_insight_collector import collect_zone_insights
+
+            zone_insights = collect_zone_insights(
+                self.hass, self,
+                self._insight_anomaly_start_times,
+                self._insight_humidity_histories,
+            )
+            result["zone_insights"] = zone_insights
+
+            all_insights: list[Any] = []
+            for insights_list in zone_insights.values():
+                all_insights.extend(insights_list)
+            self.insight_history.update(all_insights, dt_util.utcnow())
+            # Persist insight runtime state (anomaly timers + humidity history)
+            # so dashboard duration counters survive HA restarts.
+            self._save_insight_runtime_state()
+        finally:
+            self.data = previous_data
+
         # State restore: Away → Home clears captured states, then detect timer expiration
         await self._handle_state_restore_updates(home_state_data, result)
 
@@ -401,7 +448,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             except Exception:
                 _LOGGER.info(
                     "Smart Valve: evaluation error for zone %s",
-                    controller._zone_id, exc_info=True,
+                    controller.zone_id, exc_info=True,
                 )
 
         # Offset Sync: evaluate all active offset sync controllers after poll
@@ -454,14 +501,13 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 _LOGGER.info("Tado CE: HomeKit disconnected — resuming full cloud polling")
             self._prev_homekit_connected = homekit_connected
 
-        # 2c. Compute skip_zone_states
-        # 3. Execute API sync
+        # 2c. Load polling-mode flags for this cycle
         do_full_sync = self._should_do_full_sync()
 
         # Check if this is a write-triggered refresh (zone data only)
         zone_only, force_zone_fetch = self.refresh_handler.consume_pending_flags()
 
-        # 2c. Compute skip_zone_states
+        # 2d. Compute skip_zone_states / skip_weather based on config + HomeKit state
         cm = self.config_manager
 
         # If user explicitly set a custom polling interval, respect it —
@@ -734,10 +780,15 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         regardless of the cloud polling interval.
         """
         # Initial fetch immediately (don't wait for first interval)
-        bridge_data = await self._async_fetch_bridge_data()
-        if bridge_data is not None:
-            self._cached_bridge_data = bridge_data
-            self._update_bridge_in_coordinator_data()
+        try:
+            bridge_data = await self._async_fetch_bridge_data()
+            if bridge_data is not None:
+                self._cached_bridge_data = bridge_data
+                self._update_bridge_in_coordinator_data()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            _LOGGER.debug("Bridge poll loop: initial fetch failed, will retry next cycle")
 
         while True:
             await asyncio.sleep(BRIDGE_POLL_INTERVAL_SECONDS)
@@ -762,10 +813,12 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.data["bridge"] = self._cached_bridge_data
         self.async_update_listeners()
 
-    def cancel_bridge_poll(self) -> None:
+    async def cancel_bridge_poll(self) -> None:
         """Cancel the independent bridge poll task."""
         if self._bridge_poll_task is not None:
             self._bridge_poll_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._bridge_poll_task
             self._bridge_poll_task = None
 
     async def _async_run_weather_compensation(
@@ -858,6 +911,16 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "prev_remaining": self._prev_savings_remaining,
         })
 
+    @property
+    def homekit_reads_saved(self) -> int:
+        """Return the number of HomeKit reads saved today."""
+        return self._homekit_reads_saved
+
+    @property
+    def homekit_writes_saved(self) -> int:
+        """Return the number of HomeKit writes saved today."""
+        return self._homekit_writes_saved
+
     def record_homekit_read_saved(self) -> None:
         """Record one HomeKit read saving and persist."""
         self._homekit_reads_saved += 1
@@ -901,6 +964,112 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return []
         return self._sr_manager.get_diagnostics_summary()
 
+    # ------------------------------------------------------------------
+    # Insight runtime state persistence (anomaly timers + humidity history)
+    # ------------------------------------------------------------------
+
+    def _serialize_insight_runtime_state(self) -> dict[str, Any]:
+        """Build JSON-safe dict for persistence."""
+        return {
+            "saved_at": dt_util.utcnow().isoformat(),
+            "version": 1,
+            "anomaly_start_times": {
+                zone_id: ts.isoformat() if ts is not None else None
+                for zone_id, ts in self._insight_anomaly_start_times.items()
+            },
+            # Humidity samples are plain floats — JSON round-trips cleanly.
+            "humidity_histories": {
+                zone_id: list(samples)
+                for zone_id, samples in self._insight_humidity_histories.items()
+            },
+        }
+
+    def _save_insight_runtime_state(self) -> None:
+        """Schedule debounced save of insight runtime dicts."""
+        from .const import INSIGHT_RUNTIME_STATE_KEY
+
+        try:
+            self.data_loader.save_auxiliary(
+                INSIGHT_RUNTIME_STATE_KEY,
+                self._serialize_insight_runtime_state(),
+            )
+        except (OSError, ValueError, TypeError) as e:
+            _LOGGER.warning("Failed to schedule insight runtime state save: %s", e)
+
+    async def async_load_insight_runtime_state(self) -> None:
+        """Restore insight runtime dicts from DataLoader auxiliary.
+
+        Called during coordinator setup before the first poll. On missing
+        file, corrupt data, or version mismatch, starts with empty dicts.
+        """
+        from .const import INSIGHT_RUNTIME_STATE_KEY
+        from .helpers import parse_iso_datetime
+
+        try:
+            data = await self.data_loader.async_load_auxiliary(INSIGHT_RUNTIME_STATE_KEY)
+        except (OSError, ValueError) as e:
+            _LOGGER.debug("No insight runtime state to restore: %s", e)
+            return
+
+        if not isinstance(data, dict):
+            _LOGGER.debug("Insight runtime state is not a dict, starting fresh")
+            return
+
+        if data.get("version") != 1:
+            _LOGGER.info(
+                "Insight runtime state version %s mismatch (expected 1), starting fresh",
+                data.get("version"),
+            )
+            return
+
+        # Restore anomaly start times
+        raw_anomalies = data.get("anomaly_start_times") or {}
+        if isinstance(raw_anomalies, dict):
+            for zone_id, iso_str in raw_anomalies.items():
+                if not isinstance(iso_str, str):
+                    continue
+                try:
+                    parsed = parse_iso_datetime(iso_str)
+                    if parsed is not None:
+                        self._insight_anomaly_start_times[str(zone_id)] = parsed
+                except (ValueError, TypeError):
+                    continue
+
+        # Restore humidity histories
+        raw_histories = data.get("humidity_histories") or {}
+        if isinstance(raw_histories, dict):
+            for zone_id, samples in raw_histories.items():
+                if isinstance(samples, list):
+                    # Filter to numeric samples only (defensive)
+                    self._insight_humidity_histories[str(zone_id)] = [
+                        float(s) for s in samples
+                        if isinstance(s, (int, float))
+                    ]
+
+        _LOGGER.info(
+            "Insight runtime state restored: %s anomalies, %s histories",
+            len(self._insight_anomaly_start_times),
+            len(self._insight_humidity_histories),
+        )
+
+    async def async_shutdown_insight_state(self) -> None:
+        """Persist insight runtime state on shutdown — forces immediate flush.
+
+        During HA integration unload the debouncer may not fire before the
+        Store is torn down. Use async_update_store to write synchronously.
+        """
+        from .const import INSIGHT_RUNTIME_STATE_KEY
+
+        try:
+            await self.data_loader.async_update_store(
+                INSIGHT_RUNTIME_STATE_KEY,
+                self._serialize_insight_runtime_state(),
+            )
+        except (OSError, ValueError, TypeError) as e:
+            _LOGGER.warning(
+                "Failed to flush insight runtime state on shutdown: %s", e,
+            )
+
     async def async_shutdown_state_restore(self) -> None:
         """Persist and shut down state restore manager (null-safe)."""
         if self._sr_manager is not None:
@@ -917,7 +1086,10 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         zones_info = self.data_loader.get_cached("zones_info")
         if not zones_info or not isinstance(zones_info, list):
-            _LOGGER.warning("Smart Valve: zones_info not available — skipping controller initialization")
+            _LOGGER.warning(
+                "Smart Valve: Tado API data not loaded yet — Smart Valve Control "
+                "will initialize on next successful poll",
+            )
             return
 
         _LOGGER.info("Smart Valve: checking %s zones for eligible controllers", len(zones_info))
@@ -938,7 +1110,12 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 continue
 
             if not ext_sensor:
-                _LOGGER.info("Smart Valve: zone %s has svc_mode=%s but no external sensor — skipped", zone_id, svc_mode)
+                _LOGGER.info(
+                    "Smart Valve: zone %s is configured for %s mode but has no "
+                    "external sensor selected — skipping. Pick an external temperature "
+                    "sensor in Zone Configuration to enable Smart Valve Control.",
+                    zone_id, svc_mode,
+                )
                 continue
 
             if svc_mode == "valve_target":
@@ -960,7 +1137,14 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.zone_config_manager.add_listener(self._on_zone_config_change)
 
     async def async_shutdown_valve_controllers(self) -> None:
-        """Deactivate and clean up all valve and offset sync controllers."""
+        """Deactivate and clean up all valve and offset sync controllers.
+
+        Sets `_shutting_down` so any queued/in-flight `_transition` tasks
+        bail out before touching controller dicts — preventing zombie
+        controllers that would outlive the shutdown sequence.
+        """
+        self._shutting_down = True
+
         for zone_id, controller in list(self.valve_controllers.items()):
             try:
                 await controller.async_deactivate()
@@ -982,17 +1166,33 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.offset_sync_controllers.clear()
 
     def _on_zone_config_change(self, zone_id: str, key: str, value: Any) -> None:
-        """Handle zone config changes — activate/deactivate controllers dynamically."""
-        if key != "svc_mode":
+        """Handle zone config changes — activate/deactivate controllers dynamically.
+
+        Reacts to `svc_mode` and `external_temp_sensor` key changes. All dict
+        mutation is deferred to `_transition()` so that concurrent callbacks
+        serialize via a per-zone lock (otherwise two rapid callbacks would
+        race on dict pop/install outside any lock).
+
+        See .kiro/specs/svc-lifecycle-hardening/ for the full design.
+        """
+        if key not in ("svc_mode", "external_temp_sensor"):
             return
 
         from .const import SVC_MODE_OFFSET_SYNC, SVC_MODE_VALVE_TARGET
 
-        # Check prerequisites
+        # Capture current intent synchronously. Values are captured here so
+        # that each scheduled `_transition` task carries the config state as
+        # of its triggering callback — not as of when the task eventually
+        # runs (which could be after further config changes).
         config = self.zone_config_manager.get_zone_config(zone_id)
-        ext_sensor = config.get("external_temp_sensor", "")
+        current_mode: str = (
+            str(value) if key == "svc_mode" else config.get("svc_mode", "off")
+        )
+        ext_sensor: str = (
+            str(value) if key == "external_temp_sensor" else config.get("external_temp_sensor", "")
+        )
 
-        # Check zone type
+        # Zone-type guard
         zones_info = self.data_loader.get_cached("zones_info")
         if zones_info and isinstance(zones_info, list):
             zone_type = next(
@@ -1001,56 +1201,156 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
             if zone_type != "HEATING":
                 _LOGGER.warning(
-                    "Smart Valve: zone %s is %s, not HEATING — skipping",
+                    "Smart Valve: zone %s is a %s zone — Smart Valve Control only "
+                    "works with heating zones (with TRVs), skipping",
                     zone_id, zone_type,
                 )
                 return
 
-        # Deactivate existing controllers for this zone (if any)
-        if zone_id in self.valve_controllers:
-            controller = self.valve_controllers.pop(zone_id)
-            self.hass.async_create_task(controller.async_deactivate())
-            _LOGGER.info("Smart Valve: deactivated valve_target controller for zone %s", zone_id)
-
-        if zone_id in self.offset_sync_controllers:
-            # Warn about double compensation risk when switching offset_sync → valve_target
-            if value == SVC_MODE_VALVE_TARGET:
-                _LOGGER.warning(
-                    "Smart Valve: zone %s switching from offset_sync to valve_target — "
-                    "existing non-zero device offset may cause double compensation. "
-                    "Consider resetting offset to 0 via set_temperature_offset service",
-                    zone_id,
-                )
-            controller_os = self.offset_sync_controllers.pop(zone_id)
-            self.hass.async_create_task(controller_os.async_deactivate())
-            _LOGGER.info("Offset Sync: deactivated controller for zone %s", zone_id)
-
-        # Activate new controller based on svc_mode
-        if value == SVC_MODE_VALVE_TARGET:
-            if not ext_sensor:
-                _LOGGER.info(
-                    "Smart Valve: zone %s svc_mode=valve_target but no external sensor — skipped",
-                    zone_id,
-                )
+        async def _transition() -> None:
+            # Two-phase shutdown check: once before queueing for the lock,
+            # once after acquiring it. A shutdown that begins while this
+            # task was queued must not allow controller activation to
+            # proceed after the shutdown sequence runs.
+            if self._shutting_down:
                 return
-            from .valve_controller import SmartValveController
+            lock = self._zone_transition_locks.setdefault(zone_id, asyncio.Lock())
+            async with lock:
+                if self._shutting_down:
+                    return
 
-            new_controller = SmartValveController(self.hass, self, zone_id)
-            self.valve_controllers[zone_id] = new_controller
-            self.hass.async_create_task(new_controller.async_activate())
-            _LOGGER.info("Smart Valve: activated valve_target controller for zone %s", zone_id)
+                # All dict mutation happens inside the lock so a second
+                # concurrent transition cannot race on pop/install.
+                old_valve = self.valve_controllers.pop(zone_id, None)
+                old_offset = self.offset_sync_controllers.pop(zone_id, None)
 
-        elif value == SVC_MODE_OFFSET_SYNC:
-            if not ext_sensor:
-                _LOGGER.info(
-                    "Offset Sync: zone %s svc_mode=offset_sync but no external sensor — skipped",
-                    zone_id,
-                )
-                return
-            from .offset_sync_controller import OffsetSyncController
+                if old_valve:
+                    _LOGGER.info(
+                        "Smart Valve: deactivating valve_target controller for zone %s",
+                        zone_id,
+                    )
+                    try:
+                        await old_valve.async_deactivate()
+                    except Exception:
+                        _LOGGER.warning(
+                            "Smart Valve: error deactivating controller for zone %s",
+                            zone_id, exc_info=True,
+                        )
 
-            new_controller_os = OffsetSyncController(self.hass, self, zone_id)
-            self.offset_sync_controllers[zone_id] = new_controller_os
-            self.hass.async_create_task(new_controller_os.async_activate())
-            _LOGGER.info("Offset Sync: activated controller for zone %s", zone_id)
+                if old_offset:
+                    if current_mode == SVC_MODE_VALVE_TARGET:
+                        _LOGGER.warning(
+                            "Smart Valve: zone %s switching from offset_sync to "
+                            "valve_target — existing non-zero device offset may cause "
+                            "double compensation. Consider resetting offset to 0 via "
+                            "set_temperature_offset service",
+                            zone_id,
+                        )
+                    _LOGGER.info("Offset Sync: deactivating controller for zone %s", zone_id)
+                    try:
+                        await old_offset.async_deactivate()
+                    except Exception:
+                        _LOGGER.warning(
+                            "Offset Sync: error deactivating controller for zone %s",
+                            zone_id, exc_info=True,
+                        )
+
+                # Determine and install new controller (still inside lock)
+                new_controller: Any = None
+                if current_mode == SVC_MODE_VALVE_TARGET:
+                    if not ext_sensor:
+                        _LOGGER.info(
+                            "Smart Valve: zone %s svc_mode=valve_target but no "
+                            "external sensor — skipped",
+                            zone_id,
+                        )
+                        self._raise_sensor_missing_repair(zone_id, current_mode)
+                    else:
+                        from .valve_controller import SmartValveController
+
+                        self._clear_sensor_missing_repair(zone_id)
+                        new_controller = SmartValveController(self.hass, self, zone_id)
+                        self.valve_controllers[zone_id] = new_controller
+
+                elif current_mode == SVC_MODE_OFFSET_SYNC:
+                    if not ext_sensor:
+                        _LOGGER.info(
+                            "Offset Sync: zone %s svc_mode=offset_sync but no "
+                            "external sensor — skipped",
+                            zone_id,
+                        )
+                        self._raise_sensor_missing_repair(zone_id, current_mode)
+                    else:
+                        from .offset_sync_controller import OffsetSyncController
+
+                        self._clear_sensor_missing_repair(zone_id)
+                        new_controller = OffsetSyncController(self.hass, self, zone_id)
+                        self.offset_sync_controllers[zone_id] = new_controller
+
+                else:
+                    # svc_mode is "off" or unknown — no new controller,
+                    # also clear any stale repair issue for this zone.
+                    self._clear_sensor_missing_repair(zone_id)
+
+                if new_controller:
+                    await new_controller.async_activate()
+                    _LOGGER.info(
+                        "Smart Valve: activated %s controller for zone %s",
+                        current_mode, zone_id,
+                    )
+
+        self.hass.async_create_task(_transition())
+
+    def _raise_sensor_missing_repair(self, zone_id: str, mode: str) -> None:
+        """Raise a persistent repair notification when SVC is auto-disabled.
+
+        Called when an SVC/Offset Sync controller cannot activate because the
+        external sensor for the zone is empty. Uses HA's issue registry API
+        which is idempotent — calling with the same issue_id updates rather
+        than duplicating.
+        """
+        try:
+            from homeassistant.helpers import issue_registry as ir
+
+            zones_info_raw = self.data_loader.get_cached("zones_info")
+            zones_info = zones_info_raw if isinstance(zones_info_raw, list) else []
+            zone_name = next(
+                (z.get("name", f"Zone {zone_id}") for z in zones_info
+                 if str(z.get("id")) == zone_id),
+                f"Zone {zone_id}",
+            )
+
+            ir.async_create_issue(
+                self.hass,
+                DOMAIN,
+                f"svc_sensor_missing_{zone_id}",
+                is_fixable=False,
+                severity=ir.IssueSeverity.WARNING,
+                translation_key="svc_sensor_missing",
+                translation_placeholders={
+                    "zone_name": zone_name,
+                    "mode": mode,
+                },
+            )
+        except Exception:
+            _LOGGER.debug(
+                "Could not raise sensor-missing repair for zone %s",
+                zone_id, exc_info=True,
+            )
+
+    def _clear_sensor_missing_repair(self, zone_id: str) -> None:
+        """Clear a previously-raised sensor-missing repair notification."""
+        try:
+            from homeassistant.helpers import issue_registry as ir
+
+            ir.async_delete_issue(
+                self.hass,
+                DOMAIN,
+                f"svc_sensor_missing_{zone_id}",
+            )
+        except Exception:
+            _LOGGER.debug(
+                "Could not clear sensor-missing repair for zone %s",
+                zone_id, exc_info=True,
+            )
 

@@ -2,9 +2,6 @@
 
 How Tado CE interacts with the Tado API, including call types, data flow, and optimization tips.
 
-> **Entity ID note:** All examples use **v2.3.1 entity_ids** (preserved for migrated users).
-> Fresh v3.0.0 installs get different entity_ids — see [ENTITIES.md](ENTITIES.md) for the mapping.
-
 ---
 
 ## API Call Types
@@ -77,7 +74,7 @@ Bridge API calls are separate from the cloud API — they use a different endpoi
 | Wiring state | Bridge installation status, boiler output temp | Every sync (if bridge configured) |
 | Max output temp | Read/write boiler max flow temperature | Every sync + on user action |
 
-Bridge calls require the serial number and auth key from your Internet Bridge (configured in Flow Temperature Control settings).
+Bridge calls require the serial number and auth key from your Internet Bridge (configured under **Settings → Tado CE → Configure → General Settings → Hardware Connections → Internet Bridge**).
 
 ---
 
@@ -191,42 +188,22 @@ Enable all features without concern. Even with 5-minute polling, ~576 calls/day 
 
 ## Data Storage
 
-Tado CE stores data in `/config/.storage/tado_ce/`. All per-home files include `{home_id}` suffix for multi-home isolation.
+Since v4.0.0-beta.5, Tado CE stores all runtime data through Home Assistant's built-in Store system (under `/config/.storage/`). You don't need to interact with these files directly — HA manages serialisation, atomic writes, and shutdown flush.
 
-### Per-Home Data Files
+### Store Categories
 
-| File | Contents |
-|------|----------|
-| `config_{home_id}.json` | OAuth tokens, home configuration |
-| `ratelimit_{home_id}.json` | Current rate limit status, reset time |
-| `zones_{home_id}.json` | Latest zone states snapshot |
-| `zones_info_{home_id}.json` | Zone configuration (names, types, devices) |
-| `weather_{home_id}.json` | Latest weather data |
-| `home_state_{home_id}.json` | Home presence state |
-| `mobile_devices_{home_id}.json` | Mobile device locations |
-| `offsets_{home_id}.json` | Temperature offset data per zone |
-| `ac_capabilities_{home_id}.json` | Cached AC zone capabilities |
-| `schedules_{home_id}.json` | Cached heating schedules |
-| `api_call_history_{home_id}.json` | Historical API calls for tracking |
-| `heating_cycle_history_{home_id}.json` | Heating cycle detection history |
-| `zone_config_{home_id}.json` | Per-zone configuration settings |
-| `insight_history_{home_id}.json` | Insight appearance/disappearance tracking |
-| `state_restore_{home_id}.json` | Captured zone states for restore_previous_state service |
+Two categories of Store, both keyed per home (multi-home isolation):
 
-### Legacy Files (pre-v3.0.0)
+| Category | Save Mode | Examples |
+|----------|-----------|----------|
+| API data | Immediate (write-through on every API response) | `zones`, `config`, `home_state`, `ratelimit`, `zones_info`, `weather`, `mobile_devices`, `offsets`, `schedules`, `ac_capabilities` |
+| Auxiliary | Debounced (coalesced saves, typically 5–30s) | `zone_config`, `wc_state`, `bridge_health`, `outdoor_temp_history`, `window_detection`, `smart_comfort_cache`, `overlay_mode`, `timer_duration`, `homekit_savings`, `insight_runtime_state` |
 
-| File | Status |
-|------|--------|
-| `config.json` | Migrated to `config_{home_id}.json` |
-| `zones.json` | Migrated to `zones_{home_id}.json` |
-| `zones_info.json` | Migrated to `zones_info_{home_id}.json` |
-| `ratelimit.json` | Migrated to `ratelimit_{home_id}.json` |
-| `smart_comfort_cache_{home_id}.json` | Smart comfort temperature history per zone |
-| `heating_cycle_history_{home_id}.json` | Still active — used by heating cycle coordinator |
+### Upgrade Behaviour
 
-Legacy files without `{home_id}` suffix are auto-migrated on first v3.0.0 startup.
-
-These files persist across restarts and upgrades.
+- **From v3.5.3 or any v4.0.0-beta**: existing JSON files under `/config/.storage/tado_ce/` are migrated to HA Store on first start of v4.0.0-beta.5+. Old files are renamed (not deleted) so you can roll back.
+- **From pre-v3.0.0**: first upgrade to v3.0.0 migrates flat-named files (e.g. `config.json`) to per-home files (e.g. `config_{home_id}.json`). Then the v4.0.0-beta.5 migration picks those up into Store.
+- **Restore-related state** (e.g. `state_restore`, HomeKit pairing data, heating cycle history) is also stored through HA Store, so it survives restarts and upgrades automatically.
 
 ---
 
@@ -247,18 +224,18 @@ These files persist across restarts and upgrades.
 ### Call History Not Recording
 
 1. Ensure API History Retention > 0
-2. Check logs for file I/O errors
-3. Verify `/config/.storage/tado_ce/` directory exists
+2. Check logs for Store save errors
+3. Try reloading the integration to re-initialise the Store
 
 ---
 
 ## Related Documentation
 
-- [ENTITIES.md](ENTITIES.md) — Complete entity reference (86 entities)
+- [ENTITIES.md](ENTITIES.md) — Complete entity reference
 - [FEATURES_GUIDE.md](FEATURES_GUIDE.md) — Features, configuration, and usage scenarios
 - [README.md](README.md) — Installation and setup
 - [ROADMAP.md](ROADMAP.md) — Planned features and ideas
 
 ---
 
-**Last Updated:** v3.5.3 (2026-04-08)
+**Last Updated:** v4.0.0-beta.15 (2026-05-10)

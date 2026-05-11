@@ -45,10 +45,6 @@ _DEVIATION_ICON_HOT = 2  # °C — deviation above this shows "hot" icon
 
 
 class TadoScheduleDeviationSensor(TadoZoneSensor):
-    """Represent a Tado schedule deviation sensor."""
-
-    _attr_has_entity_name = True
-
     """Historical temperature comparison sensor.
 
     Compares current temperature to the 7-day average at the same time of day.
@@ -56,6 +52,8 @@ class TadoScheduleDeviationSensor(TadoZoneSensor):
 
     State: Difference from historical average (e.g., "+1.2" or "-0.8")
     """
+
+    _attr_has_entity_name = True
 
     def __init__(
         self, coordinator: TadoDataUpdateCoordinator, zone_id: str, zone_name: str, zone_type: str = "HEATING",
@@ -163,16 +161,14 @@ class TadoScheduleDeviationSensor(TadoZoneSensor):
 
 
 class TadoNextScheduleTimeSensor(TadoZoneSensor):
-    """Represent a Tado next schedule change time sensor."""
-
-    _attr_has_entity_name = True
-
     """Next schedule time sensor.
 
     Shows when the next scheduled temperature change will occur.
 
     State: Next schedule time (e.g., "17:00" or "Tomorrow 07:00")
     """
+
+    _attr_has_entity_name = True
 
     def __init__(
         self, coordinator: TadoDataUpdateCoordinator, zone_id: str, zone_name: str, zone_type: str = "HEATING",
@@ -250,16 +246,14 @@ class TadoNextScheduleTimeSensor(TadoZoneSensor):
 
 
 class TadoNextScheduleTempSensor(TadoZoneSensor):
-    """Represent a Tado next schedule target temperature sensor."""
-
-    _attr_has_entity_name = True
-
     """Next schedule target temperature sensor.
 
     Shows the target temperature of the next scheduled block.
 
     State: Target temperature (°C) or "OFF"
     """
+
+    _attr_has_entity_name = True
 
     def __init__(
         self, coordinator: TadoDataUpdateCoordinator, zone_id: str, zone_name: str, zone_type: str = "HEATING",
@@ -361,10 +355,6 @@ class TadoNextScheduleTempSensor(TadoZoneSensor):
 
 
 class TadoPreheatAdvisorSensor(TadoZoneSensor):
-    """Represent a Tado preheat advisor sensor."""
-
-    _attr_has_entity_name = True
-
     """Preheat timing advisor sensor.
 
     Suggests optimal preheat start time based on historical heating rates.
@@ -372,6 +362,8 @@ class TadoPreheatAdvisorSensor(TadoZoneSensor):
 
     State: Recommended start time (e.g., "06:15")
     """
+
+    _attr_has_entity_name = True
 
     def __init__(
         self, coordinator: TadoDataUpdateCoordinator, zone_id: str, zone_name: str, zone_type: str = "HEATING",
@@ -698,22 +690,23 @@ class TadoPreheatAdvisorSensor(TadoZoneSensor):
             self._attr_available = False
         finally:
             # (used by TadoPreheatNowSensor and insight collector)
-            self.coordinator.publish_entity_data(
-                self._zone_id,
-                ENTITY_DATA_PREHEAT_ADVISOR,
-                {
-                    "state": str(self._attr_native_value) if self._attr_native_value else None,
-                    "target_time": self._target_time,
-                    "target_temperature": self._target_temp,
-                    "current_temperature": self._current_temp,
-                    "duration_minutes": self._duration_minutes,
-                    "confidence": self._confidence,
-                    "is_tomorrow": self._is_tomorrow,
-                    "cooling_rate": self._cooling_rate,
-                    "predicted_crossover_time": self._predicted_crossover_time,
-                    "is_cooling_prediction": self._is_cooling_prediction,
-                },
-            )
+            if self._attr_available:
+                self.coordinator.publish_entity_data(
+                    self._zone_id,
+                    ENTITY_DATA_PREHEAT_ADVISOR,
+                    {
+                        "state": str(self._attr_native_value) if self._attr_native_value else None,
+                        "target_time": self._target_time,
+                        "target_temperature": self._target_temp,
+                        "current_temperature": self._current_temp,
+                        "duration_minutes": self._duration_minutes,
+                        "confidence": self._confidence,
+                        "is_tomorrow": self._is_tomorrow,
+                        "cooling_rate": self._cooling_rate,
+                        "predicted_crossover_time": self._predicted_crossover_time,
+                        "is_cooling_prediction": self._is_cooling_prediction,
+                    },
+                )
 
 
     def _apply_cooling_preheat(self, crossover_dt: datetime, now: datetime) -> None:
@@ -846,10 +839,6 @@ class TadoPreheatAdvisorSensor(TadoZoneSensor):
         }
 
 class TadoSmartComfortTargetSensor(TadoZoneSensor):
-    """Represent a Tado smart comfort target temperature sensor."""
-
-    _attr_has_entity_name = True
-
     """Smart Comfort Target Temperature sensor.
 
     Calculates the ideal target temperature using ASHRAE 55 Adaptive Comfort Model.
@@ -864,6 +853,8 @@ class TadoSmartComfortTargetSensor(TadoZoneSensor):
 
     State: Recommended target temperature (°C)
     """
+
+    _attr_has_entity_name = True
 
     def __init__(
         self, coordinator: TadoDataUpdateCoordinator, zone_id: str, zone_name: str, zone_type: str = "HEATING",

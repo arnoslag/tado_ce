@@ -8,11 +8,16 @@ For completed features, see [CHANGELOG.md](CHANGELOG.md).
 
 ## Up Next
 
-**HomeKit Local Control — GA Release**
+**v4.0.0 GA Release**
 
-v4.0.0-beta.14 is the latest beta — fourteen releases since beta.1 introduced HomeKit local control. The beta cycle has addressed humidity source accuracy, cleaned up verbose logging, removed Test Mode, fixed multiple settings and data persistence issues, improved HomeKit write verification, added Smart Valve Control for TRV offset compensation using external sensors, added Offset Sync as a second SVC mode, hardened SVC for edge cases (all-OFF schedules, crash recovery, device offset warnings, schedule-aware active state), fixed a critical SVC feedback loop that caused temperature escalation, resolved overlay mode, startup freshness, and repairs platform issues, added real-time HomeKit target temperature and mode updates, added a `tado_ce_ready` event for boot automations, fixed config flow rate limiting, fixed presence sync, fixed SVC cloud writes, improved Weather Compensation resilience to brief outdoor sensor outages. Currently in final testing. Next steps:
-- Monitor beta.14 feedback
-- Target: GA release in May 2026 if no blockers found
+v4.0.0-beta.15 is in final testing. Headline features shipped during
+the beta cycle: HomeKit local control, Smart Valve Control (Offset
+Sync + Valve Target modes), Weather Compensation, multi-home support,
+actionable insights, and a redesigned Options Flow. See
+[CHANGELOG.md](CHANGELOG.md) for the full release history.
+
+- Monitor beta.15 feedback from the community
+- **Target: GA release May 2026** if no blockers surface
 
 ## Future Consideration
 

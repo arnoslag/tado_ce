@@ -1,4 +1,4 @@
-# Tado CE — Entity Reference (v4.0.0-beta.14)
+# Tado CE — Entity Reference (v4.0.0-beta.15)
 
 This document lists all 88 entity types in Tado CE, organised by function.
 
@@ -378,6 +378,20 @@ This document lists all 88 entity types in Tado CE, organised by function.
 | 71 | `climate.lounge` | `climate.lounge` |
 | 72 | `climate.lounge` | `climate.lounge` |
 | 73 | `water_heater.lounge` | `water_heater.lounge` |
+
+### Smart Valve Control Attributes (heating zones only)
+
+Smart Valve Control (v4.0.0-beta.9+) and Offset Sync (v4.0.0-beta.14+) don't create dedicated entities — they expose state via attributes on each heating zone's climate entity. Dashboards (e.g. Pulse Card) can read these attributes directly.
+
+| Attribute | Present when | Value |
+|-----------|--------------|-------|
+| `valve_control_enabled` | SVC configured (Valve Target or Offset Sync) | `true` |
+| `valve_control_active` | SVC configured | `true` when controller is actively compensating; `false` when paused after a manual write or deactivated |
+| `valve_control_mode` | Offset Sync configured | `"offset_sync"` |
+| `valve_target` | Valve Target mode + currently writing | Current TRV target temperature (°C, rounded to 0.1) |
+| `desired_target` | Valve Target mode + ACTIVE state | User's intended target temperature captured at IDLE→ACTIVE transition (°C) |
+
+Configure SVC per zone under **Settings → Tado CE → Configure → Zone Configuration → External Sensors → Smart Valve Control Mode**.
 
 ---
 

@@ -24,6 +24,7 @@ TO_REDACT_CONFIG = {
     "password",
     "email",
     "bridge_serial",
+    "bridge_auth_key",
 }
 
 # Keys to redact from coordinator / API response data (defense-in-depth).
@@ -71,10 +72,10 @@ async def async_get_config_entry_diagnostics(
     coord_data = coordinator.data or {}
     redacted_coord: dict[str, Any] = {}
 
-    # Safe keys — no PII, include as-is
+    # Safe keys — defense-in-depth redaction for future API schema changes
     for key in ("ratelimit", "weather", "offsets"):
         if key in coord_data:
-            redacted_coord[key] = coord_data[key]
+            redacted_coord[key] = async_redact_data(coord_data[key], TO_REDACT_DATA)
 
     # Zone count summary (don't dump full zone state)
     zones_info = coord_data.get("zones_info") or []
@@ -106,7 +107,7 @@ async def async_get_config_entry_diagnostics(
             homekit_diag["status"] = "connected"
         else:
             homekit_diag["status"] = "disconnected"
-        mapped = len(getattr(client, "_zone_to_aids", {}))
+        mapped = len(client.zone_aid_map) if hasattr(client, "zone_aid_map") else 0
         homekit_diag["mapped_zones"] = mapped
         from .const import HOMEKIT_CACHE_REFRESH_SECONDS, get_climate_zone_ids
 

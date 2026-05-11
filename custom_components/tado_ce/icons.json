@@ -67,18 +67,6 @@
       }
     },
     "number": {
-      "min_temp": {
-        "default": "mdi:thermometer-low"
-      },
-      "max_temp": {
-        "default": "mdi:thermometer-high"
-      },
-      "surface_offset": {
-        "default": "mdi:thermometer-minus"
-      },
-      "ufh_buffer": {
-        "default": "mdi:radiator"
-      },
       "boiler_max_output_temp": {
         "default": "mdi:thermometer-water"
       }
@@ -96,24 +84,6 @@
         "default": "mdi:timer-cog-outline"
       },
       "timer_duration": {
-        "default": "mdi:timer"
-      },
-      "heat_emitter": {
-        "default": "mdi:radiator"
-      },
-      "adaptive_preheat": {
-        "default": "mdi:clock-fast"
-      },
-      "smart_comfort": {
-        "default": "mdi:emoticon-happy"
-      },
-      "window_type": {
-        "default": "mdi:window-closed-variant"
-      },
-      "zone_overlay_mode": {
-        "default": "mdi:timer-cog-outline"
-      },
-      "zone_timer_duration": {
         "default": "mdi:timer"
       }
     },

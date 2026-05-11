@@ -31,6 +31,7 @@ _OPTIMISTIC_FIELDS = (
     # Climate entities (heating.py, ac.py)
     "_expected_hvac_mode",
     "_expected_hvac_action",
+    "_expected_target_temperature",
     # Water heater entities
     "_expected_operation",
     "_expected_temperature",

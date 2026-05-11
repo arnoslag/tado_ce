@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from .coordinator import TadoDataUpdateCoordinator
     from .zone_config_manager import ZoneConfigManager
 
-from .const import DOMAIN
+from .const import DOMAIN, is_valid_device_offset
 from .optimistic_helpers import clear_optimistic_state, set_optimistic_fields
 
 _LOGGER = logging.getLogger(__name__)
@@ -32,8 +32,6 @@ def update_offset(
 
     Returns the offset value if offset_enabled is True in config and data
     is available, otherwise None.
-
-    Replaces inline _update_offset() in heating.py.
 
     Args:
         coordinator: The data update coordinator (provides config_manager, data_loader)
@@ -51,15 +49,12 @@ def update_offset(
         offsets = (coordinator.data or {}).get("offsets")
         if offsets:
             value = offsets.get(zone_id)
-            if value is not None:
-                from .const import DEVICE_OFFSET_MAX, DEVICE_OFFSET_MIN
-
-                if not (DEVICE_OFFSET_MIN <= value <= DEVICE_OFFSET_MAX):
-                    _LOGGER.warning(
-                        "Offset for zone %s rejected on read: %s°C outside valid range",
-                        zone_id, value,
-                    )
-                    return None
+            if value is not None and not is_valid_device_offset(value):
+                _LOGGER.warning(
+                    "Offset for zone %s rejected on read: %s°C outside valid range",
+                    zone_id, value,
+                )
+                return None
             return value  # type: ignore[no-any-return]
         return None
     except Exception:
@@ -71,8 +66,6 @@ def update_preset_mode(coordinator: TadoDataUpdateCoordinator) -> str | None:
     """Read preset mode (HOME/AWAY) from home_state.json.
 
     Returns "home" or "away" (HA preset constants), or None if unavailable.
-
-    Replaces inline _update_preset_mode() in heating.py.
 
     Args:
         coordinator: The data update coordinator (provides data_loader)
@@ -238,6 +231,9 @@ async def api_call_with_rollback(
 
     if api_success:
         _LOGGER.info("%s: %s", entity._zone_name, reason)
+        # Write protection: prevent HomeKit bridge from overwriting with stale values
+        if entity.coordinator.state_reconciler:
+            entity.coordinator.state_reconciler.record_local_write(entity._zone_id)
         await async_trigger_immediate_refresh(entity.hass, entity.entity_id, "hvac_mode_change")
     else:
         _LOGGER.warning("%s: %s failed, reverted", entity._zone_name, reason)

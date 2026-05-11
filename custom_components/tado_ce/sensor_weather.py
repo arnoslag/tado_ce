@@ -24,11 +24,9 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class TadoOutsideTemperatureSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], SensorEntity):
-    """Represent a Tado outside temperature sensor."""
+    """Outside temperature from Tado weather data."""
 
     _attr_has_entity_name = True
-
-    """Outside temperature from Tado weather data."""
 
     def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
         """Initialize the Outside Temperature Sensor."""
@@ -73,11 +71,9 @@ class TadoOutsideTemperatureSensor(CoordinatorEntity["TadoDataUpdateCoordinator"
 
 
 class TadoSolarIntensitySensor(CoordinatorEntity["TadoDataUpdateCoordinator"], SensorEntity):
-    """Represent a Tado solar intensity sensor."""
+    """Solar intensity from Tado weather data."""
 
     _attr_has_entity_name = True
-
-    """Solar intensity from Tado weather data."""
 
     def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
         """Initialize the Solar Intensity Sensor."""
@@ -121,11 +117,9 @@ class TadoSolarIntensitySensor(CoordinatorEntity["TadoDataUpdateCoordinator"], S
 
 
 class TadoWeatherStateSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], SensorEntity):
-    """Represent a Tado weather state sensor."""
+    """Weather state from Tado weather data."""
 
     _attr_has_entity_name = True
-
-    """Weather state from Tado weather data."""
 
     def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
         """Initialize the Weather State Sensor."""

@@ -6,7 +6,7 @@
 ![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2025.11%2B-blue?style=for-the-badge&logo=home-assistant) ![Python](https://img.shields.io/badge/Python-3.13%2B-blue?style=for-the-badge&logo=python&logoColor=white) ![Tado](https://img.shields.io/badge/Tado-V2%2FV3%2FV3%2B-orange?style=for-the-badge) ![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg?style=for-the-badge)
 
 <!-- Status Badges -->
-![Version](https://img.shields.io/badge/Version-4.0.0--beta.14-purple?style=for-the-badge) ![License](https://img.shields.io/badge/License-AGPL--3.0-blue?style=for-the-badge) ![Maintained](https://img.shields.io/badge/Maintained-Yes-green.svg?style=for-the-badge) ![Coverage](https://img.shields.io/badge/Coverage-98%25-brightgreen?style=for-the-badge)
+![Version](https://img.shields.io/badge/Version-4.0.0--beta.15-purple?style=for-the-badge) ![License](https://img.shields.io/badge/License-AGPL--3.0-blue?style=for-the-badge) ![Maintained](https://img.shields.io/badge/Maintained-Yes-green.svg?style=for-the-badge) ![Coverage](https://img.shields.io/badge/Coverage-98%25-brightgreen?style=for-the-badge)
 
 <!-- Community Badges -->
 ![GitHub stars](https://img.shields.io/github/stars/hiall-fyi/tado_ce?style=for-the-badge&logo=github) ![GitHub forks](https://img.shields.io/github/forks/hiall-fyi/tado_ce?style=for-the-badge&logo=github) ![GitHub issues](https://img.shields.io/github/issues/hiall-fyi/tado_ce?style=for-the-badge&logo=github) ![GitHub Release Date](https://img.shields.io/github/release-date/hiall-fyi/tado_ce?style=for-the-badge&logo=github)
@@ -102,8 +102,8 @@ Tado CE provides comprehensive smart climate control with features developed by 
 - **Thermal Analytics** — Heating rate analysis, preheat estimates, thermal inertia, confidence scoring
 - **Weather Compensation** — Automatic boiler flow temperature adjustment based on outdoor temperature with preset heating curves
 - **Enhanced Controls** — Smart boost, hot water timer (min 1 min), immediate refresh, temperature offset, restore previous state
-- **Smart Valve Control** — Per-zone proportional TRV offset using external sensors. Automatically adjusts the TRV target so the room reaches your desired temperature, writing via HomeKit (zero API cost) with cloud fallback. Backs off on manual changes, resumes on next schedule block.
-- **Per-Zone Configuration** — Individual overlay modes, temperature limits, UFH settings, Smart Valve Control per zone
+- **Smart Valve Control** — Per-zone TRV compensation using an external temperature sensor. Two modes: **Offset Sync** (recommended) writes a device temperature offset so Tado's own algorithm sees your external reading; **Valve Target** (advanced) overrides the TRV setpoint directly. Both back off on manual changes and resume on the next schedule block; writes go through HomeKit when available (zero API cost) with cloud fallback.
+- **Per-Zone Configuration** — Individual manual override modes, temperature limits, UFH settings, Smart Valve Control per zone
 - **Zone Features Toggles** — Control which entity types are created for a minimal or full setup
 - **Multi-Language** — Config flow and options UI in 7 languages (English, German, Spanish, French, Italian, Dutch, Portuguese)
 - **Optional Features** — Schedule calendar, boiler flow temperature, device tracking, home state sync
@@ -120,9 +120,9 @@ Access via **Settings > Devices & Services > Tado CE > gear icon**.
 
 Settings are organised into four sections:
 
-- **General Settings** — Feature toggles (Weather, Mobile Tracking, Smart Comfort, Schedule Calendar, Zone Features, Bridge, Weather Compensation, Local Control)
+- **General Settings** — Feature toggles grouped by origin: **Tado Features** (Home Presence, Weather Data, Mobile Tracking, Schedule Calendar, Device Offsets), **Hardware Connections** (Internet Bridge, HomeKit), **Smart Automations** (Smart Comfort, Thermal Analytics, Adaptive Preheat, Weather Compensation), and **Advanced** (Per-Zone Configuration)
 - **Advanced Settings** — Tuning parameters for enabled features only (polling intervals, debounce windows, comfort modes, heating curves, HomeKit cloud sync frequency)
-- **Zone Configuration** — Per-zone overlay mode, temperature limits, heating type, external sensors, window detection, preheat mode, Smart Valve Control
+- **Zone Configuration** — Per-zone manual override mode, temperature limits, heating type, external sensors, window detection, preheat mode, Smart Valve Control
 - **Reset to Defaults** — Reset settings per feature or everything at once, without losing your Tado account or bridge pairing
 
 See [FEATURES_GUIDE.md](FEATURES_GUIDE.md) for detailed configuration guides and usage scenarios based on your setup (low quota, high quota, mixed zones, OpenTherm boiler, etc.).
@@ -150,7 +150,7 @@ Quick overview of entities created by Tado CE (88 entity types — see [ENTITIES
 
 ## Services
 
-10 services for climate control, hot water timers, open window mode, temperature offsets, and more. All available in **Developer Tools > Services** with full parameter documentation.
+12 services for climate control, hot water timers, open window mode, temperature offsets, restoring previous state, and more. All available in **Developer Tools > Services** with full parameter documentation.
 
 See [FEATURES_GUIDE.md](FEATURES_GUIDE.md) for service details and usage examples.
 

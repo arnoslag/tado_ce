@@ -26,6 +26,7 @@ from .bridge_type_inference import format_display_value
 from .device_manager import get_hub_device_info
 from .entity_registry import get_meta
 from .helpers import parse_iso_datetime
+from .sensor_hub import _ATTR_HISTORY_CAP
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -334,8 +335,10 @@ class TadoBridgeSchemaVersionSensor(
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return schema metadata."""
+        # Cap field_paths to reduce recorder DB bloat. Full native_value
+        # (scalar count) is still exposed for schema-drift detection.
         return {
-            "field_paths": self._current_field_paths,
+            "field_paths": self._current_field_paths[:_ATTR_HISTORY_CAP],
             "last_schema_change": (
                 self._last_schema_change.isoformat() if self._last_schema_change else None
             ),

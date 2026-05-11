@@ -169,16 +169,14 @@ def _create_device_connection_sensors(
 
 
 class TadoHomeSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], BinarySensorEntity):
-    """Represent a Tado home-level binary sensor."""
-
-    _attr_has_entity_name = True
-
     """Binary sensor for Tado Home/Away status.
 
     Reads from home_state.json (source of truth for presence) instead of
     zones.json tadoMode. Falls back to zones.json if home_state is not
     available (e.g., home_state_sync_enabled=false).
     """
+
+    _attr_has_entity_name = True
 
     def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
         """Initialize the Home Sensor."""
@@ -254,11 +252,9 @@ class TadoHomeSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], BinarySenso
 
 
 class TadoOpenWindowSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], BinarySensorEntity):
-    """Represent a Tado open window detection binary sensor."""
+    """Binary sensor for Tado Open Window detection."""
 
     _attr_has_entity_name = True
-
-    """Binary sensor for Tado Open Window detection."""
 
     def __init__(
         self,
@@ -331,10 +327,6 @@ class TadoOpenWindowSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], Binar
 
 
 class TadoPreheatNowSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], BinarySensorEntity):
-    """Represent a Tado preheat-active binary sensor."""
-
-    _attr_has_entity_name = True
-
     """Binary sensor indicating when to start preheating.
 
     Turns ON when current time >= recommended preheat start time.
@@ -343,6 +335,8 @@ class TadoPreheatNowSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], Binar
     UFH buffer is already applied in TadoPreheatAdvisorSensor,
     so this sensor just reads the adjusted time directly.
     """
+
+    _attr_has_entity_name = True
 
     def __init__(
         self,
@@ -486,14 +480,15 @@ class TadoPreheatNowSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], Binar
         finally:
             # Publish computed state to coordinator for cross-component access
             # (used by AdaptivePreheatManager initial state check)
-            self.coordinator.publish_entity_data(
-                self._zone_id,
-                ENTITY_DATA_PREHEAT_NOW,
-                {
-                    "state": "on" if self._attr_is_on else "off",
-                    "recommended_start": self._recommended_start,
-                },
-            )
+            if self._attr_available:
+                self.coordinator.publish_entity_data(
+                    self._zone_id,
+                    ENTITY_DATA_PREHEAT_NOW,
+                    {
+                        "state": "on" if self._attr_is_on else "off",
+                        "recommended_start": self._recommended_start,
+                    },
+                )
 
 
 def _serialize_window_detection_state(
@@ -581,10 +576,6 @@ def _restore_window_detection_state(
 
 
 class TadoWindowPredictedSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], BinarySensorEntity):
-    """Represent a Tado predicted window-open binary sensor."""
-
-    _attr_has_entity_name = True
-
     """Binary sensor for early open window detection.
 
     Detects possible open windows using local temperature analysis,
@@ -593,6 +584,8 @@ class TadoWindowPredictedSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], 
     This is a PREDICTIVE sensor - it does NOT replace Tado's confirmed
     Window binary sensor (binary_sensor.{zone}_window).
     """
+
+    _attr_has_entity_name = True
 
     _attr_device_class = BinarySensorDeviceClass.WINDOW
 
@@ -1032,7 +1025,7 @@ class TadoDeviceConnectionBinarySensor(CoordinatorEntity["TadoDataUpdateCoordina
     def extra_state_attributes(self) -> dict[str, Any] | None:
         """Return extra state attributes."""
         return {
-            "device_serial": self._device_serial,
+            "device_serial": mask_serial(self._device_serial),
             "device_type": self._device_type,
             "firmware_version": self._firmware,
             "last_seen": self._connection_timestamp,
@@ -1181,8 +1174,8 @@ class TadoHomeKitConnectedSensor(CoordinatorEntity["TadoDataUpdateCoordinator"],
         # Mapped/unmapped zone counts
         mapped_zones = 0
         unmapped_zones = 0
-        if client and hasattr(client, "_zone_to_aids"):
-            mapped_zones = len(client._zone_to_aids)
+        if client and hasattr(client, "zone_aid_map"):
+            mapped_zones = len(client.zone_aid_map)
             data = self.coordinator.data or {}
             zones_info = data.get("zones_info") or []
             if zones_info:

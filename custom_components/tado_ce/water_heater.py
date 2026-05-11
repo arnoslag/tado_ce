@@ -77,11 +77,9 @@ async def async_setup_entry(
 
 
 class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeaterEntity):
-    """TadoWaterHeater."""
+    """Tado CE Water Heater Entity."""
 
     _attr_has_entity_name = True
-
-    """Tado CE Water Heater Entity."""
 
     def __init__(self, coordinator: TadoDataUpdateCoordinator, zone_id: str, zone_name: str, home_id: str) -> None:
         """Initialize."""
@@ -121,6 +119,25 @@ class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeate
         # Layer 3: Expected state confirmation
         self._expected_operation: str | None = None
         self._expected_temperature: float | None = None
+
+    # ------------------------------------------------------------------
+    # Public API (TadoZoneEntity Protocol — see entity_types.py)
+    # ------------------------------------------------------------------
+
+    @property
+    def zone_id(self) -> str:
+        """Return the Tado zone ID as a string."""
+        return str(self._zone_id)
+
+    @property
+    def zone_type(self) -> str:
+        """Return the zone type — always HOT_WATER for this entity."""
+        return "HOT_WATER"
+
+    @property
+    def entity_type(self) -> str:
+        """Return the entity type tag for state-capture routing."""
+        return self._entity_type
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
@@ -326,7 +343,8 @@ class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeate
 
         if not success:
             _LOGGER.error(
-                "ROLLBACK: Failed to set operation mode to %s after %s attempts.",
+                "Hot water: could not set mode to %s after %s attempts — "
+                "reverting card to previous state",
                 operation_mode, MAX_RETRY_ATTEMPTS,
             )
             self._attr_current_operation = previous_mode

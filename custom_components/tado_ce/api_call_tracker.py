@@ -13,7 +13,7 @@ from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
 from .helpers import parse_iso_datetime
-from .storage import async_migrate_json_to_store, load_json_sync
+from .storage import async_migrate_json_to_store
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -105,16 +105,6 @@ class APICallTracker:
         self._initialized = False
         self._dirty = False
 
-    def _load_history_sync(self) -> dict[str, Any]:
-        """Load call history from old JSON file synchronously (fallback only)."""
-        try:
-            data = load_json_sync(self._old_json_path)
-            if data is not None:
-                return data  # type: ignore[return-value]
-        except (OSError, HomeAssistantError):
-            _LOGGER.exception("Failed to load API call history")
-        return {}
-
     async def _load_history_async(self) -> dict[str, Any]:
         """Load call history from Store, with JSON migration fallback."""
         try:
@@ -166,17 +156,6 @@ class APICallTracker:
         # also acquires _async_lock, so calling it inside would deadlock.
         await self.async_cleanup_old_records()
         self._last_cleanup_date = dt_util.utcnow().date()  # type: ignore[assignment]
-
-    def _ensure_initialized_sync(self) -> None:
-        """Ensure tracker is initialized synchronously.
-
-        Falls back to reading old JSON file if Store not yet loaded.
-        Should only be used when async_init() cannot be called.
-        """
-        if not self._initialized:
-            self._call_history = self._load_history_sync()
-            self._initialized = True
-            _LOGGER.debug("Loaded API call history (sync fallback): %s dates", len(self._call_history))
 
     @property
     def needs_save(self) -> bool:
@@ -245,9 +224,15 @@ class APICallTracker:
             days: Number of days to retrieve
 
         Returns:
-            List of call records sorted by timestamp (newest first)
+            List of call records sorted by timestamp (newest first).
+            Empty list if the tracker hasn't been initialised yet (disk I/O
+            can only happen via ``async_init`` to keep the event loop unblocked).
         """
-        self._ensure_initialized_sync()
+        if not self._initialized:
+            _LOGGER.debug(
+                "get_call_history called before async_init completed — returning []",
+            )
+            return []
 
         cutoff_date = (dt_util.utcnow() - timedelta(days=days)).strftime("%Y-%m-%d")
         calls = []
@@ -386,7 +371,11 @@ class APICallTracker:
         if current_used <= 0:
             return None
 
-        self._ensure_initialized_sync()
+        if not self._initialized:
+            _LOGGER.debug(
+                "extrapolate_reset_time called before async_init completed — returning None",
+            )
+            return None
 
         # Try history-based rate first, fall back to config-based
         history_result = self._rate_from_history()

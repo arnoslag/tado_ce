@@ -36,8 +36,6 @@ class TadoBatterySensor(CoordinatorEntity["TadoDataUpdateCoordinator"], SensorEn
 
     _attr_has_entity_name = True
 
-    """Battery status sensor."""
-
     def __init__(
         self,
         coordinator: TadoDataUpdateCoordinator,
@@ -93,7 +91,7 @@ class TadoBatterySensor(CoordinatorEntity["TadoDataUpdateCoordinator"], SensorEn
     def extra_state_attributes(self) -> dict[str, Any] | None:
         """Return extra state attributes."""
         return {
-            "device_serial": self._device_serial,
+            "device_serial": mask_serial(self._device_serial),
             "device_type": self._device_type,
             "firmware_version": self._firmware,
             "connection_state": _format_connection_state_attr(self._connection_state),

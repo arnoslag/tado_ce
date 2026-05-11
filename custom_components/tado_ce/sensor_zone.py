@@ -113,8 +113,6 @@ class TadoTemperatureSensor(TadoZoneSensor):
 
     _attr_has_entity_name = True
 
-    """Current temperature sensor."""
-
     def __init__(
         self, coordinator: TadoDataUpdateCoordinator, zone_id: str, zone_name: str, zone_type: str = "HEATING",
     ) -> None:
@@ -186,8 +184,6 @@ class TadoHumiditySensor(TadoZoneSensor):
 
     _attr_has_entity_name = True
 
-    """Humidity sensor."""
-
     def __init__(
         self, coordinator: TadoDataUpdateCoordinator, zone_id: str, zone_name: str, zone_type: str = "HEATING",
     ) -> None:
@@ -252,8 +248,6 @@ class TadoHeatingPowerSensor(TadoZoneSensor):
 
     _attr_has_entity_name = True
 
-    """Heating power sensor."""
-
     def __init__(
         self, coordinator: TadoDataUpdateCoordinator, zone_id: str, zone_name: str, zone_type: str = "HEATING",
     ) -> None:
@@ -279,8 +273,6 @@ class TadoACPowerSensor(TadoZoneSensor):
     """Represent a Tado AC power state sensor."""
 
     _attr_has_entity_name = True
-
-    """AC power sensor."""
 
     def __init__(
         self, coordinator: TadoDataUpdateCoordinator, zone_id: str, zone_name: str, zone_type: str = "AIR_CONDITIONING",
@@ -309,15 +301,13 @@ class TadoACPowerSensor(TadoZoneSensor):
 
 
 class TadoBoilerFlowTemperatureSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], SensorEntity):
-    """Represent a Tado boiler flow temperature sensor."""
-
-    _attr_has_entity_name = True
-
     """Boiler flow temperature sensor - reads from HEATING zones.
 
     This is a Hub-level sensor that reads boilerFlowTemperature from
     any HEATING zone that has this data available.
     """
+
+    _attr_has_entity_name = True
 
     def __init__(self, coordinator: TadoDataUpdateCoordinator) -> None:
         """Initialize the Boiler Flow Temperature Sensor."""
@@ -378,8 +368,6 @@ class TadoTargetTempSensor(TadoZoneSensor):
 
     _attr_has_entity_name = True
 
-    """Target temperature sensor."""
-
     def __init__(
         self, coordinator: TadoDataUpdateCoordinator, zone_id: str, zone_name: str, zone_type: str = "HEATING",
     ) -> None:
@@ -407,8 +395,6 @@ class TadoOverlaySensor(TadoZoneSensor):
     """Represent a Tado overlay mode sensor."""
 
     _attr_has_entity_name = True
-
-    """Overlay status sensor (Manual/Schedule)."""
 
     def __init__(
         self, coordinator: TadoDataUpdateCoordinator, zone_id: str, zone_name: str, zone_type: str = "HEATING",

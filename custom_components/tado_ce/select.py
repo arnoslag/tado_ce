@@ -72,10 +72,6 @@ async def async_setup_entry(
 
 
 class TadoPresenceModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], SelectEntity):
-    """TadoPresenceModeSelect."""
-
-    _attr_has_entity_name = True
-
     """Tado CE Presence Mode Select Entity.
 
     Allows control of presence mode: auto (geofencing), home, away.
@@ -88,6 +84,7 @@ class TadoPresenceModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sel
     Uses 1 API call per change.
     """
 
+    _attr_has_entity_name = True
     _attr_options: list[str] = ["auto", "home", "away"]
     _attr_translation_key = "presence_mode"
 
@@ -252,10 +249,6 @@ class TadoPresenceModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sel
 
 
 class TadoOverlayModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], SelectEntity):
-    """TadoOverlayModeSelect."""
-
-    _attr_has_entity_name = True
-
     """Tado CE Overlay Mode Select Entity.
 
     Allows control of overlay termination type for manual temperature changes.
@@ -273,6 +266,7 @@ class TadoOverlayModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sele
     and async_add_executor_job for file saves.
     """
 
+    _attr_has_entity_name = True
     _attr_options = OVERLAY_MODE_OPTIONS
     _attr_translation_key = "overlay_mode"
 
@@ -343,16 +337,13 @@ class TadoOverlayModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sele
 
 
 class TadoTimerDurationSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], SelectEntity):
-    """TadoTimerDurationSelect."""
-
-    _attr_has_entity_name = True
-
     """Tado CE Timer Duration Select Entity.
 
     Controls how long Timer overlay mode lasts.
     Only relevant when Overlay Mode = Timer.
     """
 
+    _attr_has_entity_name = True
     _attr_options = TIMER_DURATION_OPTIONS
     _attr_translation_key = "timer_duration"
 

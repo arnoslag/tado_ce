@@ -72,17 +72,14 @@ def should_block_manual_action(
 ) -> tuple[bool, str]:
     """Check if manual actions should be blocked due to bootstrap reserve.
 
-    Bootstrap Reserve - blocks ALL actions (including manual) when quota
-    falls to the absolute minimum needed for auto-recovery after API reset.
-
-    Simplified - reads directly from ratelimit_data which already contains
-    simulated values when Test Mode is ON.
-
+    Bootstrap Reserve blocks ALL actions (including manual) when quota falls to
+    the absolute minimum needed for auto-recovery after API reset. Reads quota
+    figures directly from ratelimit_data — the caller is responsible for passing
+    current values.
 
     Args:
-        ratelimit_data: Rate limit data with 'remaining', 'used', 'reset_seconds'
-                        (already simulated when Test Mode is ON)
-        config_manager: Configuration manager for feature settings
+        ratelimit_data: Rate limit data with 'remaining', 'used', 'reset_seconds'.
+        config_manager: Configuration manager for feature settings.
 
     Returns:
         Tuple of (should_block: bool, reason: str)

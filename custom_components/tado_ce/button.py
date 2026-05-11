@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.button import ButtonEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.util import slugify
 
 from .const import DOMAIN
 from .coordinator import TadoDataUpdateCoordinator
@@ -119,10 +120,7 @@ class TadoResumeAllSchedulesButton(CoordinatorEntity[TadoDataUpdateCoordinator],
         self._attr_icon = _meta.icon
 
     async def async_press(self) -> None:
-        """Handle button press - resume schedules for all zones.
-
-        DRY refactor - uses shared async_trigger_immediate_refresh().
-        """
+        """Handle button press - resume schedules for all zones."""
         await _check_bootstrap_reserve_or_raise(self.hass, "Immediate Refresh", coordinator=self.coordinator)
 
         _LOGGER.info("Resume All Schedules button pressed")
@@ -191,7 +189,7 @@ class TadoRefreshACCapabilitiesButton(CoordinatorEntity[TadoDataUpdateCoordinato
 
         _LOGGER.info("Refresh AC Capabilities button pressed")
 
-        # Use home-aware file path (TECH-2)
+        # Use home-aware file path
         home_id = self.coordinator.home_id
         ac_caps_file = get_data_file("ac_capabilities", home_id)
 
@@ -277,7 +275,7 @@ class TadoWaterHeaterTimerButton(CoordinatorEntity[TadoDataUpdateCoordinator], B
             water_heater_entity_id = entry
         else:
             # Fallback to name-based construction for backwards compatibility
-            water_heater_entity_id = f"water_heater.{self._zone_name.lower().replace(' ', '_')}"
+            water_heater_entity_id = f"water_heater.{slugify(self._zone_name)}"
 
         # Verify entity exists before calling service
         if not self.hass.states.get(water_heater_entity_id):
@@ -430,10 +428,7 @@ class TadoBoostButton(CoordinatorEntity[TadoDataUpdateCoordinator], ButtonEntity
         self._attr_icon = _meta.icon
 
     async def async_press(self) -> None:
-        """Handle button press - boost heating to max for 30 minutes.
-
-        DRY refactor - uses shared async_trigger_immediate_refresh().
-        """
+        """Handle button press - boost heating to max for 30 minutes."""
         await _check_bootstrap_reserve_or_raise(self.hass, f"Boost {self._zone_name}", coordinator=self.coordinator)
 
         _LOGGER.info("Boost button pressed for %s", self._zone_name)
@@ -534,10 +529,7 @@ class TadoSmartBoostButton(CoordinatorEntity[TadoDataUpdateCoordinator], ButtonE
         return SMART_BOOST_DEFAULT_RATE
 
     async def async_press(self) -> None:
-        """Handle button press - smart boost with calculated duration.
-
-        DRY refactor - uses shared async_trigger_immediate_refresh().
-        """
+        """Handle button press - smart boost with calculated duration."""
         await _check_bootstrap_reserve_or_raise(self.hass, f"Smart Boost {self._zone_name}", coordinator=self.coordinator)
 
         _LOGGER.info("Smart Boost button pressed for %s", self._zone_name)

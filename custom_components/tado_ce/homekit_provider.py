@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from datetime import datetime
 import logging
 from typing import TYPE_CHECKING, Any
@@ -54,12 +55,16 @@ def _find_char_iid(
                 # aiohomekit normalizes types to full UUID: 0000XXXX-0000-1000-8000-0026BB765291
                 raw_type = char.get("type", "")
                 if "-" in raw_type:
-                    ctype = raw_type.split("-")[0].lstrip("0").upper()
+                    ctype = raw_type.split("-")[0].upper()
                 else:
-                    ctype = raw_type.upper().lstrip("0")
-                if ctype == char_type.upper():
-                    iid = char.get("iid")
-                    return int(iid) if iid is not None else None
+                    ctype = raw_type.upper()
+                # Compare as integers to handle leading-zero differences (e.g. "0F" vs "F")
+                try:
+                    if int(ctype, 16) == int(char_type, 16):
+                        iid = char.get("iid")
+                        return int(iid) if iid is not None else None
+                except (ValueError, TypeError):
+                    continue
     return None
 
 
@@ -260,8 +265,9 @@ class HomeKitLocalProvider:
         if not self._accessories:
             await self.async_refresh_accessories()
 
-        # Build subscription list: (aid, iid) for all interesting characteristics
+        # Build subscription list and reverse lookup in a single pass
         subscribe_chars: list[tuple[int, int]] = []
+        self._event_map = {}
         char_types = (
             CHAR_CURRENT_TEMPERATURE,
             CHAR_CURRENT_HUMIDITY,
@@ -270,40 +276,40 @@ class HomeKitLocalProvider:
             CHAR_TARGET_HEATING_STATE,
         )
 
-        for zone_id, aids in self._client._zone_to_aids.items():
+        for zone_id, aids in self._client.zone_aid_map.items():
             for aid in aids:
                 for char_type in char_types:
                     iid = _find_char_iid(self._accessories, aid, char_type)
                     if iid is not None:
                         subscribe_chars.append((aid, iid))
+                        self._event_map[(aid, iid)] = (zone_id, char_type)
 
         if not subscribe_chars:
             _LOGGER.debug("HomeKit: No characteristics to subscribe to")
             return
 
-        # Build reverse lookup: (aid, iid) → (zone_id, char_type)
-        self._event_map = {}
-        for zone_id, aids in self._client._zone_to_aids.items():
-            for aid in aids:
-                for char_type in char_types:
-                    iid = _find_char_iid(self._accessories, aid, char_type)
-                    if iid is not None:
-                        self._event_map[(aid, iid)] = (zone_id, char_type)
-
         # Subscribe to events
         await self._client.pairing.subscribe(subscribe_chars)
+        # On reconnect, tear down the previous dispatcher before installing
+        # the new one. Without this, every reconnect leaks a live callback
+        # and every bridge event triggers N duplicate state updates.
+        if self._unsub_dispatcher is not None:
+            self._unsub_dispatcher()
+            self._unsub_dispatcher = None
         self._unsub_dispatcher = self._client.pairing.dispatcher_connect(
             self._on_event_callback,
         )
         _LOGGER.info(
             "HomeKit: Subscribed to %d characteristics across %d zones",
             len(subscribe_chars),
-            len(self._client._zone_to_aids),
+            len(self._client.zone_aid_map),
         )
 
         # Start periodic cache refresh to prevent staleness
         if self._cache_refresh_task is not None:
             self._cache_refresh_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._cache_refresh_task
         self._cache_refresh_task = asyncio.create_task(
             self._periodic_cache_refresh(),
         )

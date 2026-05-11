@@ -24,10 +24,11 @@ Complete guide to all Tado CE exclusive features, configurations, and usage scen
 15. [Automation Events](#-automation-events)
 16. [Multi-TRV Zones](#-multi-trv-zones)
 17. [Per-Zone Configuration](#-per-zone-configuration)
-18. [Zone Features Toggles](#-zone-features-toggles)
-19. [Configuration Scenarios](#-configuration-scenarios)
-20. [Actionable Insights](#-actionable-insights)
-21. [Troubleshooting](#-troubleshooting)
+18. [Per-Zone Entity Types](#-per-zone-entity-types)
+19. [Reset to Defaults](#-reset-to-defaults)
+20. [Configuration Scenarios](#-configuration-scenarios)
+21. [Actionable Insights](#-actionable-insights)
+22. [Troubleshooting](#-troubleshooting)
 
 ---
 
@@ -264,7 +265,7 @@ When you drag a temperature slider, each position fires a `set_temperature` call
 | Range | 0–10 seconds |
 | Disable | Set to 0 |
 
-**Where to configure:** Settings → Tado CE → Configure → Global Settings → Polling & API
+**Where to configure:** Settings → Tado CE → Configure → Advanced Settings → Polling & API
 
 **How it works:** Each slider movement resets a per-zone timer. Only when the timer expires (no new movement for N seconds) does the API call fire. If you drag from 18°C to 22°C over 2 seconds, only one call is made for 22°C.
 
@@ -289,7 +290,7 @@ Device-level operations (child lock, early start) are queued and executed one at
 | Range | 0.5–5 seconds |
 | Max queue depth | 20 operations |
 
-**Where to configure:** Settings → Tado CE → Configure → Global Settings → Polling & API
+**Where to configure:** Settings → Tado CE → Configure → Advanced Settings → Polling & API
 
 **Why it matters:** Without queuing, toggling child lock and early start simultaneously can cause the Tado API to return stale data or reject one of the calls. The queue ensures each operation completes before the next starts.
 
@@ -343,7 +344,7 @@ automation:
 
 ### Configuration Summary
 
-All settings are under **Settings → Tado CE → Configure → Global Settings → Polling & API**:
+All settings are under **Settings → Tado CE → Configure → Advanced Settings → Polling & API**:
 
 | Setting | Default | Range | Notes |
 |---------|---------|-------|-------|
@@ -396,9 +397,9 @@ Real-time analysis of heating system thermal performance based on complete heati
 
 ### Configuration
 
-**Global Toggle:** Options → Tado CE Exclusive → Thermal Analytics
+**Global Toggle:** Options → General Settings → Smart Automations → Thermal Analytics
 
-**Per-Zone Control (v2.1.0+):** Options → Tado CE Exclusive → Thermal Analytics Zones
+**Per-Zone Control (v2.1.0+):** Options → Advanced Settings → Thermal Analytics → Thermal Analytics Zones
 - Default: All zones with heatingPower data enabled
 - Deselect zones that never call for heat (passive heating) to keep UI clean
 
@@ -500,11 +501,11 @@ Existing users with preheat enabled are automatically migrated to Active mode. P
 
 ### Configuration
 
-1. Settings → Devices & Services → Tado CE → Configure
-2. Enable "Smart Comfort Analytics"
-3. Configure Smart Comfort Mode: None / Light / Moderate / Aggressive
-4. Set Temperature History days (1–30)
-5. Optionally set Outdoor Temperature Entity for weather compensation
+1. Settings → Devices & Services → Tado CE → Configure → **General Settings → Smart Automations**
+2. Enable **Smart Comfort**
+3. Open **Advanced Settings → Smart Comfort** and pick a **Smart Comfort Mode**: None / Light (recommended when first enabling) / Moderate / Aggressive
+4. Set **Temperature History days** (1–30)
+5. Optionally select an **Outdoor Temperature Entity** for weather-adjusted comfort targets
 
 ### Usage Scenarios
 
@@ -626,11 +627,11 @@ When heat index is active, the comfort level calculation uses the "feels like" t
 
 ### Configuration
 
-1. Settings → Devices & Services → Tado CE → Configure
-2. Select "Window Type" (default: Double Pane)
-3. Set "Outdoor Temperature Entity" (e.g., `weather.home`)
+1. Settings → Devices & Services → Tado CE → Configure → **Advanced Settings → Smart Comfort**
+2. Set the default **Window Type** (applies to any zone that hasn't picked its own)
+3. Set the **Outdoor Temperature Entity** (e.g., `weather.home`)
 
-**Per-Zone Window Type (v2.1.0+):** Use Zone Config entity `select.{zone}_window_type` to set different window types per zone.
+**Per-Zone Window Type:** For per-zone overrides, enable **General Settings → Advanced → Per-Zone Configuration**, then open **Zone Configuration → (zone) → Smart Features → Window Type**.
 
 ### Usage Scenarios
 
@@ -979,7 +980,7 @@ The Boiler Wiring State sensor includes extra state attributes from the Bridge A
 
 ### Configuration
 
-1. Go to **Settings → Devices & Services → Tado CE → Configure → Global Settings → Flow Temperature Control**
+1. Go to **Settings → Devices & Services → Tado CE → Configure → General Settings → Hardware Connections**
 2. Enable the **Internet Bridge** toggle
 3. Enter your **Bridge Serial Number** (starts with `IB`, printed on the bottom of your Internet Bridge)
 4. Enter your **Bridge Auth Key** (also printed on the bottom)
@@ -1091,8 +1092,8 @@ Pair your Tado bridge via HomeKit to control heating and AC directly on your loc
 
 ### Setup
 
-1. Go to **Settings → Tado CE → Configure → General Settings**
-2. Enable **HomeKit Local Control**
+1. Go to **Settings → Tado CE → Configure → General Settings → Hardware Connections**
+2. Enable **Local Control (HomeKit)**
 3. Follow the pairing flow — you'll need the HomeKit setup code from your bridge
 4. Once paired, the integration connects automatically on every HA restart
 
@@ -1102,7 +1103,7 @@ Pair your Tado bridge via HomeKit to control heating and AC directly on your loc
 
 | Setting | Location | Default | Description |
 |---------|----------|---------|-------------|
-| HomeKit Local Control | General Settings | Off | Enable/disable HomeKit pairing |
+| HomeKit Local Control | General Settings → Hardware Connections | Off | Enable/disable HomeKit pairing |
 | Cloud Sync Interval | Advanced Settings → HomeKit | 30 min | How often to fetch cloud data (humidity, heating power, overlays) when HomeKit is connected. Temperature uses HomeKit locally. **Note:** If you set a custom polling interval in Polling & API, all data refreshes at your custom rate instead — this setting only applies when using automatic polling. |
 | Unpair | Advanced Settings → HomeKit | — | Remove the HomeKit pairing without removing the integration |
 
@@ -1190,11 +1191,11 @@ Presets automatically calculate the slope from your min/max flow and design/shut
 
 ### Configuration
 
-1. Go to **Settings → Tado CE → Configure → Global Settings → Flow Temperature Control**
-2. Enable the **Internet Bridge** toggle (or use cloud outdoor temperature)
-3. Enable **Weather Compensation**
-4. Select a **Heating System Preset** (or choose Custom for full control)
-5. Save — the engine starts adjusting on the next update cycle
+1. Go to **Settings → Tado CE → Configure → General Settings**
+2. Under **Hardware Connections**, enable the **Internet Bridge** toggle (required for real-time flow temperature data)
+3. Under **Smart Automations**, enable **Weather Compensation**
+4. Save, then open **Advanced Settings → Weather Compensation** to pick a **Heating System Preset** (or choose Custom for full control)
+5. Save again — the engine starts adjusting on the next update cycle
 
 **Custom parameters (when preset = Custom):**
 
@@ -1280,7 +1281,7 @@ entities:
 
 ## 🎯 Smart Valve Control
 
-**Available:** v4.0.0-beta.9 | **Requirement:** Heating zone + external temperature sensor + HomeKit (recommended for Valve Target) | **Per-Zone Opt-in**
+**Available:** v4.0.0-beta.9 (Valve Target mode), v4.0.0-beta.14 (Offset Sync mode) | **Requirement:** Heating zone + external temperature sensor + HomeKit (recommended for Valve Target) | **Per-Zone Opt-in**
 
 Automatically uses your external sensor to make the TRV heat your room correctly — instead of relying on the TRV's inaccurate built-in sensor.
 
@@ -1294,7 +1295,7 @@ External sensors in Tado CE fix what you *see* in HA, but the TRV still uses its
 
 Smart Valve Control offers two approaches to solve this problem. You choose one per zone:
 
-| | Offset Sync | Valve Target |
+| | Offset Sync (recommended) | Valve Target (advanced) |
 |---|---|---|
 | **What it does** | Corrects the TRV's temperature reading so Tado sees the right number | Overrides the TRV's target temperature to force the valve open/closed |
 | **How it works** | Writes a device offset → Tado app and Tado's own algorithm both use the corrected temperature | Calculates a boosted target and writes it directly to the TRV, bypassing Tado's logic |
@@ -1316,7 +1317,7 @@ Smart Valve Control offers two approaches to solve this problem. You choose one 
 
 1. Configure an **external temperature sensor** for the zone (any HA temperature sensor — Zigbee, Aqara, etc.)
 2. Go to **Settings → Tado CE → Configure → pick a zone → External Sensors section**
-3. Set **Smart Valve Control Mode** to either **Offset Sync** or **Valve Target**
+3. Set **Smart Valve Control Mode** to **Offset Sync (recommended)** or **Valve Target (advanced)**
 
 The mode selector only appears for heating zones that have an external temperature sensor configured.
 
@@ -1337,7 +1338,7 @@ desired_offset = external_sensor − (TRV_reported_temp − current_offset)
 - Updates automatically whenever your external sensor changes (debounced to avoid spamming)
 - Rate-limited to one write per 5 minutes per device (Tado's API limit for device offsets)
 - Offset is clamped to ±10°C (Tado's hardware limit)
-- Only writes when the change is ≥ 0.5°C (avoids unnecessary API calls)
+- Only writes when the change exceeds your configured sensitivity threshold (default 0.5°C, adjustable 0.5–3.0°C per zone)
 - If your external sensor goes offline, the last offset is preserved (no sudden jump)
 
 **Offset Sync + the Tado app:**
@@ -1723,21 +1724,31 @@ Customize settings for each individual zone via **Settings → Tado CE → Confi
 
 ### Available Settings
 
+Organised in the order they appear in the Options Flow — fundamental limits first, hardware next, sensors that augment Tado, smart features that depend on those sensors, and runtime override behaviour last.
+
 | Setting | Description | Applies To |
 |---------|-------------|------------|
-| Overlay Mode | How temperature changes behave (Tado Default, Next Time Block, Timer, Manual) | All zones |
-| Overlay Timer | Timer duration when overlay mode is Timer | All zones |
+| **Temperature Limits** | | |
 | Min Temperature | Minimum allowed temperature (5–25°C) | All zones |
 | Max Temperature | Maximum allowed temperature (15–30°C) | All zones |
+| Surface Temp Offset | Fine-tune mold risk surface temperature estimate (-5 to +5°C) | All zones |
+| **Heating System** | | |
 | Heating Type | Radiator or Underfloor Heating | Heating zones |
 | UFH Buffer | Extra preheat buffer for underfloor heating (0–60 min) | UFH zones |
 | Adaptive Preheat Mode | Off, Active, or Passive | Heating zones |
+| **External Sensors** | | |
+| External Temperature Sensor | Use any HA sensor instead of Tado's built-in | All zones |
+| External Humidity Sensor | Use any HA sensor instead of Tado's built-in | All zones |
+| Smart Valve Control Mode | Off / Offset Sync (recommended) / Valve Target (advanced) | Heating zones (with external temp sensor) |
+| Offset Sync Sensitivity | How much the offset must change before writing (0.5–3.0°C) | Offset Sync mode only |
+| **Smart Features** | | |
+| Smart Comfort Mode | Adjust target temperature based on outdoor conditions | All zones |
 | Window Type | Window insulation type for mold risk calculation | All zones |
 | Window Detection Mode | Active, Passive, or Auto | All zones |
 | Window Predicted Sensitivity | Low, Medium, or High | All zones |
-| External Temperature Sensor | Use any HA sensor instead of Tado's built-in | All zones |
-| External Humidity Sensor | Use any HA sensor instead of Tado's built-in | All zones |
-| Smart Valve Control | Automatically adjust TRV target using external sensor | Heating zones (with external temp sensor) |
+| **Manual Temperature Override** | | |
+| Override Mode | How manual temperature changes behave (Tado Default, Next Time Block, Timer, Manual) | All zones |
+| Override Timer | Timer duration when override mode is Timer | All zones |
 
 ### Zone Overlay Mode Options
 
@@ -1750,26 +1761,54 @@ Customize settings for each individual zone via **Settings → Tado CE → Confi
 
 ---
 
-## 🎛️ Zone Features Toggles
+## 🎛️ Per-Zone Entity Types
 
-**Available:** v2.1.0+ | **Requirement:** None | **Options Flow Configuration**
+Each zone creates several entity types depending on the zone's capabilities and the features you've enabled. The integration creates them automatically — most are always on, one is toggleable via the Options Flow:
 
-Control which entity types are created, reducing clutter for users who don't need all features.
+| Entity group | Entities created | Controlled by |
+|--------------|------------------|---------------|
+| Zone Diagnostics | Battery, connection, heating power sensors | Always on |
+| Device Controls | Child lock, early start switches | Always on |
+| Boost Buttons | Boost, Smart Boost buttons | Always on |
+| Environment Sensors | Mold risk, comfort level, condensation risk | Always on |
+| Thermal Analytics | Thermal inertia, heating rate, preheat time sensors | **General Settings → Smart Automations → Thermal Analytics** toggle |
 
-### Available Toggles
+> To hide entities you don't use, **disable the entity in HA's entity registry** (Settings → Devices & Services → Tado CE → entity → Disable). The integration continues to compute and publish them, but they won't appear on dashboards or in automations.
 
-| Toggle | Entities Controlled | Default (New) | Default (Upgrade) |
-|--------|---------------------|---------------|-------------------|
-| Zone Diagnostics | Battery, connection, heating power sensors | OFF | ON |
-| Device Controls | Child lock, early start switches | OFF | ON |
-| Boost Buttons | Boost, Smart Boost buttons | OFF | ON |
-| Environment Sensors | Mold risk, comfort level, condensation risk | OFF | ON |
-| Thermal Analytics | Thermal inertia, heating rate, preheat time | OFF | ON |
+---
 
-**New installs:** All toggles OFF for minimal setup. Enable what you need.
-**Upgrades:** All toggles ON to preserve existing entities and automations.
+## 🔁 Reset to Defaults
 
-Configure: **Settings → Tado CE → Configure → General Settings → Zone Features** section.
+Located at **Settings → Tado CE → Configure → Reset to Defaults**. Lets you revert tuning parameters without re-entering your Tado account or re-pairing hardware.
+
+**Per-category reset** — resets only the tuning fields for that feature. The feature itself stays enabled so the entities don't disappear:
+
+| Scope | What resets |
+|-------|-------------|
+| Smart Comfort | Mode, feels-like toggle, window type default, history days, outdoor temperature entity |
+| Thermal Analytics | Zones selection, history days, minimum cycles, inertia threshold |
+| Weather Compensation | Preset, slope, design/max/min/shutoff temps, smoothing method + window, room compensation + factor, step size, hysteresis |
+| Internet Bridge | Bridge serial, bridge auth key (re-entry required to keep Bridge API / Weather Compensation working) |
+| HomeKit | Cloud sync interval (pairing credentials are preserved) |
+| Polling & API | Day/night start hours, custom intervals, refresh delay, API history retention, smart actions debounce, device sync delay, frequent mobile sync, hot water timer default |
+
+**Reset Everything** — turns every feature toggle OFF, then applies all default tuning values. **Preserves**:
+
+- Your Tado account (refresh token, home ID)
+- Internet Bridge credentials (if previously entered)
+- HomeKit pairing credentials (if previously paired)
+
+After resetting everything, you'll need to re-enable the features you want from General Settings — but you don't need to re-authenticate or re-pair.
+
+### What's NOT covered
+
+**Per-zone configuration** (external sensors, Smart Valve Control, overlay mode, temperature limits, window detection) is **not** included in the Reset to Defaults scope. Per-zone settings are stored separately, and resetting them in bulk would wipe potentially-expensive-to-rebuild per-zone state. To reset a zone, open **Zone Configuration → (zone)** and change the values back manually.
+
+### Safety behaviour
+
+- Confirmation step — the final "Confirm Reset" screen describes exactly what will be wiped and what's preserved
+- No toggle flipping during per-category reset — enabling/disabling features is a separate user action
+- Repair notifications, HomeKit pairing files, and zone_config.json are all preserved
 
 ---
 
@@ -2133,4 +2172,4 @@ Look for `Bridge API full response` in logs to verify the API is returning data.
 
 ---
 
-**Last Updated:** v4.0.0-beta.8 (2026-04-20)
+**Last Updated:** v4.0.0-beta.15 (2026-05-10)

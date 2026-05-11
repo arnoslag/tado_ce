@@ -54,7 +54,11 @@ from .const import (
     SURFACE_TEMP_OFFSET_MAX,
     SURFACE_TEMP_OFFSET_MIN,
     SURFACE_TEMP_OFFSET_STEP,
+    SVC_OFFSET_MIN_CHANGE_MAX,
+    SVC_OFFSET_MIN_CHANGE_MIN,
     TIMER_DURATION_DEFAULT,
+    TIMER_DURATION_MAX,
+    TIMER_DURATION_MIN,
     TIMER_DURATION_OPTIONS,
     WINDOW_DETECTION_MODE_DEFAULT,
     WINDOW_DETECTION_MODE_MAP,
@@ -64,6 +68,8 @@ from .const import (
     WINDOW_SENSITIVITY_MAP,
     WINDOW_SENSITIVITY_OPTIONS,
     WINDOW_SENSITIVITY_REVERSE_MAP,
+    ZONE_TEMP_MAX_CEILING,
+    ZONE_TEMP_MIN_FLOOR,
     is_climate_zone,
 )
 
@@ -95,7 +101,6 @@ RESET_DEFAULTS: dict[str, dict[str, Any]] = {
         "mold_risk_window_type": "double_pane",
         "smart_comfort_history_days": 7,
         "outdoor_temp_entity": "",
-        "hot_water_timer_duration": 60,
     },
     "thermal_analytics": {
         "thermal_analytics_zones": [],
@@ -121,9 +126,6 @@ RESET_DEFAULTS: dict[str, dict[str, Any]] = {
         "bridge_serial": "",
         "bridge_auth_key": "",
     },
-    "mobile_tracking": {
-        "mobile_devices_frequent_sync": False,
-    },
     "homekit": {
         "homekit_cloud_sync_minutes": 30,
     },
@@ -137,6 +139,7 @@ RESET_DEFAULTS: dict[str, dict[str, Any]] = {
         "smart_actions_debounce_seconds": 3,
         "device_sync_delay_seconds": 1.0,
         "mobile_devices_frequent_sync": False,
+        "hot_water_timer_duration": 60,
     },
 }
 
@@ -189,14 +192,66 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
     def _build_general_schema(self) -> vol.Schema:
         """Build the General Settings form schema — toggles only.
 
-        12 BooleanSelector fields grouped in 4 sections:
-        Smart Features, Connections, Data Sources, Per-Zone.
+        12 BooleanSelector fields grouped in 4 sections by feature
+        origin / user mental model:
+        - Tado Features (Tado-native: weather, home state, mobile,
+          offsets, schedule calendar)
+        - Hardware Connections (physical bridges: Internet Bridge,
+          HomeKit)
+        - Smart Automations (tado_ce value-add: Smart Comfort,
+          Thermal Analytics, Adaptive Preheat, Weather Compensation)
+        - Advanced (Per-Zone Configuration)
         """
         opt = self.config_entry.options.get
         return vol.Schema(
             {
-                # === Smart Features ===
-                vol.Required("smart_features"): data_entry_flow.section(
+                # === Tado Features (Tado-native functionality) ===
+                vol.Required("tado_features"): data_entry_flow.section(
+                    vol.Schema(
+                        {
+                            vol.Optional(
+                                "home_state_sync_enabled",
+                                default=opt("home_state_sync_enabled", False),
+                            ): BooleanSelector(),
+                            vol.Optional(
+                                "weather_enabled",
+                                default=opt("weather_enabled", False),
+                            ): BooleanSelector(),
+                            vol.Optional(
+                                "mobile_devices_enabled",
+                                default=opt("mobile_devices_enabled", False),
+                            ): BooleanSelector(),
+                            vol.Optional(
+                                "schedule_calendar_enabled",
+                                default=opt("schedule_calendar_enabled", False),
+                            ): BooleanSelector(),
+                            vol.Optional(
+                                "offset_enabled",
+                                default=opt("offset_enabled", False),
+                            ): BooleanSelector(),
+                        },
+                    ),
+                    {"collapsed": False},
+                ),
+                # === Hardware Connections (physical bridges) ===
+                vol.Required("hardware_connections"): data_entry_flow.section(
+                    vol.Schema(
+                        {
+                            vol.Optional(
+                                "bridge_enabled",
+                                default=bool(opt("bridge_serial", ""))
+                                and bool(opt("bridge_auth_key", "")),
+                            ): BooleanSelector(),
+                            vol.Optional(
+                                "homekit_enabled",
+                                default=opt("homekit_enabled", False),
+                            ): BooleanSelector(),
+                        },
+                    ),
+                    {"collapsed": False},
+                ),
+                # === Smart Automations (tado_ce value-add features) ===
+                vol.Required("smart_automations"): data_entry_flow.section(
                     vol.Schema(
                         {
                             vol.Optional(
@@ -212,60 +267,15 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                                 default=opt("adaptive_preheat_enabled", False),
                             ): BooleanSelector(),
                             vol.Optional(
-                                "schedule_calendar_enabled",
-                                default=opt("schedule_calendar_enabled", False),
-                            ): BooleanSelector(),
-                        },
-                    ),
-                    {"collapsed": False},
-                ),
-                # === Connections ===
-                vol.Required("connections"): data_entry_flow.section(
-                    vol.Schema(
-                        {
-                            vol.Optional(
-                                "bridge_enabled",
-                                default=bool(opt("bridge_serial", ""))
-                                and bool(opt("bridge_auth_key", "")),
-                            ): BooleanSelector(),
-                            vol.Optional(
                                 "wc_enabled",
                                 default=opt("wc_enabled", False),
                             ): BooleanSelector(),
-                            vol.Optional(
-                                "homekit_enabled",
-                                default=opt("homekit_enabled", False),
-                            ): BooleanSelector(),
                         },
                     ),
                     {"collapsed": False},
                 ),
-                # === Data Sources ===
-                vol.Required("data_sources"): data_entry_flow.section(
-                    vol.Schema(
-                        {
-                            vol.Optional(
-                                "weather_enabled",
-                                default=opt("weather_enabled", False),
-                            ): BooleanSelector(),
-                            vol.Optional(
-                                "home_state_sync_enabled",
-                                default=opt("home_state_sync_enabled", False),
-                            ): BooleanSelector(),
-                            vol.Optional(
-                                "mobile_devices_enabled",
-                                default=opt("mobile_devices_enabled", False),
-                            ): BooleanSelector(),
-                            vol.Optional(
-                                "offset_enabled",
-                                default=opt("offset_enabled", False),
-                            ): BooleanSelector(),
-                        },
-                    ),
-                    {"collapsed": False},
-                ),
-                # === Per-Zone ===
-                vol.Required("per_zone"): data_entry_flow.section(
+                # === Advanced (Per-Zone Configuration) ===
+                vol.Required("advanced"): data_entry_flow.section(
                     vol.Schema(
                         {
                             vol.Optional(
@@ -294,7 +304,12 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
 
         # --- Smart Comfort (if enabled) ---
         if opt("smart_comfort_enabled", False):
-            smart_comfort_default = opt("smart_comfort_mode", opt("weather_compensation", "none"))
+            # First-enable default: if smart_comfort_mode has never been set,
+            # suggest "light" as a sensible starting point. Otherwise preserve
+            # whatever the user chose (including "none" if they explicitly set
+            # that). Legacy `weather_compensation` fallback kept for migration.
+            stored_mode = opt("smart_comfort_mode", opt("weather_compensation"))
+            smart_comfort_default = stored_mode if stored_mode is not None else "light"
             sections[vol.Required("smart_comfort")] = data_entry_flow.section(
                 vol.Schema(
                     {
@@ -307,10 +322,6 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                             description={"suggested_value": opt("outdoor_temp_entity", "")}
                             if opt("outdoor_temp_entity", "") else None,
                         ): EntitySelector(EntitySelectorConfig(domain=["sensor", "weather"])),
-                        vol.Optional(
-                            "hot_water_timer_duration",
-                            default=opt("hot_water_timer_duration", DEFAULT_HOT_WATER_TIMER_DURATION),
-                        ): NumberSelector(NumberSelectorConfig(min=1, max=MAX_CUSTOM_INTERVAL, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="min")),
                         vol.Optional(
                             "smart_comfort_mode",
                             default=smart_comfort_default,
@@ -381,20 +392,12 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
             )
 
         # --- HomeKit (if enabled) ---
+        # Connection status is surfaced in the section description via
+        # description_placeholders (see async_step_advanced_settings) —
+        # NOT via a pseudo-editable TextSelector field.
         if opt("homekit_enabled", False):
-            coordinator = self.config_entry.runtime_data
-            hk_connected = (
-                coordinator.homekit_provider is not None
-                and coordinator.homekit_provider.is_connected
-            )
-            status_text = "Connected" if hk_connected else "Disconnected"
-
             sections[vol.Required("homekit")] = data_entry_flow.section(
                 vol.Schema({
-                    vol.Optional(
-                        "homekit_status",
-                        description={"suggested_value": status_text},
-                    ): TextSelector(TextSelectorConfig(type=TextSelectorType.TEXT)),
                     vol.Optional(
                         "homekit_cloud_sync_minutes",
                         default=opt("homekit_cloud_sync_minutes", DEFAULT_HOMEKIT_CLOUD_SYNC_MINUTES),
@@ -429,6 +432,11 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
         polling_schema_fields[vol.Optional("smart_actions_debounce_seconds", default=opt("smart_actions_debounce_seconds", SMART_ACTIONS_DEBOUNCE_DEFAULT))] = NumberSelector(NumberSelectorConfig(min=SMART_ACTIONS_DEBOUNCE_MIN, max=SMART_ACTIONS_DEBOUNCE_MAX, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="s"))
         polling_schema_fields[vol.Optional("device_sync_delay_seconds", default=opt("device_sync_delay_seconds", DEVICE_SYNC_DELAY_DEFAULT))] = NumberSelector(NumberSelectorConfig(min=DEVICE_SYNC_DELAY_MIN, max=DEVICE_SYNC_DELAY_MAX, step=0.5, mode=NumberSelectorMode.BOX, unit_of_measurement="s"))
 
+        # Hot water timer default duration (service-layer default — affects
+        # the water_heater.turn_on and set_water_heater_timer service when
+        # no explicit duration is given).
+        polling_schema_fields[vol.Optional("hot_water_timer_duration", default=opt("hot_water_timer_duration", DEFAULT_HOT_WATER_TIMER_DURATION))] = NumberSelector(NumberSelectorConfig(min=1, max=MAX_CUSTOM_INTERVAL, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="min"))
+
         # Mobile frequent sync in Polling & API (conditional on mobile_devices_enabled)
         if opt("mobile_devices_enabled", False):
             polling_schema_fields[vol.Optional("mobile_devices_frequent_sync", default=opt("mobile_devices_frequent_sync", False))] = BooleanSelector()
@@ -445,8 +453,18 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
         user_input: dict[str, Any],
         processed: dict[str, Any],
     ) -> None:
-        """Flatten General Settings section dicts to top-level toggle keys."""
-        for section_key in ("smart_features", "connections", "data_sources", "per_zone"):
+        """Flatten General Settings section dicts to top-level toggle keys.
+
+        Section keys are by mental-model grouping (Tado-native vs
+        tado_ce value-add vs hardware), not storage structure — the
+        toggles themselves keep their legacy keys for migration safety.
+        """
+        for section_key in (
+            "tado_features",
+            "hardware_connections",
+            "smart_automations",
+            "advanced",
+        ):
             section = user_input.get(section_key, {})
             for key, value in section.items():
                 processed[key] = value
@@ -585,10 +603,24 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
 
         zones_with_heating_power = await self._load_zones_with_heating_power()
         schema = self._build_advanced_schema(zones_with_heating_power)
+
+        # Compute HomeKit connection status for the section description
+        # (rendered via strings.json placeholder {homekit_status}).
+        homekit_status = ""
+        opt = self.config_entry.options.get
+        if opt("homekit_enabled", False):
+            coordinator = self.config_entry.runtime_data
+            hk_connected = (
+                coordinator.homekit_provider is not None
+                and coordinator.homekit_provider.is_connected
+            )
+            homekit_status = "Connected" if hk_connected else "Disconnected"
+
         return self.async_show_form(
             step_id="advanced_settings",
             data_schema=schema,
             errors=errors,
+            description_placeholders={"homekit_status": homekit_status},
         )
 
     async def async_step_bridge_setup(
@@ -746,7 +778,6 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
             return
         section = user_input["smart_comfort"]
         for key in [
-            "hot_water_timer_duration",
             "smart_comfort_mode",
             "use_feels_like",
             "mold_risk_window_type",
@@ -782,6 +813,7 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                 "api_history_retention_days",
                 "smart_actions_debounce_seconds",
                 "device_sync_delay_seconds",
+                "hot_water_timer_duration",
             ]:
                 if key in section:
                     processed[key] = section[key]
@@ -979,19 +1011,47 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
             # SVC Mode select (only present for HEATING zones with external sensor)
             if "svc_mode" in s:
                 all_values["svc_mode"] = s["svc_mode"]
+            if "svc_offset_min_change" in s:
+                raw_min_change = float(s["svc_offset_min_change"])
+                all_values["svc_offset_min_change"] = max(
+                    SVC_OFFSET_MIN_CHANGE_MIN,
+                    min(raw_min_change, SVC_OFFSET_MIN_CHANGE_MAX),
+                )
 
         if "overlay_section" in user_input:
             s = user_input["overlay_section"]
             all_values["overlay_mode"] = OVERLAY_MODE_MAP.get(
                 s.get("overlay_mode", "Tado Default"), OVERLAY_MODE_DEFAULT,
             )
-            all_values["timer_duration"] = int(s.get("timer_duration", str(TIMER_DURATION_DEFAULT)))
+            raw_timer = int(s.get("timer_duration", str(TIMER_DURATION_DEFAULT)))
+            all_values["timer_duration"] = max(
+                TIMER_DURATION_MIN, min(raw_timer, TIMER_DURATION_MAX),
+            )
 
         if "temperature_section" in user_input:
             s = user_input["temperature_section"]
-            all_values["min_temp"] = float(s.get("min_temp", 5.0))
-            all_values["max_temp"] = float(s.get("max_temp", 25.0))
-            all_values["surface_temp_offset"] = float(s.get("surface_temp_offset", 0.0))
+            raw_min = float(s.get("min_temp", 5.0))
+            raw_max = float(s.get("max_temp", 25.0))
+            raw_surface = float(s.get("surface_temp_offset", 0.0))
+            # Clamp to absolute bounds so YAML-import / service-call paths
+            # that bypass the UI NumberSelector cannot persist out-of-range
+            # values (defense in depth).
+            clamped_min = max(
+                ZONE_TEMP_MIN_FLOOR, min(raw_min, ZONE_TEMP_MAX_CEILING),
+            )
+            clamped_max = max(
+                ZONE_TEMP_MIN_FLOOR, min(raw_max, ZONE_TEMP_MAX_CEILING),
+            )
+            # Inverted bounds (e.g. min=25, max=10 from hand-edit) would make
+            # the valve controller fall back to defaults at runtime. Swap
+            # here so the persisted values are at least self-consistent.
+            if clamped_min > clamped_max:
+                clamped_min, clamped_max = clamped_max, clamped_min
+            all_values["min_temp"] = clamped_min
+            all_values["max_temp"] = clamped_max
+            all_values["surface_temp_offset"] = max(
+                SURFACE_TEMP_OFFSET_MIN, min(raw_surface, SURFACE_TEMP_OFFSET_MAX),
+            )
 
         return all_values
 
@@ -1005,17 +1065,33 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
 
         coordinator = self.config_entry.runtime_data
         zone_config_manager = coordinator.zone_config_manager
+        errors: dict[str, str] = {}
 
         if user_input is not None:
             all_values = self._process_zone_sensor_input(
                 user_input, zone_config_manager.get_zone_config(zone_id),
             )
 
-            for key, value in all_values.items():
-                await zone_config_manager.async_set_zone_value(zone_id, key, value)
+            # SVC-active + sensor clear inline validation.
+            # Clearing the external sensor on a zone with an active SVC
+            # mode would silently deactivate the controller at runtime —
+            # surface this as an inline schema error so the user knows
+            # the right mitigation (set SVC Mode to Off first).
+            existing = zone_config_manager.get_zone_config(zone_id)
+            prev_sensor = existing.get("external_temp_sensor", "")
+            new_sensor = all_values.get("external_temp_sensor", "")
+            active_svc_mode = all_values.get(
+                "svc_mode", existing.get("svc_mode", "off"),
+            )
+            if prev_sensor and not new_sensor and active_svc_mode != "off":
+                errors["sensor_section"] = "svc_active_sensor_clear"
 
-            # Return to menu (no config entry change — zone_config.json is separate)
-            return self.async_create_entry(title="", data=self.config_entry.options)
+            if not errors:
+                for key, value in all_values.items():
+                    await zone_config_manager.async_set_zone_value(zone_id, key, value)
+
+                # Return to menu (no config entry change — zone_config.json is separate)
+                return self.async_create_entry(title="", data=self.config_entry.options)
 
         # Load current values
         config = zone_config_manager.get_zone_config(zone_id)
@@ -1054,6 +1130,7 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
         cur_temp_sensor = config.get("external_temp_sensor", "")
         cur_humidity_sensor = config.get("external_humidity_sensor", "")
         cur_svc_mode = config.get("svc_mode", "off")
+        cur_svc_offset_min_change = config.get("svc_offset_min_change", 0.5)
         cur_use_ext_temp = bool(cur_temp_sensor)
         cur_use_ext_humidity = bool(cur_humidity_sensor)
         cur_overlay = OVERLAY_MODE_REVERSE_MAP.get(
@@ -1068,7 +1145,44 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
             step_id="zone_sensor_config",
             data_schema=vol.Schema(
                 {
-                    # === Heating ===
+                    # === Temperature Limits === (fundamental boundaries first)
+                    vol.Required("temperature_section"): data_entry_flow.section(
+                        vol.Schema(
+                            {
+                                vol.Optional(
+                                    "min_temp", default=cur_min_temp,
+                                ): NumberSelector(
+                                    NumberSelectorConfig(
+                                        min=5.0, max=25.0, step=0.5,
+                                        mode=NumberSelectorMode.BOX,
+                                        unit_of_measurement="°C",
+                                    ),
+                                ),
+                                vol.Optional(
+                                    "max_temp", default=cur_max_temp,
+                                ): NumberSelector(
+                                    NumberSelectorConfig(
+                                        min=15.0, max=30.0, step=0.5,
+                                        mode=NumberSelectorMode.BOX,
+                                        unit_of_measurement="°C",
+                                    ),
+                                ),
+                                vol.Optional(
+                                    "surface_temp_offset", default=cur_surface_offset,
+                                ): NumberSelector(
+                                    NumberSelectorConfig(
+                                        min=SURFACE_TEMP_OFFSET_MIN,
+                                        max=SURFACE_TEMP_OFFSET_MAX,
+                                        step=SURFACE_TEMP_OFFSET_STEP,
+                                        mode=NumberSelectorMode.BOX,
+                                        unit_of_measurement="°C",
+                                    ),
+                                ),
+                            },
+                        ),
+                        {"collapsed": False},
+                    ),
+                    # === Heating System === (physical hardware)
                     vol.Required("heating_section"): data_entry_flow.section(
                         vol.Schema(
                             {
@@ -1102,7 +1216,71 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                         ),
                         {"collapsed": False},
                     ),
-                    # === Comfort ===
+                    # === External Sensors === (augments Tado's built-in sensors)
+                    vol.Required("sensor_section"): data_entry_flow.section(
+                        vol.Schema(
+                            {
+                                vol.Optional(
+                                    "use_external_temp", default=cur_use_ext_temp,
+                                ): BooleanSelector(),
+                                vol.Optional(
+                                    "external_temp_sensor",
+                                    description={"suggested_value": cur_temp_sensor}
+                                    if cur_temp_sensor else None,
+                                ): EntitySelector(
+                                    EntitySelectorConfig(
+                                        domain="sensor", device_class="temperature",
+                                    ),
+                                ),
+                                vol.Optional(
+                                    "use_external_humidity", default=cur_use_ext_humidity,
+                                ): BooleanSelector(),
+                                vol.Optional(
+                                    "external_humidity_sensor",
+                                    description={"suggested_value": cur_humidity_sensor}
+                                    if cur_humidity_sensor else None,
+                                ): EntitySelector(
+                                    EntitySelectorConfig(
+                                        domain="sensor", device_class="humidity",
+                                    ),
+                                ),
+                                **(
+                                    {
+                                        vol.Optional(
+                                            "svc_mode", default=cur_svc_mode,
+                                        ): SelectSelector(
+                                            SelectSelectorConfig(
+                                                # Ordering signals recommendation:
+                                                # Offset Sync before Valve Target.
+                                                options=["off", "offset_sync", "valve_target"],
+                                                translation_key="svc_mode",
+                                                mode=SelectSelectorMode.DROPDOWN,
+                                            ),
+                                        ),
+                                        **(
+                                            {
+                                                vol.Optional(
+                                                    "svc_offset_min_change", default=cur_svc_offset_min_change,
+                                                ): NumberSelector(
+                                                    NumberSelectorConfig(
+                                                        min=0.5, max=3.0, step=0.5,
+                                                        mode=NumberSelectorMode.SLIDER,
+                                                        unit_of_measurement="°C",
+                                                    ),
+                                                ),
+                                            }
+                                            if cur_svc_mode == "offset_sync"
+                                            else {}
+                                        ),
+                                    }
+                                    if zone_type == "HEATING" and (cur_temp_sensor or cur_use_ext_temp)
+                                    else {}
+                                ),
+                            },
+                        ),
+                        {"collapsed": True},
+                    ),
+                    # === Smart Features === (depends on sensors above)
                     vol.Required("comfort_section"): data_entry_flow.section(
                         vol.Schema(
                             {
@@ -1144,54 +1322,7 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                         ),
                         {"collapsed": True},
                     ),
-                    # === External Sensors ===
-                    vol.Required("sensor_section"): data_entry_flow.section(
-                        vol.Schema(
-                            {
-                                vol.Optional(
-                                    "use_external_temp", default=cur_use_ext_temp,
-                                ): BooleanSelector(),
-                                vol.Optional(
-                                    "external_temp_sensor",
-                                    description={"suggested_value": cur_temp_sensor}
-                                    if cur_temp_sensor else None,
-                                ): EntitySelector(
-                                    EntitySelectorConfig(
-                                        domain="sensor", device_class="temperature",
-                                    ),
-                                ),
-                                vol.Optional(
-                                    "use_external_humidity", default=cur_use_ext_humidity,
-                                ): BooleanSelector(),
-                                vol.Optional(
-                                    "external_humidity_sensor",
-                                    description={"suggested_value": cur_humidity_sensor}
-                                    if cur_humidity_sensor else None,
-                                ): EntitySelector(
-                                    EntitySelectorConfig(
-                                        domain="sensor", device_class="humidity",
-                                    ),
-                                ),
-                                **(
-                                    {
-                                        vol.Optional(
-                                            "svc_mode", default=cur_svc_mode,
-                                        ): SelectSelector(
-                                            SelectSelectorConfig(
-                                                options=["off", "valve_target", "offset_sync"],
-                                                translation_key="svc_mode",
-                                                mode=SelectSelectorMode.DROPDOWN,
-                                            ),
-                                        ),
-                                    }
-                                    if zone_type == "HEATING" and (cur_temp_sensor or cur_use_ext_temp)
-                                    else {}
-                                ),
-                            },
-                        ),
-                        {"collapsed": True},
-                    ),
-                    # === Overlay ===
+                    # === Manual Temperature Override === (runtime control)
                     vol.Required("overlay_section"): data_entry_flow.section(
                         vol.Schema(
                             {
@@ -1215,44 +1346,8 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                         ),
                         {"collapsed": True},
                     ),
-                    # === Temperature ===
-                    vol.Required("temperature_section"): data_entry_flow.section(
-                        vol.Schema(
-                            {
-                                vol.Optional(
-                                    "min_temp", default=cur_min_temp,
-                                ): NumberSelector(
-                                    NumberSelectorConfig(
-                                        min=5.0, max=25.0, step=0.5,
-                                        mode=NumberSelectorMode.BOX,
-                                        unit_of_measurement="°C",
-                                    ),
-                                ),
-                                vol.Optional(
-                                    "max_temp", default=cur_max_temp,
-                                ): NumberSelector(
-                                    NumberSelectorConfig(
-                                        min=15.0, max=30.0, step=0.5,
-                                        mode=NumberSelectorMode.BOX,
-                                        unit_of_measurement="°C",
-                                    ),
-                                ),
-                                vol.Optional(
-                                    "surface_temp_offset", default=cur_surface_offset,
-                                ): NumberSelector(
-                                    NumberSelectorConfig(
-                                        min=SURFACE_TEMP_OFFSET_MIN,
-                                        max=SURFACE_TEMP_OFFSET_MAX,
-                                        step=SURFACE_TEMP_OFFSET_STEP,
-                                        mode=NumberSelectorMode.BOX,
-                                        unit_of_measurement="°C",
-                                    ),
-                                ),
-                            },
-                        ),
-                        {"collapsed": True},
-                    ),
                 },
             ),
+            errors=errors,
             description_placeholders={"zone_name": zone_name},
         )
