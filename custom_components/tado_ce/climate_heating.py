@@ -29,6 +29,7 @@ from .climate_helpers import (
     setup_climate_external_sensor_subscription,
     unsubscribe_external_sensors,
     update_offset,
+    update_offset_clamp,
     update_preset_mode,
 )
 from .const import (
@@ -325,38 +326,36 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity,
         if reconciler and provider and provider.is_connected:
             reconciler.local_provider = provider
 
-            # Target temperature — skip merge when zone is OFF (frost protection
-            # target 5°C is authoritative; HomeKit bridge reports stale target
-            # from the last heating cycle)
-            if self._attr_hvac_mode != HVACMode.OFF:
-                cloud_target = self._attr_target_temperature
-                merged_target, target_src = reconciler.merge_zone_target_temperature(
-                    self._zone_id, cloud_target,
+            # Target temperature — always consult the reconciler. When
+            # the zone is OFF, the reconciler's changed-timestamp check
+            # rejects stale bridge echoes (the #258 loop); legitimate
+            # pushes from the Tado app still pass through (fixes #261).
+            cloud_target = self._attr_target_temperature
+            merged_target, target_src = reconciler.merge_zone_target_temperature(
+                self._zone_id, cloud_target,
+            )
+            if merged_target is not None and merged_target != self._attr_target_temperature:
+                self._attr_target_temperature = merged_target
+                _LOGGER.debug(
+                    "%s: HomeKit target temp update: %s → %s (%s)",
+                    self._zone_name, cloud_target, merged_target, target_src,
                 )
-                if merged_target is not None and merged_target != self._attr_target_temperature:
-                    self._attr_target_temperature = merged_target
-                    _LOGGER.debug(
-                        "%s: HomeKit target temp update: %s → %s (%s)",
-                        self._zone_name, cloud_target, merged_target, target_src,
-                    )
 
-            # HVAC mode (target heating state) — skip merge when zone is OFF
-            # (cloud is authoritative for mode transitions; HomeKit bridge
-            # may report stale target_heating_state = HEAT after user set OFF)
-            if self._attr_hvac_mode != HVACMode.OFF:
-                merged_state, state_src = reconciler.merge_zone_target_heating_state(
-                    self._zone_id, None,  # No cloud value in real-time path
-                )
-                if merged_state is not None and state_src == "homekit":
-                    new_mode = _HOMEKIT_TARGET_STATE_TO_HVAC.get(merged_state)
-                    if new_mode is not None and new_mode != self._attr_hvac_mode:
-                        old_mode = self._attr_hvac_mode
-                        self._attr_hvac_mode = new_mode
-                        self._attr_hvac_action = self._calculate_hvac_action()
-                        _LOGGER.debug(
-                            "%s: HomeKit HVAC mode update: %s → %s (%s)",
-                            self._zone_name, old_mode, new_mode, state_src,
-                        )
+            # HVAC mode — reconciler's changed-timestamp check handles
+            # stale-vs-fresh the same way.
+            merged_state, state_src = reconciler.merge_zone_target_heating_state(
+                self._zone_id, None,  # No cloud value in real-time path
+            )
+            if merged_state is not None and state_src == "homekit":
+                new_mode = _HOMEKIT_TARGET_STATE_TO_HVAC.get(merged_state)
+                if new_mode is not None and new_mode != self._attr_hvac_mode:
+                    old_mode = self._attr_hvac_mode
+                    self._attr_hvac_mode = new_mode
+                    self._attr_hvac_action = self._calculate_hvac_action()
+                    _LOGGER.debug(
+                        "%s: HomeKit HVAC mode update: %s → %s (%s)",
+                        self._zone_name, old_mode, new_mode, state_src,
+                    )
 
         self.async_write_ha_state()
 
@@ -400,6 +399,12 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity,
         # Only include offset_celsius if enabled and available
         if self._offset_celsius is not None:
             attrs["offset_celsius"] = self._offset_celsius
+            # Offset Sync clamp signal — user-visible when the physical
+            # gap needed a correction outside Tado's ±10°C device limit.
+            clamp_direction = update_offset_clamp(self.coordinator, self._zone_id)
+            if clamp_direction is not None:
+                attrs["offset_clamped"] = clamp_direction != "none"
+                attrs["offset_clamp_direction"] = clamp_direction
         # Schedule Preview — show current schedule target temperature
         scheduled_temp = get_current_schedule_target(
             self._zone_id,

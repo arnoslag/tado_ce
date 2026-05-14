@@ -546,23 +546,24 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
                     self._zone_name, cloud_target, merged_target, target_src,
                 )
 
-            # HVAC mode (target heating state) — skip merge when zone is OFF
-            # (cloud is authoritative for mode transitions; HomeKit bridge
-            # may report stale target_heating_state after user set OFF)
-            if self._attr_hvac_mode != HVACMode.OFF:
-                merged_state, state_src = reconciler.merge_zone_target_heating_state(
-                    self._zone_id, None,  # No cloud value in real-time path
-                )
-                if merged_state is not None and state_src == "homekit":
-                    new_mode = _HOMEKIT_TARGET_STATE_TO_HVAC_AC.get(merged_state)
-                    if new_mode is not None and new_mode != self._attr_hvac_mode:
-                        old_mode = self._attr_hvac_mode
-                        self._attr_hvac_mode = new_mode
-                        self._attr_hvac_action = self._calculate_hvac_action(hvac_mode=new_mode)
-                        _LOGGER.debug(
-                            "AC %s: HomeKit HVAC mode update: %s → %s (%s)",
-                            self._zone_name, old_mode, new_mode, state_src,
-                        )
+            # HVAC mode — reconciler's changed-timestamp check handles
+            # stale-vs-fresh. AC zones don't have the frost-protection
+            # semantic that heating zones do, so OFF here just means
+            # "user turned it off"; a legitimate OFF → COOL / OFF → HEAT
+            # via the Tado app must still reflect here.
+            merged_state, state_src = reconciler.merge_zone_target_heating_state(
+                self._zone_id, None,  # No cloud value in real-time path
+            )
+            if merged_state is not None and state_src == "homekit":
+                new_mode = _HOMEKIT_TARGET_STATE_TO_HVAC_AC.get(merged_state)
+                if new_mode is not None and new_mode != self._attr_hvac_mode:
+                    old_mode = self._attr_hvac_mode
+                    self._attr_hvac_mode = new_mode
+                    self._attr_hvac_action = self._calculate_hvac_action(hvac_mode=new_mode)
+                    _LOGGER.debug(
+                        "AC %s: HomeKit HVAC mode update: %s → %s (%s)",
+                        self._zone_name, old_mode, new_mode, state_src,
+                    )
 
         self.async_write_ha_state()
 

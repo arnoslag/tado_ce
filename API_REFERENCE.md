@@ -238,4 +238,4 @@ Two categories of Store, both keyed per home (multi-home isolation):
 
 ---
 
-**Last Updated:** v4.0.0-beta.15 (2026-05-10)
+**Last Updated:** v4.0.0-beta.16 (2026-05-14)

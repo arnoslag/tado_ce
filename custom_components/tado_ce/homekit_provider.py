@@ -80,8 +80,8 @@ class HomeKitLocalProvider:
         self._client = client
         self._hass = hass
         self._home_id = home_id
-        # Cache: zone_id → {char_type: (value, timestamp)}
-        self._cache: dict[str, dict[str, tuple[Any, datetime]]] = {}
+        # Cache: zone_id → {char_type: (value, last_changed_at, last_observed_at)}
+        self._cache: dict[str, dict[str, tuple[Any, datetime, datetime]]] = {}
         # Accessory list cache (refreshed on connect)
         self._accessories: list[dict[str, Any]] = []
         # Event subscription cleanup
@@ -105,70 +105,93 @@ class HomeKitLocalProvider:
         zone_id: str,
         char_type: str,
         value: Any,
+        observed_at: datetime | None = None,
     ) -> None:
         """Update the local cache for a zone characteristic.
 
-        Called by event subscription callbacks when bridge pushes updates.
+        `last_changed_at` advances only when the value differs from the
+        previous cached value. `last_observed_at` advances on every call.
+        Keepalive-style writes (same value) should still call this to
+        refresh observed_at; consumers decide which timestamp to trust.
         """
+        now = observed_at or dt_util.utcnow()
         if zone_id not in self._cache:
             self._cache[zone_id] = {}
-        self._cache[zone_id][char_type] = (value, dt_util.utcnow())
+        prev = self._cache[zone_id].get(char_type)
+        if prev is not None and prev[0] == value:
+            # Same value — keep last_changed_at, advance last_observed_at only.
+            self._cache[zone_id][char_type] = (prev[0], prev[1], now)
+        else:
+            self._cache[zone_id][char_type] = (value, now, now)
 
-    def get_temperature(self, zone_id: str) -> tuple[float | None, datetime | None]:
+    def get_temperature(
+        self, zone_id: str,
+    ) -> tuple[float | None, datetime | None, datetime | None]:
         """Get current temperature for a zone.
 
         Returns:
-            (celsius, timestamp) or (None, None) if unavailable.
+            (celsius, last_changed_at, last_observed_at) — any field is
+            None if the cache has no entry for this zone/char.
         """
         entry = self._cache.get(zone_id, {}).get(CHAR_CURRENT_TEMPERATURE)
         if entry is None:
-            return None, None
+            return None, None, None
         return entry
 
-    def get_humidity(self, zone_id: str) -> tuple[float | None, datetime | None]:
+    def get_humidity(
+        self, zone_id: str,
+    ) -> tuple[float | None, datetime | None, datetime | None]:
         """Get current humidity for a zone.
 
         Returns:
-            (percentage, timestamp) or (None, None) if unavailable.
+            (percentage, last_changed_at, last_observed_at) — any field
+            is None if the cache has no entry for this zone/char.
         """
         entry = self._cache.get(zone_id, {}).get(CHAR_CURRENT_HUMIDITY)
         if entry is None:
-            return None, None
+            return None, None, None
         return entry
 
-    def get_target_temperature(self, zone_id: str) -> tuple[float | None, datetime | None]:
+    def get_target_temperature(
+        self, zone_id: str,
+    ) -> tuple[float | None, datetime | None, datetime | None]:
         """Get target temperature for a zone.
 
         Returns:
-            (celsius, timestamp) or (None, None) if unavailable.
+            (celsius, last_changed_at, last_observed_at) — any field is
+            None if the cache has no entry for this zone/char.
         """
         entry = self._cache.get(zone_id, {}).get(CHAR_TARGET_TEMPERATURE)
         if entry is None:
-            return None, None
+            return None, None, None
         return entry
 
-    def get_hvac_state(self, zone_id: str) -> tuple[int | None, datetime | None]:
+    def get_hvac_state(
+        self, zone_id: str,
+    ) -> tuple[int | None, datetime | None, datetime | None]:
         """Get current HVAC state for a zone.
 
         Returns:
-            (state_int, timestamp) or (None, None) if unavailable.
+            (state_int, last_changed_at, last_observed_at).
             State: 0=Off, 1=Heat, 2=Cool.
         """
         entry = self._cache.get(zone_id, {}).get(CHAR_CURRENT_HEATING_STATE)
         if entry is None:
-            return None, None
+            return None, None, None
         return entry
 
-    def get_target_heating_state(self, zone_id: str) -> tuple[int | None, datetime | None]:
+    def get_target_heating_state(
+        self, zone_id: str,
+    ) -> tuple[int | None, datetime | None, datetime | None]:
         """Get target heating/cooling state for a zone.
 
         Returns:
-            (state_int, timestamp) or (None, None) if unavailable.
+            (state_int, last_changed_at, last_observed_at).
             State: 0=Off, 1=Heat, 2=Cool, 3=Auto.
         """
         entry = self._cache.get(zone_id, {}).get(CHAR_TARGET_HEATING_STATE)
         if entry is None:
-            return None, None
+            return None, None, None
         return entry
 
     async def set_temperature(self, zone_id: str, temperature: float) -> bool:

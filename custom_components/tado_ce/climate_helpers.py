@@ -62,6 +62,34 @@ def update_offset(
         return None
 
 
+def update_offset_clamp(
+    coordinator: TadoDataUpdateCoordinator,
+    zone_id: str,
+) -> str | None:
+    """Read the Offset Sync clamp-direction signal for a zone.
+
+    Returns "none" (no clamp), "hit_max" (+10°C limit hit), "hit_min"
+    (-10°C limit hit), or None if Offset Sync has never written for
+    this zone. Used by the climate entity's extra_state_attributes to
+    surface the clamp signal to users.
+    """
+    try:
+        config_manager = coordinator.config_manager
+        if not config_manager or not config_manager.get_offset_enabled():
+            return None
+
+        clamps = (coordinator.data or {}).get("offset_clamps")
+        if not isinstance(clamps, dict):
+            return None
+        value = clamps.get(zone_id)
+        if value in ("none", "hit_max", "hit_min"):
+            return value  # type: ignore[no-any-return]
+        return None
+    except AttributeError:
+        # coordinator not fully initialised yet — fall through to None
+        return None
+
+
 def update_preset_mode(coordinator: TadoDataUpdateCoordinator) -> str | None:
     """Read preset mode (HOME/AWAY) from home_state.json.
 
@@ -89,7 +117,7 @@ def update_preset_mode(coordinator: TadoDataUpdateCoordinator) -> str | None:
 
 def inject_presence_state(
     coordinator: TadoDataUpdateCoordinator,
-    presence: str,
+    presence: str | None,
     locked: bool,
 ) -> None:
     """Inject presence state into coordinator data after a local API write.
@@ -105,14 +133,30 @@ def inject_presence_state(
 
     Args:
         coordinator: The data update coordinator
-        presence: "HOME" or "AWAY"
-        locked: Whether presence is manually locked (True for home/away, False for auto)
+        presence: "HOME", "AWAY", or None. None means "leave the existing
+            cached presence unchanged" — used for the "auto" path where
+            the API call deletes the lock and geofencing now decides, so
+            we don't actually know whether the resulting presence is
+            HOME or AWAY until the next poll. Forcing "HOME" here would
+            poison the cache for users who switch to auto while
+            physically away.
+        locked: Whether presence is manually locked (True for home/away,
+            False for auto)
 
     """
-    home_state = {
-        "presence": presence,
-        "presenceLocked": locked,
-    }
+    existing = (coordinator.data or {}).get("home_state") if coordinator.data else None
+    if not isinstance(existing, dict):
+        existing = {}
+
+    if presence is None:
+        resolved_presence = existing.get("presence")
+    else:
+        resolved_presence = presence
+
+    home_state: dict[str, Any] = {"presenceLocked": locked}
+    if resolved_presence is not None:
+        home_state["presence"] = resolved_presence
+
     if coordinator.data is None:
         coordinator.data = {}
     coordinator.data["home_state"] = home_state

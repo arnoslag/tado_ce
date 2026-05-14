@@ -12,7 +12,7 @@ from homeassistant.helpers.entity import DeviceInfo  # type: ignore[attr-defined
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
-from .const import DOMAIN, MANUFACTURER
+from .const import DOMAIN, LOW_QUOTA_THRESHOLD, MANUFACTURER
 from .entity_registry import ENTITY_REGISTRY
 
 if TYPE_CHECKING:
@@ -83,17 +83,43 @@ async def async_setup_entry(
         _LOGGER.warning("No zones found for calendar setup")
         return
 
-    # Fetch all schedules first
+    # Reuse cached schedules when available — avoids burning API quota on
+    # every entry-setup retry (#261). Schedules rarely change day-to-day,
+    # so a mildly stale cached schedule is strictly better than no calendar
+    # at all when the quota is low.
     client = coordinator.api_client
-    schedules = {}
+    cached_schedules = data_loader.load_schedules_file() or {}
+    ratelimit_data = data_loader.load_ratelimit_file() or {}
+    remaining = ratelimit_data.get("remaining", 100)
+    low_quota = remaining <= LOW_QUOTA_THRESHOLD
+
+    schedules: dict[str, Any] = {}
+    cached_hits = 0
+    fetched = 0
+    skipped_low_quota = 0
 
     for zone_data in zones_info:
         zone_id = str(zone_data.get("id", ""))
         zone_name = zone_data.get("name", f"Zone {zone_id}")
         zone_type = zone_data.get("type", "HEATING")
 
-        # Only fetch HEATING zones
         if zone_type != "HEATING":
+            continue
+
+        cached = cached_schedules.get(zone_id)
+        if cached:
+            schedules[zone_id] = cached
+            cached_hits += 1
+            continue
+
+        if low_quota:
+            skipped_low_quota += 1
+            _LOGGER.warning(
+                "Calendar: skipping schedule fetch for %s — API quota low "
+                "(%s remaining). Zone will get a schedule entity after "
+                "the quota resets.",
+                zone_name, remaining,
+            )
             continue
 
         try:
@@ -102,14 +128,21 @@ async def async_setup_entry(
                 schedules[zone_id] = {
                     "name": zone_name,
                     "type": schedule_data.get("type", "ONE_DAY"),
-                    # Tado API may return null for existing keys; 'or {}' handles None correctly
                     "blocks": schedule_data.get("blocks") or {},
                 }
+                fetched += 1
         except Exception:
             _LOGGER.exception("Failed to fetch schedule for %s", zone_name)
 
-    # Save schedules to file
-    await _async_save_schedules(hass, schedules, home_id, data_loader=data_loader)
+    # Only re-persist when we added new fetched data — avoids overwriting
+    # good cache with a partial result after a low-quota bail.
+    if fetched > 0:
+        await _async_save_schedules(hass, schedules, home_id, data_loader=data_loader)
+
+    _LOGGER.info(
+        "Calendar: %d zone(s) loaded — %d from cache, %d fetched, %d skipped (low quota)",
+        len(schedules), cached_hits, fetched, skipped_low_quota,
+    )
 
     # Create calendar entity for each zone
     calendars = []
@@ -125,7 +158,6 @@ async def async_setup_entry(
         )
 
     async_add_entities(calendars)
-    _LOGGER.info("Added %s Tado schedule calendars", len(calendars))
 
 
 async def _async_save_schedules(

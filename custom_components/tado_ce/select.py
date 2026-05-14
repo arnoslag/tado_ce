@@ -226,9 +226,13 @@ class TadoPresenceModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sel
         if success:
             _LOGGER.info("Set presence mode to %s", option)
             # Inject home_state locally so climate entities update preset_mode
-            # even when Home State Sync is disabled
+            # even when Home State Sync is disabled. For "auto", we only
+            # know presenceLocked = False — the actual HOME/AWAY value
+            # depends on geofencing and is unknown until the next poll,
+            # so we leave the existing cached presence untouched rather
+            # than guess "HOME".
             if option == "auto":
-                inject_presence_state(self.coordinator, "HOME", locked=False)
+                inject_presence_state(self.coordinator, None, locked=False)
             else:
                 inject_presence_state(self.coordinator, option.upper(), locked=True)
             await async_trigger_immediate_refresh(

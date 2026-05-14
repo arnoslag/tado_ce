@@ -26,6 +26,8 @@ from .const import (
     HOMEKIT_SAVINGS_RESET_MIN_JUMP,
     HOMEKIT_SAVINGS_RESET_RATIO,
     HOMEKIT_WEATHER_SKIP_MINUTES,
+    LOW_QUOTA_THRESHOLD,
+    OFFSET_DRIFT_REFRESH_SECONDS,
     OUTDOOR_TEMP_HISTORY_MAX,
     OVERLAY_MODE_DEFAULT,
     TIMER_DURATION_DEFAULT,
@@ -168,6 +170,12 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Full sync tracking
         self._last_full_sync: datetime | None = None
         self._cached_ratelimit: dict[str, Any] | None = None
+
+        # Periodic offset drift refresh tracker (#262 follow-up). The
+        # full sync's _sync_offsets pass updates this stamp; the
+        # post-sync drift check fires when the stamp ages past
+        # OFFSET_DRIFT_REFRESH_SECONDS.
+        self._last_offset_resync: datetime | None = None
 
         # Bridge API client (lazy-init from options when bridge credentials present)
         self.bridge_api_client: TadoBridgeApiClient | None = None
@@ -344,6 +352,14 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         api_call_history_data: dict[str, Any] = dict(self.api_tracker._call_history) if self.api_tracker else {}
         zones_info_data = self.data_loader.get_cached("zones_info")
         mobile_devices_data = self.data_loader.get_cached("mobile_devices")
+
+        # Periodic offset drift refresh (#262 follow-up) — fire BEFORE
+        # snapshotting `offsets` so the result dict carries the freshly
+        # re-fetched values. See _maybe_resync_offsets for the gating
+        # logic.
+        ratelimit_for_resync = ratelimit_data if isinstance(ratelimit_data, dict) else None
+        await self._maybe_resync_offsets(zones_info_data, ratelimit_for_resync)
+
         offsets_data = self.data_loader.get_cached("offsets")
         schedules_data = self.data_loader.get_cached("schedules")
         ac_capabilities = self.data_loader.get_cached("ac_capabilities")
@@ -563,6 +579,11 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         if do_full_sync:
             self._last_full_sync = dt_util.utcnow()
+            # Full sync's _sync_offsets pass already pulled fresh offsets,
+            # so the periodic drift refresh in _maybe_resync_offsets can
+            # skip the next interval rather than double-fetching.
+            if cm.get_offset_enabled():
+                self._last_offset_resync = dt_util.utcnow()
 
         # Update cloud zone fetch timestamp when zoneStates was fetched
         # Reset HomeKit savings counters when API quota resets.
@@ -616,6 +637,67 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         zone_data = self.data_loader.get_cached("zones")
         weather_data = self.data_loader.get_cached("weather")
         return await self._async_post_sync_processing(zone_data, weather_data)
+
+    async def _maybe_resync_offsets(
+        self,
+        zones_info_data: dict[str, Any] | list[Any] | None,
+        ratelimit_data: dict[str, Any] | None,
+    ) -> None:
+        """Re-fetch device offsets from Tado when the cache may be stale.
+
+        Tado's adaptive calibration can change a stored device offset
+        without HA having written it (manual edit in the Tado app, or
+        Tado's own learning loop). The Offset Sync controller's
+        per-write readback gate (#262) only confirms what we wrote
+        landed; later server-side drift goes unnoticed and the next
+        evaluation calculates `desired = external - (inside - cached)`
+        from the wrong baseline, which can drag the cache to ±10°C.
+
+        This method runs from `_async_post_sync_processing` and gates a
+        re-fetch on three conditions:
+
+        1. Offset feature enabled.
+        2. `OFFSET_DRIFT_REFRESH_SECONDS` has passed since the last
+           full sync or drift refresh.
+        3. API quota is not low (>= LOW_QUOTA_THRESHOLD remaining) —
+           the readback gate keeps the cache safe even when this
+           refresh is skipped, so it is fine to back off under quota
+           pressure.
+
+        Skipping in (3) is safe but not free — every minute the cache
+        runs without resync is a minute the next Offset Sync evaluation
+        could compute from a stale baseline. The trade-off favours not
+        burning the user's last quota on a defence-in-depth refresh.
+        """
+        if not self.config_manager.get_offset_enabled():
+            return
+
+        if not zones_info_data or not isinstance(zones_info_data, list):
+            return
+
+        last = self._last_offset_resync
+        if last is not None:
+            age = (dt_util.utcnow() - last).total_seconds()
+            if age < OFFSET_DRIFT_REFRESH_SECONDS:
+                return
+
+        if isinstance(ratelimit_data, dict):
+            remaining = ratelimit_data.get("remaining")
+            if isinstance(remaining, int) and remaining < LOW_QUOTA_THRESHOLD:
+                _LOGGER.debug(
+                    "Offset drift refresh: skipping — API quota low (%s remaining)",
+                    remaining,
+                )
+                return
+
+        try:
+            await self.api_client.async_resync_offsets(zones_info_data)
+        except Exception:
+            _LOGGER.debug("Offset drift refresh: fetch failed", exc_info=True)
+            return
+
+        self._last_offset_resync = dt_util.utcnow()
+        _LOGGER.debug("Offset drift refresh: cache reconciled with Tado")
 
     async def _accumulate_outdoor_temp_history(
         self, weather_data: dict[str, Any] | list[Any] | None,

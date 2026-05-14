@@ -51,26 +51,37 @@ class StateReconciler:
         self,
         zone_id: str,
         getter: str,
+        freshness_mode: str = "observed",
     ) -> tuple[float | int | None, bool]:
         """Get a fresh value from local provider.
 
         Args:
             zone_id: Zone identifier.
             getter: Method name on local_provider (e.g. "get_temperature").
+            freshness_mode: Which cache timestamp to check against the
+                staleness threshold. "observed" = last_observed_at (keeps
+                stable readings valid). "changed" = last_changed_at
+                (rejects cache entries that haven't seen a real value
+                change within the threshold — needed for event-driven
+                signals like target temperature and mode).
 
         Returns:
-            (value, is_fresh) — value is None if unavailable or stale.
+            (value, is_fresh) — is_fresh is False when value or the
+            relevant timestamp is None, or its age exceeds the threshold.
         """
         if not self._local_provider or not self._local_provider.is_connected:
             return None, False
         method = getattr(self._local_provider, getter)
         result = method(zone_id)
-        if not isinstance(result, tuple) or len(result) != 2:
+        if not isinstance(result, tuple) or len(result) != 3:
             return None, False
-        value, timestamp = result
-        if value is None or timestamp is None:
+        value, changed_at, observed_at = result
+        if value is None:
             return None, False
-        age = dt_util.utcnow() - timestamp
+        reference = changed_at if freshness_mode == "changed" else observed_at
+        if reference is None:
+            return None, False
+        age = dt_util.utcnow() - reference
         if age >= HOMEKIT_STALENESS_THRESHOLD:
             return None, False
         return value, True
@@ -169,7 +180,9 @@ class StateReconciler:
             self._log_source_transition(zone_id, "target_temp", "cloud", cloud_value)
             return cloud_value, "cloud"
 
-        local_val, is_fresh = self._get_fresh_local_value(zone_id, "get_target_temperature")
+        local_val, is_fresh = self._get_fresh_local_value(
+            zone_id, "get_target_temperature", freshness_mode="changed",
+        )
         if is_fresh and local_val is not None:
             self._log_source_transition(zone_id, "target_temp", "homekit", local_val)
             return local_val, "homekit"
@@ -209,7 +222,9 @@ class StateReconciler:
             self._log_source_transition(zone_id, "target_hvac", "cloud", cloud_value)
             return cloud_value, "cloud"
 
-        local_val, is_fresh = self._get_fresh_local_value(zone_id, "get_target_heating_state")
+        local_val, is_fresh = self._get_fresh_local_value(
+            zone_id, "get_target_heating_state", freshness_mode="changed",
+        )
         if is_fresh and local_val is not None:
             self._log_source_transition(zone_id, "target_hvac", "homekit", int(local_val))
             return int(local_val), "homekit"

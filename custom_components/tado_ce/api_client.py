@@ -999,6 +999,18 @@ class TadoApiClient(TadoAuthMixin):
             await self.save_ratelimit("error")
             raise TadoSyncError(f"Sync failed: {e}") from e
 
+    async def async_resync_offsets(self, zones_info: list[Any]) -> None:
+        """Public wrapper around _sync_offsets for periodic drift refresh.
+
+        The coordinator calls this on a fixed interval (see
+        `OFFSET_DRIFT_REFRESH_SECONDS`) so the cached `offsets` map
+        stays close to Tado's stored value even when Tado's adaptive
+        calibration changes the offset behind our back (#262 follow-up).
+
+        Idempotent — same semantics as the full-sync path.
+        """
+        await self._sync_offsets(zones_info)
+
     async def _sync_offsets(self, zones_info: list[Any]) -> None:
         """Sync temperature offsets for all devices.
 

@@ -170,10 +170,12 @@ class TadoTemperatureSensor(TadoZoneSensor):
                 result = reconciler.merge_zone_temperature(self._zone_id, None)
                 if isinstance(result, tuple) and len(result) == 2 and result[1] == "homekit":
                     self._data_source = "homekit"
-                    _, ts = provider.get_temperature(self._zone_id)
-                    self._last_homekit_update = ts.isoformat() if ts else None
+                    _, _changed, observed = provider.get_temperature(self._zone_id)
+                    self._last_homekit_update = observed.isoformat() if observed else None
                     return
-        except (TypeError, ValueError, AttributeError):
+        except AttributeError:
+            # coordinator or provider attributes missing (e.g. coordinator
+            # not fully initialised yet). Fall through to cloud default.
             pass
         self._data_source = "cloud"
         self._last_homekit_update = None

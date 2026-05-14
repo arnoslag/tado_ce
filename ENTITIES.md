@@ -1,4 +1,4 @@
-# Tado CE — Entity Reference (v4.0.0-beta.15)
+# Tado CE — Entity Reference (v4.0.0-beta.16)
 
 This document lists all 88 entity types in Tado CE, organised by function.
 
@@ -390,8 +390,13 @@ Smart Valve Control (v4.0.0-beta.9+) and Offset Sync (v4.0.0-beta.14+) don't cre
 | `valve_control_mode` | Offset Sync configured | `"offset_sync"` |
 | `valve_target` | Valve Target mode + currently writing | Current TRV target temperature (°C, rounded to 0.1) |
 | `desired_target` | Valve Target mode + ACTIVE state | User's intended target temperature captured at IDLE→ACTIVE transition (°C) |
+| `offset_celsius` | Device offset feature enabled | Current device offset in °C (populated after Offset Sync confirms a write, or when `set_temperature_offset` service is used) |
+| `offset_clamped` (v4.0.0-beta.16+) | `offset_celsius` present and Offset Sync has written at least once | `true` if the last write had to be clamped at Tado's ±10°C limit, `false` otherwise |
+| `offset_clamp_direction` (v4.0.0-beta.16+) | Same as `offset_clamped` | `"none"` / `"hit_max"` / `"hit_min"` — which bound was hit |
 
 Configure SVC per zone under **Settings → Tado CE → Configure → Zone Configuration → External Sensors → Smart Valve Control Mode**.
+
+> **Reading the clamp attributes:** when `offset_clamped: true` appears, the physical temperature gap between your external sensor and the TRV exceeded Tado's ±10°C device-offset limit. The `offset_celsius` value you see is the clamp boundary, not the full correction required. Check for draughts around the TRV, a cold external wall behind it, or an external sensor placed in a warmer pocket than the TRV itself.
 
 ---
 

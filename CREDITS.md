@@ -21,6 +21,11 @@ Thank you to everyone who supported the project through [Buy Me a Coffee](https:
 
 Community contributors who helped shape each release through bug reports, feature requests, testing, and feedback.
 
+### v4.0.0-beta.16
+
+- **[@apilone](https://github.com/apilone)** — Reported two distinct bugs in a single thread ([#261](https://github.com/hiall-fyi/tado_ce/issues/261)): the OFF → HEAT via Tado app not reflecting in the HA entity (a mirror-image of the #258 fix), and the API-burst loop that exhausted his daily quota overnight while the HomeKit bridge was reconnecting. Provided the API Usage chart and log excerpts that pinpointed the back-off-retry setup-loop draining the quota — the two problems turned out to be in completely different subsystems, and the second was invisible without the log evidence.
+- **[@simonotter](https://github.com/simonotter)** — Shared the Offset Sync graph that looked wrong ([#262](https://github.com/hiall-fyi/tado_ce/issues/262)): HA reporting +10°C offset while the Tado app showed -5.9°C, with external sensor chart showing the "yellow line swinging to 27°C" pattern. The card YAML + Tado-app screenshots made it clear the HA cache was poisoned by a failed write that never reached the TRV — and revealed the silent ±10°C clamp saturation as a separate UX issue worth surfacing.
+
 ### v4.0.0-beta.15
 
 - **[@Si-Hill](https://github.com/Si-Hill)** — Reported TRV motor noise overnight when Offset Sync was enabled, with screenshots that immediately identified the missing schedule gate ([Discussion #219](https://github.com/hiall-fyi/tado_ce/discussions/219)). Then followed up with graphs showing the offset oscillating every 5 minutes — the pattern ("raises a little, drops a little, in a loop") pointed straight at the stale-cache-after-write bug. Also proposed per-zone sensitivity as a battery-life trade-off, which shipped as the **Offset Sync Sensitivity** feature in this release.

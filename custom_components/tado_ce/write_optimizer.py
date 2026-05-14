@@ -176,6 +176,11 @@ class DeviceOperation:
     operation_name: str
     callback: Callable[[], Awaitable[bool]]
     entity_id: str  # for logging
+    # Completion future — set by DeviceSyncQueue.enqueue, resolved by
+    # _process_queue when the callback finishes. Callers that care about
+    # success/failure await this; the queue itself no longer swallows
+    # False-return / raise outcomes.
+    done: asyncio.Future[bool] | None = None
 
 
 class DeviceSyncQueue:
@@ -190,11 +195,22 @@ class DeviceSyncQueue:
         self._is_processing: bool = False
         self._shutdown_event: asyncio.Event = asyncio.Event()
 
-    async def enqueue(self, operation: DeviceOperation) -> bool:
+    async def enqueue(
+        self, operation: DeviceOperation,
+    ) -> tuple[bool, asyncio.Future[bool]]:
         """Add operation to queue.
 
-        Returns False if queue is full.
+        Returns (accepted, done_future). `accepted` is False if the queue
+        is full; in that case `done_future` is already resolved to False.
+        Otherwise `done_future` resolves to the callback's return value
+        (or False if the callback raised) once the queue processes it.
+        Callers that care about success/failure — beyond "was accepted
+        into the queue" — should await the future.
         """
+        loop = asyncio.get_running_loop()
+        done: asyncio.Future[bool] = loop.create_future()
+        operation.done = done
+
         try:
             self._queue.put_nowait(operation)
         except asyncio.QueueFull:
@@ -205,7 +221,8 @@ class DeviceSyncQueue:
                 operation.operation_name,
                 operation.entity_id,
             )
-            return False
+            done.set_result(False)
+            return False, done
 
         _LOGGER.debug(
             "Device Sync enqueued %s for %s (depth: %s)",
@@ -214,12 +231,11 @@ class DeviceSyncQueue:
             self._queue.qsize(),
         )
 
-        # Start processor if not already running
         if self._processor_task is None or self._processor_task.done():
             self._shutdown_event.clear()
             self._processor_task = asyncio.create_task(self._process_queue())
 
-        return True
+        return True, done
 
     async def _process_queue(self) -> None:
         """Process operations sequentially with delay between each (FIFO order, fail-forward)."""
@@ -235,12 +251,15 @@ class DeviceSyncQueue:
                 is_first = False
 
                 try:
-                    await operation.callback()
+                    result = await operation.callback()
                     _LOGGER.debug(
-                        "Device Sync completed %s for %s",
+                        "Device Sync completed %s for %s (result=%s)",
                         operation.operation_name,
                         operation.entity_id,
+                        result,
                     )
+                    if operation.done is not None and not operation.done.done():
+                        operation.done.set_result(bool(result))
                 except Exception:
                     _LOGGER.warning(
                         "Device Sync failed %s for %s",
@@ -248,6 +267,8 @@ class DeviceSyncQueue:
                         operation.entity_id,
                         exc_info=True,
                     )
+                    if operation.done is not None and not operation.done.done():
+                        operation.done.set_result(False)
                 finally:
                     self._queue.task_done()
         finally:

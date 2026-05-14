@@ -10,6 +10,7 @@ OffsetSyncController is stateless: sensor changes → calculate → rate limit �
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 import logging
 import time
@@ -49,6 +50,19 @@ class OffsetSyncRuntime:
     # in-flight sensor callbacks or scheduled debounce timers short-circuit
     # instead of writing to a deactivated controller.
     deactivated: bool = False
+
+
+@dataclass(frozen=True)
+class OffsetCalc:
+    """Result of calculate_desired_offset — clamped value + clamp tag.
+
+    clamp_direction: "none" (in range), "hit_max" (raw > +10),
+    "hit_min" (raw < -10). A raw value landing exactly on the limit
+    is "none" — only true clamps flag.
+    """
+
+    value: float
+    clamp_direction: str
 
 
 class OffsetSyncController:
@@ -91,7 +105,7 @@ class OffsetSyncController:
         inside_temperature: float,
         current_device_offset: float,
         external_temp: float,
-    ) -> float:
+    ) -> OffsetCalc:
         """Calculate and clamp desired offset.
 
         Formula: clamp(external_temp - (inside_temperature - current_device_offset), -10, +10)
@@ -99,10 +113,23 @@ class OffsetSyncController:
         The TRV raw reading is: inside_temperature - current_device_offset.
         The desired offset makes Tado display external_temp:
             desired_offset = external_temp - TRV_raw
+
+        Returns OffsetCalc(value, clamp_direction) so the caller can
+        surface the clamp state to the user when the physical gap
+        exceeded Tado's ±10°C storage limit.
         """
         trv_raw = inside_temperature - current_device_offset
-        desired = external_temp - trv_raw
-        return round(max(DEVICE_OFFSET_MIN, min(desired, DEVICE_OFFSET_MAX)), 1)
+        raw_desired = external_temp - trv_raw
+        clamped = round(max(DEVICE_OFFSET_MIN, min(raw_desired, DEVICE_OFFSET_MAX)), 1)
+
+        if raw_desired > DEVICE_OFFSET_MAX:
+            direction = "hit_max"
+        elif raw_desired < DEVICE_OFFSET_MIN:
+            direction = "hit_min"
+        else:
+            direction = "none"
+
+        return OffsetCalc(value=clamped, clamp_direction=direction)
 
     @staticmethod
     def should_write(
@@ -228,10 +255,11 @@ class OffsetSyncController:
             )
             return
 
-        # Calculate desired offset
-        desired_offset = self.calculate_desired_offset(
+        # Calculate desired offset (and detect clamp for user-visible signal)
+        calc = self.calculate_desired_offset(
             inside_temperature, current_device_offset, external_temp,
         )
+        desired_offset = calc.value
 
         # Minimum change threshold (per-zone configurable)
         zone_config = self._zcm.get_zone_config(self._zone_id)
@@ -269,8 +297,8 @@ class OffsetSyncController:
             )
             return
 
-        # Write offset
-        await self._async_write_offset(desired_offset)
+        # Write offset (passing clamp direction for user-visible signal)
+        await self._async_write_offset(desired_offset, calc.clamp_direction)
 
         # Flush any pending offset if rate limit has expired
         await self._async_flush_pending()
@@ -292,8 +320,20 @@ class OffsetSyncController:
     # Write operations
     # ------------------------------------------------------------------
 
-    async def _async_write_offset(self, offset: float) -> None:
-        """Write offset to all zone devices via DeviceSyncQueue."""
+    async def _async_write_offset(
+        self, offset: float, clamp_direction: str = "none",
+    ) -> None:
+        """Write offset to devices and confirm via readback.
+
+        State and cache are updated only after Tado confirms the written
+        value (#262) — prevents the optimistic-update feedback loop where
+        a failed write (rate limit, server error, queue overflow) would
+        otherwise poison the cache with a value the TRV never stored.
+
+        `clamp_direction` is recorded in `coordinator.data["offset_clamps"]`
+        alongside the confirmed offset so the climate entity can surface a
+        clamp signal to the user.
+        """
         from .write_optimizer import DeviceOperation
 
         serials = self._get_zone_device_serials()
@@ -305,7 +345,8 @@ class OffsetSyncController:
             return
 
         device_sync_queue = self._coordinator.device_sync_queue
-        any_enqueued = False
+        dones: list[asyncio.Future[bool]] = []
+        any_accepted = False
 
         for serial in serials:
             async def _do_write(s: str = serial, o: float = offset) -> bool:
@@ -318,9 +359,10 @@ class OffsetSyncController:
                 callback=_do_write,
                 entity_id=f"offset_sync.zone_{self._zone_id}",
             )
-            enqueued = await device_sync_queue.enqueue(operation)
-            if enqueued:
-                any_enqueued = True
+            accepted, done = await device_sync_queue.enqueue(operation)
+            if accepted:
+                any_accepted = True
+                dones.append(done)
             else:
                 _LOGGER.warning(
                     "Offset Sync: zone %s device %s could not be scheduled for "
@@ -328,10 +370,7 @@ class OffsetSyncController:
                     self._zone_id, serial[:6],
                 )
 
-        # If every write was dropped, the TRVs never received the update — do
-        # not update internal state or cache, otherwise the next correction
-        # attempt would be suppressed as if the write had succeeded.
-        if not any_enqueued:
+        if not any_accepted:
             _LOGGER.warning(
                 "Offset Sync: zone %s could not schedule offset write for any "
                 "device — leaving state unchanged, will retry on next sensor change",
@@ -339,26 +378,84 @@ class OffsetSyncController:
             )
             return
 
-        # Update runtime state
-        self._runtime.last_written_offset = offset
+        # Wait for every accepted write to complete. Failure on any one
+        # means we can't claim the offset landed on every TRV — safer to
+        # retry on the next sensor change than to poison the cache.
+        results = await asyncio.gather(*dones, return_exceptions=False)
+        if not all(results):
+            _LOGGER.warning(
+                "Offset Sync: zone %s one or more device writes failed — "
+                "leaving state unchanged, will retry on next sensor change",
+                self._zone_id,
+            )
+            return
+
+        # Readback from Tado — the ground truth. Follows the pattern
+        # services.handle_set_temperature_offset adopted for #221.
+        readback = await self._api_client.get_device_offset(serials[0])
+        if readback is None:
+            _LOGGER.warning(
+                "Offset Sync: zone %s readback failed after write — "
+                "leaving state unchanged",
+                self._zone_id,
+            )
+            return
+
+        if abs(readback - offset) > 0.05:
+            _LOGGER.warning(
+                "Offset Sync: zone %s readback %.1f°C does not match "
+                "written %.1f°C — Tado may have clamped or rejected the "
+                "value. Leaving state unchanged.",
+                self._zone_id, readback, offset,
+            )
+            return
+
+        # Confirmed — update internal state, cache, persisted state.
+        self._runtime.last_written_offset = readback
         self._runtime.last_offset_write_ts = time.monotonic()
         self._runtime.pending_offset = None
 
-        # Update coordinator offsets cache so next evaluation uses correct
-        # current_device_offset (prevents oscillation from stale cache)
         raw_offsets = self._coordinator.data_loader.get_cached("offsets")
-        cached_offsets: dict[str, float] = raw_offsets if isinstance(raw_offsets, dict) else {}
-        cached_offsets[self._zone_id] = offset
+        cached_offsets: dict[str, float] = (
+            raw_offsets if isinstance(raw_offsets, dict) else {}
+        )
+        cached_offsets[self._zone_id] = readback
         self._coordinator.data_loader.update_cache("offsets", cached_offsets)
         if self._coordinator.data and isinstance(self._coordinator.data, dict):
             self._coordinator.data["offsets"] = cached_offsets
 
-        # Persist state
+        # Clamp signal — parallel cache so the climate entity can surface
+        # whether the required correction exceeded Tado's ±10°C device
+        # limit. In-memory only; regenerated on each successful write.
+        raw_clamps = self._coordinator.data_loader.get_cached("offset_clamps")
+        cached_clamps: dict[str, str] = (
+            raw_clamps if isinstance(raw_clamps, dict) else {}
+        )
+        cached_clamps[self._zone_id] = clamp_direction
+        self._coordinator.data_loader.update_cache("offset_clamps", cached_clamps)
+        if self._coordinator.data and isinstance(self._coordinator.data, dict):
+            self._coordinator.data["offset_clamps"] = cached_clamps
+
         await self.async_persist_state()
 
+        if clamp_direction != "none":
+            direction_desc = (
+                "exceeded maximum (+10°C)" if clamp_direction == "hit_max"
+                else "exceeded minimum (-10°C)"
+            )
+            _LOGGER.warning(
+                "Offset Sync: zone %s wrote offset %.1f°C but the "
+                "required correction %s Tado's device limit. The TRV's "
+                "displayed temperature will still differ from the "
+                "external sensor. Check for draughts, a cold external "
+                "wall, or external sensor placement.",
+                self._zone_id, readback, direction_desc,
+            )
+
         _LOGGER.info(
-            "Offset Sync: zone %s wrote offset %.1f°C to %s device(s)",
-            self._zone_id, offset, len(serials),
+            "Offset Sync: zone %s wrote offset %.1f°C to %s device(s) "
+            "(readback confirmed)",
+            self._zone_id, readback, len(serials),
         )
 
     def _get_zone_device_serials(self) -> list[str]:

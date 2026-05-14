@@ -1337,8 +1337,10 @@ desired_offset = external_sensor − (TRV_reported_temp − current_offset)
 **Key behaviours:**
 - Updates automatically whenever your external sensor changes (debounced to avoid spamming)
 - Rate-limited to one write per 5 minutes per device (Tado's API limit for device offsets)
-- Offset is clamped to ±10°C (Tado's hardware limit)
+- Offset is clamped to ±10°C (Tado's hardware limit) — see [When the clamp fires](#when-the-clamp-fires) below
 - Only writes when the change exceeds your configured sensitivity threshold (default 0.5°C, adjustable 0.5–3.0°C per zone)
+- Readback verification: after each successful write, the integration reads the offset back from Tado and only updates the local cache when the confirmed value matches. A failed write (rate limit, server error) leaves the cache unchanged rather than poisoning it with a value the TRV never received (v4.0.0-beta.16+)
+- Periodic drift refresh: every 30 minutes the integration re-reads each TRV's stored offset from Tado and reconciles the local cache. This catches the case where Tado's own adaptive calibration (or a manual edit in the Tado app) changes the stored offset behind the integration's back, which would otherwise feed a wrong baseline into the next correction and could drift the cache to the ±10°C limit (v4.0.0-beta.16+)
 - If your external sensor goes offline, the last offset is preserved (no sudden jump)
 
 **Offset Sync + the Tado app:**
@@ -1347,6 +1349,48 @@ The Tado app will show your external sensor's temperature as the room temperatur
 > **Note:** If you previously had a manual offset set in the Tado app or via an automation, Offset Sync will overwrite it. That's intentional — it keeps the offset in sync with your external sensor continuously.
 
 > **Important:** If you switch from Offset Sync to Off or Valve Target, the last written offset remains on the device. Reset it manually in the Tado app if you want to return to the TRV's uncorrected reading.
+
+#### When the clamp fires
+
+Tado stores device offsets in a single signed byte, capped at ±10°C. When your external sensor and the TRV differ by more than that, Offset Sync writes the ±10°C boundary — but the physical gap remains uncorrected beyond that point.
+
+From **v4.0.0-beta.16** onwards, the climate entity exposes two attributes so you can tell when this is happening:
+
+- `offset_clamped` — `true` when the last write was clamped, `false` otherwise
+- `offset_clamp_direction` — `"hit_max"` (required correction was larger than +10°C), `"hit_min"` (smaller than −10°C), or `"none"` (in range)
+
+A warning line also appears in the log on each clamp event, naming the zone and the direction.
+
+**What to do when you see `offset_clamped: true`:**
+
+A gap that needs >10°C of correction almost always points to an environmental issue rather than a Tado fault. Common causes, in order of likelihood:
+
+1. **Draught on the TRV** — an air current from a window, a door, or a nearby ventilation grille is cooling the TRV's temperature sensor below room temperature.
+2. **Cold external wall behind the radiator** — the TRV is mounted on a wall that sits several degrees below the room air temperature (common with poorly insulated external walls in older homes).
+3. **External sensor placed in a warmer pocket** — the sensor sits near a heat source (sun-exposed windowsill, above a fridge, adjacent to another heated zone) or high up in the room where warm air collects.
+4. **Radiator cycling very hot** — the TRV body itself heats up when the valve opens, reading 2–3°C above the room for short periods. This usually resolves on its own within a heating cycle.
+
+If none of those apply, open a [GitHub Discussion](https://github.com/hiall-fyi/tado_ce/discussions) with the offset chart and your sensor placements — clamps that persist for hours without an obvious environmental cause are rare enough to be worth looking at.
+
+**Automations on `offset_clamped`:**
+
+You can build an automation that notifies you when a zone has been saturated for a while — useful during commissioning to catch sensor-placement issues early:
+
+```yaml
+alias: Notify when Offset Sync clamps for 30 minutes
+trigger:
+  - platform: state
+    entity_id: climate.office_tado
+    attribute: offset_clamped
+    to: true
+    for:
+      minutes: 30
+action:
+  - service: notify.persistent_notification
+    data:
+      title: "Offset Sync saturated in Office"
+      message: "Required correction exceeds ±10°C — check TRV position or external sensor placement."
+```
 
 ---
 
@@ -2172,4 +2216,4 @@ Look for `Bridge API full response` in logs to verify the API is returning data.
 
 ---
 
-**Last Updated:** v4.0.0-beta.15 (2026-05-10)
+**Last Updated:** v4.0.0-beta.16 (2026-05-14)

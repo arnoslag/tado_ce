@@ -190,7 +190,7 @@ class TadoEarlyStartSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switc
         async def _execute() -> bool:
             return await self._async_set_early_start(True)
 
-        enqueued = await self.coordinator.device_sync_queue.enqueue(
+        accepted, done = await self.coordinator.device_sync_queue.enqueue(
             DeviceOperation(
                 device_serial=self._zone_id,
                 operation_name="early_start_on",
@@ -198,9 +198,7 @@ class TadoEarlyStartSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switc
                 entity_id=self.entity_id,
             ),
         )
-        if enqueued:
-            await async_trigger_immediate_refresh(self.hass, self.entity_id, "early_start_on")
-        else:
+        if not accepted:
             _LOGGER.warning("Device Sync queue full, rejecting early start ON for %s", self._zone_name)
             self._attr_is_on = old_is_on
             clear_optimistic_state(self)
@@ -209,6 +207,17 @@ class TadoEarlyStartSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switc
                 f"Early Start {self._zone_name}: device sync queue full",
                 translation_domain=DOMAIN,
             )
+
+        await async_trigger_immediate_refresh(self.hass, self.entity_id, "early_start_on")
+
+        # Roll back optimistic UI if the API write failed (e.g. rate-limited).
+        # Without this, a failed write leaves the wrong value on the dashboard
+        # until the next successful refresh — which may itself be rate-limited.
+        if not await done:
+            _LOGGER.warning("Early Start ON for %s failed — rolling back UI state", self._zone_name)
+            self._attr_is_on = old_is_on
+            clear_optimistic_state(self)
+            self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn off early start - async."""
@@ -223,7 +232,7 @@ class TadoEarlyStartSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switc
         async def _execute() -> bool:
             return await self._async_set_early_start(False)
 
-        enqueued = await self.coordinator.device_sync_queue.enqueue(
+        accepted, done = await self.coordinator.device_sync_queue.enqueue(
             DeviceOperation(
                 device_serial=self._zone_id,
                 operation_name="early_start_off",
@@ -231,9 +240,7 @@ class TadoEarlyStartSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switc
                 entity_id=self.entity_id,
             ),
         )
-        if enqueued:
-            await async_trigger_immediate_refresh(self.hass, self.entity_id, "early_start_off")
-        else:
+        if not accepted:
             _LOGGER.warning("Device Sync queue full, rejecting early start OFF for %s", self._zone_name)
             self._attr_is_on = old_is_on
             clear_optimistic_state(self)
@@ -242,6 +249,14 @@ class TadoEarlyStartSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switc
                 f"Early Start {self._zone_name}: device sync queue full",
                 translation_domain=DOMAIN,
             )
+
+        await async_trigger_immediate_refresh(self.hass, self.entity_id, "early_start_off")
+
+        if not await done:
+            _LOGGER.warning("Early Start OFF for %s failed — rolling back UI state", self._zone_name)
+            self._attr_is_on = old_is_on
+            clear_optimistic_state(self)
+            self.async_write_ha_state()
 
     async def _async_set_early_start(self, enabled: bool) -> bool:
         """Set early start state via async API."""
@@ -375,7 +390,7 @@ class TadoChildLockSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switch
         async def _execute() -> bool:
             return await self._async_set_child_lock(True)
 
-        enqueued = await self.coordinator.device_sync_queue.enqueue(
+        accepted, done = await self.coordinator.device_sync_queue.enqueue(
             DeviceOperation(
                 device_serial=self._serial,
                 operation_name="child_lock_on",
@@ -383,9 +398,7 @@ class TadoChildLockSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switch
                 entity_id=self.entity_id,
             ),
         )
-        if enqueued:
-            await async_trigger_immediate_refresh(self.hass, self.entity_id, "child_lock_on")
-        else:
+        if not accepted:
             _LOGGER.warning("Device Sync queue full, rejecting child lock ON for %s", self._zone_name)
             self._attr_is_on = old_is_on
             clear_optimistic_state(self)
@@ -394,6 +407,14 @@ class TadoChildLockSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switch
                 f"Child Lock {self._zone_name}: device sync queue full",
                 translation_domain=DOMAIN,
             )
+
+        await async_trigger_immediate_refresh(self.hass, self.entity_id, "child_lock_on")
+
+        if not await done:
+            _LOGGER.warning("Child Lock ON for %s failed — rolling back UI state", self._zone_name)
+            self._attr_is_on = old_is_on
+            clear_optimistic_state(self)
+            self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn off child lock - async."""
@@ -408,7 +429,7 @@ class TadoChildLockSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switch
         async def _execute() -> bool:
             return await self._async_set_child_lock(False)
 
-        enqueued = await self.coordinator.device_sync_queue.enqueue(
+        accepted, done = await self.coordinator.device_sync_queue.enqueue(
             DeviceOperation(
                 device_serial=self._serial,
                 operation_name="child_lock_off",
@@ -416,9 +437,7 @@ class TadoChildLockSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switch
                 entity_id=self.entity_id,
             ),
         )
-        if enqueued:
-            await async_trigger_immediate_refresh(self.hass, self.entity_id, "child_lock_off")
-        else:
+        if not accepted:
             _LOGGER.warning("Device Sync queue full, rejecting child lock OFF for %s", self._zone_name)
             self._attr_is_on = old_is_on
             clear_optimistic_state(self)
@@ -427,6 +446,14 @@ class TadoChildLockSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switch
                 f"Child Lock {self._zone_name}: device sync queue full",
                 translation_domain=DOMAIN,
             )
+
+        await async_trigger_immediate_refresh(self.hass, self.entity_id, "child_lock_off")
+
+        if not await done:
+            _LOGGER.warning("Child Lock OFF for %s failed — rolling back UI state", self._zone_name)
+            self._attr_is_on = old_is_on
+            clear_optimistic_state(self)
+            self.async_write_ha_state()
 
     async def _async_set_child_lock(self, enabled: bool) -> bool:
         """Set child lock state via centralized API client."""
