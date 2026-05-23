@@ -1,4 +1,11 @@
-"""Tado CE Environment Sensors — mold risk, condensation, comfort level, etc."""
+"""Tado CE environment sensors — mold risk, condensation, comfort, dew point, surface temp.
+
+Each entity computes a derived environmental indicator from the
+zone's temperature + humidity (and an optional outdoor source).
+The `_extract_mold_risk_data` helper is the shared input for the
+mold-related sensors so they all see the same effective
+temperature / dew point / margin numbers.
+"""
 
 from __future__ import annotations
 
@@ -273,7 +280,11 @@ class TadoMoldRiskSensor(TadoZoneSensor):
             self._attr_available = True
 
         except Exception as e:
-            _LOGGER.debug("Failed to update mold risk for zone %s: %s", self._zone_id, e)
+            _LOGGER.debug(
+                "Environment Sensor: zone %s mold risk update failed "
+                "(%s) — marking unavailable until the next poll",
+                self._zone_id, e,
+            )
             self._attr_available = False
 
 
@@ -377,7 +388,12 @@ class TadoMoldRiskPercentageSensor(TadoZoneSensor):
             self._attr_available = True
 
         except Exception as e:
-            _LOGGER.debug("Failed to update mold risk percentage for zone %s: %s", self._zone_id, e)
+            _LOGGER.debug(
+                "Environment Sensor: zone %s mold risk percentage "
+                "update failed (%s) — marking unavailable until the "
+                "next poll",
+                self._zone_id, e,
+            )
             self._attr_available = False
 
 
@@ -541,7 +557,11 @@ class TadoCondensationRiskSensor(TadoZoneSensor):
             )
 
         except Exception as e:
-            _LOGGER.debug("Failed to update condensation risk for zone %s: %s", self._zone_id, e)
+            _LOGGER.debug(
+                "Environment Sensor: zone %s condensation risk update "
+                "failed (%s) — marking unavailable until the next poll",
+                self._zone_id, e,
+            )
             self._attr_available = False
 
     @callback
@@ -671,7 +691,12 @@ class TadoCondensationRiskSensor(TadoZoneSensor):
         self._attr_available = True
 
     def _get_outdoor_humidity(self, entity_id: str) -> float | None:
-        """Get outdoor humidity from weather entity."""
+        """Read outdoor humidity from a weather entity or companion sensor.
+
+        For `weather.*` entities the humidity attribute is direct;
+        for `sensor.*_temperature` patterns we look for a sibling
+        `sensor.*_humidity` to pair the temperature source with.
+        """
         if not self.hass or not entity_id:
             return None
 
@@ -697,13 +722,18 @@ class TadoCondensationRiskSensor(TadoZoneSensor):
                         pass
 
         except Exception as e:
-            _LOGGER.debug("Error getting outdoor humidity from %s: %s", entity_id, e)
+            _LOGGER.debug(
+                "Environment Sensor: could not read outdoor humidity "
+                "from %s (%s) — condensation risk falls back to "
+                "indoor-only data",
+                entity_id, e,
+            )
             return None
 
-        # Log warning if no humidity found (helps user understand why sensor is unavailable)
         _LOGGER.debug(
-            "Condensation risk: No outdoor humidity found for %s. "
-            "Use a weather.* entity or ensure sensor.*_humidity exists.",
+            "Environment Sensor: no outdoor humidity available for "
+            "%s — set a weather.* entity or pair the outdoor "
+            "temperature sensor with a sensor.*_humidity sibling",
             entity_id,
         )
         return None
@@ -794,7 +824,7 @@ class TadoSurfaceTemperatureSensor(TadoZoneSensor):
             if not config_manager:
                 # Fallback to room temperature
                 self._attr_native_value = room_temp
-                self._calculation_method = "Room Average"
+                self._calculation_method = "room_average"
                 self._outdoor_temp = None
                 self._window_type = "unknown"
                 self._u_value = None
@@ -842,9 +872,9 @@ class TadoSurfaceTemperatureSensor(TadoZoneSensor):
                     # Apply offset (for calibration)
                     if self._offset_applied != 0.0:
                         surface_temp = surface_temp + self._offset_applied
-                        self._calculation_method = "Calibrated"
+                        self._calculation_method = "calibrated_surface"
                     else:
-                        self._calculation_method = "Estimated"
+                        self._calculation_method = "surface_estimation"
 
                     self._attr_native_value = round(surface_temp, 1)
                     self._attr_available = True
@@ -852,7 +882,7 @@ class TadoSurfaceTemperatureSensor(TadoZoneSensor):
 
             # Tier 2: Fallback to room temperature
             self._attr_native_value = room_temp
-            self._calculation_method = "Room Average"
+            self._calculation_method = "room_average"
             self._outdoor_temp = None
             self._window_type = "unknown"
             self._u_value = None
@@ -860,7 +890,12 @@ class TadoSurfaceTemperatureSensor(TadoZoneSensor):
             self._attr_available = True
 
         except Exception as e:
-            _LOGGER.debug("Failed to update surface temperature for zone %s: %s", self._zone_id, e)
+            _LOGGER.debug(
+                "Environment Sensor: zone %s surface temperature "
+                "update failed (%s) — marking unavailable until the "
+                "next poll",
+                self._zone_id, e,
+            )
             self._attr_available = False
 
 
@@ -940,7 +975,11 @@ class TadoDewPointSensor(TadoZoneSensor):
             self._attr_available = True
 
         except Exception as e:
-            _LOGGER.debug("Failed to update dew point for zone %s: %s", self._zone_id, e)
+            _LOGGER.debug(
+                "Environment Sensor: zone %s dew point update failed "
+                "(%s) — marking unavailable until the next poll",
+                self._zone_id, e,
+            )
             self._attr_available = False
 
 
@@ -1107,7 +1146,11 @@ class TadoComfortLevelSensor(TadoZoneSensor):
             self._attr_available = True
 
         except Exception as e:
-            _LOGGER.debug("Failed to update air comfort for zone %s: %s", self._zone_id, e)
+            _LOGGER.debug(
+                "Environment Sensor: zone %s comfort level update "
+                "failed (%s) — marking unavailable until the next poll",
+                self._zone_id, e,
+            )
             self._attr_available = False
 
     def _calculate_adaptive_comfort(self) -> str:

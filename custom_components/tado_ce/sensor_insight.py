@@ -1,4 +1,11 @@
-"""Tado CE Insight Sensors — home and zone actionable insights."""
+"""Tado CE Insight sensors — actionable home + per-zone recommendations.
+
+Two entities: a home-level insight aggregator (battery alerts,
+schedule deviations, comfort score), and a per-zone insight that
+surfaces zone-specific recommendations from the insight
+collector. Both read from the coordinator's published entity-data
+cache so they don't run their own analysis loop.
+"""
 
 from __future__ import annotations
 
@@ -289,7 +296,11 @@ class TadoHomeInsightsSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], Sen
             self._attr_native_value = len(self._aggregated.get("actions_needed", []))
             self._attr_available = True
         except Exception as e:
-            _LOGGER.debug("Failed to update home insights: %s", e)
+            _LOGGER.debug(
+                "Insight Sensor: home insights update failed (%s) — "
+                "marking unavailable until the next poll",
+                e,
+            )
             self._attr_available = False
 
 
@@ -386,5 +397,9 @@ class TadoZoneInsightsSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], Sen
             self._attr_native_value = len(self._insights)
             self._attr_available = True
         except Exception as e:
-            _LOGGER.debug("Failed to update zone insights for %s: %s", self._zone_name, e)
+            _LOGGER.debug(
+                "Insight Sensor: zone %s insights update failed (%s) "
+                "— marking unavailable until the next poll",
+                self._zone_name, e,
+            )
             self._attr_available = False

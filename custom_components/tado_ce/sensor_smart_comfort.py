@@ -1,4 +1,10 @@
-"""Tado CE Smart Comfort Sensors — schedule deviation, preheat advisor, etc."""
+"""Tado CE Smart Comfort sensors — schedule deviation, next-schedule preview, preheat advisor, target.
+
+Sensors here surface the Smart Comfort engine's per-zone state
+(historical comparison, scheduled vs. actual, when the next
+schedule change lands and to what target). Created only when
+Smart Comfort is enabled in config.
+"""
 
 from __future__ import annotations
 
@@ -156,7 +162,12 @@ class TadoScheduleDeviationSensor(TadoZoneSensor):
             self._attr_available = True
 
         except Exception as e:
-            _LOGGER.debug("Failed to update historical comparison for zone %s: %s", self._zone_id, e)
+            _LOGGER.debug(
+                "Smart Comfort Sensor: zone %s historical comparison "
+                "update failed (%s) — marking unavailable until the "
+                "next poll",
+                self._zone_id, e,
+            )
             self._attr_available = False
 
 
@@ -241,7 +252,12 @@ class TadoNextScheduleTimeSensor(TadoZoneSensor):
             self._attr_available = True
 
         except Exception as e:
-            _LOGGER.debug("Failed to update next schedule for zone %s: %s", self._zone_id, e)
+            _LOGGER.debug(
+                "Smart Comfort Sensor: zone %s next schedule time "
+                "update failed (%s) — marking unavailable until the "
+                "next poll",
+                self._zone_id, e,
+            )
             self._attr_available = False
 
 
@@ -350,7 +366,12 @@ class TadoNextScheduleTempSensor(TadoZoneSensor):
             self._attr_available = True
 
         except Exception as e:
-            _LOGGER.debug("Failed to update next schedule temp for zone %s: %s", self._zone_id, e)
+            _LOGGER.debug(
+                "Smart Comfort Sensor: zone %s next schedule "
+                "temperature update failed (%s) — marking unavailable "
+                "until the next poll",
+                self._zone_id, e,
+            )
             self._attr_available = False
 
 
@@ -659,7 +680,7 @@ class TadoPreheatAdvisorSensor(TadoZoneSensor):
                 self._attr_available = False
                 return
 
-            # Suppress preheat when home is in AWAY mode (#171)
+            # Suppress preheat when home is in AWAY mode
             home_state = (self.coordinator.data or {}).get("home_state")
             if home_state and home_state.get("presence") != "HOME":
                 self._set_simple_status(
@@ -668,7 +689,7 @@ class TadoPreheatAdvisorSensor(TadoZoneSensor):
                 )
                 return
 
-            # Check cooling prediction against CURRENT active target (Discussion #163)
+            # Check cooling prediction against CURRENT active target
             if self._check_active_cooling_preheat(zone_data):
                 return
 
@@ -686,7 +707,11 @@ class TadoPreheatAdvisorSensor(TadoZoneSensor):
             self._handle_schedule_block(next_block, manager)
 
         except Exception as e:
-            _LOGGER.debug("Failed to update preheat advice for zone %s: %s", self._zone_id, e)
+            _LOGGER.debug(
+                "Smart Comfort Sensor: zone %s preheat advisor update "
+                "failed (%s) — marking unavailable until the next poll",
+                self._zone_id, e,
+            )
             self._attr_available = False
         finally:
             # (used by TadoPreheatNowSensor and insight collector)
@@ -957,7 +982,11 @@ class TadoSmartComfortTargetSensor(TadoZoneSensor):
             self._attr_available = True
 
         except Exception as e:
-            _LOGGER.debug("Failed to update Smart Comfort target for zone %s: %s", self._zone_id, e)
+            _LOGGER.debug(
+                "Smart Comfort Sensor: zone %s comfort target update "
+                "failed (%s) — marking unavailable until the next poll",
+                self._zone_id, e,
+            )
             self._attr_available = False
 
     def _calculate_comfort_target(self) -> float | None:

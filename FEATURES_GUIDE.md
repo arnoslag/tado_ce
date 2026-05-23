@@ -2,8 +2,7 @@
 
 Complete guide to all Tado CE exclusive features, configurations, and usage scenarios.
 
-> **Entity ID note:** All automation examples use **v2.3.1 entity_ids** (preserved for migrated users).
-> Fresh v3.0.0 installs get different entity_ids — see [ENTITIES.md](ENTITIES.md) for the mapping.
+> **Entity ID note:** All entity IDs and automation examples on this page use **v2.3.1 entity_ids** for readability (preserved for migrated users). Fresh v3.0+ installs use a `_ce_` prefix pattern (e.g. `sensor.lounge_ce_thermal_inertia` instead of `sensor.lounge_thermal_inertia`). [ENTITIES.md](ENTITIES.md) is the canonical reference — check there for actual entity IDs on a fresh install before copying examples into your dashboard or automations.
 
 ## 📑 Table of Contents
 
@@ -179,7 +178,7 @@ Smart Polling includes multiple strategies:
 | Option | Default | API Calls Saved |
 |--------|---------|-----------------|
 | Enable Weather Sensors | Off | 1 call per sync |
-| Enable Mobile Device Tracking | Off | 1 call per full sync (every 6h) |
+| Enable Mobile Device Tracking | Off | 1 call per full sync (at startup, plus every poll if Frequent Sync is enabled) |
 | Enable Home State Sync | Off | Required for Away Mode |
 
 ### How It Works
@@ -675,17 +674,9 @@ Detects open windows even when your heating or AC is off. Combines temperature d
 | Active | Only when heating/cooling is running | Rapid temperature drop while HVAC is active |
 | Passive | Anytime, even when HVAC is off | Temperature drop speed + humidity + outdoor differential |
 
-### Window Detection Mode Per Zone (v3.3.0+)
+### Per-Zone Sensitivity (v3.3.0+)
 
-Choose how each zone detects open windows. Configured via **Options Flow → Zone Configuration**.
-
-| Mode | Behavior |
-|------|----------|
-| Active | Only detects when heating/cooling is running (original behavior) |
-| Passive | Detects anytime, including when HVAC is off |
-| Auto | Picks the best method automatically — uses active when HVAC is running, passive when it's off |
-
-**Sensitivity presets (per zone):**
+Configured via **Options Flow → Zone Configuration**. The integration runs both detection modes automatically — active when the zone is heating or cooling, passive when it's idle — so there's no per-zone mode selector to choose from. What you can configure is sensitivity:
 
 | Sensitivity | Min Readings | Temp Rate Threshold | Best For |
 |-------------|-------------|---------------------|----------|
@@ -1111,20 +1102,27 @@ Pair your Tado bridge via HomeKit to control heating and AC directly on your loc
 
 | Entity | Type | Description |
 |--------|------|-------------|
-| HomeKit Connected | `binary_sensor` | Shows whether the HomeKit connection is active. Attributes include uptime, reconnect count, mapped/unmapped zones, and API savings counters |
+| HomeKit Connected | `binary_sensor` | Shows whether the HomeKit connection is active. Attributes include uptime, reconnect count, mapped/unmapped zones, and current write performance metrics. |
+| HomeKit Reads Saved | `sensor` (disabled by default) | How many cloud read calls HomeKit local control has saved you since the last API quota reset. |
+| HomeKit Writes Saved | `sensor` (disabled by default) | How many cloud write calls HomeKit local control has saved you since the last API quota reset. |
 
-The HomeKit Connected sensor's attributes fall into two groups — savings counters and write performance metrics — with different persistence behaviour:
+Reads Saved and Writes Saved are diagnostic sensors disabled by default — enable them under **Settings → Devices → Tado CE Hub → "X entities not shown"** if you want history charts of HomeKit's API savings. The counters survive HA restarts and reset when your Tado API quota resets (typically once per day).
 
-**Savings counters** — how many API calls HomeKit saved you:
+The HomeKit Connected sensor's own attributes are connection state plus current-session write performance metrics:
+
+**Connection state:**
 
 | Attribute | Description |
 |-----------|-------------|
-| `reads_saved_today` | Cloud data fetches skipped because HomeKit provided the data |
-| `writes_saved_today` | Cloud API writes skipped because HomeKit handled the command locally |
+| `last_connected` | When the bridge last connected (or `null` if never) |
+| `last_disconnected` | When the bridge last disconnected (or `"Never"` if it hasn't since HA started) |
+| `reconnect_count` | How many times the bridge has reconnected since the integration loaded |
+| `uptime` | Time elapsed since the current connection established |
+| `status` | `connected`, `disconnected`, or `not_configured` |
+| `mapped_zones` | Heating zones currently routed via HomeKit |
+| `unmapped_zones` | Heating zones still falling back to cloud (e.g. no matching HomeKit accessory) |
 
-These survive HA restarts (saved to disk) so your daily total stays accurate even if HA reboots mid-day. They reset to zero when your Tado API quota resets (typically once per day).
-
-**Write performance metrics** — how well HomeKit is performing right now:
+**Write performance metrics:**
 
 | Attribute | Description |
 |-----------|-------------|
@@ -1281,7 +1279,7 @@ entities:
 
 ## 🎯 Smart Valve Control
 
-**Available:** v4.0.0-beta.9 (Valve Target mode), v4.0.0-beta.14 (Offset Sync mode) | **Requirement:** Heating zone + external temperature sensor + HomeKit (recommended for Valve Target) | **Per-Zone Opt-in**
+**Available:** v4.0.0+ | **Requirement:** Heating zone + external temperature sensor + HomeKit (recommended for Valve Target) | **Per-Zone Opt-in**
 
 Automatically uses your external sensor to make the TRV heat your room correctly — instead of relying on the TRV's inaccurate built-in sensor.
 
@@ -1339,8 +1337,8 @@ desired_offset = external_sensor − (TRV_reported_temp − current_offset)
 - Rate-limited to one write per 5 minutes per device (Tado's API limit for device offsets)
 - Offset is clamped to ±10°C (Tado's hardware limit) — see [When the clamp fires](#when-the-clamp-fires) below
 - Only writes when the change exceeds your configured sensitivity threshold (default 0.5°C, adjustable 0.5–3.0°C per zone)
-- Readback verification: after each successful write, the integration reads the offset back from Tado and only updates the local cache when the confirmed value matches. A failed write (rate limit, server error) leaves the cache unchanged rather than poisoning it with a value the TRV never received (v4.0.0-beta.16+)
-- Periodic drift refresh: every 30 minutes the integration re-reads each TRV's stored offset from Tado and reconciles the local cache. This catches the case where Tado's own adaptive calibration (or a manual edit in the Tado app) changes the stored offset behind the integration's back, which would otherwise feed a wrong baseline into the next correction and could drift the cache to the ±10°C limit (v4.0.0-beta.16+)
+- Readback verification: after each successful write, the integration reads the offset back from Tado and only updates the local cache when the confirmed value matches. A failed write (rate limit, server error) leaves the cache unchanged rather than poisoning it with a value the TRV never received (v4.0.0+)
+- Periodic drift refresh: the integration re-reads each TRV's stored offset from Tado and reconciles the local cache. With HomeKit connected, the refresh follows your **HomeKit Cloud Refresh** setting (matching the rest of cloud sync); HomeKit-off installs run it every 30 minutes. This catches the case where Tado's own adaptive calibration (or a manual edit in the Tado app) changes the stored offset behind the integration's back, which would otherwise feed a wrong baseline into the next correction and could drift the cache to the ±10°C limit (v4.0.0+)
 - If your external sensor goes offline, the last offset is preserved (no sudden jump)
 
 **Offset Sync + the Tado app:**
@@ -1354,7 +1352,7 @@ The Tado app will show your external sensor's temperature as the room temperatur
 
 Tado stores device offsets in a single signed byte, capped at ±10°C. When your external sensor and the TRV differ by more than that, Offset Sync writes the ±10°C boundary — but the physical gap remains uncorrected beyond that point.
 
-From **v4.0.0-beta.16** onwards, the climate entity exposes two attributes so you can tell when this is happening:
+The climate entity exposes two attributes so you can tell when this is happening:
 
 - `offset_clamped` — `true` when the last write was clamped, `false` otherwise
 - `offset_clamp_direction` — `"hit_max"` (required correction was larger than +10°C), `"hit_min"` (smaller than −10°C), or `"none"` (in range)
@@ -1591,7 +1589,7 @@ Tracks mobile device presence (home/away). Enable "Mobile Device Tracking" in Co
 |--------|--------------|
 | `device_tracker.tado_ce_{device_name}` | {device_name} |
 
-API usage: 1 call per full sync (every 6h). Enable "Sync Mobile Frequently" for every-poll updates.
+API usage: 1 call per full sync (full sync runs at HA startup). Enable "Sync Mobile Frequently" if you want device-tracker updates on every poll instead — useful if you build presence-driven automations.
 
 ### Home State Sync & Presence Mode
 
@@ -1786,9 +1784,8 @@ Organised in the order they appear in the Options Flow — fundamental limits fi
 | Smart Valve Control Mode | Off / Offset Sync (recommended) / Valve Target (advanced) | Heating zones (with external temp sensor) |
 | Offset Sync Sensitivity | How much the offset must change before writing (0.5–3.0°C) | Offset Sync mode only |
 | **Smart Features** | | |
-| Smart Comfort Mode | Adjust target temperature based on outdoor conditions | All zones |
+| Smart Comfort Mode | Adjust target temperature based on outdoor conditions | Heating zones (when Smart Comfort is enabled globally) |
 | Window Type | Window insulation type for mold risk calculation | All zones |
-| Window Detection Mode | Active, Passive, or Auto | All zones |
 | Window Predicted Sensitivity | Low, Medium, or High | All zones |
 | **Manual Temperature Override** | | |
 | Override Mode | How manual temperature changes behave (Tado Default, Next Time Block, Timer, Manual) | All zones |
@@ -2216,4 +2213,4 @@ Look for `Bridge API full response` in logs to verify the API is returning data.
 
 ---
 
-**Last Updated:** v4.0.0-beta.16 (2026-05-14)
+**Last Updated:** v4.0.0 (2026-05-23)

@@ -1,4 +1,10 @@
-"""Tado CE adaptive polling interval management — day/night, quota-aware, low-quota protection."""
+"""Tado CE adaptive polling — day/night windows, quota-aware backoff, low-quota guard.
+
+Computes the next coordinator polling interval from current API quota,
+the configured day / night hours, and feature flags (HomeKit connected
+state changes the calls-per-sync count). Custom user intervals win
+over the adaptive value unless quota would be exhausted.
+"""
 
 from __future__ import annotations
 
@@ -49,28 +55,22 @@ def _get_calls_per_sync(
     config_manager: ConfigurationManager,
     homekit_connected: bool = False,
 ) -> int:
-    """Calculate API calls per sync based on enabled features.
+    """Return the number of cloud API calls one poll cycle costs.
 
-    Helper for adaptive polling calculation.
-
-    Args:
-        config_manager: Configuration manager with feature settings
-        homekit_connected: If True, skip zoneStates base call (local data available)
-
-    Returns:
-        Number of API calls per sync cycle
+    Skips the zone-states call when HomeKit is providing live data,
+    then adds optional weather, mobile-devices, and home-state calls
+    based on the user's feature config.
     """
-    # Base: zoneStates API call (skip if HomeKit provides temperature/humidity)
     calls = 0 if homekit_connected else 1
 
     if config_manager.get_weather_enabled():
-        calls += 1  # weather API call
+        calls += 1
 
     if config_manager.get_mobile_devices_enabled() and config_manager.get_mobile_devices_frequent_sync():
-        calls += 1  # mobileDevices API call
+        calls += 1
 
     if config_manager.get_home_state_sync_enabled():
-        calls += 1  # home state API call
+        calls += 1
 
     return calls
 
@@ -80,11 +80,11 @@ def _build_polling_context(
     config_manager: ConfigurationManager,
     homekit_connected: bool = False,
 ) -> _PollingContext:
-    """Compute all derived polling values from ratelimit data and config.
+    """Bundle every derived value the mode-specific helpers need.
 
     Centralises reset-time recalculation, calls-per-sync adjustment,
-    day/night detection, and quota budgeting into a single immutable context
-    consumed by the mode-specific helpers.
+    day/night detection, and quota budgeting so each mode helper just
+    reads from the immutable context instead of recomputing.
     """
     _remaining = ratelimit_data.get("remaining")
     remaining: int = int(_remaining) if _remaining is not None else 100
@@ -92,7 +92,8 @@ def _build_polling_context(
     reset_seconds: int = int(_reset_sec) if _reset_sec is not None else 86400
     last_reset_utc = ratelimit_data.get("last_reset_utc")
 
-    # Recalculate reset_seconds from last_reset_utc
+    # Prefer the live-calculated value over the stored snapshot when
+    # we know when the quota last reset.
     if last_reset_utc:
         from .ratelimit import calculate_seconds_until_reset
 
@@ -111,7 +112,6 @@ def _build_polling_context(
     night_start = config_manager.get_night_start_hour()
     is_day = is_daytime(config_manager)
 
-    # Night / Day durations
     if night_start > day_start:
         night_duration = 24 - night_start + day_start
     else:
@@ -135,9 +135,10 @@ def _build_polling_context(
 
 
 def _calculate_uniform_interval(ctx: _PollingContext) -> int:
-    """Calculate polling interval for Uniform Mode (day_start == night_start).
+    """Return the polling interval when day_start == night_start.
 
-    No Day/Night distinction — distributes quota evenly over the full reset window.
+    Uniform mode treats the whole 24 h as a single quota window — no
+    day / night distinction — and spreads the usable quota evenly.
     """
     effective_hours = ctx.reset_hours
     night_calls_needed = 0
@@ -152,7 +153,8 @@ def _calculate_uniform_interval(ctx: _PollingContext) -> int:
     interval_minutes = int(max(MIN_POLLING_INTERVAL, min(MAX_POLLING_INTERVAL, interval_minutes)))
 
     _LOGGER.debug(
-        "Adaptive polling (uniform): %dmin (remaining=%s, usable=%.0f, reset=%.1fh)",
+        "Polling: uniform mode → %d min "
+        "(remaining=%s, usable=%.0f, reset=%.1fh)",
         interval_minutes, ctx.remaining, ctx.usable_quota, ctx.reset_hours,
     )
 
@@ -160,29 +162,31 @@ def _calculate_uniform_interval(ctx: _PollingContext) -> int:
 
 
 def _calculate_low_quota_interval(ctx: _PollingContext) -> int | None:
-    """Calculate polling interval for low-quota users (remaining <= LOW_QUOTA_THRESHOLD).
+    """Return the polling interval for low-quota users.
 
-    Night: Fixed MAX_POLLING_INTERVAL to conserve quota.
-    Day: Distributes remaining quota after reserving Night calls.
+    Night holds the maximum interval to conserve quota; daytime
+    distributes whatever is left after reserving night calls. Returns
+    None at night so the caller falls back to the default / custom
+    night interval.
     """
     night_calls = (ctx.night_duration * 60) / MAX_POLLING_INTERVAL
     usable_remaining = ctx.effective_remaining * POLLING_SAFETY_BUFFER - QUOTA_RESERVE_CALLS
     day_calls = usable_remaining - night_calls
 
-    # Edge case: not enough quota for both day and night
     if day_calls <= 0:
         if not ctx.is_day:
-            return None  # Night period — use default/custom night interval
+            return None
         return MAX_POLLING_INTERVAL
 
     if not ctx.is_day:
-        return None  # Night period — use default/custom night interval
+        return None
 
     day_interval = (ctx.day_duration * 60) / day_calls
     day_interval = int(max(MIN_POLLING_INTERVAL, min(MAX_POLLING_INTERVAL, day_interval)))
 
     _LOGGER.debug(
-        "Adaptive polling (low quota, day): %dmin (remaining=%s, day_calls=%.0f, night_reserved=%.0f)",
+        "Polling: low-quota daytime → %d min "
+        "(remaining=%s, day_calls=%.0f, night_reserved=%.0f)",
         day_interval, ctx.remaining, day_calls, night_calls,
     )
 
@@ -193,30 +197,27 @@ def _calculate_day_night_interval(
     ctx: _PollingContext,
     config_manager: ConfigurationManager,
 ) -> int | None:
-    """Calculate polling interval for normal Day/Night mode with reset-time awareness.
+    """Return the daytime adaptive interval, taking quota reset-time into account.
 
-    Night: Returns None to signal use of default/custom night interval.
-    Day: Adaptive based on remaining quota, considering whether reset occurs
-    before or after Night Start.
+    Returns None at night so the caller uses the default / custom
+    night interval. During the day the helper picks the closer of
+    "until quota reset" and "until night start" as the budgeting
+    horizon, and reserves quota for the upcoming night when night
+    comes first.
     """
-    # Night period — signal to use default/custom night interval
     if not ctx.is_day:
         return None
 
-    # Day period — calculate hours until night
     if ctx.current_hour < ctx.night_start:
         hours_until_night = ctx.night_start - ctx.current_hour
     else:
         hours_until_night = 24 - ctx.current_hour + ctx.night_start
 
-    # Determine effective time window (until Reset or Night Start, whichever is sooner)
     if ctx.reset_hours < hours_until_night:
-        # Reset is before Night Start — use all quota until reset, no need to reserve for Night
         effective_hours = ctx.reset_hours
         night_calls_needed = 0.0
         time_boundary = f"reset ({ctx.reset_hours:.1f}h)"
     else:
-        # Night Start is before Reset — need to reserve quota for Night
         effective_hours = float(hours_until_night)
         custom_night = config_manager.get_custom_night_interval()
         night_interval_for_calc = custom_night if custom_night is not None else MAX_POLLING_INTERVAL
@@ -233,8 +234,10 @@ def _calculate_day_night_interval(
     interval_minutes = int(max(MIN_POLLING_INTERVAL, min(MAX_POLLING_INTERVAL, interval_minutes)))
 
     _LOGGER.debug(
-        "Adaptive polling (day, until %s): %dmin (remaining=%s, day_quota=%.0f, night_reserved=%.0f)",
-        time_boundary, interval_minutes, ctx.remaining, day_quota, night_calls_needed,
+        "Polling: daytime adaptive → %d min until %s "
+        "(remaining=%s, day_quota=%.0f, night_reserved=%.0f)",
+        interval_minutes, time_boundary, ctx.remaining,
+        day_quota, night_calls_needed,
     )
 
     return interval_minutes
@@ -245,52 +248,35 @@ def calculate_adaptive_interval(
     config_manager: ConfigurationManager,
     homekit_connected: bool = False,
 ) -> int | None:
-    """Calculate adaptive polling interval — thin orchestrator.
-
-    Delegates to mode-specific helpers based on quota level and Day/Night config.
-    """
+    """Pick the right mode-specific helper and return the calculated interval."""
     ctx = _build_polling_context(ratelimit_data, config_manager, homekit_connected=homekit_connected)
 
-    # No remaining quota — use max interval
     if ctx.effective_remaining <= 0:
         _LOGGER.debug(
-            "Tado CE: No remaining quota (effective_remaining=%s). Using max interval: %s min",
-            ctx.effective_remaining,
-            MAX_POLLING_INTERVAL,
+            "Polling: no quota remaining (effective_remaining=%s) — "
+            "falling back to max interval %d min",
+            ctx.effective_remaining, MAX_POLLING_INTERVAL,
         )
         return MAX_POLLING_INTERVAL
 
-    # Uniform Mode (day_start == night_start)
     if ctx.is_uniform_mode:
         return _calculate_uniform_interval(ctx)
 
-    # Low-quota Smart Day/Night
     if ctx.remaining <= LOW_QUOTA_THRESHOLD:
         return _calculate_low_quota_interval(ctx)
 
-    # Normal Day/Night with reset-time awareness
     return _calculate_day_night_interval(ctx, config_manager)
 def should_pause_polling(ratelimit_data: dict[str, Any], config_manager: ConfigurationManager) -> tuple[bool, str]:
-    """Check if polling should be paused to reserve quota for manual operations.
+    """Return (should_pause, user_facing_reason) when quota is too low to keep polling.
 
-    Pauses polling when quota is critically low to ensure users can still
-    perform manual operations (set temperature, etc.). If reset time has
-    passed, resumes polling to detect the actual reset from API headers.
-
-    Args:
-        ratelimit_data: Rate limit data with 'remaining', 'used', 'reset_seconds'
-        config_manager: Configuration manager for feature settings
-
-    Returns:
-        Tuple of (should_pause: bool, reason: str)
-            - should_pause: True if polling should be paused
-            - reason: Human-readable explanation (empty if not pausing)
+    Pausing reserves the last few calls so the user can still set
+    temperature, change mode, etc. Resumes automatically once the
+    reset time has passed so we can detect the actual reset from the
+    next API response.
     """
-    # Check if Quota Reserve Protection is enabled
     if not config_manager.get_quota_reserve_enabled():
         return False, ""
 
-    # Check if reset time has passed - if so, resume polling to detect reset
     last_reset_utc = ratelimit_data.get("last_reset_utc")
     if last_reset_utc:
         try:
@@ -298,36 +284,35 @@ def should_pause_polling(ratelimit_data: dict[str, Any], config_manager: Configu
             next_reset = last_reset + timedelta(hours=24)
             now_utc = dt_util.utcnow()
 
-            # If next reset time has passed, resume polling to detect actual reset
             if now_utc >= next_reset:
                 _LOGGER.info(
-                    "Tado CE: Reset time has passed (expected %s UTC). Resuming polling to detect actual reset.",
+                    "Polling: expected reset time %s UTC has passed — "
+                    "resuming polling to pick up the actual reset",
                     next_reset.strftime("%H:%M"),
                 )
                 return False, ""
         except (ValueError, TypeError) as e:
-            _LOGGER.debug("Failed to check reset time: %s", e)
+            _LOGGER.debug(
+                "Polling: could not parse last_reset_utc (%s) — "
+                "treating reset time as unknown",
+                e,
+            )
     else:
-        # No reset time known (fresh install / stale data) — allow polling
-        # so we can bootstrap ratelimit data from API response headers.
+        # No reset time known (fresh install / stale snapshot) — let the
+        # next poll bootstrap rate-limit headers.
         return False, ""
 
-    # No need to recalculate - save_ratelimit() stores the correct values
     _remaining = ratelimit_data.get("remaining")
     remaining = _remaining if _remaining is not None else 100
     _limit = ratelimit_data.get("limit")
     daily_limit = _limit if _limit is not None else 100
 
-    # Calculate reserve threshold: max of absolute minimum or percentage
     reserve_threshold = max(QUOTA_RESERVE_CALLS, int(daily_limit * QUOTA_RESERVE_PERCENT))
 
-    # Check if we should pause
     if remaining <= reserve_threshold:
-        # Calculate reset time: prefer reset_seconds, then last_reset_utc, then unknown
         _rs = ratelimit_data.get("reset_seconds")
         reset_seconds = _rs if _rs is not None else 0
 
-        # If reset_seconds is 0/None, try to calculate from last_reset_utc
         if not reset_seconds and last_reset_utc:
             from .ratelimit import calculate_seconds_until_reset
 
@@ -338,12 +323,12 @@ def should_pause_polling(ratelimit_data: dict[str, Any], config_manager: Configu
             minutes = (reset_seconds % 3600) // 60
             reset_info = f"reset in {hours}h {minutes}m"
         else:
-            reset_info = "reset time unknown — will resume after first successful API response"
+            reset_info = "reset time unknown — will resume after the next successful API response"
 
         reason = (
             f"Quota critically low ({remaining} remaining, reserve threshold={reserve_threshold}). "
             f"Polling paused until {reset_info}. "
-            f"Manual operations (set temperature, etc.) still available."
+            f"Manual actions (set temperature, change mode, etc.) still work."
         )
         return True, reason
 
@@ -351,35 +336,24 @@ def should_pause_polling(ratelimit_data: dict[str, Any], config_manager: Configu
 
 
 def is_daytime(config_manager: ConfigurationManager) -> bool:
-    """Check if current time is daytime based on configured hours.
+    """Return True when the current local time falls inside the configured day window.
 
-    Args:
-        config_manager: Configuration manager with day/night hour settings
-
-    Returns:
-        True if current time is within day hours, False otherwise
-
-    Note:
-        If day_start == night_start, returns True (uniform mode - always day polling)
+    Uniform mode (`day_start == night_start`) always reports day so
+    every poll uses the day interval. Handles the wrap-around case
+    where night_start < day_start (e.g. night=01:00, day=06:00).
     """
-    # Use HA's timezone-aware current time
     now = dt_util.now()
     hour = now.hour
 
     day_start = config_manager.get_day_start_hour()
     night_start = config_manager.get_night_start_hour()
 
-    # Uniform mode: if day_start == night_start, always use day interval
     if day_start == night_start:
         return True
 
-    # Handle wrap-around case
-    # Normal case: day_start < night_start (e.g., day=6, night=22)
     if day_start < night_start:
         return day_start <= hour < night_start
 
-    # Wrap-around case: night_start < day_start (e.g., night=1, day=6)
-    # Day is from day_start to 24 OR from 0 to night_start
     return hour >= day_start or hour < night_start
 
 
@@ -388,25 +362,16 @@ def get_polling_interval(
     cached_ratelimit: dict[str, Any] | None = None,
     homekit_connected: bool = False,
 ) -> int:
-    """Get polling interval based on configuration and API rate limit.
+    """Return the polling interval in minutes for the current day / night window.
 
-    Uses adaptive polling based on remaining quota and time until reset.
-    Custom intervals are treated as targets, but adaptive polling can
-    override if quota is low. Day/Night aware — custom intervals are
-    only used as override when explicitly set by user.
-
-    Args:
-        config_manager: Configuration manager with polling settings
-        cached_ratelimit: Pre-loaded ratelimit data (to avoid blocking I/O in async context)
-        homekit_connected: If True, HomeKit is providing local data (fewer API calls needed)
-
-    Returns:
-        Polling interval in minutes
+    Honours a user-set custom interval unless the adaptive value
+    indicates the quota is genuinely insufficient. Adaptive picks
+    based on remaining quota + time until reset; falls back to the
+    DEFAULT_DAY_INTERVAL / DEFAULT_NIGHT_INTERVAL if no rate-limit
+    snapshot is available.
     """
     daytime = is_daytime(config_manager)
 
-    # Check if user has explicitly set custom intervals
-    # Only use custom interval if user explicitly configured it (not default)
     custom_day_interval = config_manager.get_custom_day_interval()
     custom_night_interval = config_manager.get_custom_night_interval()
 
@@ -419,13 +384,11 @@ def get_polling_interval(
         custom_interval = custom_night_interval
         user_set_custom = True
 
-    # Calculate adaptive interval based on remaining quota
     adaptive_interval = None
     try:
         ratelimit_data = None
 
         if cached_ratelimit is not None:
-            # Use pre-loaded data (async-safe)
             ratelimit_data = cached_ratelimit
 
         if ratelimit_data:
@@ -434,37 +397,35 @@ def get_polling_interval(
             )
 
     except (ValueError, TypeError, AttributeError) as e:
-        _LOGGER.debug("Could not calculate adaptive polling interval, using default: %s", e)
+        _LOGGER.debug(
+            "Polling: could not calculate adaptive interval (%s) — "
+            "falling back to default",
+            e,
+        )
 
-    # When the user has explicitly set a custom interval, honour it even below
-    # MIN_POLLING_INTERVAL (5 min). Adaptive interval is normally clamped to
-    # MIN_POLLING_INTERVAL, so without this branch, high-quota users would see
-    # their custom <5min intervals silently overridden. Only override the custom
-    # value when adaptive indicates the quota is *genuinely* insufficient
-    # (adaptive > custom AND adaptive > MIN_POLLING_INTERVAL, i.e. not just hitting the clamp).
+    # Honour the user's explicit custom interval (even below
+    # MIN_POLLING_INTERVAL — the adaptive clamp would otherwise
+    # silently override high-quota users' sub-5-min targets). Only
+    # override when adaptive shows quota is *genuinely* insufficient
+    # (adaptive > custom AND adaptive > MIN_POLLING_INTERVAL, i.e.
+    # not just bumping into the clamp floor).
     if user_set_custom and custom_interval is not None:
-        # User explicitly set custom interval - check if quota is actually sufficient
         if adaptive_interval is not None:
-            # Calculate what the "raw" adaptive interval would be without MIN_POLLING_INTERVAL clamp
-            # If adaptive > custom AND adaptive > MIN_POLLING_INTERVAL, quota is truly insufficient
             if adaptive_interval > custom_interval and adaptive_interval > MIN_POLLING_INTERVAL:
                 _LOGGER.warning(
-                    "Tado CE: Custom interval (%s min) would exceed quota. "
-                    "Using adaptive interval (%s min) to protect remaining calls.",
-                    custom_interval,
-                    adaptive_interval,
+                    "Polling: custom interval %s min would burn through "
+                    "the remaining quota — using adaptive %s min instead "
+                    "to protect the day's calls",
+                    custom_interval, adaptive_interval,
                 )
                 return adaptive_interval
-        # Custom interval is safe (or no ratelimit data), use it
         _LOGGER.debug(
-            "Tado CE: Using custom %s interval: %s min",
+            "Polling: using custom %s interval %s min",
             "day" if daytime else "night",
             custom_interval,
         )
         return custom_interval
     if adaptive_interval is not None:
-        # No custom interval set - use pure adaptive (Day/Night aware)
         return adaptive_interval
-    # Fallback to default intervals
     return DEFAULT_DAY_INTERVAL if daytime else DEFAULT_NIGHT_INTERVAL
 

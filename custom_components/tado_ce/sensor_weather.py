@@ -1,4 +1,11 @@
-"""Tado CE Weather Sensors — outside temperature, solar, weather state."""
+"""Tado CE home-level weather sensors.
+
+Three entities sourced from Tado's `/weather` endpoint:
+outside temperature, solar intensity, and weather state. They
+exist alongside the user's own outdoor source (HA weather
+entity) — these are convenience reflections of what Tado itself
+sees, useful for cross-checking the cloud's own decisions.
+"""
 
 from __future__ import annotations
 
@@ -55,7 +62,7 @@ class TadoOutsideTemperatureSensor(CoordinatorEntity["TadoDataUpdateCoordinator"
 
     @callback
     def update(self) -> None:
-        """Update entity state from coordinator data."""
+        """Refresh outside temperature from coordinator weather data."""
         try:
             data = (self.coordinator.data or {}).get("weather")
             if data:
@@ -66,7 +73,11 @@ class TadoOutsideTemperatureSensor(CoordinatorEntity["TadoDataUpdateCoordinator"
             else:
                 self._attr_available = False
         except Exception:
-            _LOGGER.debug("Failed to update outside temperature sensor")
+            _LOGGER.debug(
+                "Weather Sensor: outside temperature update failed — "
+                "marking unavailable until the next poll",
+                exc_info=True,
+            )
             self._attr_available = False
 
 
@@ -101,7 +112,7 @@ class TadoSolarIntensitySensor(CoordinatorEntity["TadoDataUpdateCoordinator"], S
 
     @callback
     def update(self) -> None:
-        """Update entity state from coordinator data."""
+        """Refresh solar intensity percentage from coordinator weather data."""
         try:
             data = (self.coordinator.data or {}).get("weather")
             if data:
@@ -112,7 +123,11 @@ class TadoSolarIntensitySensor(CoordinatorEntity["TadoDataUpdateCoordinator"], S
             else:
                 self._attr_available = False
         except Exception:
-            _LOGGER.debug("Failed to update solar intensity sensor")
+            _LOGGER.debug(
+                "Weather Sensor: solar intensity update failed — "
+                "marking unavailable until the next poll",
+                exc_info=True,
+            )
             self._attr_available = False
 
 
@@ -169,7 +184,7 @@ class TadoWeatherStateSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], Sen
 
     @callback
     def update(self) -> None:
-        """Update entity state from coordinator data."""
+        """Refresh weather-state condition (sunny / cloudy / rain / etc.) from coordinator data."""
         try:
             data = (self.coordinator.data or {}).get("weather")
             if data:
@@ -181,5 +196,9 @@ class TadoWeatherStateSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], Sen
             else:
                 self._attr_available = False
         except Exception:
-            _LOGGER.debug("Failed to update weather state sensor")
+            _LOGGER.debug(
+                "Weather Sensor: weather state update failed — marking "
+                "unavailable until the next poll",
+                exc_info=True,
+            )
             self._attr_available = False

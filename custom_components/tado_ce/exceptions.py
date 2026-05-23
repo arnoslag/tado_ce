@@ -38,5 +38,5 @@ class TadoRateLimitError(HomeAssistantError):
     """Raised when the Tado API returns HTTP 429 and retries are exhausted.
 
     The config flow catches this and shows a "rate_limited" error message,
-    telling the user to wait before trying again (#246).
+    telling the user to wait before trying again.
     """

@@ -1,4 +1,10 @@
-"""Tado CE Number Platform — boiler max output temperature control."""
+"""Tado CE number platform — boiler max output temperature.
+
+Single optional entity, only created when bridge credentials are
+configured AND the bridge response actually carries the
+`boilerMaxOutputTemperatureInCelsius` field. OpenTherm-only —
+on/off boilers don't expose a max-output setting.
+"""
 
 from __future__ import annotations
 
@@ -44,11 +50,16 @@ async def async_setup_entry(
         bridge_data = coordinator.data.get("bridge")
         if isinstance(bridge_data, dict) and "boilerMaxOutputTemperatureInCelsius" in bridge_data:
             entities.append(TadoBoilerMaxOutputTemperatureNumber(coordinator))
-            _LOGGER.info("Bridge credentials found with temperature field — creating bridge number entity")
+            _LOGGER.debug(
+                "Number: bridge exposes boiler max output temperature "
+                "— creating boiler max temp number entity",
+            )
         else:
             _LOGGER.debug(
-                "Bridge credentials present but boilerMaxOutputTemperatureInCelsius not in response — "
-                "skipping number entity",
+                "Number: bridge configured but boiler max output "
+                "temperature not in the response — boiler max temp "
+                "number entity not created (requires an OpenTherm "
+                "boiler)",
             )
 
     async_add_entities(entities, True)
@@ -58,10 +69,11 @@ class TadoBoilerMaxOutputTemperatureNumber(
     CoordinatorEntity["TadoDataUpdateCoordinator"],
     NumberEntity,
 ):
-    """Number entity for controlling boiler max output temperature.
+    """Set the boiler's maximum output temperature on OpenTherm bridges.
 
-    Uses optimistic update: value reflects the set value immediately,
-    then syncs with the server on the next coordinator poll.
+    Optimistic on success — the entity reflects the requested
+    value immediately and the next coordinator poll either
+    confirms it or corrects it from the bridge.
     """
 
     _attr_has_entity_name = True
@@ -86,12 +98,7 @@ class TadoBoilerMaxOutputTemperatureNumber(
         self._attr_native_value: float | None = None
 
     async def async_set_native_value(self, value: float) -> None:
-        """Set boiler max output temperature via Bridge API.
-
-        Uses optimistic update: sets _attr_native_value immediately on
-        success. The next coordinator poll will confirm or correct the
-        value (server is source of truth).
-        """
+        """Send the new boiler max output temperature to the bridge."""
         client = self.coordinator.bridge_api_client
         if client is None:
             msg = "Bridge API client not available"
@@ -99,16 +106,22 @@ class TadoBoilerMaxOutputTemperatureNumber(
         try:
             await client.async_set_max_output_temperature(value)
         except TadoBridgeApiError as err:
-            _LOGGER.exception("Failed to set boiler max output temperature")
+            _LOGGER.warning(
+                "Number: boiler max output temperature write failed "
+                "(%s) — keeping the previous value",
+                err,
+            )
             msg = "Failed to set boiler max output temperature"
             raise HomeAssistantError(msg) from err
-        # Optimistic update — reflect new value immediately
+        # Quantise to the bridge's 0.5°C step before reflecting back
+        # — the bridge would round anyway, so showing the user's raw
+        # request would briefly disagree with the next poll.
         self._attr_native_value = round(value * 2) / 2
         self.async_write_ha_state()
 
     @callback
     def _handle_coordinator_update(self) -> None:
-        """Handle coordinator data update."""
+        """Refresh boiler max output temperature from the latest bridge poll."""
         bridge = self.coordinator.data.get("bridge")
         if not bridge:
             self._attr_available = False

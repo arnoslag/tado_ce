@@ -1,35 +1,25 @@
-"""Tado CE Data Loader — per-home HA Store persistence and in-memory cache.
+"""Tado CE data loader — per-home HA Store persistence with in-memory cache.
 
 Manages two categories of persistent data via HA Store:
 
-**API Data** (10 stores, immediate save):
-    Written on every API response via ``async_update_store()``.
-    Uses ``Store.async_save()`` for immediate persistence.
-    Stores: zones, config, home_state, ratelimit,
-    zones_info, weather, mobile_devices, offsets, schedules, ac_capabilities.
+- **API data** (immediate save): ten stores written on every API
+  response — `zones`, `config`, `home_state`, `ratelimit`, `zones_info`,
+  `weather`, `mobile_devices`, `offsets`, `schedules`,
+  `ac_capabilities`. Uses `Store.async_save()`.
+- **Auxiliary data** (debounced save): per-feature state — window
+  detection, WC state, bridge health, outdoor temp history, zone
+  config, smart-comfort cache, overlay mode, timer duration, HomeKit
+  savings, insight runtime state. Uses `Store.async_delay_save()`;
+  HA flushes pending writes on `EVENT_HOMEASSISTANT_FINAL_WRITE`.
 
-**Auxiliary Data** (9 stores, debounced save):
-    Written via ``save_auxiliary()`` with configurable delay.
-    Uses ``Store.async_delay_save()`` for batched writes.
-    HA automatically persists pending data on shutdown via
-    ``EVENT_HOMEASSISTANT_FINAL_WRITE``.
-    Stores: window_detection, wc_state, bridge_health, outdoor_temp_history,
-    zone_config, smart_comfort_cache, overlay_mode,
-    timer_duration, homekit_savings.
+`HeatingCycleStorage`, `InsightHistoryTracker`,
+`StateRestoreManager`, and `APICallTracker` keep their own Store
+instances — they need data-format migration, dirty-flag tracking, or
+domain-specific load/save logic that doesn't fit this loader.
 
-**Standalone Stores** (not managed by DataLoader):
-    HeatingCycleStorage, InsightHistoryTracker, StateRestoreManager,
-    APICallTracker manage their own Store instances because they have
-    complex data-format migration, dirty-flag tracking, or domain-specific
-    save/load logic that doesn't fit the DataLoader pattern.
-
-**When to use DataLoader vs standalone Store:**
-    - DataLoader: Simple key-value data, no complex transforms on load/save
-    - Standalone: Needs data-format migration, dirty tracking, or domain logic
-
-**JSON file exceptions** (not managed by DataLoader):
-    - config_flow bootstrap writes (DataLoader not yet created)
-    - homekit_pairing / homekit_device_map (independent lifecycle)
+A few legacy JSON files stay outside the loader: config-flow
+bootstrap writes (DataLoader not yet created at that point),
+`homekit_pairing`, and `homekit_device_map` (independent lifecycle).
 """
 
 from __future__ import annotations
@@ -91,11 +81,7 @@ STORE_VERSION = 1
 
 
 class DataLoader:
-    """Per-entry data loader with home_id-scoped HA Store persistence.
-
-    Each config entry (home) gets its own DataLoader instance.
-    All persistence uses HA Store — API data with immediate save,
-    auxiliary data with debounced save.
+    """One-per-config-entry HA Store persistence with a home-id-scoped cache.
 
     Usage::
 
@@ -106,12 +92,7 @@ class DataLoader:
     """
 
     def __init__(self, home_id: str, hass: HomeAssistant | None = None) -> None:
-        """Initialize DataLoader for a specific home.
-
-        Args:
-            home_id: Tado home ID for Store key scoping.
-            hass: HomeAssistant instance (required for Store operations).
-        """
+        """Initialise the loader bound to one Tado home."""
         self._home_id = home_id
         self._hass = hass
         self._cache: dict[str, Any] = {}
@@ -120,7 +101,7 @@ class DataLoader:
             self._init_stores(hass)
 
     def _init_stores(self, hass: HomeAssistant) -> None:
-        """Create Store instances for all managed data."""
+        """Create one HA Store instance per managed key."""
         for name in _ALL_STORES:
             self._stores[name] = Store(
                 hass,
@@ -130,29 +111,17 @@ class DataLoader:
 
     @property
     def home_id(self) -> str:
-        """Return the home_id this loader is scoped to."""
+        """Return the Tado home ID this loader is scoped to."""
         return self._home_id
 
     # --- Cache API ---
 
     def update_cache(self, base_name: str, data: dict[str, Any] | list[Any]) -> None:
-        """Update in-memory cache entry.
-
-        Called by async_update_store after Store write. Also used by
-        legacy callers during transition.
-
-        Args:
-            base_name: Store name (e.g. "zones").
-            data: Parsed data to cache.
-        """
+        """Update the in-memory cache entry without touching the Store."""
         self._cache[base_name] = data
 
     def get_cached(self, base_name: str) -> dict[str, Any] | list[Any] | None:
-        """Get data from in-memory cache.
-
-        Returns:
-            Cached data, or None if not cached or negatively cached.
-        """
+        """Return the cached value, or None when missing or negatively cached."""
         result = self._cache.get(base_name)
         if result is _CACHE_MISSING:
             return None
@@ -161,33 +130,25 @@ class DataLoader:
     # --- API Data Store Operations ---
 
     async def async_update_store(self, name: str, data: dict[str, Any] | list[Any]) -> None:
-        """Save API data to Store immediately and update in-memory cache.
-
-        Used by api_client after each API response. Replaces the old
-        JSON file write-through pattern.
-
-        Args:
-            name: Store name (e.g. "zones", "ratelimit").
-            data: Data to persist.
-        """
+        """Save API data to Store immediately and update the cache."""
         store = self._stores.get(name)
         if store is None:
-            _LOGGER.warning("Unknown storage key: %s", name)
+            _LOGGER.warning(
+                "Data Loader: cannot save unknown store %r — "
+                "this is a programming error, the data will not persist",
+                name,
+            )
             return
         await store.async_save(data)
         self._cache[name] = data
 
     async def async_load_all_to_cache(self) -> None:
-        """Load all API data stores into in-memory cache.
+        """Populate the cache with every API-data store on cold start.
 
-        Called once during cold start. For each API data store:
-        1. Try ``Store.async_load()``
-        2. If None, try v3.5.3 JSON migration via ``async_migrate_json_to_store``
-        3. Cache result (including negative sentinel for missing data)
-
-        Handles v3.5.3 / v4.0.0-beta.x → v4.x migration: old JSON files
-        in DATA_DIR are migrated to HA Store on first load, then renamed
-        to ``.json.migrated``.
+        For each store: tries `Store.async_load()` first, falls back
+        to migrating the v3.5.3 JSON file alongside it, and caches a
+        negative sentinel when both are empty so subsequent reads
+        don't re-trigger the migration path.
         """
         api_store_names = [name for name, delay in _ALL_STORES.items() if delay == 0]
         for name in api_store_names:
@@ -198,57 +159,62 @@ class DataLoader:
             try:
                 data = await store.async_load()
             except HomeAssistantError:
-                _LOGGER.exception("Failed to load store %s", name)
+                _LOGGER.warning(
+                    "Data Loader: could not load store %r — caching as "
+                    "missing, integration will rebuild from the next "
+                    "API response",
+                    name, exc_info=True,
+                )
                 self._cache[name] = _CACHE_MISSING
                 continue
 
             if data is None and self._hass is not None:
-                # v3.5.3 migration: try loading from old JSON file
                 old_path = self._old_api_data_path(name)
-                _LOGGER.debug("DataLoader: Store %s empty, trying JSON migration from %s", name, old_path)
+                _LOGGER.debug(
+                    "Data Loader: store %r empty, trying legacy JSON "
+                    "migration from %s",
+                    name, old_path,
+                )
                 data = await async_migrate_json_to_store(
                     self._hass, old_path, store, label=name,
                 )
             if data is not None:
-                _LOGGER.debug("DataLoader: Loaded %s (type=%s)", name, type(data).__name__)
+                _LOGGER.debug("Data Loader: loaded %r (type=%s)", name, type(data).__name__)
             self._cache[name] = data if data is not None else _CACHE_MISSING
 
     def _old_api_data_path(self, name: str) -> Path:
-        """Get old JSON file path for API data (v3.5.3 format).
-
-        v3.5.3 used: ``DATA_DIR / "{name}_{home_id}.json"``
-        """
+        """Return the v3.5.3 JSON path that one-time migration should look at."""
         return DATA_DIR / f"{name}_{self._home_id}.json"
 
-    # --- Backward-compatible cache read methods ---
-    # These methods previously did blocking file I/O. Now they are thin
-    # wrappers over the in-memory cache (populated by async_load_all_to_cache
-    # or async_update_store). Signatures preserved for backward compatibility.
+    # --- Backward-compatible sync cache reads ---
+    # Thin wrappers preserved for callers written before
+    # async_load_all_to_cache existed; they read straight from the
+    # in-memory cache, so they are sync.
 
     def load_zones_file(self) -> dict[str, Any] | None:
-        """Load zone states from cache."""
+        """Return cached zone states, or None if unloaded."""
         return self.get_cached("zones")  # type: ignore[return-value]
 
     def load_zones_info_file(self) -> list[Any] | None:
-        """Load zone metadata from cache."""
+        """Return cached zone metadata, or None if unloaded."""
         return self.get_cached("zones_info")  # type: ignore[return-value]
 
     def load_mobile_devices_file(self) -> list[Any] | None:
-        """Load mobile devices from cache."""
+        """Return cached mobile-device list, or None if unloaded."""
         return self.get_cached("mobile_devices")  # type: ignore[return-value]
 
     def load_ratelimit_file(self) -> dict[str, Any] | None:
-        """Load rate limit data from cache."""
+        """Return cached rate-limit snapshot, or None if unloaded."""
         return self.get_cached("ratelimit")  # type: ignore[return-value]
 
     def load_schedules_file(self) -> dict[str, Any] | None:
-        """Load zone schedules from cache."""
+        """Return cached schedule data for every zone, or None if unloaded."""
         return self.get_cached("schedules")  # type: ignore[return-value]
 
     # === Convenience methods ===
 
     def get_zone_schedule(self, zone_id: str) -> dict[str, Any] | None:
-        """Get schedule data for a specific zone."""
+        """Return the cached schedule for one zone, or None when unavailable."""
         schedules = self.load_schedules_file()
         if schedules:
             return schedules.get(zone_id)
@@ -257,36 +223,32 @@ class DataLoader:
     # === Auxiliary Data — Store-backed with debounced writes ===
 
     def _old_auxiliary_path(self, name: str) -> Path:
-        """Get the pre-Store JSON path for an auxiliary file (migration lookup only).
+        """Return the legacy JSON path for one-time migration, accounting for shared keys.
 
-        In the legacy v3.5.3 JSON format, overlay_mode and timer_duration were
-        shared across homes (no home_id suffix). All other files were home-scoped.
-        Current Store keys are home-scoped uniformly; this path is only used when
-        migrating old on-disk JSON into the new Store.
+        v3.5.3 stored `overlay_mode` and `timer_duration` shared
+        across homes (no home_id suffix); every other auxiliary file
+        was already home-scoped. Today's Store keys are home-scoped
+        uniformly, so this asymmetry only matters for migration.
         """
         if name in ("overlay_mode", "timer_duration"):
             return DATA_DIR / f"{name}.json"
         return DATA_DIR / f"{name}_{self._home_id}.json"
 
     async def async_load_auxiliary(self, name: str) -> dict[str, Any] | list[Any] | None:
-        """Load auxiliary data from Store, with JSON migration fallback.
-
-        Args:
-            name: Auxiliary store name.
-
-        Returns:
-            Loaded data, or None if not found.
-        """
+        """Load one auxiliary value from Store, falling back to a legacy JSON file."""
         store = self._stores.get(name)
         if not store:
-            _LOGGER.warning("Unknown auxiliary storage key: %s", name)
+            _LOGGER.warning(
+                "Data Loader: cannot load unknown auxiliary store %r — "
+                "this is a programming error",
+                name,
+            )
             return None
 
         data = await store.async_load()
         if data is not None:
             return data
 
-        # Try migrating from old JSON file
         if self._hass is None:
             return None
         old_path = self._old_auxiliary_path(name)
@@ -295,68 +257,66 @@ class DataLoader:
         )
 
     def save_auxiliary(self, name: str, data: dict[str, Any] | list[Any]) -> None:
-        """Schedule debounced save for auxiliary data via Store.
-
-        Args:
-            name: Auxiliary store name.
-            data: Data to save.
-        """
+        """Queue a debounced save for one auxiliary value (delay per store config)."""
         store = self._stores.get(name)
         if store:
             delay = _ALL_STORES.get(name, 10)
             store.async_delay_save(lambda: data, delay)
         else:
-            _LOGGER.warning("Unknown auxiliary storage key for save: %s", name)
+            _LOGGER.warning(
+                "Data Loader: cannot save unknown auxiliary store %r — "
+                "this is a programming error, the data will not persist",
+                name,
+            )
 
     # === Overlay mode (per-home, Store-backed) ===
 
     async def async_load_overlay_mode(self) -> str:
-        """Load overlay mode from Store.
-
-        Returns:
-            "TADO_MODE", "NEXT_TIME_BLOCK", "TIMER", or "MANUAL".
-            Defaults to "TADO_MODE" if not found.
-        """
+        """Return the configured overlay mode, falling back to the default."""
         try:
             data = await self.async_load_auxiliary("overlay_mode")
             if data is None:
                 return OVERLAY_MODE_DEFAULT
             if not isinstance(data, dict):
-                _LOGGER.warning("Invalid overlay_mode format, defaulting to TADO_MODE")
+                _LOGGER.warning(
+                    "Data Loader: overlay_mode store had unexpected format — "
+                    "falling back to default %s",
+                    OVERLAY_MODE_DEFAULT,
+                )
                 return OVERLAY_MODE_DEFAULT
             mode = data.get("overlay_mode", OVERLAY_MODE_DEFAULT)
             if mode not in ("TADO_MODE", "NEXT_TIME_BLOCK", "TIMER", "MANUAL"):
-                _LOGGER.warning("Invalid overlay mode '%s', defaulting to TADO_MODE", mode)
+                _LOGGER.warning(
+                    "Data Loader: overlay_mode value %r is not recognised — "
+                    "falling back to default %s",
+                    mode, OVERLAY_MODE_DEFAULT,
+                )
                 return OVERLAY_MODE_DEFAULT
             return mode  # type: ignore[no-any-return]
         except (HomeAssistantError, OSError) as e:
-            _LOGGER.warning("Failed to load overlay mode: %s", e)
+            _LOGGER.warning(
+                "Data Loader: could not load overlay mode (%s) — "
+                "using default %s",
+                e, OVERLAY_MODE_DEFAULT,
+            )
             return OVERLAY_MODE_DEFAULT
 
     def save_overlay_mode(self, mode: str) -> bool:
-        """Save overlay mode via Store.
-
-        Args:
-            mode: "TADO_MODE", "NEXT_TIME_BLOCK", "TIMER", or "MANUAL"
-
-        Returns:
-            True if valid mode, False otherwise.
-        """
+        """Persist the overlay mode if it is a recognised value."""
         if mode not in ("TADO_MODE", "NEXT_TIME_BLOCK", "TIMER", "MANUAL"):
-            _LOGGER.error("Invalid overlay mode: %s", mode)
+            _LOGGER.warning(
+                "Data Loader: refusing to save unrecognised overlay mode %r",
+                mode,
+            )
             return False
         self.save_auxiliary("overlay_mode", {"overlay_mode": mode})
-        _LOGGER.debug("Saved overlay mode: %s", mode)
+        _LOGGER.debug("Data Loader: queued overlay mode save (%s)", mode)
         return True
 
     # === Timer duration (per-home, Store-backed) ===
 
     async def async_load_timer_duration(self) -> int:
-        """Load timer duration from Store.
-
-        Returns:
-            Duration in minutes (default TIMER_DURATION_DEFAULT if not set or error).
-        """
+        """Return the saved timer duration in minutes, or the default on error."""
         try:
             data = await self.async_load_auxiliary("timer_duration")
             if data is None:
@@ -364,37 +324,37 @@ class DataLoader:
             if isinstance(data, dict):
                 return data.get("timer_duration", TIMER_DURATION_DEFAULT)  # type: ignore[no-any-return]
         except (HomeAssistantError, OSError) as e:
-            _LOGGER.debug("Failed to load timer duration: %s", e)
+            _LOGGER.debug(
+                "Data Loader: could not load timer duration (%s) — "
+                "using default %d minutes",
+                e, TIMER_DURATION_DEFAULT,
+            )
         return TIMER_DURATION_DEFAULT
 
     def save_timer_duration(self, duration: int) -> bool:
-        """Save timer duration via Store.
-
-        Args:
-            duration: Duration in minutes (15-180)
-
-        Returns:
-            True if valid duration, False otherwise.
-        """
+        """Persist the timer duration if it is inside the allowed range."""
         if not isinstance(duration, int) or duration < TIMER_DURATION_MIN or duration > TIMER_DURATION_MAX:
-            _LOGGER.error("Invalid timer duration: %s", duration)
+            _LOGGER.warning(
+                "Data Loader: refusing to save timer duration %r — "
+                "must be an int in %d..%d minutes",
+                duration, TIMER_DURATION_MIN, TIMER_DURATION_MAX,
+            )
             return False
         self.save_auxiliary("timer_duration", {"timer_duration": duration})
-        _LOGGER.debug("Saved timer duration: %s minutes", duration)
+        _LOGGER.debug("Data Loader: queued timer duration save (%d minutes)", duration)
         return True
 
     # === Outdoor temperature history (Store-backed) ===
 
     async def async_load_outdoor_temp_history(self) -> list[Any]:
-        """Load outdoor temperature history from Store.
-
-        Returns:
-            List of float temperature readings (most recent last), max 336 entries.
-        """
+        """Return the cached outdoor-temperature ring buffer (most recent last)."""
         try:
             data = await self.async_load_auxiliary("outdoor_temp_history")
             if data is None:
-                _LOGGER.debug("outdoor_temp_history not found - starting fresh")
+                _LOGGER.debug(
+                    "Data Loader: outdoor_temp_history not yet saved — "
+                    "starting fresh",
+                )
                 return []
             if isinstance(data, dict):
                 readings = data.get("readings", [])
@@ -402,18 +362,15 @@ class DataLoader:
                 return readings[-OUTDOOR_TEMP_HISTORY_MAX:]
             return []
         except (HomeAssistantError, OSError) as e:
-            _LOGGER.warning("Failed to load outdoor_temp_history: %s", e)
+            _LOGGER.warning(
+                "Data Loader: could not load outdoor temperature history "
+                "(%s) — starting fresh",
+                e,
+            )
             return []
 
     def save_outdoor_temp_history(self, readings: list[Any]) -> bool:
-        """Save outdoor temperature history via Store.
-
-        Args:
-            readings: List of float temperature readings (most recent last).
-
-        Returns:
-            True (always succeeds — Store handles async write).
-        """
+        """Persist the outdoor-temperature ring buffer (trimmed to the configured max)."""
         trimmed = readings[-OUTDOOR_TEMP_HISTORY_MAX:]
         data = {"readings": trimmed}
         self.save_auxiliary("outdoor_temp_history", data)
@@ -422,115 +379,87 @@ class DataLoader:
     # === Weather Compensation State (Store-backed) ===
 
     async def async_load_wc_state(self) -> dict[str, Any] | None:
-        """Load weather compensation state from Store.
-
-        Returns:
-            Parsed dict, or None if not found.
-        """
+        """Return the persisted weather-compensation state, or None when missing."""
         try:
             data = await self.async_load_auxiliary("wc_state")
         except (HomeAssistantError, OSError) as e:
-            _LOGGER.warning("Failed to load wc_state: %s", e)
+            _LOGGER.warning(
+                "Data Loader: could not load weather-compensation state "
+                "(%s) — starting fresh, smoothing buffer will rebuild",
+                e,
+            )
             return None
         if data is not None and isinstance(data, dict):
             return data
         return None
 
     def save_wc_state(self, data: dict[str, Any]) -> bool:
-        """Save weather compensation state via Store.
-
-        Args:
-            data: Serialized WeatherCompensationState dict.
-
-        Returns:
-            True (always succeeds — Store handles async write).
-        """
+        """Persist the weather-compensation state."""
         self.save_auxiliary("wc_state", data)
         return True
 
     # === Bridge Health State (Store-backed) ===
 
     async def async_load_bridge_health(self) -> dict[str, Any] | None:
-        """Load bridge health state from Store.
-
-        Returns:
-            Parsed dict, or None if not found.
-        """
+        """Return the persisted bridge-health state, or None when missing."""
         try:
             data = await self.async_load_auxiliary("bridge_health")
         except (HomeAssistantError, OSError) as e:
-            _LOGGER.warning("Failed to load bridge_health: %s", e)
+            _LOGGER.warning(
+                "Data Loader: could not load bridge-health state (%s) — "
+                "starting fresh, health metrics will rebuild",
+                e,
+            )
             return None
         if data is not None and isinstance(data, dict):
             return data
         return None
 
     def save_bridge_health(self, data: dict[str, Any]) -> bool:
-        """Save bridge health state via Store.
-
-        Args:
-            data: Serialized BridgeHealthState dict.
-
-        Returns:
-            True (always succeeds — Store handles async write).
-        """
+        """Persist the bridge-health state."""
         self.save_auxiliary("bridge_health", data)
         return True
 
     # === HomeKit Savings Counters (Store-backed) ===
 
     async def async_load_homekit_savings(self) -> dict[str, Any] | None:
-        """Load HomeKit API savings counters from Store.
-
-        Returns:
-            Dict with reads_saved, writes_saved, last_reset_utc, or None if not found.
-        """
+        """Return the persisted HomeKit API-savings counters, or None when missing."""
         try:
             data = await self.async_load_auxiliary("homekit_savings")
         except (HomeAssistantError, OSError) as e:
-            _LOGGER.warning("Failed to load homekit_savings: %s", e)
+            _LOGGER.warning(
+                "Data Loader: could not load HomeKit savings counters "
+                "(%s) — counters will reset",
+                e,
+            )
             return None
         if data is not None and isinstance(data, dict):
             return data
         return None
 
     def save_homekit_savings(self, data: dict[str, Any]) -> bool:
-        """Save HomeKit API savings counters via Store.
-
-        Args:
-            data: Dict with reads_saved, writes_saved, last_reset_utc.
-
-        Returns:
-            True (always succeeds — Store handles async write).
-        """
+        """Persist the HomeKit API-savings counters."""
         self.save_auxiliary("homekit_savings", data)
         return True
 
     # === Window Detection State (Store-backed) ===
 
     async def async_load_window_detection(self) -> dict[str, Any] | None:
-        """Load window detection state from Store.
-
-        Returns:
-            Parsed dict with per-zone detection state, or None if not found.
-        """
+        """Return the persisted window-detection state, or None when missing."""
         try:
             data = await self.async_load_auxiliary("window_detection")
         except (HomeAssistantError, OSError) as e:
-            _LOGGER.warning("Failed to load window_detection: %s", e)
+            _LOGGER.warning(
+                "Data Loader: could not load window-detection state "
+                "(%s) — starting fresh, per-zone detection state will rebuild",
+                e,
+            )
             return None
         if data is not None and isinstance(data, dict):
             return data
         return None
 
     def save_window_detection(self, data: dict[str, Any]) -> bool:
-        """Save window detection state via Store.
-
-        Args:
-            data: Dict of per-zone detection state.
-
-        Returns:
-            True (always succeeds — Store handles async write).
-        """
+        """Persist the window-detection state."""
         self.save_auxiliary("window_detection", data)
         return True

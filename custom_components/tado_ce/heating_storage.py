@@ -1,4 +1,9 @@
-"""Tado CE heating cycle storage — per-home persistence via HA Store."""
+"""Tado CE heating-cycle storage — per-home cycle history in HA Store + JSON migration.
+
+Persists completed heating cycles for the heating-cycle
+analyzer's rolling window. Uses HA Store with debounced saves
+plus a one-shot migration from the v3.x JSON file shape.
+"""
 
 from __future__ import annotations
 
@@ -45,19 +50,21 @@ class HeatingCycleStorage:
         self._data: dict[str, Any] = {"zones": {}}
 
     async def async_load(self) -> None:
-        """Load cycle data from Store with migration from old JSON file."""
+        """Load cycle history from Store, migrating from the v3.x JSON file when needed."""
+        from .helpers import mask_home_id
+
         try:
             stored = await self._store.async_load()
             if stored is not None:
                 self._data = self._migrate_data_format(stored)
                 _LOGGER.debug(
-                    "Loaded heating cycle history for home %s: %d zones",
-                    self._home_id,
+                    "Heating Storage: loaded cycle history for home "
+                    "%s — %d zone(s)",
+                    mask_home_id(self._home_id),
                     len(self._data.get("zones", {})),
                 )
                 return
 
-            # No Store data — try migrating from old JSON file
             migrated = await async_migrate_json_to_store(
                 self._hass, self._old_storage_path, self._store,
                 label="heating_cycles",
@@ -67,29 +74,41 @@ class HeatingCycleStorage:
                 self._data = self._migrate_data_format(migrated)
                 return
 
-            _LOGGER.debug("No existing heating cycle history found")
+            _LOGGER.debug(
+                "Heating Storage: no existing cycle history found "
+                "for home %s — starting fresh",
+                mask_home_id(self._home_id),
+            )
 
         except HomeAssistantError:
-            _LOGGER.exception("Corrupted heating cycle storage")
+            _LOGGER.warning(
+                "Heating Storage: cycle history Store is corrupt — "
+                "starting fresh for this session, will retry on next "
+                "reload",
+                exc_info=True,
+            )
             self._data = {"zones": {}}
         except OSError:
-            _LOGGER.exception("Failed to load heating cycle storage")
+            _LOGGER.warning(
+                "Heating Storage: cycle history could not be read "
+                "from disk — starting fresh for this session, will "
+                "retry on next reload",
+                exc_info=True,
+            )
             self._data = {"zones": {}}
 
     def _migrate_data_format(self, loaded_data: dict[str, Any]) -> dict[str, Any]:
-        """Migrate old data format to new format.
-
-        Old format: {"zone_id": [cycles], ...}
-        New format: {"zones": {"zone_id": {"cycles": [...]}, ...}}
-        """
-        # Check if already new format
+        """Lift old `{zone_id: [cycles]}` shape into new `{zones: {zone_id: {cycles: [...]}}}`."""
         if "zones" in loaded_data:
-            # Strip "version" if present (legacy Store data)
+            # Already new shape — drop the legacy "version" key
+            # if present so it doesn't leak into save_cycle.
             loaded_data.pop("version", None)
             return loaded_data
 
-        # Migrate old format
-        _LOGGER.info("Migrating heating cycle data from old format")
+        _LOGGER.info(
+            "Heating Storage: migrating cycle history from legacy "
+            "format",
+        )
         new_data: dict[str, Any] = {"zones": {}}
 
         for zone_id, cycles in loaded_data.items():
@@ -98,7 +117,8 @@ class HeatingCycleStorage:
             if isinstance(cycles, list):
                 new_data["zones"][zone_id] = {"cycles": cycles}
                 _LOGGER.debug(
-                    "Migrated zone %s with %d cycles",
+                    "Heating Storage: migrated zone %s with %d "
+                    "cycle(s)",
                     zone_id,
                     len(cycles),
                 )
@@ -117,7 +137,8 @@ class HeatingCycleStorage:
         self._data["zones"][zone_id]["cycles"].append(cycle.to_dict())
 
         _LOGGER.debug(
-            "Saved cycle for zone %s: %s -> %s (completed=%s, interrupted=%s)",
+            "Heating Storage: stored cycle for zone %s — %s → %s "
+            "(completed=%s, interrupted=%s)",
             zone_id,
             cycle.start_time.isoformat(),
             cycle.end_time.isoformat() if cycle.end_time else "active",
@@ -162,7 +183,11 @@ class HeatingCycleStorage:
                     break  # Only one active cycle per zone
 
         if active:
-            _LOGGER.info("Found %d active cycles to resume", len(active))
+            _LOGGER.info(
+                "Heating Storage: resuming %d active cycle(s) after "
+                "restart",
+                len(active),
+            )
 
         return active
 
@@ -184,7 +209,7 @@ class HeatingCycleStorage:
         removed_count = original_count - len(self._data["zones"][zone_id]["cycles"])
         if removed_count > 0:
             _LOGGER.debug(
-                "Cleaned up %d old cycles for zone %s",
+                "Heating Storage: pruned %d old cycle(s) for zone %s",
                 removed_count,
                 zone_id,
             )

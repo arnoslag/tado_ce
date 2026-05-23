@@ -1,4 +1,12 @@
-"""Tado CE Bridge Sensors — dynamic field sensors, capabilities, and schema tracking."""
+"""Tado CE bridge sensors — dynamic field discovery + capabilities + schema tracking.
+
+Each Tado bridge exposes a different subset of API fields depending
+on wiring (relay-only, OpenTherm, etc.). Rather than hard-coding a
+sensor per field, this module discovers fields at runtime from the
+bridge response, formats values via a named-formatter registry,
+and tracks schema drift between polls so the user can see when
+Tado adds or removes fields.
+"""
 
 from __future__ import annotations
 
@@ -103,13 +111,18 @@ def _format_value(
     For numeric sensor values (temperature etc.), returns float directly
     so HA can apply unit conversion. For everything else, returns a string.
     """
-    # Named formatter takes priority
+    # Named formatter takes priority — defined fields use it; inferred
+    # fields fall through to format_display_value.
     if formatter_name:
         registry = _get_formatter_registry()
         fn = registry.get(formatter_name)
         if fn is not None:
             return fn(value)  # type: ignore[no-any-return]
-        _LOGGER.debug("Formatter %s not found in registry, falling back to inference", formatter_name)
+        _LOGGER.debug(
+            "Bridge Sensors: formatter %r not in registry — falling back "
+            "to type inference",
+            formatter_name,
+        )
 
     # Numeric values: return as float for HA native_value
     if isinstance(value, (int, float)) and not isinstance(value, bool):
@@ -198,12 +211,18 @@ class TadoDynamicBridgeSensor(
         if value is None:
             self._attr_available = False
         else:
-            # Timestamp device class requires datetime object, not raw string
+            # SensorDeviceClass.TIMESTAMP requires a datetime, not a
+            # raw ISO string — parse here so HA's value coercion path
+            # doesn't reject the sensor.
             if getattr(self, "_attr_device_class", None) == SensorDeviceClass.TIMESTAMP and isinstance(value, str):
                 try:
                     self._attr_native_value = parse_iso_datetime(value)
                 except (ValueError, TypeError):
-                    _LOGGER.debug("Failed to parse timestamp: %s", value)
+                    _LOGGER.debug(
+                        "Bridge Sensors: could not parse timestamp %r — "
+                        "marking sensor unavailable for this cycle",
+                        value,
+                    )
                     self._attr_native_value = None
             else:
                 self._attr_native_value = _format_value(
@@ -326,7 +345,10 @@ class TadoBridgeSchemaVersionSensor(
             if diff.has_changes:
                 self._last_schema_change = dt_util.utcnow()
                 self._recent_changes = diff.to_change_list()
-                _LOGGER.info("Bridge API schema change detected: %s", diff.summary)
+                _LOGGER.info(
+                    "Bridge Sensors: API schema changed — %s",
+                    diff.summary,
+                )
 
         self._previous_fields = current_fields
         self._current_field_paths = [f.path for f in current_fields]

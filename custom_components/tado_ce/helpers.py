@@ -1,4 +1,10 @@
-"""Tado CE shared helpers — retry delay, datetime parsing, overlay termination, refresh trigger."""
+"""Tado CE shared helpers — masking, retry delay, datetime parsing, overlay termination, refresh trigger.
+
+Pure functions used across the integration. The masking
+helpers (`mask_serial`, `mask_serial_dict`, `mask_home_id`)
+exist to keep PII out of shipped logs — every emit referring
+to a device serial / home_id should route through them.
+"""
 
 from __future__ import annotations
 
@@ -38,6 +44,28 @@ def mask_serial(serial: str) -> str:
 def mask_serial_dict(d: dict[str, str]) -> dict[str, str]:
     """Mask all keys (serials) in a serial-to-zone mapping dict."""
     return {mask_serial(k): v for k, v in d.items()}
+
+
+# Tado home_id is a numeric per-account identifier — not strictly secret
+# (Tado's own logs already contain it) but identifies one user's home,
+# so we mask it in shipped log output. Multi-home users still get a
+# stable, distinguishable shape in their logs.
+_HOME_ID_VISIBLE_CHARS: int = 3
+
+
+def mask_home_id(home_id: str | int | None) -> str:
+    """Mask a Tado home ID for safe logging.
+
+    Keeps the first few characters visible so multi-home users can
+    still distinguish entries (e.g. '123…' vs '987…') and replaces
+    the rest with '…'. Returns '<unknown>' when home_id is missing.
+    """
+    if home_id is None or home_id == "":
+        return "<unknown>"
+    s = str(home_id)
+    if len(s) <= _HOME_ID_VISIBLE_CHARS:
+        return s
+    return s[:_HOME_ID_VISIBLE_CHARS] + "…"
 
 
 def get_zone_states(coord_data: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
@@ -96,17 +124,24 @@ def merge_homekit_into_zone_data(
             sensor_data.setdefault("insideTemperature", {})["celsius"] = merged_temp
         if merged_hum is not None:
             sensor_data.setdefault("humidity", {})["percentage"] = merged_hum
-        # Log when merge changes the value (cloud → homekit or vice versa)
+        # Only log when the merge actually changed something —
+        # otherwise multi-zone homes would emit a debug line per
+        # zone per poll for no signal.
         if cloud_temp != merged_temp or cloud_humidity != merged_hum:
             _LOGGER.debug(
-                "Zone %s merge: temp %s→%s (%s), humidity %s→%s (%s)",
+                "Helpers: zone %s merge — temp %s → %s (%s), "
+                "humidity %s → %s (%s)",
                 zone_id, cloud_temp, merged_temp, temp_src,
                 cloud_humidity, merged_hum, hum_src,
             )
         result = dict(zone_data)
         result["sensorDataPoints"] = sensor_data
     except (TypeError, ValueError, AttributeError):
-        _LOGGER.debug("Failed to merge HomeKit data into zone %s", zone_id, exc_info=True)
+        _LOGGER.debug(
+            "Helpers: HomeKit merge failed for zone %s — falling "
+            "back to cloud-only zone data for this poll",
+            zone_id, exc_info=True,
+        )
         return zone_data
     else:
         return result
@@ -147,17 +182,21 @@ def should_use_homekit_for_overlay(hass: HomeAssistant, zone_id: str, entry_id: 
                 # Per-zone override takes priority
                 if zone_mode and zone_mode != OVERLAY_MODE_DEFAULT:
                     _LOGGER.debug(
-                        "Zone %s has per-zone overlay mode %s — skipping HomeKit, using cloud API",
+                        "Helpers: zone %s using per-zone overlay "
+                        "mode %s — routing this write through the "
+                        "cloud API so the termination type is "
+                        "respected",
                         zone_id, zone_mode,
                     )
                     return False
 
-            # Check global overlay mode
             if coordinator:
                 global_mode = coordinator.overlay_mode or OVERLAY_MODE_DEFAULT
                 if global_mode != OVERLAY_MODE_DEFAULT:
                     _LOGGER.debug(
-                        "Global overlay mode is %s — skipping HomeKit, using cloud API",
+                        "Helpers: global overlay mode is %s — "
+                        "routing this write through the cloud API "
+                        "so the termination type is respected",
                         global_mode,
                     )
                     return False
@@ -255,15 +294,11 @@ async def async_trigger_immediate_refresh(
     force: bool = False,
     skip_debounce: bool = False,
 ) -> None:
-    """Trigger immediate refresh after state change.
+    """Ask the entity's coordinator for an immediate (debounced) refresh.
 
-    Args:
-        hass: Home Assistant instance
-        entity_id: Entity ID that triggered the refresh
-        reason: Reason for the refresh (for logging)
-        force: If True, force refresh even if recently refreshed (for buttons)
-        skip_debounce: If True, skip debounce delay (for buttons)
-
+    `force=True` bypasses the cooldown so button-driven writes
+    show up straight away; `skip_debounce=True` removes the
+    debounce delay entirely (also button-style flow).
     """
     try:
         from homeassistant.helpers import entity_registry as er
@@ -280,24 +315,27 @@ async def async_trigger_immediate_refresh(
                     skip_debounce=skip_debounce,
                 )
                 return
-        _LOGGER.warning("No refresh handler found for entity %s", entity_id)
+        _LOGGER.warning(
+            "Helpers: no refresh handler found for %s — refresh "
+            "request silently dropped, will retry on the next "
+            "coordinator poll",
+            entity_id,
+        )
     except (KeyError, TypeError, ValueError) as e:
-        _LOGGER.warning("Failed to trigger immediate refresh: %s", e)
+        _LOGGER.warning(
+            "Helpers: immediate refresh trigger failed (%s) — "
+            "refresh request silently dropped, will retry on the "
+            "next coordinator poll",
+            e,
+        )
 
 
 def get_optimistic_window(hass: HomeAssistant, entry_id: str | None = None) -> float:
-    """Get the optimistic update window duration in seconds.
+    """Compute how long entities should hold optimistic state after a write.
 
-    The optimistic window = debounce_seconds + OPTIMISTIC_WINDOW_BUFFER_SECONDS.
-    During this window, entities ignore API updates to preserve optimistic state.
-
-    Args:
-        hass: Home Assistant instance
-        entry_id: Optional config entry ID for per-entry config lookup
-
-    Returns:
-        Optimistic window duration in seconds (default: 17.0 = 15 + 2)
-
+    Window = `refresh_debounce_seconds` + a small buffer. Falls
+    back to the integration default when the config can't be
+    read (e.g. coordinator not yet wired).
     """
     from .const import DEFAULT_OPTIMISTIC_WINDOW_SECONDS, OPTIMISTIC_WINDOW_BUFFER_SECONDS
 
@@ -307,7 +345,11 @@ def get_optimistic_window(hass: HomeAssistant, entry_id: str | None = None) -> f
             if coordinator and coordinator.config_manager:
                 return float(coordinator.config_manager.get_refresh_debounce_seconds()) + OPTIMISTIC_WINDOW_BUFFER_SECONDS
     except (AttributeError, TypeError, ValueError) as err:
-        _LOGGER.debug("Failed to get optimistic window from config: %s", err)
+        _LOGGER.debug(
+            "Helpers: optimistic window read from config failed "
+            "(%s) — falling back to default %.1fs",
+            err, DEFAULT_OPTIMISTIC_WINDOW_SECONDS,
+        )
     return DEFAULT_OPTIMISTIC_WINDOW_SECONDS
 
 

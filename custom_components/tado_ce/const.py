@@ -13,7 +13,7 @@ MANUFACTURER = "Joe Yiu (@hiall-fyi)"
 # Dispatcher signal for HomeKit real-time entity updates
 SIGNAL_HOMEKIT_UPDATE = "tado_ce_homekit_update_{home_id}"
 
-# Bus event fired after first successful API sync and entity population (#246)
+# Bus event fired after first successful API sync and entity population
 EVENT_READY: Final[str] = "tado_ce_ready"
 
 # Tado bridge device models (Internet Bridge hardware)
@@ -379,7 +379,7 @@ HOMEKIT_SAVINGS_RESET_RATIO: Final[float] = 0.05
 # so reducing fetch frequency saves API quota.
 HOMEKIT_WEATHER_SKIP_MINUTES: Final[int] = 30
 
-# Periodic device-offset resync interval (#262 follow-up).
+# Periodic device-offset resync interval.
 #
 # Tado's own adaptive calibration can change a device offset without
 # Home Assistant having written it — e.g. the user changes the offset in

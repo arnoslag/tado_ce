@@ -1,4 +1,10 @@
-"""Tado CE Zone Sensors — temperature, humidity, heating power, overlay, etc."""
+"""Tado CE per-zone sensors — temperature, humidity, target, overlay, heating / AC power.
+
+Every entity is a `TadoZoneSensor` subclass — the base wires up
+the HomeKit live-update dispatcher and merges fresh HomeKit
+sensor readings into the cloud zone data so card values match
+what users see in the Tado app.
+"""
 
 from __future__ import annotations
 
@@ -71,15 +77,20 @@ class TadoZoneSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], SensorEntit
         self._handle_coordinator_update()
 
     def _get_zone_data(self) -> dict[str, Any] | None:
-        """Get zone data from coordinator, with HomeKit overlay when available.
+        """Read this zone's data, layering fresh HomeKit readings on top of cloud.
 
-        Merges fresh HomeKit temperature/humidity into sensorDataPoints.
-        Other fields (activityDataPoints, setting, overlayType) are unaffected.
+        Only `sensorDataPoints` (temperature / humidity) get the
+        HomeKit overlay; activity / setting / overlayType stay
+        cloud-only because HomeKit doesn't carry them.
         """
         try:
             zone_data = get_zone_state(self.coordinator.data, self._zone_id)
         except Exception:
-            _LOGGER.debug("Failed to get zone data for zone %s", self._zone_id)
+            _LOGGER.debug(
+                "Zone Sensor: could not read zone %s data — returning "
+                "None so the entity falls back to unavailable",
+                self._zone_id,
+            )
             return None
         if zone_data is None:
             return None
@@ -155,13 +166,13 @@ class TadoTemperatureSensor(TadoZoneSensor):
         new_value = (sensor_data.get("insideTemperature") or {}).get("celsius")
         if new_value != self._attr_native_value:
             _LOGGER.debug(
-                "Zone %s temp entity: %s → %s (source: %s)",
+                "Zone Sensor: zone %s temperature %s → %s°C (source %s)",
                 self._zone_id, self._attr_native_value, new_value, self._data_source,
             )
         self._attr_native_value = new_value
 
     def _update_homekit_attributes(self) -> None:
-        """Update data_source and last_homekit_update from HomeKit provider."""
+        """Surface `data_source` + `last_homekit_update` for the user."""
         try:
             provider = self.coordinator.homekit_provider
             reconciler = self.coordinator.state_reconciler
@@ -174,8 +185,8 @@ class TadoTemperatureSensor(TadoZoneSensor):
                     self._last_homekit_update = observed.isoformat() if observed else None
                     return
         except AttributeError:
-            # coordinator or provider attributes missing (e.g. coordinator
-            # not fully initialised yet). Fall through to cloud default.
+            # Coordinator / provider not fully initialised on first
+            # poll — fall through to the cloud default.
             pass
         self._data_source = "cloud"
         self._last_homekit_update = None
@@ -227,20 +238,19 @@ class TadoHumiditySensor(TadoZoneSensor):
         new_value = (sensor_data.get("humidity") or {}).get("percentage")
         if new_value != self._attr_native_value:
             _LOGGER.debug(
-                "Zone %s humidity entity: %s → %s (source: %s)",
+                "Zone Sensor: zone %s humidity %s → %s%% (source %s)",
                 self._zone_id, self._attr_native_value, new_value, self._data_source,
             )
         self._attr_native_value = new_value
 
     def _update_homekit_attributes(self) -> None:
-        """Update data_source attribute.
+        """Pin humidity source to cloud unless cloud is unavailable.
 
-        Humidity prefers cloud over HomeKit (bridge humidity is stale).
-        HomeKit is only used as fallback when cloud is unavailable.
-        The actual source is determined by the reconciler in _get_zone_data.
+        Bridge humidity tends to lag behind cloud humidity, so the
+        reconciler only falls back to HomeKit when cloud sync has
+        failed. Surface that as a stable `cloud` attribute by
+        default — the source label flips only when cloud is gone.
         """
-        # In normal operation, cloud is always available → source is "cloud".
-        # Only when cloud sync fails AND HomeKit is connected does it become "homekit".
         self._data_source = "cloud"
         self._last_homekit_update = None
 
@@ -265,7 +275,6 @@ class TadoHeatingPowerSensor(TadoZoneSensor):
 
     @callback
     def _update_from_zone_data(self, zone_data: dict[str, Any]) -> None:
-        # Use 'or {}' pattern for null safety (API may return null for these fields)
         activity_data = zone_data.get("activityDataPoints") or {}
         power = (activity_data.get("heatingPower") or {}).get("percentage")
         self._attr_native_value = power if power is not None else 0
@@ -291,10 +300,11 @@ class TadoACPowerSensor(TadoZoneSensor):
 
     @callback
     def _update_from_zone_data(self, zone_data: dict[str, Any]) -> None:
-        # Use 'or {}' pattern for null safety (API may return null for these fields)
         activity_data = zone_data.get("activityDataPoints") or {}
         ac_power = activity_data.get("acPower") or {}
-        # Try percentage first (older API), then value (newer API returns 'ON'/'OFF')
+        # Newer firmware reports `value` ("ON" / "OFF"); older firmware
+        # reports `percentage`. Coerce to a percentage either way so
+        # the sensor stays a stable shape for users / dashboards.
         power = ac_power.get("percentage")
         if power is None:
             value = ac_power.get("value")
@@ -303,10 +313,12 @@ class TadoACPowerSensor(TadoZoneSensor):
 
 
 class TadoBoilerFlowTemperatureSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], SensorEntity):
-    """Boiler flow temperature sensor - reads from HEATING zones.
+    """Hub-level boiler flow temperature, sourced from whichever zone reports it.
 
-    This is a Hub-level sensor that reads boilerFlowTemperature from
-    any HEATING zone that has this data available.
+    OpenTherm boilers expose flow temperature on a single zone's
+    activity data; on/off boilers don't. The sensor walks the
+    zone list and surfaces the first match, with the source zone
+    in `extra_state_attributes`.
     """
 
     _attr_has_entity_name = True
@@ -360,7 +372,11 @@ class TadoBoilerFlowTemperatureSensor(CoordinatorEntity["TadoDataUpdateCoordinat
             self._source_zone = None
             self._attr_available = False
         except Exception:
-            _LOGGER.debug("Failed to update boiler flow temperature sensor")
+            _LOGGER.debug(
+                "Zone Sensor: boiler flow temperature update failed — "
+                "marking unavailable until the next poll",
+                exc_info=True,
+            )
             self._attr_available = False
         self.async_write_ha_state()
 
@@ -385,11 +401,13 @@ class TadoTargetTempSensor(TadoZoneSensor):
 
     @callback
     def _update_from_zone_data(self, zone_data: dict[str, Any]) -> None:
-        # Use 'or {}' pattern for null safety (API may return null for setting)
         setting = zone_data.get("setting") or {}
         if setting.get("power") == "ON":
             self._attr_native_value = (setting.get("temperature") or {}).get("celsius")
         else:
+            # Power-off zones have no meaningful target — exposing
+            # the last value would mislead users into thinking the
+            # zone is still aiming for it.
             self._attr_native_value = None
 
 
@@ -439,7 +457,6 @@ class TadoOverlaySensor(TadoZoneSensor):
         else:
             self._attr_native_value = "Schedule"
 
-        # Extract overlay timer expiry if present
         overlay = zone_data.get("overlay") or {}
         termination = overlay.get("termination") or {}
         if termination.get("type") == "TIMER":
@@ -449,10 +466,12 @@ class TadoOverlaySensor(TadoZoneSensor):
             self._overlay_expiry = None
             self._overlay_remaining = None
 
-        # Next change: use overlay expiry for Timer overlays, otherwise next schedule change
         if self._overlay_expiry:
+            # Timer overlays revert to the schedule, but the schedule
+            # target at that moment isn't deterministic from the zone
+            # snapshot alone — leave next_temp blank.
             self._next_change = self._overlay_expiry
-            self._next_temp = None  # timer returns to schedule — no specific temp
+            self._next_temp = None
         else:
             next_change = zone_data.get("nextScheduleChange")
             if next_change:

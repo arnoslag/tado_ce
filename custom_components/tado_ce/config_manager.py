@@ -1,4 +1,11 @@
-"""Tado CE Configuration Manager — config entry settings access and persistence."""
+"""Tado CE configuration manager — typed reads from `config_entry.options` with validation.
+
+Reads live from `config_entry.options` (not a cached snapshot)
+so users get real-time effect when they flip a runtime-only
+toggle. Every getter validates type + range and falls back to
+the documented default with a warning when the stored value is
+unusable — covers users on old schemas and corrupted entries.
+"""
 
 from __future__ import annotations
 
@@ -99,22 +106,31 @@ class ConfigurationManager:
             try:
                 value = int(float(value))
             except (ValueError, TypeError, OverflowError):
-                _LOGGER.warning("Invalid %s: %s, using default %s", key, value, default)
+                _LOGGER.warning(
+                    "Config: %s value %r could not be parsed as int "
+                    "— falling back to default %s",
+                    key, value, default,
+                )
                 return default
         if not isinstance(value, int) or value < min_val or value > max_val:
-            _LOGGER.warning("Invalid %s: %s, using default %s", key, value, default)
+            _LOGGER.warning(
+                "Config: %s value %r outside range %d–%d — falling "
+                "back to default %s",
+                key, value, min_val, max_val, default,
+            )
             return default
         return value
 
     def _get_float_option(self, key: str, default: float, min_val: float, max_val: float) -> float:
-        """Get float option with range validation.
-
-        Accepts int or float input. Out-of-range values return default with warning.
-        """
+        """Read a float option, falling back to `default` when missing or out of range."""
         value = self._get_option(key, default)
         if isinstance(value, (int, float)) and min_val <= value <= max_val:
             return float(value)
-        _LOGGER.warning("Invalid %s: %s, using default %s", key, value, default)
+        _LOGGER.warning(
+            "Config: %s value %r outside range %s–%s — falling back "
+            "to default %s",
+            key, value, min_val, max_val, default,
+        )
         return default
 
     @staticmethod
@@ -272,14 +288,7 @@ class ConfigurationManager:
         return self._get_int_option("night_start_hour", DEFAULT_NIGHT_START_HOUR, MIN_HOUR, MAX_HOUR)
 
     def _get_optional_interval(self, key: str) -> int | None:
-        """Get optional polling interval with float→int conversion and range validation.
-
-        Handles HA NumberSelector (float), legacy TextSelector (str),
-        None (not configured), and out-of-range values.
-
-        Returns:
-            Interval in minutes (1-1440), or None if not configured/invalid.
-        """
+        """Read an optional polling interval — `None` when missing, blank, or invalid."""
         interval = self._get_option(key, None)
         if interval is None:
             return None
@@ -292,11 +301,21 @@ class ConfigurationManager:
             try:
                 interval = int(float(interval))
             except (ValueError, TypeError, OverflowError):
-                _LOGGER.warning("Invalid %s: %s, ignoring", key, interval)
+                _LOGGER.warning(
+                    "Config: %s value %r could not be parsed as int "
+                    "— ignoring this interval, polling will use the "
+                    "automatic schedule",
+                    key, interval,
+                )
                 return None
 
         if not isinstance(interval, int) or interval < 1 or interval > MAX_CUSTOM_INTERVAL:
-            _LOGGER.warning("Invalid %s: %s, ignoring", key, interval)
+            _LOGGER.warning(
+                "Config: %s value %r outside range 1–%d — ignoring "
+                "this interval, polling will use the automatic "
+                "schedule",
+                key, interval, MAX_CUSTOM_INTERVAL,
+            )
             return None
         return interval
 
@@ -427,7 +446,8 @@ class ConfigurationManager:
 
         if window_type not in WINDOW_U_VALUES:
             _LOGGER.warning(
-                "Invalid mold_risk_window_type: %s, using default %s",
+                "Config: mold_risk_window_type value %r is not in "
+                "WINDOW_U_VALUES — falling back to default %s",
                 window_type,
                 DEFAULT_MOLD_RISK_WINDOW_TYPE,
             )

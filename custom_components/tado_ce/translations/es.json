@@ -761,7 +761,8 @@
             "name": "Fuente de temperatura",
             "state": {
               "surface_estimation": "Estimación de la superficie",
-              "room_average": "Habitación media"
+              "room_average": "Habitación media",
+              "unknown": "Desconocido"
             }
           },
           "outdoor_temperature": {
@@ -797,7 +798,12 @@
             "name": "Punto de rocío"
           },
           "temperature_source": {
-            "name": "Fuente de temperatura"
+            "name": "Fuente de temperatura",
+            "state": {
+              "surface_estimation": "Estimación de la superficie",
+              "room_average": "Precio medio por habitación",
+              "unknown": "Desconocido"
+            }
           },
           "zone_type": {
             "name": "Tipo de zona"
@@ -867,7 +873,13 @@
             "name": "Desplazamiento aplicado"
           },
           "calculation_method": {
-            "name": "Método de cálculo"
+            "name": "Método de cálculo",
+            "state": {
+              "surface_estimation": "Estimación de la superficie",
+              "calibrated_surface": "Superficie calibrada",
+              "room_average": "Precio medio por habitación",
+              "unknown": "Desconocido"
+            }
           },
           "zone_type": {
             "name": "Tipo de zona"
@@ -1333,6 +1345,12 @@
     },
     "timer_set_failed_all": {
       "message": "No se ha podido configurar el temporizador en ninguna de las zonas de {entity_count}. Motivos: {reasons}"
+    },
+    "state_restore_failed": {
+      "message": "El restablecimiento del estado ha fallado para {entity_id}: la nube ha rechazado la solicitud. Se ha guardado el estado capturado para que puedas volver a intentarlo."
+    },
+    "resume_schedule_failed": {
+      "message": "Se ha producido un error al programar la reanudación de {entity_id}: la nube ha rechazado la solicitud. Inténtalo de nuevo."
     }
   },
   "issues": {

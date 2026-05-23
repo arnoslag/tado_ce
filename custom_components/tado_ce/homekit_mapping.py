@@ -1,4 +1,11 @@
-"""Tado CE HomeKit Mapping — serial number to zone ID mapping."""
+"""Tado CE HomeKit mapping — link HomeKit accessories to cloud zone IDs by serial.
+
+Tado HomeKit accessories advertise their device serial via
+characteristic 0x30; the cloud API returns the same serial inside
+each zone's `devices` list. This module joins the two sources so
+the integration can target writes to the right HomeKit accessory
+ID (`aid`) for each zone.
+"""
 
 from __future__ import annotations
 
@@ -8,6 +15,7 @@ from typing import TYPE_CHECKING, Any
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
+from .helpers import mask_home_id, mask_serial
 from .homekit_client import CHAR_MODEL, CHAR_SERIAL_NUMBER
 
 if TYPE_CHECKING:
@@ -25,16 +33,12 @@ def build_serial_mapping(
     accessories: list[dict[str, Any]],
     cloud_zones_info: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    """Map HomeKit accessory serials to Tado zone IDs.
+    """Build the serial-to-zone and zone-to-aids mapping from HomeKit + cloud data.
 
-    Strategy:
-    1. Extract serial from each HomeKit accessory (characteristic 0x30)
-    2. Extract device serials from cloud API zone info
-    3. Match by serial number (exact match)
-    4. Skip bridge accessory (model IB01)
-
-    Returns:
-        {"serial_to_zone": {...}, "zone_to_aids": {...}, "last_updated": "..."}
+    Reads the serial-number characteristic (0x30) from every HomeKit
+    accessory, joins it against the device serials returned by the
+    cloud API, and skips the bridge accessory (model IB01) since it
+    isn't tied to a heating zone.
     """
     empty_result: dict[str, Any] = {
         "serial_to_zone": {},
@@ -43,30 +47,39 @@ def build_serial_mapping(
     }
 
     if not accessories:
-        _LOGGER.warning("HomeKit: No accessories found, cannot build mapping")
+        _LOGGER.warning(
+            "HomeKit: no accessories returned by the bridge — cannot "
+            "build the serial-to-zone mapping, local control will stay "
+            "off until the next pairing fetch",
+        )
         return empty_result
 
     if not cloud_zones_info:
-        _LOGGER.warning("HomeKit: No cloud zone info, cannot build mapping")
+        _LOGGER.warning(
+            "HomeKit: no cloud zone data available — cannot build the "
+            "serial-to-zone mapping, will retry after the next cloud sync",
+        )
         return empty_result
 
-    # Cloud: zone_id → set of device serials
+    # Cloud-side index: zone_id → {device serials}, skipping zones with
+    # no usable id (Tado IDs start from 1).
     zone_serials: dict[str, set[str]] = {}
     for zone in cloud_zones_info:
         raw_id = zone.get("id")
-        if not raw_id:  # Skip None, 0, "", False — Tado zone IDs start from 1
-            _LOGGER.debug("HomeKit: Skipping zone with invalid id: %s", raw_id)
+        if not raw_id:
+            _LOGGER.debug(
+                "HomeKit: skipping zone with no usable id (%r)", raw_id,
+            )
             continue
         zone_id = str(raw_id)
         devices = zone.get("devices") or []
         zone_serials[zone_id] = {d.get("serialNo", "") for d in devices} - {""}
 
     _LOGGER.debug(
-        "HomeKit: Cloud zone serials: %s",
+        "HomeKit: cloud zone serial counts — %s",
         {zid: len(serials) for zid, serials in zone_serials.items()},
     )
 
-    # HomeKit: extract serial and model per accessory
     serial_to_zone: dict[str, str] = {}
     zone_to_aids: dict[str, list[int]] = {}
 
@@ -75,8 +88,10 @@ def build_serial_mapping(
         serial = model = None
         for svc in acc.get("services", []):
             for char in svc.get("characteristics", []):
-                # aiohomekit normalizes types to full UUID: 0000XXXX-0000-1000-8000-0026BB765291
-                # Extract short form and compare as integers to handle leading zeros
+                # aiohomekit normalises type UUIDs to the full
+                # 0000XXXX-0000-1000-8000-0026BB765291 form. Strip
+                # the suffix and compare as ints so leading zeros
+                # round-trip cleanly.
                 raw_type = char.get("type", "")
                 if "-" in raw_type:
                     ctype = raw_type.split("-")[0].upper()
@@ -91,16 +106,19 @@ def build_serial_mapping(
                 elif ctype_int == int(CHAR_MODEL, 16):
                     model = char.get("value")
 
-        # Skip bridge accessory
         if model == _BRIDGE_MODEL:
-            _LOGGER.debug("HomeKit: Skipping bridge accessory (IB01)")
+            _LOGGER.debug(
+                "HomeKit: skipping IB01 bridge accessory (not a zone device)",
+            )
             continue
 
         if not serial or aid is None:
-            _LOGGER.debug("HomeKit: Accessory aid=%s has no serial, skipping", aid)
+            _LOGGER.debug(
+                "HomeKit: accessory aid=%s has no serial — skipping",
+                aid,
+            )
             continue
 
-        # Match serial to zone
         matched = False
         for zone_id, serials in zone_serials.items():
             if serial in serials:
@@ -111,12 +129,13 @@ def build_serial_mapping(
 
         if not matched:
             _LOGGER.warning(
-                "HomeKit: Accessory serial %s not found in any cloud zone",
-                serial,
+                "HomeKit: accessory serial %s does not match any cloud "
+                "zone — local control unavailable for this device",
+                mask_serial(serial),
             )
 
     _LOGGER.info(
-        "HomeKit: Mapped %d accessories to %d zones",
+        "HomeKit: mapped %d accessory(ies) to %d zone(s)",
         len(serial_to_zone),
         len(zone_to_aids),
     )
@@ -132,34 +151,30 @@ def validate_mapping(
     mapping: dict[str, Any],
     valid_zone_ids: set[str] | None = None,
 ) -> bool:
-    """Validate a device mapping for integrity.
+    """Return True when the cached mapping looks healthy, False to force a rebuild.
 
-    Checks:
-    - No zone "0" entries (invalid Tado zone ID)
-    - If valid_zone_ids provided, all mapped zones must be in the set
-
-    Args:
-        mapping: Device mapping dict with serial_to_zone and zone_to_aids.
-        valid_zone_ids: Optional set of known-good zone IDs from cloud API.
-
-    Returns:
-        True if mapping is valid, False if it should be rebuilt.
+    Drops mappings containing zone "0" (a known corruption shape
+    from earlier builds) and any zone IDs not present in the
+    current cloud zone set.
     """
     serial_to_zone = mapping.get("serial_to_zone", {})
     zone_to_aids = mapping.get("zone_to_aids", {})
 
-    # Check for zone "0" — known corruption from earlier builds
     if "0" in zone_to_aids or "0" in serial_to_zone.values():
-        _LOGGER.info("HomeKit: Cached mapping contains invalid zone '0' — forcing rebuild")
+        _LOGGER.info(
+            "HomeKit: cached mapping contains invalid zone '0' — "
+            "rebuilding from current bridge + cloud data",
+        )
         return False
 
-    # Cross-check against cloud zone IDs if available
     if valid_zone_ids is not None:
         mapped_zone_ids = set(serial_to_zone.values())
         invalid_zones = mapped_zone_ids - valid_zone_ids
         if invalid_zones:
             _LOGGER.warning(
-                "HomeKit: Cached mapping contains zone IDs not in cloud: %s — forcing rebuild",
+                "HomeKit: cached mapping references zone(s) %s that no "
+                "longer exist in the cloud zone list — rebuilding from "
+                "current data",
                 invalid_zones,
             )
             return False
@@ -171,17 +186,12 @@ async def load_device_mapping(
     hass: HomeAssistant,
     home_id: str,
 ) -> dict[str, Any] | None:
-    """Load stored device mapping from HA Store.
-
-    Returns:
-        Mapping dict or None if not found.
-    """
+    """Load the cached mapping from HA Store, falling back to legacy JSON migration."""
     store: Store[dict[str, Any]] = Store(hass, _STORE_VERSION, f"tado_ce/homekit_device_map_{home_id}")
     data = await store.async_load()
     if data and isinstance(data, dict):
         return data
 
-    # Try migrating from old JSON file
     from .const import get_data_file
     from .storage import async_migrate_json_to_store
 
@@ -197,17 +207,21 @@ async def save_device_mapping(
     home_id: str,
     mapping: dict[str, Any],
 ) -> None:
-    """Save device mapping to HA Store."""
+    """Persist the mapping to HA Store."""
     store: Store[dict[str, Any]] = Store(hass, _STORE_VERSION, f"tado_ce/homekit_device_map_{home_id}")
     await store.async_save(mapping)
-    _LOGGER.debug("HomeKit: Saved device mapping for home %s", home_id)
+    _LOGGER.debug(
+        "HomeKit: saved device mapping for home %s", mask_home_id(home_id),
+    )
 
 
 async def remove_device_mapping(
     hass: HomeAssistant,
     home_id: str,
 ) -> None:
-    """Remove device mapping from HA Store."""
+    """Remove the cached mapping from HA Store (e.g. when unpairing the bridge)."""
     store: Store[dict[str, Any]] = Store(hass, _STORE_VERSION, f"tado_ce/homekit_device_map_{home_id}")
     await store.async_remove()
-    _LOGGER.debug("HomeKit: Removed device mapping for home %s", home_id)
+    _LOGGER.debug(
+        "HomeKit: removed device mapping for home %s", mask_home_id(home_id),
+    )

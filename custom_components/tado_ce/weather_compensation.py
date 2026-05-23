@@ -282,13 +282,10 @@ def evaluate(
     now_mono: float,
     poll_interval_minutes: float,
 ) -> WeatherCompensationResult:
-    """Run one weather compensation evaluation cycle.
+    """Run one weather-compensation evaluation cycle and return the result.
 
-    Mutates *state* in-place. Returns a result indicating the target
-    flow temperature and whether the Bridge API should be called.
-
-    Handles shutoff, idempotency, and independence
-    is enforced by the caller wrapping this in try/except).
+    Mutates `state` in place. Caller wraps the call in try/except so an
+    exception here can't break the wider coordinator update.
     """
     base = WeatherCompensationResult(
         target_flow_temp=None,
@@ -491,13 +488,10 @@ async def async_run_wc_cycle(
     update_interval: timedelta | None,
     bridge_data: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
-    """Run one weather compensation evaluation cycle.
+    """Run one weather-compensation cycle, sending flow temp to the bridge if needed.
 
-    Resolve outdoor/indoor temps, call the pure engine, and send the
-    target flow temperature to the Bridge API when needed.
-
-    Returns a dict suitable for ``coordinator.data["weather_compensation"]``
-    or *None* when the feature is disabled / unavailable.
+    Returns a dict for `coordinator.data["weather_compensation"]`, or
+    None when the feature is disabled or evaluation failed.
     """
     import logging
     import time
@@ -508,25 +502,21 @@ async def async_run_wc_cycle(
         config = _build_wc_config(config_manager)
         outdoor_temp = _resolve_outdoor_temp(hass, config_manager, weather_data)
 
-        # --- Resolve indoor temp + target (room compensation) ---
         indoor_temp: float | None = None
         target_temp: float | None = None
         if config.room_compensation_enabled:
             indoor_temp, target_temp = _resolve_indoor_temps(zone_data)
 
-        # --- Current flow temp from bridge ---
         current_flow: float | None = None
         if bridge_data:
             raw_flow = bridge_data.get("boilerMaxOutputTemperatureInCelsius")
             if raw_flow is not None:
                 current_flow = float(raw_flow)
 
-        # --- Poll interval (minutes) ---
         poll_min = 5.0
         if update_interval is not None:
             poll_min = update_interval.total_seconds() / 60.0
 
-        # --- Evaluate ---
         result = evaluate(
             config,
             wc_state,
@@ -538,23 +528,25 @@ async def async_run_wc_cycle(
             poll_min,
         )
 
-        # --- Send to Bridge API if needed ---
         if result.should_send and result.target_flow_temp is not None:
             try:
                 await bridge_api_client.async_set_max_output_temperature(
                     result.target_flow_temp,
                 )
-                _LOGGER.info(
-                    "Weather compensation: set flow temp to %.1f°C "
-                    "(outdoor=%.1f°C, preset=%s)",
+                _LOGGER.debug(
+                    "Weather Compensation: set flow temp to %.1f°C "
+                    "(outdoor %.1f°C, preset %s)",
                     result.target_flow_temp,
                     result.smoothed_outdoor_temp or 0.0,
                     result.heating_system_preset,
                 )
             except Exception:
                 _LOGGER.warning(
-                    "Weather compensation: Bridge API call failed — will retry next cycle",
+                    "Weather Compensation: bridge call failed — will "
+                    "retry on the next cycle",
                 )
+                # Reset send-state so the next cycle re-sends instead
+                # of skipping due to idempotency check.
                 wc_state.last_sent_flow_temp = None
                 wc_state.last_adjustment_time = 0.0
 
@@ -571,7 +563,8 @@ async def async_run_wc_cycle(
         }
     except Exception:
         _LOGGER.debug(
-            "Weather compensation evaluation failed — main update unaffected",
+            "Weather Compensation: evaluation failed — main coordinator "
+            "update unaffected",
             exc_info=True,
         )
         return None

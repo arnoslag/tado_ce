@@ -188,7 +188,7 @@ Enable all features without concern. Even with 5-minute polling, ~576 calls/day 
 
 ## Data Storage
 
-Since v4.0.0-beta.5, Tado CE stores all runtime data through Home Assistant's built-in Store system (under `/config/.storage/`). You don't need to interact with these files directly — HA manages serialisation, atomic writes, and shutdown flush.
+Since v4.0.0, Tado CE stores all runtime data through Home Assistant's built-in Store system (under `/config/.storage/`). You don't need to interact with these files directly — HA manages serialisation, atomic writes, and shutdown flush.
 
 ### Store Categories
 
@@ -201,8 +201,8 @@ Two categories of Store, both keyed per home (multi-home isolation):
 
 ### Upgrade Behaviour
 
-- **From v3.5.3 or any v4.0.0-beta**: existing JSON files under `/config/.storage/tado_ce/` are migrated to HA Store on first start of v4.0.0-beta.5+. Old files are renamed (not deleted) so you can roll back.
-- **From pre-v3.0.0**: first upgrade to v3.0.0 migrates flat-named files (e.g. `config.json`) to per-home files (e.g. `config_{home_id}.json`). Then the v4.0.0-beta.5 migration picks those up into Store.
+- **From v3.5.3**: existing JSON files under `/config/.storage/tado_ce/` are migrated to HA Store on first start of v4.0.0. Old files are renamed (not deleted) so you can roll back.
+- **From pre-v3.0.0**: first upgrade to v3.0.0 migrates flat-named files (e.g. `config.json`) to per-home files (e.g. `config_{home_id}.json`). Then the v4.0.0 migration picks those up into Store.
 - **Restore-related state** (e.g. `state_restore`, HomeKit pairing data, heating cycle history) is also stored through HA Store, so it survives restarts and upgrades automatically.
 
 ---
@@ -238,4 +238,4 @@ Two categories of Store, both keyed per home (multi-home isolation):
 
 ---
 
-**Last Updated:** v4.0.0-beta.16 (2026-05-14)
+**Last Updated:** v4.0.0 (2026-05-23)

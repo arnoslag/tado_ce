@@ -1,4 +1,10 @@
-"""Tado CE centralized physics calculations — dew point, surface temp, risk classifiers, comfort models."""
+"""Tado CE physics calculations — dew point, surface temp, mold/comfort/heat-risk classifiers.
+
+Pure functions used by the environment / smart-comfort
+sensors. The Magnus-Tetens approximation is accurate to ±0.1%
+in the −40°C to 50°C range — covers every realistic indoor /
+outdoor temperature.
+"""
 
 from __future__ import annotations
 
@@ -237,7 +243,8 @@ def calculate_surface_rh(effective_temp: float, dew_point: float) -> int | None:
         return round(min(100.0, max(0.0, surface_rh)))
     except (ValueError, TypeError, ZeroDivisionError):
         _LOGGER.debug(
-            "Failed to calculate surface RH (effective_temp=%s, dew_point=%s)",
+            "Calculations: surface RH could not be computed "
+            "(effective_temp=%s, dew_point=%s) — returning None",
             effective_temp,
             dew_point,
         )

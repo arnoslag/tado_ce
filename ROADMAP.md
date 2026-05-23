@@ -8,16 +8,14 @@ For completed features, see [CHANGELOG.md](CHANGELOG.md).
 
 ## Up Next
 
-**v4.0.0 GA Release**
+**v4.0.0 shipped — May 2026.** Headline changes: HomeKit local
+control, Smart Valve Control (Offset Sync + Valve Target modes),
+Weather Compensation, multi-home support, actionable insights, and a
+redesigned Options Flow. See [CHANGELOG.md](CHANGELOG.md) for what
+changed for users coming from v3.5.3.
 
-v4.0.0-beta.16 is in final testing. Headline features shipped during
-the beta cycle: HomeKit local control, Smart Valve Control (Offset
-Sync + Valve Target modes), Weather Compensation, multi-home support,
-actionable insights, and a redesigned Options Flow. See
-[CHANGELOG.md](CHANGELOG.md) for the full release history.
-
-- Monitor beta.16 feedback from the community
-- **Target: GA release May 2026** if no blockers surface
+The next milestone is gathering field feedback and triaging which
+items below to schedule for the 4.x cycle.
 
 ## Future Consideration
 
@@ -36,8 +34,6 @@ actionable insights, and a redesigned Options Flow. See
 - **Local Only Mode** — A toggle that stops all cloud polling after initial setup, running purely off HomeKit bridge data. Technically feasible — the coordinator already skips cloud calls when HomeKit provides live data. Tradeoff: cloud-only data (schedules, battery, heating power, geofencing) would go stale. Could include a daily cloud check for diagnostics.
 
 - **Periodic Full Sync** — Currently `zones_info`, `offsets`, `schedules`, and `ac_capabilities` only refresh on the first poll after restart. A periodic full sync (e.g. every 6 hours) would keep this data fresh without requiring a restart. Low priority — this data rarely changes.
-
-- **HACS Default Repository** — Apply for inclusion in the HACS default repository list.
 
 ### Long-Term Exploration
 

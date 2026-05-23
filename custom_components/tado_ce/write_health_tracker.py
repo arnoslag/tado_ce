@@ -1,9 +1,9 @@
-"""Tado CE Write Health Tracker — circuit breaker for HomeKit writes.
+"""Tado CE write-health tracker — circuit breaker for HomeKit write attempts.
 
-States:
-- CLOSED: Normal operation, HomeKit writes attempted.
-- OPEN: HomeKit writes skipped after consecutive failures.
-- HALF_OPEN: One probe write attempted after cooldown period.
+Standard three-state circuit-breaker pattern. CLOSED lets writes
+through, OPEN skips them after `WRITE_FAILURE_THRESHOLD` consecutive
+failures, HALF_OPEN lets one probe through after the cooldown to
+test recovery before fully closing.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class CircuitState(enum.Enum):
-    """Circuit breaker states."""
+    """Three states a write-health circuit can be in."""
 
     CLOSED = "closed"
     OPEN = "open"
@@ -26,17 +26,17 @@ class CircuitState(enum.Enum):
 
 
 class WriteHealthTracker:
-    """Track consecutive HomeKit write failures and implement circuit breaker."""
+    """Track consecutive HomeKit write failures and gate further attempts."""
 
     def __init__(self) -> None:
-        """Initialize the WriteHealthTracker."""
+        """Start with a closed circuit and zero recorded failures."""
         self._consecutive_failures: int = 0
-        self._circuit_opened_at: float | None = None  # time.monotonic() timestamp
+        self._circuit_opened_at: float | None = None
         self._state: CircuitState = CircuitState.CLOSED
 
     @property
     def state(self) -> CircuitState:
-        """Return current circuit breaker state, checking for OPEN → HALF_OPEN transition."""
+        """Return current state, transitioning OPEN → HALF_OPEN once cooldown elapsed."""
         if self._state == CircuitState.OPEN and self._circuit_opened_at is not None:
             elapsed = time.monotonic() - self._circuit_opened_at
             if elapsed >= WRITE_CIRCUIT_OPEN_SECONDS:
@@ -45,39 +45,42 @@ class WriteHealthTracker:
 
     @property
     def consecutive_failures(self) -> int:
-        """Return current consecutive failure count."""
+        """Return the current consecutive failure count."""
         return self._consecutive_failures
 
     def should_try_homekit(self) -> bool:
-        """Return True if HomeKit writes should be attempted."""
+        """Return True when the circuit allows another HomeKit write attempt."""
         return self.state in (CircuitState.CLOSED, CircuitState.HALF_OPEN)
 
     def record_success(self) -> None:
-        """Record a successful HomeKit write."""
+        """Record a successful write — closes the circuit and clears the failure count."""
         self._consecutive_failures = 0
         self._circuit_opened_at = None
         self._state = CircuitState.CLOSED
 
     def record_failure(self) -> None:
-        """Record a failed HomeKit write."""
+        """Record a failed write — opens the circuit at the threshold."""
         self._consecutive_failures += 1
         if self._state == CircuitState.HALF_OPEN:
             self._circuit_opened_at = time.monotonic()
             self._state = CircuitState.OPEN
             _LOGGER.debug(
-                "WriteHealth: probe failed, re-opening circuit (failures=%d)",
+                "Write Health: probe write failed — re-opening circuit "
+                "(consecutive failures=%d)",
                 self._consecutive_failures,
             )
         elif self._consecutive_failures >= WRITE_FAILURE_THRESHOLD:
             self._circuit_opened_at = time.monotonic()
             self._state = CircuitState.OPEN
             _LOGGER.warning(
-                "WriteHealth: circuit OPEN after %d consecutive failures",
+                "Write Health: HomeKit writes paused after %d consecutive "
+                "failures — falling back to cloud writes until the bridge "
+                "recovers",
                 self._consecutive_failures,
             )
 
     def reset(self) -> None:
-        """Reset tracker to initial state (e.g. on reconnect)."""
+        """Reset to a clean closed state (e.g. on bridge reconnect)."""
         self._consecutive_failures = 0
         self._circuit_opened_at = None
         self._state = CircuitState.CLOSED

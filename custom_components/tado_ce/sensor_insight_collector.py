@@ -1,4 +1,11 @@
-"""Tado CE Insight Collector — standalone insight collection functions."""
+"""Tado CE insight collector — gathers per-zone, cross-zone, and hub insights.
+
+Pure-function module called by the home / zone insight sensors
+to assemble actionable recommendations from coordinator state
+and published entity data. Each collector returns an
+`InsightResult` dataclass; the caller renders it into entity
+state + attributes.
+"""
 
 from __future__ import annotations
 
@@ -375,7 +382,11 @@ def collect_zone_insights(
                 zone_insights[zone_name] = insights
 
     except Exception as e:
-        _LOGGER.debug("Failed to collect zone insights: %s", e)
+        _LOGGER.debug(
+            "Insight Collector: zone insight collection failed (%s) — "
+            "returning whatever insights were gathered so far",
+            e,
+        )
 
     return zone_insights
 
@@ -814,7 +825,11 @@ def get_cross_zone_insights(
         return _collect_all_cross_zone(ctx, coordinator, merged_states, zone_name_map, zones_info)
 
     except Exception as e:
-        _LOGGER.debug("Failed to collect cross-zone insights: %s", e)
+        _LOGGER.debug(
+            "Insight Collector: cross-zone insight collection failed "
+            "(%s) — returning whatever was gathered so far",
+            e,
+        )
 
     return []
 
@@ -936,7 +951,11 @@ def get_hub_insights(
         _collect_api_spike_insight(coord_data, hub_insights)
 
     except Exception as e:
-        _LOGGER.debug("Failed to collect hub insights: %s", e)
+        _LOGGER.debug(
+            "Insight Collector: hub insight collection failed (%s) — "
+            "returning whatever was gathered so far",
+            e,
+        )
 
     return hub_insights
 

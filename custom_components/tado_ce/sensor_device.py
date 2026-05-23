@@ -1,4 +1,10 @@
-"""Tado CE Device Sensors — battery status."""
+"""Tado CE per-device battery sensor.
+
+One entity per Tado device serial. The native state is the
+human-friendly battery level (`Normal` / `Low` / `Critical`); a
+recommendation attribute carries an actionable message when the
+device is approaching empty.
+"""
 
 from __future__ import annotations
 
@@ -106,12 +112,13 @@ class TadoBatterySensor(CoordinatorEntity["TadoDataUpdateCoordinator"], SensorEn
 
     @callback
     def update(self) -> None:
-        """Update entity state from coordinator data."""
+        """Refresh battery / firmware / connection state from coordinator data."""
         try:
             zones_info = (self.coordinator.data or {}).get("zones_info")
             if zones_info:
                 for zone in zones_info:
-                    # Tado API may return null for 'devices'; 'or []' handles None correctly
+                    # `devices` can come back as null on a fresh zone —
+                    # `or []` covers both null and missing-key cases.
                     for device in zone.get("devices") or []:
                         if device.get("shortSerialNo") == self._device_serial:
                             raw_battery = device.get("batteryState", "unknown")
@@ -131,5 +138,9 @@ class TadoBatterySensor(CoordinatorEntity["TadoDataUpdateCoordinator"], SensorEn
                             return
             self._attr_available = False
         except (KeyError, TypeError, AttributeError) as err:
-            _LOGGER.debug("Battery sensor update failed for %s: %s", mask_serial(self._device_serial), err)
+            _LOGGER.debug(
+                "Battery Sensor: %s update failed (%s) — entity marked "
+                "unavailable until the next poll",
+                mask_serial(self._device_serial), err,
+            )
             self._attr_available = False
