@@ -176,6 +176,12 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._last_full_sync: datetime | None = None
         self._cached_ratelimit: dict[str, Any] | None = None
 
+        # Polling pause state — set when should_pause_polling returns
+        # True, cleared on the first cycle that returns False after a
+        # pause. Used by should_pause_polling to suppress the
+        # "resuming polling" INFO line when the user was never paused.
+        self._was_paused: bool = False
+
         # Periodic offset drift refresh tracker. The full sync's
         # _sync_offsets pass updates this stamp; the post-sync drift
         # check fires when the stamp ages past
@@ -498,9 +504,11 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             should_pause, reason = should_pause_polling(
                 self._cached_ratelimit,
                 self.config_manager,
+                was_paused=self._was_paused,
             )
             if should_pause:
                 _LOGGER.warning("Coordinator: %s", reason)
+                self._was_paused = True
                 self.update_interval = timedelta(minutes=15)
                 # retry_after lets HA defer the next refresh precisely.
                 reset_seconds = self._cached_ratelimit.get("reset_seconds")
@@ -510,6 +518,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     retry_after,
                 )
                 raise UpdateFailed(reason, retry_after=retry_after)
+            self._was_paused = False
 
         # 2. Set adaptive interval for NEXT poll
         homekit_connected = (
@@ -741,7 +750,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 return
 
         try:
-            await self.api_client.async_resync_offsets(zones_info_data)
+            calls_made = await self.api_client.async_resync_offsets(zones_info_data)
         except Exception:
             _LOGGER.debug(
                 "Offset Sync: drift refresh fetch failed — readback gate "
@@ -752,8 +761,9 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         self._last_offset_resync = dt_util.utcnow()
         _LOGGER.debug(
-            "Offset Sync: drift refresh complete — local cache reconciled "
-            "with Tado",
+            "Offset Sync: drift refresh complete — local cache "
+            "reconciled with Tado, %s cloud call(s) used this cycle",
+            calls_made,
         )
 
     async def _accumulate_outdoor_temp_history(

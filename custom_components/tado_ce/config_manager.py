@@ -397,13 +397,9 @@ class ConfigurationManager:
     def get_smart_comfort_mode(self) -> str:
         """Get the Smart Comfort mode preset.
 
-        Comprehensive comfort optimization including:
-        - Outdoor temperature compensation
-        - Humidity adjustment
-        - Preheat duration factors
-
-        Returns:
-            Preset name: 'none', 'light', 'moderate', or 'aggressive'
+        Returns one of 'none', 'light', 'moderate', or 'aggressive'.
+        The preset controls outdoor temperature compensation, humidity
+        adjustment, and preheat duration factors.
         """
         # Check new key first, fallback to legacy weather_compensation for backward compatibility
         return self._get_option(  # type: ignore[no-any-return]

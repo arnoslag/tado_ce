@@ -89,6 +89,7 @@ SERVICE_ACTIVATE_OPEN_WINDOW = "activate_open_window"
 SERVICE_DEACTIVATE_OPEN_WINDOW = "deactivate_open_window"
 SERVICE_SET_OPEN_WINDOW_MODE = "set_open_window_mode"
 SERVICE_RESTORE_PREVIOUS_STATE = "restore_previous_state"
+SERVICE_TURN_OFF_ALL_ZONES = "turn_off_all_zones"
 
 # API Base URLs
 TADO_API_BASE = "https://my.tado.com/api/v2"
@@ -120,9 +121,11 @@ WEATHER_COMPENSATION_PRESETS = {
 }
 
 # Adaptive Smart Polling Constants
-# MIN_POLLING_INTERVAL is for adaptive calculation floor (sensible default)
-# Custom intervals can go as low as 1 minute when user explicitly sets them
-MIN_POLLING_INTERVAL = 5  # minutes (adaptive floor - prevents excessive polling by default)
+# MIN_POLLING_INTERVAL is the physics-based floor: Tado's cloud doesn't
+# update faster than ~1 min, so polling sub-minute is wasted quota for
+# repeat readings. Adaptive math relies on the live `limit` from
+# response headers to widen across the 100 / 1000 / 20000 tiers.
+MIN_POLLING_INTERVAL = 1  # minutes (physics floor, Tado cloud update granularity)
 DEFAULT_DAY_INTERVAL = 30  # minutes (default day polling interval)
 DEFAULT_NIGHT_INTERVAL = 120  # minutes (default night polling interval)
 MAX_POLLING_INTERVAL = 120  # minutes (ensure reasonable updates even with low quota)

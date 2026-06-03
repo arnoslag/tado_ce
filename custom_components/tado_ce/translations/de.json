@@ -153,10 +153,10 @@
     },
     "button": {
       "resume_all": {
-        "name": "Lebenslauf Alle"
+        "name": "Alle Zeitpläne fortsetzen"
       },
       "refresh_ac": {
-        "name": "AC auffrischen"
+        "name": "Funktionen zur Aktualisierung der Klimaanlage"
       },
       "refresh_schedule": {
         "name": "Zeitplan aktualisieren"
@@ -203,6 +203,32 @@
           },
           "zone_type": {
             "name": "Art der Zone"
+          },
+          "swing_mode": {
+            "name": "Schaukel (vertikal)",
+            "state": {
+              "auto": "Auto",
+              "off": "Aus",
+              "on": "An",
+              "up": "Nach oben",
+              "mid_up": "Mitte (nach oben)",
+              "mid": "Mitte",
+              "mid_down": "Mitte (nach unten)",
+              "down": "Nach unten"
+            }
+          },
+          "swing_horizontal_mode": {
+            "name": "Schaukel (horizontal)",
+            "state": {
+              "auto": "Auto",
+              "off": "Aus",
+              "on": "An",
+              "left": "Links",
+              "mid_left": "Mitte (links)",
+              "mid": "Mitte",
+              "mid_right": "Mitte (rechts)",
+              "right": "Rechts"
+            }
           }
         }
       }
@@ -1236,6 +1262,10 @@
     "restore_previous_state": {
       "name": "Vorherigen Zustand wiederherstellen",
       "description": "Versetzt eine Zone in den Zustand vor dem letzten Überlagerungsvorgang zurück. Wenn kein erfasster Zustand existiert, wird der Zeitplan wieder aufgenommen."
+    },
+    "turn_off_all_zones": {
+      "name": "Alle Räume ausschalten",
+      "description": "Versetzen Sie jede Klimazone (Heizung + Klimaanlage) in den manuellen AUS-Modus. Dies entspricht der Schaltfläche „Alle Räume ausschalten“ in der Tado-App – Zeitpläne bleiben deaktiviert, bis Sie jede Zone manuell wieder aktivieren."
     }
   },
   "selector": {
@@ -1351,16 +1381,18 @@
     },
     "resume_schedule_failed": {
       "message": "Der Plan zur Wiederaufnahme für „{entity_id}“ ist fehlgeschlagen – die Cloud hat den Aufruf abgelehnt. Bitte versuchen Sie es erneut."
+    },
+    "turn_off_all_no_climate_zones": {
+      "message": "In diesem Tado-Haus wurden keine Heiz- oder Klimatisierungszonen gefunden – es gibt nichts, was ausgeschaltet werden könnte."
+    },
+    "turn_off_all_failed_all": {
+      "message": "Es ist nicht gelungen, eine Zone auszuschalten. Die Tado-Cloud hat in diesem Zyklus jeden Aufruf abgelehnt. Gründe: {reasons}. Überprüfen Sie das API-Kontingent der Integration oder versuchen Sie es erneut."
     }
   },
   "issues": {
     "auth_token_expired": {
       "title": "Tado CE: Authentifizierung abgelaufen",
       "description": "Das Aktualisierungs-Token für das Haus **{home_id}** ist abgelaufen. Bitte konfigurieren Sie die Integration neu, um sich erneut zu authentifizieren.\n\nGehen Sie zu **Einstellungen → Geräte & Dienste → Tado CE → Rekonfigurieren**."
-    },
-    "deprecated_yaml_config": {
-      "title": "Tado CE: Veralteter Konfigurationsschlüssel",
-      "description": "Der Konfigurationsschlüssel **{key}** ist veraltet und wird in einer zukünftigen Version entfernt werden. Bitte aktualisieren Sie Ihre Konfiguration."
     },
     "svc_sensor_missing": {
       "title": "„Smart Valve Control“ für „{zone_name}“ deaktiviert",

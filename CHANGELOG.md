@@ -2,6 +2,105 @@
 
 All notable changes to Tado CE will be documented in this file.
 
+## [4.0.1] - 2026-06-03
+
+The biggest user-visible change is the AC swing dropdown split into separate vertical and horizontal axes, which already shipped to beta testers as v4.1.0-beta.1. AC users on fine-grained swing units (Mitsubishi, Fujitsu, similar) can now park each axis independently instead of being forced into a single sweeping motion.
+
+Beyond the swing change, this release rolls up swing-fix polish, an AC HomeKit documentation correction (Smart AC Control V3+ units don't go through the bridge), and several defensive fixes raised by beta testers and v4.0 users.
+
+### Features
+
+- **`tado_ce.turn_off_all_zones` service** ([#283](https://github.com/hiall-fyi/tado_ce/issues/283) - @hapklaar) — Mirrors the Tado app's "Turn OFF all rooms" button. One call places every climate zone (heating + AC) into a manual OFF overlay; schedules stay suppressed until you resume each zone manually. Designed for "outside temperature above 15°C — turn off everything" automations where the next schedule block would otherwise override the off state. Hot water out of scope (Tado's own button targets climate zones only). FEATURES_GUIDE entry #14 has the full automation example.
+
+### Bug Fixes
+
+- **State Restore: defensive 2-poll confirmation gate before firing the restoration event** ([#278](https://github.com/hiall-fyi/tado_ce/issues/278) - @Newreader) — The State Restore Manager was firing `tado_ce_state_restoration_available` the moment a single poll reported `overlay=null` on a zone that previously had an overlay. A single observation can be a transient (quota-reset window, partial poll response, brief upstream blip) rather than a real overlay clear. The integration now requires two consecutive polls reporting `overlay=null` on the same zone before firing the event, filtering out transients without changing steady-state behaviour. The event still fires on real overlay clears (timer expiry, user resume from Tado app), just one polling cycle later (~5–12 minutes depending on cadence). FEATURES_GUIDE adds a defensive listener pattern (delay + re-check) for any automation subscribed to this event. Reported by @Newreader after observing a frost-protection overlay reverting to schedule heat in his setup; the underlying mechanism (whether transient API response or upstream Tado server behaviour) is still under investigation, but the defensive gate addresses the symptom regardless.
+- **Polling resume log line no longer fires when never paused** — `should_pause_polling` was logging "expected reset time XX:XX UTC has passed — resuming polling" on every poll cycle once `last_reset_utc + 24h` had elapsed, even on tiers where polling was never paused (anyone on 1000+ tier under normal load). The Tado API doesn't always refresh the `last_reset_utc` header promptly after a quota reset, so the condition stayed True every cycle and the log filled with duplicates. The line now only fires on an actual paused → unpaused transition. Cosmetic fix; no behavioural change.
+- **Drift refresh log line surfaces per-cycle quota cost** ([#277](https://github.com/hiall-fyi/tado_ce/issues/277) - @wrowlands3) — `Offset Sync: drift refresh complete` now ends with `... N cloud call(s) used this cycle` so users can audit drift refresh quota usage without inferring N from rate-limit decrement traces. FEATURES_GUIDE Smart Polling adds a worked daily-total formula and notes the LOW_QUOTA pause threshold.
+- **Adaptive polling now scales correctly across quota tiers** ([#276](https://github.com/hiall-fyi/tado_ce/issues/276) - @churchofnoise) — The narrowing direction of the adaptive math was capped at 5 minutes regardless of available quota, leaving 20K legacy-tier users polling 1/3 of what their quota afforded. The cap is now 1 minute (Tado's cloud doesn't update faster than that anyway), so high-quota users get sub-5-minute polling automatically. 100-call free tier and 1,000-call transitional tier unchanged because the math widens well above the floor on those budgets.
+- **Swing dropdowns now follow physical louver order** ([#270](https://github.com/hiall-fyi/tado_ce/issues/270) - @BirbByte) — On units that report fine-grained positions, the dropdown was alphabetical (`Down / Mid / Mid (down) / Mid (up) / Up`), which doesn't map to where the louver actually sits. Vertical now reads top-to-bottom (`Auto, Up, Mid (up), Mid, Mid (down), Down, On`) and horizontal reads left-to-right (`Auto, Left, Mid (left), Mid, Mid (right), Right, On`), matching the Tado app and most AC remotes. Unknown values Tado adds in future fall through alphabetically at the tail so they stay visible.
+- **Swing dropdown icons are now consistent** ([#270](https://github.com/hiall-fyi/tado_ce/issues/270) - @BirbByte) — `On` was picking up Home Assistant's built-in `mdi:swap-vertical` while the fixed positions had no icon at all, which looked uneven. Each swing value now ships its own icon: directional arrows for the position values, the auto-mode glyph for `Auto`, the swap glyphs for continuous `On`, and a small dot for `Off`.
+
+### Improvements
+
+- **DeepL polysemy fixes for swing translations** — DeepL guessed the wrong sense for several context-free single-word labels. `On` came back as a preposition or article in all six locales (`Am` in German, `El` in Spanish, etc.), `Right` came back as "correct" in four (`Richtig` / `Giusto` / `Juist` / `Certo`), Spanish and Portuguese had `Auto` translated literally as "car", and Italian's `Up` came out as the scroll-up sense. 21 hand-fixed strings across the six locales. Thanks to @Ralf84 for catching the German pair on first install.
+
+### Documentation
+
+- **Smart AC Control V3+ HomeKit support corrected** ([Discussion #271](https://github.com/hiall-fyi/tado_ce/discussions/271) - @MacrosorcH) — the Supported devices table read `✅ (temperature only)` for Smart AC Control V3 / V3+ since v4.0.0 GA, but @MacrosorcH pointed out that Smart AC Control units are standalone WiFi accessories with their own HomeKit pairing code, not bridged through the Internet Bridge. Tado CE only handles the bridge pairing flow today, so AC zones go through the cloud path for every operation regardless of whether the bridge is paired locally. The table cell is now `❌` with a pointer to the FEATURES_GUIDE explanation; ROADMAP records standalone-unit pairing as a no-hardware-no-code future-consideration item rather than scoped work.
+- **HomeKit local control setup steps fixed** ([Discussion #271](https://github.com/hiall-fyi/tado_ce/discussions/271) - @clude86) — The README setup section incorrectly told users to add the Tado bridge as an HA HomeKit Device first; this claims the bridge's single HomeKit-controller slot and stops Tado CE from finding it. Setup now starts directly from the Tado app's HomeKit pairing code straight into Tado CE's Configure form, no HA HomeKit Device step required.
+- **TRV LED feedback after a HomeKit-routed write** ([#281](https://github.com/hiall-fyi/tado_ce/issues/281) - @amplitur) — Documented that the HomeKit Accessory Protocol doesn't carry a feedback channel for the LED-flash visual confirmation, with `tado_ce.identify_device` shown as a manual workaround.
+- **Hub-level buttons documented in FEATURES_GUIDE** ([Discussion #280](https://github.com/hiall-fyi/tado_ce/discussions/280) - @Trebor87) — New "Hub Buttons" section in Enhanced Controls covers Resume All Schedules, Refresh AC Capabilities, and Refresh Schedule. Each entry lists entity_id, what the button does, when to press, and quota cost. Refresh AC Capabilities is the existing recovery path for AC zones whose HVAC modes show as `[OFF]` only after re-pairing — it was hard to find before, now it's documented properly.
+- **Quota Reserve switch surfaced in Smart Polling docs** — The `switch.tado_ce_{home_id}_quota_reserve_enabled` entity is now named in the Quota Reserve section so users know which switch toggles the protection.
+- **Child Lock and Early Start switches dedicated section** — New entry in Enhanced Controls explains the per-device (Child Lock) vs per-zone (Early Start) distinction, sync direction, and API cost.
+- **Event-listener safety patterns** — New "Event listeners for automation builders" section lists the 5 events tado_ce fires and shows a defensive listener pattern (delay + re-check) for `tado_ce_state_restoration_available`. Defensive code in 4.0.1 covers most transients; the doc pattern covers the rest.
+- **`add_meter_reading` and `identify_device` services documented**. Both have been live since v3.x but only had handler-level wiring, no user docs. FEATURES_GUIDE now covers `add_meter_reading` (submit a gas or electricity reading to Tado's Energy IQ, with an automation example for monthly smart-meter readings) and `identify_device` (flash the LED on a TRV by serial, useful for finding the offline one in a multi-TRV zone).
+- **v5.0.0 upgrade-path notice**. A future v5.0.0 will drop the in-place migration code that upgrades v3.x option keys, entity IDs, and storage layouts. README and FEATURES_GUIDE now flag this early so any v3.x install still around can upgrade through v4.x first; one-jump v3.x to v5.0.0 won't be supported. No timeline yet, surfacing months ahead so there's no rush.
+
+### i18n
+
+- **Hub button display names renamed for clarity** — `Resume All` → `Resume All Schedules`; `Refresh AC` → `Refresh AC Capabilities`. The entity name itself now tells users what the button does without needing to consult docs. DeepL pass for DE/ES/FR/IT/NL/PT, with hand-fixes for two polysemy cases (DE "anzeigen" → "fortsetzen"; ES "Volver a" → "Reanudar").
+
+### Internal
+
+- **Codebase cleanup, no user-visible behaviour change.** Removed `EntityMeta.legacy_name` (a pre-translation_key holdover with 67 dead callsites and zero consumers), the one-time Test Mode entity-cleanup pass that's been a no-op since v4.0.0-beta.7 ran on every install, and `async_create_deprecated_config_issue` (a YAML-deprecation repair helper that was never called and structurally couldn't be, since Tado CE doesn't accept YAML configuration). Net 111 lines of dead code dropped from the integration. Translation files lose the now-orphaned `deprecated_yaml_config` repair string across all seven locales, kept in sync via the existing translation consistency check.
+
+## [4.1.0-beta.1] - 2026-05-25
+
+**Split AC swing into vertical and horizontal axes**
+
+The unified `Off / Vertical / Horizontal / Both` swing dropdown is replaced with two independent dropdowns, one per axis. Units that report fine-grained louver positions (Mitsubishi, Fujitsu, and similar) can now be parked at a fixed direction such as Up, Mid, or Mid (left) instead of being forced into a sweeping motion.
+
+### Features
+
+- **Split AC swing into vertical and horizontal axes** ([#270](https://github.com/hiall-fyi/tado_ce/issues/270) - @Ralf84) — AC zones now expose a `Swing (vertical)` and a `Swing (horizontal)` dropdown, each populated from the cloud-reported capability set for your specific unit. Pick a fixed louver position on either dropdown to stop oscillation on that axis — useful in bedrooms or children's rooms where a constantly moving louver is disruptive. Simple `On / Off` units keep a two-value dropdown.
+- **Fine-grained louver positions for capable AC units** — Units that report values like `UP`, `MID_DOWN`, `LEFT`, `MID_RIGHT` now expose those values directly in the dropdowns. Translations land in German, Spanish, French, Italian, Dutch, and Portuguese alongside English.
+
+### Bug Fixes
+
+- **Swing changes no longer silently drop the off-axis on `OFF`-less units** ([#270](https://github.com/hiall-fyi/tado_ce/issues/270) - @Ralf84) — Picking "Vertical" on a Mitsubishi or Fujitsu unit (which doesn't report `OFF` as a swing value) used to send only `verticalSwing=ON` and omit `horizontalSwing` from the payload, leaving the bridge to keep whatever horizontal state it last had. Each axis now writes its own value independently and the silent-drop fallback is gone.
+- **Picking "On" from a swing dropdown no longer silently moves the off-axis** — `On` was incorrectly being translated as a legacy v4.0 unified value, which set the opposite axis to `Off` and logged a deprecation warning the user hadn't earned. `On` is now treated as a v4.1 raw axis value and only the axis you picked moves.
+
+### Improvements
+
+- **One log line per AC write failure, not two** — Temperature, HVAC mode, fan mode, and swing writes used to log the specific failure reason (timeout, exception, or "rejected by Tado") and then a generic "write failed" warning right after. The generic line now fires only when no specific reason was logged, so a timeout produces a single warning rather than two.
+
+### ⚠️ Migration
+
+**Service-call automations** — calls using the old unified value (`swing_mode: off / vertical / horizontal / both`) keep working with a deprecation warning logged each call. The compat shim is removed in v4.2.0. Recipe:
+
+```yaml
+# Before (v4.0)
+- service: climate.set_swing_mode
+  data:
+    entity_id: climate.tado_ce_living_room
+    swing_mode: both
+
+# After (v4.1+)
+- service: climate.set_swing_mode
+  data:
+    entity_id: climate.tado_ce_living_room
+    swing_mode: on        # or 'auto', 'up', 'mid', etc. — your unit's capability
+- service: climate.set_swing_horizontal_mode
+  data:
+    entity_id: climate.tado_ce_living_room
+    swing_horizontal_mode: on
+```
+
+**Dashboard templates and Lovelace conditions** — anything reading `state_attr('climate.X', 'swing_mode')` and matching `'both'`, `'vertical'`, or `'horizontal'` needs updating. The compat shim covers service calls, not state reads. After v4.1 the attribute holds raw values like `'on'`, `'off'`, `'up'`, `'auto'`. Cards and templates should switch to checking `swing_mode` and `swing_horizontal_mode` separately:
+
+```jinja
+{# Before #}
+{% if state_attr('climate.tado_ce_living_room', 'swing_mode') == 'both' %}
+
+{# After #}
+{% set v = state_attr('climate.tado_ce_living_room', 'swing_mode') %}
+{% set h = state_attr('climate.tado_ce_living_room', 'swing_horizontal_mode') %}
+{% if v not in ['off', None] and h not in ['off', None] %}
+```
+
+**HomeKit users with AC zones** — temperature and HVAC mode still update locally via HomeKit (typically within 2 seconds). Swing changes still go through Tado's cloud, so picking a swing position uses cloud quota and confirms on the next cloud poll (typically 5–30 minutes). Same as v4.0 — not a regression. A follow-up to wire HomeKit's binary `SwingMode` characteristic into the new vertical-axis dropdown for ON/OFF AC units is being scoped separately.
+
 ## [4.0.0] - 2026-05-23
 
 **HomeKit Local Control & Smart Valve Control**

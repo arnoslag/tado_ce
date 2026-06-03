@@ -1078,19 +1078,28 @@ class TadoApiClient(TadoAuthMixin):
             await self.save_ratelimit("error")
             raise TadoSyncError(f"Sync failed: {e}") from e
 
-    async def async_resync_offsets(self, zones_info: list[Any]) -> None:
+    async def async_resync_offsets(self, zones_info: list[Any]) -> int:
         """Public wrapper around `_sync_offsets` for the coordinator's drift-refresh path.
 
         Called on `OFFSET_DRIFT_REFRESH_SECONDS` cadence so the
         cached offsets stay close to Tado's stored values even when
         Tado's adaptive calibration walks them behind our back.
-        Idempotent.
+        Idempotent. Returns the number of cloud GET calls the refresh
+        consumed so the coordinator can surface the per-cycle quota
+        cost in its drift-refresh log line.
         """
-        await self._sync_offsets(zones_info)
+        return await self._sync_offsets(zones_info)
 
-    async def _sync_offsets(self, zones_info: list[Any]) -> None:
-        """Refresh the device-offset cache for every heating / AC zone."""
+    async def _sync_offsets(self, zones_info: list[Any]) -> int:
+        """Refresh the device-offset cache for every heating / AC zone.
+
+        Returns the number of `get_device_offset` cloud calls
+        actually attempted, so callers can surface the per-cycle
+        quota cost. This count is the N in the user-visible "drift
+        refresh complete — N call(s)" log line.
+        """
         offsets = {}
+        calls_made = 0
 
         for zone in zones_info:
             zone_id = str(zone.get("id"))
@@ -1104,6 +1113,7 @@ class TadoApiClient(TadoAuthMixin):
                 serial = device.get("shortSerialNo")
                 if serial:
                     try:
+                        calls_made += 1
                         offset = await self.get_device_offset(serial)
                         if offset is not None:
                             if not is_valid_device_offset(offset):
@@ -1133,6 +1143,8 @@ class TadoApiClient(TadoAuthMixin):
             if self._data_loader is not None:
                 await self._data_loader.async_update_store("offsets", offsets)
             _LOGGER.debug("API: offsets saved for %s zone(s)", len(offsets))
+
+        return calls_made
 
     async def _sync_ac_capabilities(self, zones_info: list[Any]) -> None:
         """Cache the per-zone AC capabilities — skipped when the cache is already populated.

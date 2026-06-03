@@ -1,123 +1,128 @@
-# Tado CE — Entity Reference (v4.0.0)
+# Tado CE — Entity Reference (v4.0.1)
 
-This document lists the entity types in Tado CE — roughly 90 distinct types in total, organised by function. The exact count depends on which features you've enabled and what your hardware exposes (Bridge API entities are dynamically discovered, AC zones expose different entities than heating zones, etc.).
+A catalogue of every entity Tado CE creates, with the exact `entity_id` you'll see in your install.
 
-> **v3.1.0 change:** Per-zone configuration (overlay mode, timer, min/max temp, temp offset, heating type, window type, sensitivity, external sensors, etc.) moved from 11 HA entities per zone to a centralised Options Flow menu. Zero config entities are created — settings live in **Settings → Tado CE → Configure → Zone Configuration**.
+The exact count depends on which features you've enabled and what your hardware exposes. Bridge API entities are dynamically discovered, AC zones expose different entities than heating zones, and several entities are disabled by default.
 
-## How to Read This Document
+## How `entity_id` works in Tado CE
 
-**Two tables per section:**
+Three concepts that get conflated, but aren't the same thing:
 
-1. **Friendly Names** — what you see in the HA UI
-2. **Entity IDs** — what you use in automations and YAML
+- **`unique_id`** — internal stable identifier, hardcoded in the integration. Never changes after install. You don't see this; HA uses it to match entities to the registry across restarts.
+- **`entity_id`** — the slug you use in automations and YAML (`climate.lounge`, `sensor.tado_ce_hub_api_usage`). Set when the entity is **first created**. Once written to the registry, HA never auto-renames it, even if the friendly name later changes. You can rename it yourself in **Settings → Devices**.
+- **Friendly name** — the label shown in the UI. Code-driven via `strings.json`, so a single release can change it for everyone.
 
-**Column guide:**
+This document focuses on `entity_id`, because that's the one that ends up in your YAML.
 
-| Column | Meaning |
-|--------|---------|
-| CE? | ✓ = CE Exclusive (not in official Tado integration) |
-| v2.3.1 Name | Friendly name in v2.3.1 |
-| v3.0 Name | Friendly name in v3.0.0 (all users, immediate) |
-| v4.0 Name | Friendly name in v4.0.0 (new entities only) |
-| v2.3.1 entity_id | Entity ID in v2.3.1 (preserved for migrated users) |
-| v3.0 entity_id (fresh) | Entity ID for fresh v3.0.0 installs |
-| v4.0 entity_id (fresh) | Entity ID for fresh v4.0.0 installs (new entities only) |
+### Why your slugs may differ
 
-**Markers:**
+Tado CE has had three eras of entity naming, and `entity_id` is sticky:
 
-| Marker | Meaning |
-|--------|---------|
-| ✓ | CE Exclusive — not available in HA official Tado integration |
-| ⬆ | Enhanced — Tado app feature that HA official lacks or CE implements better |
+- **v1.x – v2.x (legacy):** entities used a `Tado CE ` prefix (v1.x) or no device-grouping prefix at all (v2.x). Entity names were set explicitly and slugified directly.
+- **v3.0.0 onward (device-grouped):** entities adopted the modern HA pattern (`_attr_has_entity_name = True`, `device_info`, and translation keys). HA derives `entity_id` from `slugify(device_name + friendly_name)`.
+- **v4.0.0+ (multi-home):** the underlying `unique_id` gained a `home_id` segment for multi-home support, but `entity_id` shapes stayed the same.
 
-**Migration notes:**
-- Upgrading from v2.3.1 → v3.0.0 **preserves your entity_ids** — automations won't break
-- Friendly names change immediately for all users (code-driven via `strings.json`)
-- Fresh installs get HA auto-generated entity_ids from device name + friendly name
-- Multi-home fresh installs: HA auto-suffixes `_2`, `_3` etc. to avoid collision
+Anyone who installed during an older era kept their old `entity_id` slugs through every upgrade. Settings → Devices in HA is the authoritative source for any individual install.
 
-**Device name → entity_id prefix mapping (fresh installs):**
+The tables below show the slug a **fresh installer** got at each major-version snapshot. Migrated installs keep whichever slug the entity got the day it was first created, even if the friendly name has since changed.
 
-| Device | Device Name | entity_id prefix |
-|--------|------------|-----------------|
-| Hub | Tado CE Hub | `{platform}.tado_ce_hub_` |
-| Zone | {zone_name} (e.g. Lounge) | `{platform}.lounge_` |
-| Schedule | Heating Schedule | `{platform}.heating_schedule_` |
+## Conventions in this document
 
-**Zone examples use:** zone name = "Lounge", zone_id = 4, home_id = {home_id}
+- **Zone examples** use zone name `Lounge`. Substitute your own zone name.
+- **Device serial** placeholder `SU1234`. Substitute your TRV / zone serial.
+- **Mobile device** placeholder `{device_name}`. Substitute the device name in your Tado app.
+- **CE column markers:**
+  - `✓` — CE-exclusive, not in HA's official Tado integration.
+  - `⬆` — enhanced version of an HA-official feature.
+  - blank — present in both integrations.
 
 ---
 
-## Hub Sensors (19 entities)
+## Hub Sensors
 
-### Friendly Names
+Diagnostic sensors attached to the Tado CE Hub device. Most are disabled by default; enable the ones you want under **Settings → Devices → Tado CE Hub**.
 
-| Function | CE? | v2.3.1 Name | v3.0 Name | v4.0 Name |
-|----------|-----|-------------|-----------|-----------|
-| Outdoor temperature | | Outside Temperature | Outside Temp | — |
-| Solar radiation | | Solar Intensity | Solar Intensity | — |
-| Weather condition | | Weather | Weather | — |
-| Boiler flow temp | ✓ | Boiler Flow Temperature | Boiler Flow Temp | — |
-| Home identifier | ✓ | Home ID | Home ID | — |
-| API calls used | ✓ | API Usage | API Usage | — |
-| API reset countdown | ✓ | API Reset | API Reset | — |
-| Daily API limit | ✓ | API Limit | API Limit | — |
-| API health | ✓ | API Status | API Status | — |
-| Auth token health | ✓ | Token Status | Token Status | — |
-| Zone count | ✓ | Zone Count | Zone Count | — |
-| Last sync time | ✓ | Last Sync | Last Sync | — |
-| Next sync time | ✓ | Next Sync | Next Sync | — |
-| Polling interval | ✓ | Polling Interval | Polling Interval | — |
-| API call history | ✓ | Call History | Call History | — |
-| API call breakdown | ✓ | API Call Breakdown | API Breakdown | — |
-| Home-wide insights | ✓ | Home Insights | Home Insights | — |
-| HomeKit reads saved | ✓ | — | — | HomeKit Reads Saved |
-| HomeKit writes saved | ✓ | — | — | HomeKit Writes Saved |
+| Function | CE? | Friendly Name | v2.3.1 entity_id | v3.0+ fresh | v4.0+ fresh |
+|---|---|---|---|---|---|
+| Outdoor temperature | | Outside Temp | `sensor.outside_temperature` | `sensor.tado_ce_hub_outside_temp` | `sensor.tado_ce_hub_outside_temp` |
+| Solar radiation | | Solar Intensity | `sensor.solar_intensity` | `sensor.tado_ce_hub_solar_intensity` | `sensor.tado_ce_hub_solar_intensity` |
+| Weather condition | | Weather | `sensor.weather` | `sensor.tado_ce_hub_weather` | `sensor.tado_ce_hub_weather` |
+| Boiler flow temperature | ✓ | Boiler Flow Temp | `sensor.boiler_flow_temperature` | `sensor.tado_ce_hub_boiler_flow_temp` | `sensor.tado_ce_hub_boiler_flow_temp` |
+| Home identifier | ✓ | Home ID | `sensor.home_id` | `sensor.tado_ce_hub_home_id` | `sensor.tado_ce_hub_home_id` |
+| API calls used | ✓ | API Usage | `sensor.api_usage` | `sensor.tado_ce_hub_api_usage` | `sensor.tado_ce_hub_api_usage` |
+| API reset countdown | ✓ | API Reset | `sensor.api_reset` | `sensor.tado_ce_hub_api_reset` | `sensor.tado_ce_hub_api_reset` |
+| Daily API limit | ✓ | API Limit | `sensor.api_limit` | `sensor.tado_ce_hub_api_limit` | `sensor.tado_ce_hub_api_limit` |
+| API health | ✓ | API Status | `sensor.api_status` | `sensor.tado_ce_hub_api_status` | `sensor.tado_ce_hub_api_status` |
+| Auth token health | ✓ | Token Status | `sensor.token_status` | `sensor.tado_ce_hub_token_status` | `sensor.tado_ce_hub_token_status` |
+| Zone count | ✓ | Zone Count | `sensor.zone_count` | `sensor.tado_ce_hub_zone_count` | `sensor.tado_ce_hub_zone_count` |
+| Last sync time | ✓ | Last Sync | `sensor.last_sync` | `sensor.tado_ce_hub_last_sync` | `sensor.tado_ce_hub_last_sync` |
+| Next sync time | ✓ | Next Sync | `sensor.next_sync` | `sensor.tado_ce_hub_next_sync` | `sensor.tado_ce_hub_next_sync` |
+| Polling interval | ✓ | Polling Interval | `sensor.polling_interval` | `sensor.tado_ce_hub_polling_interval` | `sensor.tado_ce_hub_polling_interval` |
+| API call history | ✓ | Call History | `sensor.call_history` | `sensor.tado_ce_hub_call_history` | `sensor.tado_ce_hub_call_history` |
+| API call breakdown | ✓ | API Breakdown | `sensor.api_call_breakdown` | `sensor.tado_ce_hub_api_breakdown` | `sensor.tado_ce_hub_api_breakdown` |
+| Home-wide insights | ✓ | Home Insights | `sensor.home_insights` | `sensor.tado_ce_hub_home_insights` | `sensor.tado_ce_hub_home_insights` |
+| HomeKit reads saved | ✓ | HomeKit Reads Saved | — | — | `sensor.tado_ce_hub_homekit_reads_saved` |
+| HomeKit writes saved | ✓ | HomeKit Writes Saved | — | — | `sensor.tado_ce_hub_homekit_writes_saved` |
 
-### Entity IDs
-
-| v2.3.1 entity_id | v3.0 entity_id (fresh) |
-|-------------------|------------------------|
-| `sensor.tado_ce_outside_temperature` | `sensor.tado_ce_hub_outside_temp` |
-| `sensor.tado_ce_solar_intensity` | `sensor.tado_ce_hub_solar_intensity` |
-| `sensor.tado_ce_weather_state` | `sensor.tado_ce_hub_weather` |
-| `sensor.tado_ce_boiler_flow_temperature` | `sensor.tado_ce_hub_ce_boiler_flow_temp` |
-| `sensor.tado_ce_home_id` | `sensor.tado_ce_hub_ce_home_id` |
-| `sensor.tado_ce_api_usage` | `sensor.tado_ce_hub_ce_api_usage` |
-| `sensor.tado_ce_api_reset` | `sensor.tado_ce_hub_ce_api_reset` |
-| `sensor.tado_ce_api_limit` | `sensor.tado_ce_hub_ce_api_limit` |
-| `sensor.tado_ce_api_status` | `sensor.tado_ce_hub_ce_api_status` |
-| `sensor.tado_ce_token_status` | `sensor.tado_ce_hub_ce_token_status` |
-| `sensor.tado_ce_zones_count` | `sensor.tado_ce_hub_ce_zone_count` |
-| `sensor.tado_ce_last_sync` | `sensor.tado_ce_hub_ce_last_sync` |
-| `sensor.tado_ce_next_sync` | `sensor.tado_ce_hub_ce_next_sync` |
-| `sensor.tado_ce_polling_interval` | `sensor.tado_ce_hub_ce_polling_interval` |
-| `sensor.tado_ce_call_history` | `sensor.tado_ce_hub_ce_call_history` |
-| `sensor.tado_ce_api_call_breakdown` | `sensor.tado_ce_hub_ce_api_breakdown` |
-| `sensor.tado_ce_home_insights` | `sensor.tado_ce_hub_ce_home_insights` |
-| — | — | `sensor.tado_ce_hub_ce_homekit_reads_saved` |
-| — | — | `sensor.tado_ce_hub_ce_homekit_writes_saved` |
+The HomeKit savings counters were added in v4.0.0 alongside HomeKit local control. They reset when your API quota resets.
 
 ---
 
-## Bridge API — Dynamic Discovery (up to 15 entities)
+## Hub Binary Sensors
 
-> Entities are dynamically discovered from the Bridge API response. Which entities appear depends on your wiring type (OpenTherm, eBUS, Relay). Entities marked 🟢 are enabled by default; entities marked 🔘 require manual enabling in the HA UI.
+| Function | CE? | Friendly Name | v2.3.1 entity_id | v3.0+ fresh | v4.0+ fresh |
+|---|---|---|---|---|---|
+| Geofencing (home/away) | ✓ | Geofencing (was "Home" pre-v3.5.0) | `binary_sensor.home` | `binary_sensor.tado_ce_hub_geofencing` | `binary_sensor.tado_ce_hub_geofencing` |
+| HomeKit local control status | ✓ | HomeKit | — | — | `binary_sensor.tado_ce_hub_homekit` |
+| Internet Bridge connectivity | ✓ | Bridge | — | — | `binary_sensor.tado_ce_hub_bridge` |
 
-### Default Enabled (visible when Bridge API is configured)
+The Geofencing sensor was renamed from "Home" in v3.5.0. Your `entity_id` slug stayed the same if you installed before that. HomeKit and Bridge sensors are v4.0.0+ only.
 
-| Function | CE? | Name | Platform | Wiring |
-|----------|-----|------|----------|--------|
-| Bridge API health | ✓ | Bridge Connected | `binary_sensor` | All |
+The HomeKit sensor exposes attributes for uptime, reconnect count, and write performance metrics (`write_attempts`, `write_successes`, `write_fallbacks`, `write_avg_latency_ms`). Those metrics reset on every HA restart, API quota reset, and HomeKit reconnect, since they reflect current network conditions rather than historical data.
+
+---
+
+## Hub Controls
+
+| Function | CE? | Friendly Name | v2.3.1 entity_id | v3.0+ fresh | v4.0.1+ fresh |
+|---|---|---|---|---|---|
+| Resume all schedules | ✓ | Resume All Schedules | `button.resume_all_schedules` | `button.tado_ce_hub_resume_all` | `button.tado_ce_hub_resume_all_schedules` |
+| Refresh AC capabilities | ✓ | Refresh AC Capabilities | `button.refresh_ac_capabilities` | `button.tado_ce_hub_refresh_ac` | `button.tado_ce_hub_refresh_ac_capabilities` |
+| Presence mode | ✓ | Presence Mode | `select.presence_mode` | `select.tado_ce_hub_presence_mode` | `select.tado_ce_hub_presence_mode` |
+| Overlay mode | ✓ | Overlay Mode | `select.overlay_mode` | `select.tado_ce_hub_overlay_mode` | `select.tado_ce_hub_overlay_mode` |
+| Overlay timer duration | ✓ | Overlay Timer | `select.overlay_timer_duration` | `select.tado_ce_hub_overlay_timer` | `select.tado_ce_hub_overlay_timer` |
+
+The two button friendly names were lengthened in v4.0.1 (`Resume All` → `Resume All Schedules`, `Refresh AC` → `Refresh AC Capabilities`). Existing installs kept the old slug; only fresh v4.0.1+ installers picked up the longer name.
+
+---
+
+## Hub Config Switches
+
+| Function | CE? | Friendly Name | v3.0+ fresh |
+|---|---|---|---|
+| Quota Reserve toggle | ✓ | Quota Reserve | `switch.tado_ce_hub_quota_reserve` |
+
+The Quota Reserve switch arrived after v2.3.1, so there's no legacy entity_id for migrated users.
+
+---
+
+## Bridge API — Dynamic Discovery
+
+When the Internet Bridge is configured, Tado CE discovers entities from the bridge's response. Which entities appear depends on your wiring type (OpenTherm, eBUS, Relay).
+
+### Default Enabled
+
+| Function | CE? | Friendly Name | Platform | Wiring |
+|---|---|---|---|---|
 | Boiler wiring state | ✓ | Bridge Wiring State | `sensor` | All |
 | Boiler output temperature | ✓ | Bridge Boiler Output Temp | `sensor` | OpenTherm |
 | Boiler flow temperature | ✓ | Bridge Boiler Flow Temp | `sensor` | eBUS |
-| Max output temp control | ✓ | Boiler Max Output Temperature | `number` | OpenTherm |
+| Max output temperature control | ✓ | Max Flow Temperature | `number` | OpenTherm |
 
-### Default Disabled (user must manually enable)
+### Default Disabled
 
-| Function | CE? | Name | Platform | Wiring |
-|----------|-----|------|----------|--------|
+| Function | CE? | Friendly Name | Platform | Wiring |
+|---|---|---|---|---|
 | Output temp timestamp | ✓ | Bridge Boiler Output Temp Time | `sensor` | OpenTherm |
 | Flow temp timestamp | ✓ | Bridge Boiler Flow Temp Time | `sensor` | eBUS |
 | Max output temperature (read-only) | ✓ | Bridge Boiler Max Output Temp | `sensor` | OpenTherm |
@@ -129,403 +134,231 @@ This document lists the entity types in Tado CE — roughly 90 distinct types in
 | Bridge capabilities summary | ✓ | Bridge Capabilities | `sensor` | All |
 | Bridge schema version | ✓ | Bridge Schema Version | `sensor` | All |
 
-> **Note:** Any additional unknown fields discovered from the Bridge API are automatically created as disabled diagnostic sensors. The `number` entity (#22) provides flow temperature control via the Bridge API.
+Bridge API entities arrived in v3.3.0, so there's no v2.x equivalent. The slugs follow the standard hub-attached pattern (`sensor.tado_ce_hub_<key>`).
+
+The Bridge connectivity status itself is documented above as a hub binary sensor (`binary_sensor.tado_ce_hub_bridge`).
 
 ---
 
-## Hub Controls (5 entities)
+## Zone Sensors — Core
 
-### Friendly Names
+Per-zone temperature, humidity, and target tracking.
 
-| Function | CE? | v2.3.1 Name | v3.0 Name |
-|----------|-----|-------------|-----------|
-| Resume all schedules | ✓ | Resume All Schedules | Resume All |
-| Refresh AC cache | ✓ | Refresh AC Capabilities | Refresh AC |
-| Presence mode | ✓ | Presence Mode | Presence Mode |
-| Overlay mode | ✓ | Overlay Mode | Overlay Mode |
-| Overlay timer duration | ✓ | Overlay Timer Duration | Overlay Timer |
+| Function | CE? | Friendly Name | v2.3.1 entity_id | v3.0+ fresh | v4.0+ fresh |
+|---|---|---|---|---|---|
+| Temperature | | Temperature (was "Temp" pre-v4.0) | `sensor.lounge_temperature` | `sensor.lounge_temp` | `sensor.lounge_temperature` |
+| Humidity | | Humidity | `sensor.lounge_humidity` | `sensor.lounge_humidity` | `sensor.lounge_humidity` |
+| Heating power % | | Heating | `sensor.lounge_heating_power` | `sensor.lounge_heating` | `sensor.lounge_heating` |
+| AC power % | | AC | `sensor.lounge_ac_power` | `sensor.lounge_ac` | `sensor.lounge_ac` |
+| Target temperature | ✓ | Target | `sensor.lounge_target` | `sensor.lounge_target` | `sensor.lounge_target` |
+| Overlay status | ✓ | Overlay (was "Mode" in v2.3.1) | `sensor.lounge_mode` | `sensor.lounge_overlay` | `sensor.lounge_overlay` |
 
-### Entity IDs
+Temperature was shortened to "Temp" in v3.0 then restored to "Temperature" in v4.0. Fresh installs from each era got the slug matching the name in force at the time.
 
-| v2.3.1 entity_id | v3.0 entity_id (fresh) |
-|-------------------|------------------------|
-| `button.tado_ce_resume_all_schedules` | `button.tado_ce_hub_ce_resume_all` |
-| `button.tado_ce_refresh_ac_capabilities` | `button.tado_ce_hub_ce_refresh_ac` |
-| `select.tado_ce_presence_mode` | `select.tado_ce_hub_ce_presence_mode` |
-| `select.tado_ce_overlay_mode` | `select.tado_ce_hub_ce_overlay_mode` |
-| `select.tado_ce_overlay_timer_duration` | `select.tado_ce_hub_ce_overlay_timer` |
+Hot water power was a `sensor` in v2.x; it migrated to a `binary_sensor` in v4.0.0 and now lives under Zone Binary Sensors.
 
 ---
 
-## Hub Binary Sensors (1 always + 2 optional)
+## Zone Sensors — Smart Comfort
 
-### Friendly Names
+Five diagnostic sensors per heating zone, all CE-exclusive.
 
-| Function | CE? | v2.3.1 Name | v3.0 Name | v4.0 Name |
-|----------|-----|-------------|-----------|-----------|
-| Home/Away status | ✓ | Home | Home | Home |
-| HomeKit connection status | ✓ | — | — | HomeKit Connected |
+| Function | Friendly Name | v2.3.1 entity_id | v3.0+ fresh |
+|---|---|---|---|
+| Schedule deviation | Schedule Deviation (was "Historical Deviation" in v2.3.1) | `sensor.lounge_historical_deviation` | `sensor.lounge_schedule_deviation` |
+| Next schedule time | Next Schedule | `sensor.lounge_next_schedule_time` | `sensor.lounge_next_schedule` |
+| Next schedule temp | Next Schedule Temperature (was "Next Schedule Temp" then "Next Sched Temp") | `sensor.lounge_next_schedule_temp` | `sensor.lounge_next_sched_temp` (v3.5.x) → `sensor.lounge_next_schedule_temperature` (v4.0+) |
+| Preheat advisor | Preheat Advisor | `sensor.lounge_preheat_advisor` | `sensor.lounge_preheat_advisor` |
+| Comfort target | Comfort Target (was "Smart Comfort Target" in v2.3.1) | `sensor.lounge_smart_comfort_target` | `sensor.lounge_comfort_target` |
 
-> Three hub-level binary sensors exist: Home/Away (always), HomeKit Connected (when HomeKit local control is enabled), and Bridge Connected (when the Internet Bridge is configured). Bridge Connected is documented separately under §Bridge API — Dynamic Discovery because its attributes depend on the bridge's wiring type. HomeKit Connected attributes include uptime, reconnect count, and mapped/unmapped zone counts.
->
-> **Savings counters** — HomeKit Reads Saved (#18) and Writes Saved (#19) are standalone diagnostic sensors (disabled by default). They track how many API calls HomeKit local control has saved you today. Enable them in **Settings → Devices → Tado CE Hub → "X entities not shown"**. Counters survive HA restarts and reset when your API quota resets.
->
-> **Write performance metrics** (`write_attempts`, `write_successes`, `write_fallbacks`, `write_avg_latency_ms`) — attributes on the HomeKit Connected sensor. Reset on every HA restart, API quota reset, and HomeKit reconnect. These reflect current network conditions, not historical data. All zeros means no writes have happened since the last restart.
-
-### Entity IDs
-
-| v2.3.1 entity_id | v3.0 entity_id (fresh) | v4.0 entity_id (fresh) |
-|-------------------|------------------------|------------------------|
-| `binary_sensor.tado_ce_home` | `binary_sensor.tado_ce_hub_ce_home` | — |
-| — | — | `binary_sensor.tado_ce_hub_ce_homekit_connected` |
+The Next Schedule Temp friendly name went through three iterations (`Next Schedule Temp` → `Next Sched Temp` in v3.5 → `Next Schedule Temperature` in v4.0). The slug is sticky to whichever name was in force when the install was created.
 
 ---
 
-## Hub Config Switches (2 entities)
+## Zone Sensors — Environment
 
-### Friendly Names
+Six sensors per zone, all CE-exclusive, all diagnostic.
 
-| Function | CE? | v2.3.1 Name | v3.0 Name |
-|----------|-----|-------------|-----------|
-| Quota reserve toggle | ✓ | — | Quota Reserve |
+| Function | Friendly Name | v2.3.1 entity_id | v3.0+ fresh |
+|---|---|---|---|
+| Mold risk level | Mold Risk | `sensor.lounge_mold_risk` | `sensor.lounge_mold_risk` |
+| Mold risk percentage | Mold Risk % | `sensor.lounge_mold_risk_percentage` | `sensor.lounge_mold_risk_2` (slug collision) |
+| Condensation risk | Condensation Risk (was "Condensation" in v3.5.x) | `sensor.lounge_condensation_risk` | `sensor.lounge_condensation` (v3.5) → `sensor.lounge_condensation_risk` (v4.0+) |
+| Surface temperature | Surface Temp | `sensor.lounge_surface_temperature` | `sensor.lounge_surface_temp` |
+| Dew point | Dew Point | `sensor.lounge_dew_point` | `sensor.lounge_dew_point` |
+| Comfort level | Comfort Level | `sensor.lounge_comfort_level` | `sensor.lounge_comfort_level` |
 
-### Entity IDs
-
-| v2.3.1 entity_id | v3.0 entity_id (fresh) |
-|-------------------|------------------------|
-| — | `switch.tado_ce_hub_ce_quota_reserve` |
-
----
-
-## Zone Sensors — Core (6 entities per zone)
-
-### Friendly Names
-
-| Function | CE? | v2.3.1 Name | v3.0 Name |
-|----------|-----|-------------|-----------|
-| Temperature | | Lounge Temperature | Lounge Temp |
-| Humidity | | Lounge Humidity | Lounge Humidity |
-| Heating power % | | Lounge Heating Power | Lounge Heating |
-| AC power % | | Lounge AC Power | Lounge AC |
-| Target temperature | ✓ | Lounge Target | Lounge Target |
-| Overlay status | ✓ | Lounge Mode | Lounge Overlay |
-
-> **Note:** Boiler Flow Temp (Hub Sensors section) is defined in `sensor_zone.py` but attached to the hub device, not a zone device. Hot water power was a sensor in v2.x; it migrated to a binary sensor in v4.0.0 and now lives under §Zone Binary Sensors.
-
-### Entity IDs
-
-| v2.3.1 entity_id | v3.0 entity_id (fresh) |
-|-------------------|------------------------|
-| `sensor.lounge_temperature` | `sensor.lounge_temp` |
-| `sensor.lounge_humidity` | `sensor.lounge_humidity` |
-| `sensor.lounge_heating` | `sensor.lounge_heating` |
-| `sensor.lounge_ac_power` | `sensor.lounge_ac` |
-| `sensor.lounge_target` | `sensor.lounge_ce_target` |
-| `sensor.lounge_mode` | `sensor.lounge_ce_overlay` |
+**Mold Risk vs Mold Risk %** — these aren't duplicates. The text sensor's state is the risk level (`Critical` / `High` / `Medium` / `Low` / `None`); the numeric sensor's state is surface relative humidity (0–100%) for HA history graphs and threshold automations. Added together in v2.0.1 by request. The slug collision is a separate problem: HA's slugify drops the `%`, so on a fresh install the second entity gets an `_2` auto-suffix. A rename to break the collision is on the v5.0.0 cleanup list (see `ROADMAP.md`).
 
 ---
 
-## Zone Sensors — Smart Comfort (5 entities per zone)
+## Zone Sensors — Thermal Analytics
 
-### Friendly Names
+Six sensors per heating zone, all CE-exclusive, all disabled by default.
 
-| Function | CE? | v2.3.1 Name | v3.0 Name |
-|----------|-----|-------------|-----------|
-| Schedule deviation | ✓ | Lounge Historical Deviation | Lounge Schedule Deviation |
-| Next schedule time | ✓ | Lounge Next Schedule | Lounge Next Schedule |
-| Next schedule temp | ✓ | Lounge Next Schedule Temp | Lounge Next Sched Temp |
-| Preheat advisor | ✓ | Lounge Preheat Advisor | Lounge Preheat Advisor |
-| Comfort target | ✓ | Lounge Smart Comfort Target | Lounge Comfort Target |
-
-### Entity IDs
-
-| v2.3.1 entity_id | v3.0 entity_id (fresh) |
-|-------------------|------------------------|
-| `sensor.lounge_historical_deviation` | `sensor.lounge_ce_schedule_deviation` |
-| `sensor.lounge_next_schedule_time` | `sensor.lounge_ce_next_schedule` |
-| `sensor.lounge_next_schedule_temp` | `sensor.lounge_ce_next_sched_temp` |
-| `sensor.lounge_preheat_advisor` | `sensor.lounge_ce_preheat_advisor` |
-| `sensor.lounge_smart_comfort_target` | `sensor.lounge_ce_comfort_target` |
+| Function | Friendly Name | v2.3.1 entity_id | v3.0+ fresh |
+|---|---|---|---|
+| Thermal inertia | Thermal Inertia | `sensor.lounge_thermal_inertia` | `sensor.lounge_thermal_inertia` |
+| Heating rate | Heating Rate (was "Avg Heating Rate" in v2.3.1) | `sensor.lounge_avg_heating_rate` | `sensor.lounge_heating_rate` |
+| Preheat time | Preheat Time | `sensor.lounge_preheat_time` | `sensor.lounge_preheat_time` |
+| Analysis confidence | Confidence (was "Analysis Confidence" in v2.3.1) | `sensor.lounge_analysis_confidence` | `sensor.lounge_confidence` |
+| Heating acceleration | Heating Acceleration (was "Heat Accel" in v3.5.x) | `sensor.lounge_heating_acceleration` | `sensor.lounge_heat_accel` (v3.5) → `sensor.lounge_heating_acceleration` (v4.0+) |
+| Approach factor | Approach Factor | `sensor.lounge_approach_factor` | `sensor.lounge_approach_factor` |
 
 ---
 
-## Zone Sensors — Environment (6 entities per zone)
+## Zone Sensors — Insights
 
-### Friendly Names
-
-| Function | CE? | v2.3.1 Name | v3.0 Name |
-|----------|-----|-------------|-----------|
-| Mold risk level | ✓ | Lounge Mold Risk | Lounge Mold Risk |
-| Mold risk % | ✓ | Lounge Mold Risk Percentage | Lounge Mold Risk % |
-| Condensation risk | ✓ | Lounge Condensation Risk | Lounge Condensation |
-| Surface temperature | ✓ | Lounge Surface Temperature | Lounge Surface Temp |
-| Dew point | ✓ | Lounge Dew Point | Lounge Dew Point |
-| Comfort level | ✓ | Lounge Comfort Level | Lounge Comfort Level |
-
-### Entity IDs
-
-| v2.3.1 entity_id | v3.0 entity_id (fresh) |
-|-------------------|------------------------|
-| `sensor.lounge_mold_risk` | `sensor.lounge_ce_mold_risk` |
-| `sensor.lounge_mold_risk_percentage` | `sensor.lounge_ce_mold_risk_pct` |
-| `sensor.lounge_condensation_risk` | `sensor.lounge_ce_condensation` |
-| `sensor.lounge_surface_temperature` | `sensor.lounge_ce_surface_temp` |
-| `sensor.lounge_dew_point` | `sensor.lounge_ce_dew_point` |
-| `sensor.lounge_comfort_level` | `sensor.lounge_ce_comfort_level` |
+| Function | CE? | Friendly Name | v2.3.1 entity_id | v3.0+ fresh |
+|---|---|---|---|---|
+| Zone insights | ✓ | Insights | `sensor.lounge_insights` | `sensor.lounge_insights` |
 
 ---
 
-## Zone Sensors — Thermal Analytics (6 entities per heating zone)
+## Zone Binary Sensors
 
-### Friendly Names
+| Function | CE? | Friendly Name | v2.3.1 entity_id | v3.0+ fresh | v4.0+ fresh |
+|---|---|---|---|---|---|
+| Open window detected | | Window | `binary_sensor.lounge_open_window` | `binary_sensor.lounge_window` | `binary_sensor.lounge_window` |
+| Preheat trigger | ✓ | Preheat Now | `binary_sensor.lounge_preheat_now` | `binary_sensor.lounge_preheat_now` | `binary_sensor.lounge_preheat_now` |
+| Window predicted | ✓ | Window Predicted | `binary_sensor.lounge_window_predicted` | `binary_sensor.lounge_window_predicted` | `binary_sensor.lounge_window_predicted` |
+| Hot water power | ✓ | Power | `sensor.lounge_power` (was a sensor) | — | `binary_sensor.lounge_power` |
 
-| Function | CE? | v2.3.1 Name | v3.0 Name |
-|----------|-----|-------------|-----------|
-| Thermal inertia | ✓ | Lounge Thermal Inertia | Lounge Thermal Inertia |
-| Heating rate | ✓ | Lounge Avg Heating Rate | Lounge Heating Rate |
-| Preheat time | ✓ | Lounge Preheat Time | Lounge Preheat Time |
-| Analysis confidence | ✓ | Lounge Analysis Confidence | Lounge Confidence |
-| Heating acceleration | ✓ | Lounge Heating Acceleration | Lounge Heat Accel |
-| Approach factor | ✓ | Lounge Approach Factor | Lounge Approach Factor |
-
-### Entity IDs
-
-| v2.3.1 entity_id | v3.0 entity_id (fresh) |
-|-------------------|------------------------|
-| `sensor.lounge_thermal_inertia` | `sensor.lounge_ce_thermal_inertia` |
-| `sensor.lounge_avg_heating_rate` | `sensor.lounge_ce_heating_rate` |
-| `sensor.lounge_preheat_time` | `sensor.lounge_ce_preheat_time` |
-| `sensor.lounge_analysis_confidence` | `sensor.lounge_ce_confidence` |
-| `sensor.lounge_heating_acceleration` | `sensor.lounge_ce_heat_accel` |
-| `sensor.lounge_approach_factor` | `sensor.lounge_ce_approach_factor` |
+Hot water power migrated from `sensor` to `binary_sensor` in v4.0.0 with the `POWER` device class. Migration is automatic on first startup.
 
 ---
 
-## Zone Sensors — Insights (1 entity per zone)
+## Device Sensors
 
-### Friendly Names
+One battery sensor and one connection sensor per Tado device (TRV / room sensor / wired thermostat).
 
-| Function | CE? | v2.3.1 Name | v3.0 Name |
-|----------|-----|-------------|-----------|
-| Zone insights | ✓ | Lounge Insights | Lounge Insights |
+| Function | CE? | Friendly Name | v2.3.1 entity_id | v3.0+ fresh |
+|---|---|---|---|---|
+| Battery status | | Battery (was "{device} Battery" in v2.3.1) | `sensor.lounge_su1234_battery` | `sensor.lounge_battery` |
+| Connection status | | Connection (was "{device} Connection" in v2.3.1) | `sensor.lounge_su1234_connection` (was a sensor) | `binary_sensor.lounge_connection` |
 
-### Entity IDs
+Connection migrated from `sensor` to `binary_sensor` with the `CONNECTIVITY` device class. Battery stays a `sensor` because Tado reports `NORMAL` / `LOW` / `CRITICAL` rather than a boolean.
 
-| v2.3.1 entity_id | v3.0 entity_id (fresh) |
-|-------------------|------------------------|
-| `sensor.lounge_insights` | `sensor.lounge_ce_insights` |
-
----
-
-## Zone Binary Sensors (3 entities per zone + 1 per HOT_WATER zone)
-
-### Friendly Names
-
-| Function | CE? | v2.3.1 Name | v3.0 Name |
-|----------|-----|-------------|-----------|
-| Open window detected | | Lounge Window | Lounge Window |
-| Preheat trigger | ✓ | Lounge Preheat Now | Lounge Preheat Now |
-| Window predicted | ✓ | Lounge Window Predicted | Lounge Window Predicted |
-| Hot water power (on/off) | ✓ | — | Lounge Power |
-
-### Entity IDs
-
-| v2.3.1 entity_id | v3.0 entity_id (fresh) |
-|-------------------|------------------------|
-| `binary_sensor.lounge_open_window` | `binary_sensor.lounge_window` |
-| `binary_sensor.lounge_preheat_now` | `binary_sensor.lounge_ce_preheat_now` |
-| `binary_sensor.lounge_window_predicted` | `binary_sensor.lounge_ce_window_predicted` |
-| `sensor.lounge_power` (migrated) | `binary_sensor.lounge_power` |
+For zones with multiple devices (e.g. a wired thermostat plus two TRVs), the friendly name picks up a device-type suffix to disambiguate (`Battery (TRV)`, `Battery (Wired)`).
 
 ---
 
-## Device Sensors (1 sensor + 1 binary sensor per device)
+## Climate / Water Heater
 
-### Friendly Names
+One climate or water heater entity per zone.
 
-| Function | CE? | v2.3.1 Name | v3.0 Name |
-|----------|-----|-------------|-----------|
-| Battery status | | Lounge SU1234 Battery | Lounge Battery |
-| Connection status (connected/disconnected) | | Lounge SU1234 Connection | Lounge Connection |
+| Function | Friendly Name | v2.3.1 entity_id | v3.0+ fresh |
+|---|---|---|---|
+| Heating climate | Lounge | `climate.lounge` | `climate.lounge` |
+| AC climate | Lounge | `climate.lounge` | `climate.lounge` |
+| Water heater | Lounge | `water_heater.lounge` | `water_heater.lounge` |
 
-> Connection is now a `binary_sensor` with `CONNECTIVITY` device class.
-> Battery remains a `sensor` (Tado reports NORMAL/LOW/CRITICAL — not boolean).
+These slugs have been stable since v1.0.0.
 
-### Entity IDs
+### Smart Valve Control attributes (heating zones only)
 
-| v2.3.1 entity_id | v3.0 entity_id (fresh) |
-|-------------------|------------------------|
-| `sensor.lounge_su1234_battery` | `sensor.lounge_battery` |
-| `sensor.lounge_su1234_connection` (migrated) | `binary_sensor.lounge_connection` |
-
----
-
-## Climate / Water Heater (3 entities per zone)
-
-### Friendly Names
-
-| Function | CE? | v2.3.1 Name | v3.0 Name |
-|----------|-----|-------------|-----------|
-| Heating climate | | Lounge | Lounge |
-| AC climate | | Lounge | Lounge |
-| Water heater | | Lounge | Lounge |
-
-### Entity IDs
-
-| v2.3.1 entity_id | v3.0 entity_id (fresh) |
-|-------------------|------------------------|
-| `climate.lounge` | `climate.lounge` |
-| `climate.lounge` | `climate.lounge` |
-| `water_heater.lounge` | `water_heater.lounge` |
-
-### Smart Valve Control Attributes (heating zones only)
-
-Smart Valve Control and Offset Sync (both v4.0.0+) don't create dedicated entities — they expose state via attributes on each heating zone's climate entity. Dashboards (e.g. Pulse Card) can read these attributes directly.
+Smart Valve Control and Offset Sync (both v4.0.0+) don't create dedicated entities. They expose state via attributes on each heating zone's climate entity. Dashboards (e.g. Pulse Card) read these directly.
 
 | Attribute | Present when | Value |
-|-----------|--------------|-------|
+|---|---|---|
 | `valve_control_enabled` | Valve Target mode is configured | `true` |
-| `valve_control_active` | SVC configured | `true` when controller is actively compensating; `false` when paused after a manual write or deactivated |
+| `valve_control_active` | SVC configured | `true` while compensating, `false` when paused after a manual write or deactivated |
 | `valve_control_backed_off` | Valve Target mode + BACKED_OFF state | `true` while the controller has yielded to a manual override (cleared on the next schedule block change) |
 | `valve_control_mode` | Offset Sync configured | `"offset_sync"` |
 | `valve_target` | Valve Target mode + currently writing | Current TRV target temperature (°C, rounded to 0.1) |
-| `desired_target` | Valve Target mode + ACTIVE state | User's intended target temperature captured at IDLE→ACTIVE transition (°C) |
-| `offset_celsius` | Device offset feature enabled | Current device offset in °C (populated after Offset Sync confirms a write, or when `set_temperature_offset` service is used) |
-| `offset_clamped` (v4.0.0+) | `offset_celsius` present and Offset Sync has written at least once | `true` if the last write had to be clamped at Tado's ±10°C limit, `false` otherwise |
-| `offset_clamp_direction` (v4.0.0+) | Same as `offset_clamped` | `"none"` / `"hit_max"` / `"hit_min"` — which bound was hit |
+| `desired_target` | Valve Target mode + ACTIVE state | User's intended target captured at the IDLE → ACTIVE transition (°C) |
+| `offset_celsius` | Device offset feature enabled | Current device offset in °C, populated after Offset Sync confirms a write |
+| `offset_clamped` | `offset_celsius` present and at least one Offset Sync write has run | `true` if the last write hit Tado's ±10°C clamp |
+| `offset_clamp_direction` | Same as `offset_clamped` | `"none"` / `"hit_max"` / `"hit_min"` |
 
 Configure SVC per zone under **Settings → Tado CE → Configure → Zone Configuration → External Sensors → Smart Valve Control Mode**.
 
-> **Reading the clamp attributes:** when `offset_clamped: true` appears, the physical temperature gap between your external sensor and the TRV exceeded Tado's ±10°C device-offset limit. The `offset_celsius` value you see is the clamp boundary, not the full correction required. Check for draughts around the TRV, a cold external wall behind it, or an external sensor placed in a warmer pocket than the TRV itself.
+When `offset_clamped: true` appears, the physical gap between your external sensor and the TRV exceeded Tado's ±10°C device-offset limit. The `offset_celsius` value you see is the clamp boundary, not the full correction required. Check for draughts around the TRV, a cold external wall behind it, or an external sensor placed in a warmer pocket than the TRV itself.
 
 ---
 
-## Zone Switches (2 entities per zone)
+## Zone Switches
 
-### Friendly Names
+| Function | CE? | Friendly Name | v2.3.1 entity_id | v3.0+ fresh |
+|---|---|---|---|---|
+| Early start | ⬆ | Early Start | `switch.lounge_early_start` | `switch.lounge_early_start` |
+| Child lock | | Child Lock (was "{device} Child Lock" in v2.3.1) | `switch.lounge_su1234_child_lock` | `switch.lounge_child_lock` |
 
-| Function | CE? | v2.3.1 Name | v3.0 Name |
-|----------|-----|-------------|-----------|
-| Early start | ⬆ | Lounge Early Start | Lounge Early Start |
-| Child lock | | Lounge SU1234 Child Lock | Lounge Child Lock |
-
-> ⬆ HA official exposes early start as a read-only binary sensor.
-> CE provides a controllable switch to toggle the Tado early start feature on/off.
-
-### Entity IDs
-
-| v2.3.1 entity_id | v3.0 entity_id (fresh) |
-|-------------------|------------------------|
-| `switch.lounge_early_start` | `switch.lounge_early_start` |
-| `switch.lounge_su1234_child_lock` | `switch.lounge_child_lock` |
+HA's official Tado integration exposes early start as a read-only binary sensor; CE provides a controllable switch.
 
 ---
 
-## Zone Buttons (4 entities per zone)
+## Zone Buttons
 
-### Friendly Names
+| Function | CE? | Friendly Name | v2.3.1 entity_id | v3.0+ fresh |
+|---|---|---|---|---|
+| Timer buttons | ✓ | `{duration}min Timer` (e.g. "30min Timer") | `button.lounge_timer_30min` | `button.lounge_30min_timer` |
+| Refresh schedule | ✓ | Refresh Schedule | `button.lounge_refresh_schedule` | `button.lounge_refresh_schedule` |
+| Boost | ⬆ | Boost | `button.lounge_boost` | `button.lounge_boost` |
+| Smart boost | ✓ | Smart Boost | `button.lounge_smart_boost` | `button.lounge_smart_boost` |
 
-| Function | CE? | v2.3.1 Name | v3.0 Name |
-|----------|-----|-------------|-----------|
-| Timer buttons | ✓ | Lounge {dur}min Timer | Lounge {dur}min Timer |
-| Refresh schedule | ✓ | Lounge Refresh Schedule | Lounge Refresh Schedule |
-| Boost | ⬆ | Lounge Boost | Lounge Boost |
-| Smart boost | ✓ | Lounge Smart Boost | Lounge Smart Boost |
-
-> ⬆ Boost replicates the Tado app's boost feature (25°C for 30min).
-> HA official Tado integration does not expose this. Smart Boost (#79) is CE exclusive
-> — it uses thermal analytics to calculate optimal duration.
-
-### Entity IDs
-
-| v2.3.1 entity_id | v3.0 entity_id (fresh) |
-|-------------------|------------------------|
-| `button.lounge_timer_30min` | `button.lounge_ce_30min_timer` |
-| `button.lounge_refresh_schedule` | `button.lounge_ce_refresh_schedule` |
-| `button.lounge_boost` | `button.lounge_boost` |
-| `button.lounge_smart_boost` | `button.lounge_ce_smart_boost` |
+Boost replicates the Tado app's boost feature (25°C for 30min). HA's official integration doesn't expose this. Smart Boost is CE-exclusive, using thermal analytics to calculate optimal duration.
 
 ---
 
-## Calendar (1 entity per zone)
+## Calendar
 
-### Friendly Names
+| Function | CE? | Friendly Name | v2.3.1 entity_id | v3.0+ fresh |
+|---|---|---|---|---|
+| Zone schedule | ✓ | Schedule | `calendar.lounge` | `calendar.heating_schedule_schedule` |
 
-| Function | CE? | v2.3.1 Name | v3.0 Name |
-|----------|-----|-------------|-----------|
-| Zone schedule | ✓ | Lounge | Lounge Schedule |
-
-### Entity IDs
-
-| v2.3.1 entity_id | v3.0 entity_id (fresh) |
-|-------------------|------------------------|
-| `calendar.lounge` | `calendar.heating_schedule_ce_schedule` |
+The doubled-segment slug (`heating_schedule_schedule`) comes from the calendar device being named "Heating Schedule" plus a translation key of `schedule`. Cleanup is on the v5.0.0 list (see `ROADMAP.md`).
 
 ---
 
-## Zone Config (removed in v3.1.0)
+## Zone Config
 
-> **v3.1.0:** All 11 per-zone configuration entities (heat emitter, UFH buffer, adaptive preheat, smart comfort, window type, overlay mode, overlay timer, min/max temp, temp offset, surface offset) have been replaced by the centralised Options Flow menu. Legacy entities are automatically cleaned up on upgrade. New settings (window predicted sensitivity, external temp/humidity sensor) are also managed via Options Flow — no entities created.
-
----
-
-## Device Tracker (1 entity per mobile device, CE exclusive)
-
-### Friendly Names
-
-| Function | CE? | v2.3.1 Name | v3.0 Name |
-|----------|-----|-------------|-----------|
-| Mobile presence | ✓ | Tado CE {device_name} | {device_name} |
-
-### Entity IDs
-
-| v2.3.1 entity_id | v3.0 entity_id (fresh) |
-|-------------------|------------------------|
-| `device_tracker.tado_ce_{device_name}` | `device_tracker.tado_ce_hub_ce_{device_name}` |
+Per-zone configuration entities (heat emitter, UFH buffer, adaptive preheat, smart comfort, window type, overlay mode, overlay timer, min/max temp, temp offset, surface offset) **were removed in v3.1.0**. Settings now live in the Options Flow under **Settings → Tado CE → Configure → Zone Configuration**. Legacy entities are cleaned up automatically on upgrade.
 
 ---
 
-## Weather Compensation Sensors (2 entities, CE exclusive)
+## Device Tracker
 
-> **v3.3.0:** Requires Bridge API configured and Weather Compensation enabled in **Settings → Tado CE → Configure → Global Settings → Flow Temperature Control**.
+One device tracker per mobile device, CE-exclusive.
 
-### Friendly Names
+| Function | Friendly Name | v2.3.1 entity_id | v3.0+ fresh |
+|---|---|---|---|
+| Mobile presence | `{device_name}` (was "Tado CE {device_name}") | `device_tracker.tado_ce_{device_name}` | `device_tracker.tado_ce_hub_{device_name}` |
 
-| Function | CE? | v3.3.0 Name |
-|----------|-----|-------------|
-| Target flow temperature | ✓ | WC Target Flow Temp |
-| Compensation status | ✓ | WC Status |
+The `Tado CE ` prefix was dropped from friendly names in v3.0.1; existing trackers kept the original `entity_id`.
 
-### Entity IDs
+---
 
-| v3.3.0 entity_id (fresh) |
-|--------------------------|
-| `sensor.tado_ce_hub_ce_wc_target_flow_temp` |
-| `sensor.tado_ce_hub_ce_wc_status` |
+## Weather Compensation
+
+| Function | CE? | Friendly Name | v3.3.0+ fresh |
+|---|---|---|---|
+| Target flow temperature | ✓ | Weather Compensation Target | `sensor.tado_ce_hub_wc_target_flow_temp` |
+| Compensation status | ✓ | Weather Compensation Status | `sensor.tado_ce_hub_wc_status` |
+
+Requires Bridge API configured and Weather Compensation enabled in **Settings → Tado CE → Configure → Global Settings → Flow Temperature Control**.
 
 ---
 
 ## Summary
 
-| Category | Count | CE ✓ | Enhanced ⬆ | Standard |
-|----------|-------|------|-----------|----------|
-| Hub Sensors | 19 | 16 | 0 | 3 |
-| Bridge API — Dynamic Discovery | up to 15 | 15 | 0 | 0 |
-| Hub Controls | 5 | 5 | 0 | 0 |
-| Hub Binary Sensors | 1 always + 2 optional | 3 | 0 | 0 |
-| Hub Config Switches | 2 | 2 | 0 | 0 |
-| Zone Sensors — Core | 6 /zone | 2 | 0 | 4 |
-| Zone Sensors — Smart Comfort | 5 /zone | 5 | 0 | 0 |
-| Zone Sensors — Environment | 6 /zone | 6 | 0 | 0 |
-| Zone Sensors — Thermal Analytics | 6 /zone | 6 | 0 | 0 |
-| Zone Sensors — Insights | 1 /zone | 1 | 0 | 0 |
-| Zone Binary Sensors | 3 /zone (+1 per HOT_WATER) | 2 | 0 | 1 |
-| Device Sensors | 1 sensor + 1 binary /device | 0 | 0 | 2 |
-| Climate / Water Heater | 3 /zone | 0 | 0 | 3 |
-| Zone Switches | 2 /zone | 0 | 1 | 1 |
-| Zone Buttons | 4 /zone | 2 | 1 | 0 |
-| Calendar | 1 /zone | 1 | 0 | 0 |
-| Zone Config | ~~11 /zone~~ 0 (Options Flow) | — | — | — |
-| Device Tracker | 1 /device | 1 | 0 | 0 |
-| Weather Compensation | 2 | 2 | 0 | 0 |
-| **Total unique types** | **~90** | **~70** | **4** | **~12** |
+| Category | Per-zone | Hub-attached | CE-exclusive | Standard |
+|---|---|---|---|---|
+| Hub Sensors | — | 19 | 16 | 3 |
+| Hub Binary Sensors | — | 3 | 3 | 0 |
+| Hub Controls | — | 5 | 5 | 0 |
+| Hub Config Switches | — | 1 | 1 | 0 |
+| Bridge API (dynamic) | — | up to 14 | 14 | 0 |
+| Zone Sensors — Core | 6 | — | 2 | 4 |
+| Zone Sensors — Smart Comfort | 5 | — | 5 | 0 |
+| Zone Sensors — Environment | 6 | — | 6 | 0 |
+| Zone Sensors — Thermal Analytics | 6 | — | 6 | 0 |
+| Zone Sensors — Insights | 1 | — | 1 | 0 |
+| Zone Binary Sensors | 3 (+1 per HOT_WATER zone) | — | 2 | 1 |
+| Device Sensors | 1 sensor + 1 binary per device | — | 0 | 2 |
+| Climate / Water Heater | 1 climate or 1 water_heater | — | 0 | 1 |
+| Zone Switches | 2 | — | 0 | 2 |
+| Zone Buttons | 4 | — | 3 | 1 |
+| Calendar | 1 | — | 1 | 0 |
+| Device Tracker | — | 1 per mobile device | 1 | 0 |
+| Weather Compensation | — | 2 | 2 | 0 |

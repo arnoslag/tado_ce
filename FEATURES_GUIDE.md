@@ -2,7 +2,9 @@
 
 Complete guide to all Tado CE exclusive features, configurations, and usage scenarios.
 
-> **Entity ID note:** All entity IDs and automation examples on this page use **v2.3.1 entity_ids** for readability (preserved for migrated users). Fresh v3.0+ installs use a `_ce_` prefix pattern (e.g. `sensor.lounge_ce_thermal_inertia` instead of `sensor.lounge_thermal_inertia`). [ENTITIES.md](ENTITIES.md) is the canonical reference — check there for actual entity IDs on a fresh install before copying examples into your dashboard or automations.
+> **Entity ID note:** Examples on this page use **v2.3.1-style entity_ids** (e.g. `sensor.tado_ce_api_usage`, `sensor.lounge_thermal_inertia`) because HA preserves entity_ids across upgrades, so these slugs stay stable for anyone who installed Tado CE before v3.0.0. If you installed fresh on v3.0.0 or later, **hub-level** entities pick up a device-prefixed shape (`sensor.tado_ce_hub_api_usage`); **zone-level** entities use the same `sensor.<zone>_<feature>` shape across both classes. [ENTITIES.md](ENTITIES.md) lists every entity with the v2.3.1, v3.0+ fresh, and v4.0.1+ fresh entity_id side by side — check there before copying examples into your dashboard or automations.
+>
+> **v5.0.0 upgrade path note (forward-looking):** v5.0.0 will drop the in-place migration code that upgrades v3.x option keys, entity IDs, and storage layouts. v3.x installs should upgrade to v4.x first (any release; settings carry over automatically), then to v5.0.0 once it ships. v3.x to v5.0.0 in a single jump won't be supported. See [ROADMAP.md](ROADMAP.md#v500--legacy-cleanup) for the full removals list. No timeline yet.
 
 ## 📑 Table of Contents
 
@@ -157,7 +159,7 @@ Automatically adjusts API polling frequency based on time of day, remaining quot
 Smart Polling includes multiple strategies:
 
 - **Day/Night Polling** — more frequent during day, less at night
-- **Adaptive Polling** — auto-adjusts based on remaining quota (minimum 5 min, max 120 min)
+- **Adaptive Polling** — auto-adjusts based on remaining quota and your tier (1 min floor on the 20,000-call legacy tier, widening on the 1,000 and 100-call tiers as the budget gets tighter; 120 min ceiling)
 - **Quota Reserve Protection** — pauses polling when quota critically low (≤5%), auto-resumes after reset
 - **Bootstrap Reserve** — hard limit of 3 API calls never used, reserved for auto-recovery after reset
 - **Custom Intervals** — override with fixed intervals (1–1440 min)
@@ -186,8 +188,10 @@ Smart Polling includes multiple strategies:
 **Adaptive Polling Formula:**
 ```
 Interval = (Time Until Reset / Remaining Calls) / 0.90
-Clamped to: 5 min (floor) – 120 min (ceiling)
+Clamped to: 1 min (floor) – 120 min (ceiling)
 ```
+
+The 1 min floor is a physics limit (Tado's cloud doesn't update faster than that, so polling sub-minute would just re-read the same value). On the 100-call tier the formula naturally widens well above the floor, so the floor only bites for users on the 1,000-call transitional or 20,000-call legacy quotas.
 
 **Day/Night Aware (v2.0.1):**
 - Night period: Fixed 120 min interval to conserve quota
@@ -198,11 +202,29 @@ Clamped to: 5 min (floor) – 120 min (ceiling)
 - Pauses polling when remaining ≤5% or ≤5 calls
 - Reserves quota for manual operations (set temperature, change mode)
 - Auto-resumes when API reset time passes
+- Toggle: `switch.tado_ce_{home_id}_quota_reserve_enabled` (default on). When disabled, polling continues until quota truly runs low; the separate Bootstrap Reserve below still protects the last 3 calls so manual actions remain possible. Only disable Quota Reserve if you've sized your custom intervals against your tier's daily limit and don't want preemptive pausing.
 
 **Bootstrap Reserve (v2.0.1):**
 - Hard limit of 3 API calls never used, even for manual actions
 - When triggered: persistent notification "API limit reached. Use the Tado app for emergency changes."
 - Auto-dismisses when API reset detected
+
+**Offset Sync drift refresh (v4.0.0):**
+
+When Smart Valve Control is on, the integration runs a periodic drift refresh that pulls the stored device offset for every climate zone, so the local cache stays close to the value Tado's adaptive calibration writes back behind your back. The cadence is the larger of 30 minutes or your configured Cloud Sync Interval (the HomeKit-aware floor — see HomeKit Local Control), so on the default Cloud Sync it fires every 30 minutes, and if you've widened Cloud Sync to 60 minutes it fires every 60 minutes. Each refresh costs **N cloud calls per cycle**, where N is the number of zones with a TRV or AC controller.
+
+Example daily totals at the default 30 minute cadence:
+
+- 4 zones × 48 cycles = 192 calls/day
+- 8 zones × 48 cycles = 384 calls/day
+
+Widening Cloud Sync to 60 minutes halves the cycle count and the daily total. The drift refresh is paused automatically when remaining quota drops below 100 calls, so even on the 100-call free tier you don't lose your full manual-action budget to it. On the 1,000-call transitional tier with many zones, widen Cloud Sync to 60 or 120 minutes to keep drift cost a fraction of the day's quota. The 20,000-call legacy tier absorbs the cost without trimming.
+
+The refresh log line in `homeassistant.log` shows the per-cycle call count so you can audit it directly:
+
+```
+Offset Sync: drift refresh complete — local cache reconciled with Tado, 8 cloud call(s) used this cycle
+```
 
 ### Usage Scenarios
 
@@ -218,7 +240,7 @@ Expected: Day 32 syncs × 2 = 64, Night 4 × 2 = 8, Full sync 4 × 2 = 8 → ~80
 
 #### Scenario 2: High Quota (1000+) Adaptive
 
-Leave custom intervals empty. Adaptive polling uses 5-minute minimum. Enable all optional sensors. Adaptive will override if quota drops critically low.
+Leave custom intervals empty. Adaptive polling reads your tier from Tado's response headers and picks an interval that fits the budget, narrowing to 1 minute on the 20,000-call legacy tier where the budget allows it. Enable all optional sensors. Adaptive will widen the interval automatically if quota drops critically low.
 
 #### Scenario 3: Disable Optional Sensors to Save Calls
 
@@ -275,9 +297,9 @@ Skips API calls when the requested state already matches the current state. If y
 | Setting | Value |
 |---------|-------|
 | Behavior | Always active |
-| Covers | Temperature, HVAC mode, fan mode, swing mode, preset mode |
+| Covers | Temperature, HVAC mode, fan mode, vertical swing, horizontal swing, preset mode |
 
-**Checked states:** temperature, HVAC mode, fan mode, swing mode, and preset mode. Each is compared against the coordinator's cached state — no extra API call needed for the check.
+**Checked states:** temperature, HVAC mode, fan mode, vertical swing, horizontal swing, and preset mode. Each is compared against the coordinator's cached state — no extra API call needed for the check.
 
 #### 3. Device Sync Queue
 
@@ -923,6 +945,146 @@ automation:
 
 > **Community Blueprint:** [@jeverley](https://github.com/jeverley) built a comprehensive [Window Mode Blueprint](https://raw.githubusercontent.com/jeverley/home-assistant-blueprints/refs/heads/main/blueprints/automation/tado_ce_window_mode_sensors.yaml) that handles multiple window/door sensors per zone with separate delays for nearby openings. [Import it directly](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fraw.githubusercontent.com%2Fjeverley%2Fhome-assistant-blueprints%2Frefs%2Fheads%2Fmain%2Fblueprints%2Fautomation%2Ftado_ce_window_mode_sensors.yaml) or use the examples above as a starting point for your own automation.
 
+#### 9. Submit Energy Meter Reading
+
+Submit a gas or electricity meter reading to Tado's Energy IQ feature. Tado uses these readings to calculate consumption and report savings in the Tado app and via the cloud API.
+
+```yaml
+# Submit today's reading
+service: tado_ce.add_meter_reading
+data:
+  reading: 12345
+
+# Backdate a reading (ISO date)
+service: tado_ce.add_meter_reading
+data:
+  reading: 12345
+  date: "2026-01-17"
+```
+
+The `reading` is the meter value in your provider's billing units (m³ for gas, kWh for electricity); Tado stores it as a plain integer and applies the unit configured in the Tado app. Omitting `date` records the reading against today. The service writes once and does not retry — if the cloud rejects the submission (typically a duplicate for the same date), check the log for `add_meter_reading failed` and resubmit with a corrected date.
+
+**Automation example — monthly reading from a smart meter:**
+
+```yaml
+automation:
+  - alias: "Tado — Submit Monthly Gas Reading"
+    trigger:
+      - platform: time
+        at: "08:00:00"
+    condition:
+      - condition: template
+        value_template: "{{ now().day == 1 }}"
+    action:
+      - service: tado_ce.add_meter_reading
+        data:
+          reading: "{{ states('sensor.gas_meter_total_m3') | int }}"
+```
+
+#### 10. Identify Device (Flash LED)
+
+Flash the LED on a TRV, thermostat, or sensor so you can identify which physical device a serial number belongs to. Useful when a zone has multiple TRVs and you need to find the one that's offline or low on battery.
+
+```yaml
+service: tado_ce.identify_device
+data:
+  device_serial: VA1234567890
+```
+
+The serial is the short serial visible on the back of the device (and in `binary_sensor.{zone}_connection`'s `device_serial` attribute). The flash takes a few seconds to start since the request goes through the Tado cloud rather than the local bridge. If nothing happens after about 30 seconds, the device is offline or the serial is wrong — check the log for `identify_device failed`.
+
+#### 11. Hub-level buttons
+
+Three buttons live on the Tado CE Hub device (Settings → Devices & Services → Tado CE → the Hub entry). These are integration-level actions that affect the whole home, not a single zone.
+
+| Button | What it does | When to press |
+|--------|--------------|---------------|
+| **Resume All Schedules** (`button.tado_ce_{home_id}_resume_all`) | Clears the manual overlay on every zone in one press, returning all rooms to their Tado schedule. Equivalent to calling `tado_ce.resume_schedule` per zone. | After a holiday-mode or wide automation override, when you want everything back on schedule at once. |
+| **Refresh AC Capabilities** (`button.tado_ce_{home_id}_refresh_ac`) | Drops the cached AC capabilities file and re-fetches from Tado's cloud. The cache is install-lifetime by default — a Tado-side capability change (firmware bump adding new fan / swing options, controller re-pair issuing a new zone ID) won't surface until you press this. Costs one cloud call per AC zone (typically 1–3 calls). Only appears when the home has at least one AC zone. | After re-pairing a controller, after replacing an AC unit, after a Tado firmware update on AC controllers, or whenever AC capabilities look wrong in HA (e.g. HVAC modes showing `[OFF]` only). |
+| **Refresh Schedule** (`button.tado_ce_{home_id}_zone_{zone_id}_refresh_schedule`, per heating zone) | Re-fetches a single zone's schedule from Tado and writes it through the cache. Only appears when Schedule Calendar is enabled (Settings → Tado CE → Configure → Schedule Calendar). Costs one cloud call per zone. | After editing a schedule in the Tado app and wanting it visible in HA's calendar entity immediately, rather than waiting for the next sync. |
+
+These buttons are visible in the device page's Controls section. Their entity_ids stay stable across reloads, so they can be wired into automations or dashboards if you want quick-access tiles.
+
+#### 12. Child Lock and Early Start switches
+
+Two TRV behaviour switches that surface settings from the Tado app directly in HA.
+
+**Child Lock** — per-device switch. Each TRV in a zone has its own `switch.tado_ce_{home_id}_device_{serial}_child_lock`. Locks the physical buttons on the device so accidental presses (typically by children) don't override the schedule. You can lock some TRVs in a zone and leave others unlocked — useful when one TRV is in a child's room but another is on a hallway.
+
+**Early Start** — per-zone switch. `switch.tado_ce_{home_id}_zone_{zone_id}_early_start`. When enabled, Tado's controller starts heating the zone before the next schedule block's start time so the room reaches target temperature *at* the block boundary rather than starting from cold at that moment. Tado's controller manages the actual lead time based on the zone's heating profile. One switch per zone applies to every TRV in the zone (Early Start is a Tado server-side scheduler feature, not a per-device thing).
+
+Both surface as standard HA switches. Each toggle is an immediate cloud write — the Tado app reflects the change straight away. The integration confirms the new state on the next poll, so the HA entity may briefly show the previous value if the next poll is more than a few seconds out.
+
+#### 13. Event listeners for automation builders
+
+Tado CE fires several HA events that automations can subscribe to. Most fire on edge-triggered transitions (state change), so a naive listener that writes back to Tado on every event can trap on transient signals during quota-reset windows or partial poll responses.
+
+| Event | Fires when | Defensive listener pattern |
+|-------|-----------|---------------------------|
+| `tado_ce_ready` | First API sync complete after setup / reload | Safe — once-per-session edge. No defence needed |
+| `tado_ce_window_predicted` | Window-open prediction crosses the detection threshold | Smoothed by 3-reading window on Low sensitivity. Listener can act immediately |
+| `tado_ce_window_predicted_cleared` | Detection clears | Same smoothing. Safe to act immediately |
+| `tado_ce_state_restoration_available` | A captured pre-overlay state becomes restorable (overlay timer expired or cleared) | **Edge-triggered.** v4.0.1 onwards: the integration requires 2 consecutive polls reporting overlay=null before firing. A defensive listener pattern (delay + re-check) is still recommended for any automation that writes back to Tado |
+| `tado_ce_schedule_updated` | A zone's schedule re-fetched from Tado | Safe — user-initiated path. No defence needed |
+
+**Defensive listener pattern (recommended for `tado_ce_state_restoration_available` and any future edge-triggered event that writes back to Tado):**
+
+The event payload carries `zone_id`, `zone_name`, `entity_type`, `captured_temperature`, `captured_hvac_mode`, and `source`. Use `zone_name` to derive the climate entity ID, and check `overlay_type` on that entity — if it's still set to a value like `MANUAL`, the overlay is in place and no restore is needed.
+
+```yaml
+automation:
+  - alias: "Restore previous state — defensive"
+    trigger:
+      - platform: event
+        event_type: tado_ce_state_restoration_available
+    action:
+      # Wait 30s before re-checking — gives the overlay-cleared signal
+      # time to either hold steady or revert if it was transient
+      - delay:
+          seconds: 30
+      # Confirm the overlay is genuinely gone (overlay_type is None or
+      # empty) before issuing the restore write. If overlay_type is
+      # still set, the original overlay is in place and we skip.
+      - condition: template
+        value_template: >
+          {% set zone = trigger.event.data.zone_name | slugify %}
+          {{ state_attr('climate.' ~ zone, 'overlay_type') in [None, ''] }}
+      - service: tado_ce.restore_previous_state
+        data:
+          entity_id: "climate.{{ trigger.event.data.zone_name | slugify }}"
+```
+
+The 30s delay catches the case where Tado's API briefly returns `overlay=null` during a quota-reset window or partial poll response (the actual overlay still being in place server-side). The `overlay_type` re-check filters out the transient before any write reaches Tado. Without both guards, a naive listener risks firing on the transient and reverting the user's actual zone state.
+
+#### 14. Turn Off All Rooms (v4.0.1+)
+
+Mirrors the Tado app's "Turn OFF all rooms" button. Calls `tado_ce.turn_off_all_zones` with no parameters; every climate zone in the home (heating + AC) goes into a manual OFF overlay in one call. Hot water is out of scope — Tado's own button targets climate zones only, and Hot Water has its own UI surface in both apps.
+
+Schedules stay suppressed until you manually resume each zone. To restart all zones at once, use the **Resume All Schedules** hub button; for a single zone, call `tado_ce.resume_schedule`.
+
+```yaml
+service: tado_ce.turn_off_all_zones
+```
+
+Designed for "outside temperature above X — turn off everything" automations where the next schedule block would otherwise override the off state. Example:
+
+```yaml
+automation:
+  - alias: "Turn off heating when warm outside"
+    trigger:
+      - platform: numeric_state
+        entity_id: sensor.tado_ce_{home_id}_outside_temperature
+        above: 15
+        for:
+          minutes: 30
+    action:
+      - service: tado_ce.turn_off_all_zones
+```
+
+**Quota cost**: one cloud call per climate zone (heating + AC). For a 4-zone heating-only home, that's 4 calls; for an 8-zone mixed home, 8 calls. Bootstrap reserve still protects the last 3 calls — if quota is critically low when you call this service, the entire batch aborts before any zone is touched, and you get a `Quota critically low` error toast.
+
+**Multi-home installs**: call once per home explicitly. Without an `entity_id` to anchor the call to a specific config entry, the service raises a `multiple_entries` error so you can pick which home you mean.
+
 ---
 
 ## 🌉 Bridge API Integration
@@ -1067,10 +1229,12 @@ Pair your Tado bridge via HomeKit to control heating and AC directly on your loc
 | Limitation | Detail |
 |------------|--------|
 | HomeKit humidity (fallback only) | Humidity defaults to cloud data (0.1% precision, updates every poll cycle). HomeKit humidity is only used when cloud is unavailable — it provides 1% resolution with infrequent updates due to bridge firmware behaviour. Temperature uses HomeKit first (accurate, real-time). |
-| Cloud-only data | Heating power, battery status, schedules, hot water, and geofencing are only available from Tado's cloud. HomeKit provides temperature and HVAC mode locally. |
+| Cloud-only data | Heating power, battery status, schedules, hot water, and geofencing are only available from Tado's cloud. HomeKit provides temperature and HVAC mode locally on heating zones. |
+| Smart AC Control V3+ | Smart AC Control units are standalone WiFi accessories with their own HomeKit pairing code, separate from the Internet Bridge. Tado CE only handles the bridge's HomeKit pairing today, so Smart AC Control units fall through to the cloud path for every operation regardless of whether the bridge is paired locally. Adding standalone-unit pairing would need parallel multi-pairing management and HAP HeaterCooler service handling on top of the existing Thermostat path; not on the roadmap until that's been scoped against real hardware. Thanks to @MacrosorcH (Discussion #271) for the correction. |
 | Wireless Temp Sensors | Standalone temperature sensors (ST01) don't appear as HomeKit accessories — their data always comes from the cloud. |
 | Single pairing | The bridge can only be paired with one HomeKit controller at a time. |
 | External sensors don't control TRV valve | Per-zone external sensors change the displayed room temperature, but the TRV still uses its own sensor to control the valve. Enable **Smart Valve Control** (Offset Sync or Valve Target) in zone settings to automatically compensate — see [Smart Valve Control](#-smart-valve-control). |
+| No TRV LED feedback on local writes | When a temperature change goes through HomeKit, the TRV updates silently. There's no LED flash showing the new target the way there is when you change it in the Tado app, because the HomeKit Accessory Protocol doesn't carry a feedback channel for this. Cloud writes from the Tado app trigger the LED through Tado's own bridge protocol. If you want the LED confirmation, call `tado_ce.identify_device` after the write. See the workaround note below. |
 
 ### General Limitations
 
@@ -1159,8 +1323,21 @@ Even with HomeKit connected, some data only comes from Tado's servers:
 - Hot water control
 - Geofencing / presence detection
 - Device firmware info
+- Everything Smart AC Control V3+ does (those units are standalone HomeKit accessories Tado CE doesn't pair with — see Smart AC Control row above)
 
-The integration handles this automatically — it fetches cloud-only data at the configured Cloud Sync Interval while using HomeKit for temperature and humidity.
+The integration handles this automatically; it fetches cloud-only data at the configured Cloud Sync Interval while using HomeKit for temperature, humidity, target temperature, and HVAC mode on heating zones.
+
+### Workaround: TRV LED feedback after a local write
+
+If you'd like the LED on the TRV to flash and show the new target after a HomeKit-routed write (the way it does when you change the temperature in the Tado app), call the `tado_ce.identify_device` service straight after the write. The service hits Tado's cloud-side identify endpoint, which is the same path the Tado app uses to trigger LED feedback, so the bridge fires the flash:
+
+```yaml
+service: tado_ce.identify_device
+data:
+  device_serial: "VA1234567890"  # short serial of the TRV, visible in the device's diagnostic attributes
+```
+
+Quota cost is one cloud call per flash. On the 100-call free tier that's noticeable if you trigger it from every write, on the 1,000-call transitional tier it's marginal, and on the 20,000-call legacy tier it's negligible. Worth wiring up only if you actually want the visual confirmation; the temperature change itself lands through HomeKit either way.
 
 ---
 
@@ -2213,4 +2390,4 @@ Look for `Bridge API full response` in logs to verify the API is returning data.
 
 ---
 
-**Last Updated:** v4.0.0 (2026-05-23)
+**Last Updated:** v4.0.1 (2026-06-03)

@@ -153,10 +153,10 @@
     },
     "button": {
       "resume_all": {
-        "name": "Resume All"
+        "name": "Resume All Schedules"
       },
       "refresh_ac": {
-        "name": "Refresh AC"
+        "name": "Refresh AC Capabilities"
       },
       "refresh_schedule": {
         "name": "Refresh Schedule"
@@ -203,6 +203,32 @@
           },
           "zone_type": {
             "name": "Zone type"
+          },
+          "swing_mode": {
+            "name": "Swing (vertical)",
+            "state": {
+              "auto": "Auto",
+              "off": "Off",
+              "on": "On",
+              "up": "Up",
+              "mid_up": "Mid (up)",
+              "mid": "Mid",
+              "mid_down": "Mid (down)",
+              "down": "Down"
+            }
+          },
+          "swing_horizontal_mode": {
+            "name": "Swing (horizontal)",
+            "state": {
+              "auto": "Auto",
+              "off": "Off",
+              "on": "On",
+              "left": "Left",
+              "mid_left": "Mid (left)",
+              "mid": "Mid",
+              "mid_right": "Mid (right)",
+              "right": "Right"
+            }
           }
         }
       }
@@ -1236,6 +1262,10 @@
     "restore_previous_state": {
       "name": "Restore Previous State",
       "description": "Restore a zone to its state before the last overlay operation. If no captured state exists, falls back to resuming the schedule."
+    },
+    "turn_off_all_zones": {
+      "name": "Turn Off All Rooms",
+      "description": "Place every climate zone (heating + AC) into a manual OFF overlay. Mirrors the Tado app's 'Turn OFF all rooms' button — schedules stay suppressed until you manually resume each zone."
     }
   },
   "selector": {
@@ -1351,16 +1381,18 @@
     },
     "resume_schedule_failed": {
       "message": "Resume Schedule failed for {entity_id} — the cloud rejected the call. Please try again."
+    },
+    "turn_off_all_no_climate_zones": {
+      "message": "No heating or AC zones found in this Tado home — there is nothing to turn off."
+    },
+    "turn_off_all_failed_all": {
+      "message": "Failed to turn off any zone. Tado's cloud rejected every call this cycle. Reasons: {reasons}. Check the integration's API quota or try again."
     }
   },
   "issues": {
     "auth_token_expired": {
       "title": "Tado CE: Authentication expired",
       "description": "The refresh token for home **{home_id}** has expired. Please reconfigure the integration to re-authenticate.\n\nGo to **Settings → Devices & Services → Tado CE → Reconfigure**."
-    },
-    "deprecated_yaml_config": {
-      "title": "Tado CE: Deprecated configuration key",
-      "description": "The configuration key **{key}** is deprecated and will be removed in a future version. Please update your configuration."
     },
     "svc_sensor_missing": {
       "title": "Smart Valve Control disabled for {zone_name}",

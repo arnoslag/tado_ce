@@ -153,10 +153,10 @@
     },
     "button": {
       "resume_all": {
-        "name": "Alle hervatten"
+        "name": "Alle schema’s hervatten"
       },
       "refresh_ac": {
-        "name": "AC verversen"
+        "name": "Vernieuw de mogelijkheden van de airconditioning"
       },
       "refresh_schedule": {
         "name": "Vernieuwingsschema"
@@ -203,6 +203,32 @@
           },
           "zone_type": {
             "name": "Type zone"
+          },
+          "swing_mode": {
+            "name": "Schommel (verticaal)",
+            "state": {
+              "auto": "Auto",
+              "off": "Uit",
+              "on": "Aan",
+              "up": "Omhoog",
+              "mid_up": "Midden (omhoog)",
+              "mid": "Midden",
+              "mid_down": "Midden (omlaag)",
+              "down": "Omlaag"
+            }
+          },
+          "swing_horizontal_mode": {
+            "name": "Schommel (horizontaal)",
+            "state": {
+              "auto": "Auto",
+              "off": "Uit",
+              "on": "Aan",
+              "left": "Links",
+              "mid_left": "Midden (links)",
+              "mid": "Midden",
+              "mid_right": "Midden (rechts)",
+              "right": "Rechts"
+            }
           }
         }
       }
@@ -1236,6 +1262,10 @@
     "restore_previous_state": {
       "name": "Vorige staat herstellen",
       "description": "Herstelt een zone naar de toestand van voor de laatste overlay-bewerking. Als er geen vastgelegde staat bestaat, wordt het schema hervat."
+    },
+    "turn_off_all_zones": {
+      "name": "Alle kamers uitschakelen",
+      "description": "Zet elke klimaatzone (verwarming + airco) handmatig op UIT. Dit werkt net als de knop 'Alle kamers uitschakelen' in de Tado-app — de schema’s blijven uitgeschakeld totdat je elke zone handmatig weer inschakelt."
     }
   },
   "selector": {
@@ -1351,16 +1381,18 @@
     },
     "resume_schedule_failed": {
       "message": "Het opnieuw plannen van de taak is mislukt voor {entity_id} — de cloud heeft de aanvraag afgewezen. Probeer het nog eens."
+    },
+    "turn_off_all_no_climate_zones": {
+      "message": "Er zijn geen verwarmings- of airconditioningzones gevonden in dit Tado-huis — er valt niets uit te schakelen."
+    },
+    "turn_off_all_failed_all": {
+      "message": "Het is niet gelukt om een zone uit te schakelen. De cloud van Tado heeft alle verzoeken in deze cyclus afgewezen. Redenen: {reasons}. Controleer de API-quota van de integratie of probeer het opnieuw."
     }
   },
   "issues": {
     "auth_token_expired": {
       "title": "Tado CE: Authenticatie verlopen",
       "description": "Het verversingstoken voor home **{home_id}** is verlopen. Configureer de integratie opnieuw om opnieuw te authenticeren.\n\nGa naar **Instellingen → Apparaten & Diensten → Tado CE → Herconfiguratie**."
-    },
-    "deprecated_yaml_config": {
-      "title": "Tado CE: Afgeschreven configuratiesleutel",
-      "description": "De configuratiesleutel **{key}** is verouderd en zal in een toekomstige versie worden verwijderd. Werk uw configuratie bij."
     },
     "svc_sensor_missing": {
       "title": "Slimme klepregeling uitgeschakeld voor {zone_name}",

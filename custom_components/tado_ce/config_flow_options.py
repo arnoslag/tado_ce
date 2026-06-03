@@ -165,8 +165,11 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
     CORE features (always ON, not in UI):
     - Zone Diagnostics, Device Controls, Boost Buttons, Environment Sensors
 
-    Removed (Per-Zone handles these):
-    - ufh_buffer_minutes, ufh_zones, adaptive_preheat_zones
+    Moved to Per-Zone configuration (still active):
+    - ufh_buffer_minutes (read by Smart Comfort per-zone)
+
+    Removed (no consumers):
+    - ufh_zones, adaptive_preheat_zones
     """
 
     def __init__(self, config_entry: ConfigEntry) -> None:

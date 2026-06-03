@@ -294,26 +294,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     await async_migrate_entity_platforms(hass, entry)
 
-    from homeassistant.helpers import entity_registry as er
-
-    ent_reg = er.async_get(hass)
-    home_id = entry.data.get("home_id", "")
-    test_mode_uid = f"tado_ce_{home_id}_test_mode_enabled"
-    test_mode_entity = ent_reg.async_get_entity_id("switch", "tado_ce", test_mode_uid)
-    if test_mode_entity:
-        ent_reg.async_remove(test_mode_entity)
-        _LOGGER.info(
-            "Setup: removed deprecated Test Mode entity (%s)",
-            test_mode_entity,
-        )
-
-    if "test_mode_enabled" in entry.options:
-        new_options = {k: v for k, v in entry.options.items() if k != "test_mode_enabled"}
-        hass.config_entries.async_update_entry(entry, options=new_options)
-        _LOGGER.info(
-            "Setup: removed deprecated test_mode_enabled option key",
-        )
-
     def _ensure_data_dir() -> None:
         try:
             DATA_DIR.mkdir(parents=True, exist_ok=True)

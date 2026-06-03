@@ -153,10 +153,10 @@
     },
     "button": {
       "resume_all": {
-        "name": "Retomar tudo"
+        "name": "Retomar todos os horários"
       },
       "refresh_ac": {
-        "name": "Atualizar AC"
+        "name": "Atualizar funcionalidades do ar condicionado"
       },
       "refresh_schedule": {
         "name": "Calendário de atualização"
@@ -203,6 +203,32 @@
           },
           "zone_type": {
             "name": "Tipo de zona"
+          },
+          "swing_mode": {
+            "name": "Balanço (vertical)",
+            "state": {
+              "auto": "Auto",
+              "off": "Desligado",
+              "on": "Ligado",
+              "up": "Para cima",
+              "mid_up": "Médio (para cima)",
+              "mid": "Meio",
+              "mid_down": "Meio (para baixo)",
+              "down": "Para baixo"
+            }
+          },
+          "swing_horizontal_mode": {
+            "name": "Balanço (horizontal)",
+            "state": {
+              "auto": "Auto",
+              "off": "Desligado",
+              "on": "Ligado",
+              "left": "Esquerda",
+              "mid_left": "Centro (à esquerda)",
+              "mid": "Meio",
+              "mid_right": "Centro (direita)",
+              "right": "Direita"
+            }
           }
         }
       }
@@ -1236,6 +1262,10 @@
     "restore_previous_state": {
       "name": "Restaurar o estado anterior",
       "description": "Restaura uma zona para o seu estado antes da última operação de sobreposição. Se não existir um estado capturado, volta a retomar a agenda."
+    },
+    "turn_off_all_zones": {
+      "name": "Desligar todas as divisões",
+      "description": "Coloque todas as zonas climáticas (aquecimento + ar condicionado) num estado de desativação manual. Esta função corresponde ao botão «Desligar todas as divisões» da aplicação Tado — as programações permanecem suspensas até que reative manualmente cada zona."
     }
   },
   "selector": {
@@ -1351,16 +1381,18 @@
     },
     "resume_schedule_failed": {
       "message": "A tentativa de retomar a programação para {entity_id} falhou — a nuvem rejeitou a chamada. Por favor, tente novamente."
+    },
+    "turn_off_all_no_climate_zones": {
+      "message": "Não foram encontradas zonas de aquecimento ou ar condicionado nesta casa Tado — não há nada para desligar."
+    },
+    "turn_off_all_failed_all": {
+      "message": "Não foi possível desligar nenhuma zona. A nuvem da Tado rejeitou todas as chamadas neste ciclo. Motivos: {reasons}. Verifique a quota da API da integração ou tente novamente."
     }
   },
   "issues": {
     "auth_token_expired": {
       "title": "Tado CE: A autenticação expirou",
       "description": "O token de atualização para a casa **{home_id}** expirou. Por favor, reconfigure a integração para se autenticar novamente.\n\nAceda a **Configurações → Dispositivos e serviços → Tado CE → Reconfigurar**."
-    },
-    "deprecated_yaml_config": {
-      "title": "Tado CE: Chave de configuração obsoleta",
-      "description": "A chave de configuração **{key}** está obsoleta e será removida numa versão futura. Actualize a sua configuração."
     },
     "svc_sensor_missing": {
       "title": "Controlo inteligente da válvula desativado para o modelo{zone_name}",

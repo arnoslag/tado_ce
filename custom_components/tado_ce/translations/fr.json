@@ -153,10 +153,10 @@
     },
     "button": {
       "resume_all": {
-        "name": "Résumé Tous"
+        "name": "Reprendre tous les horaires"
       },
       "refresh_ac": {
-        "name": "Rafraîchir AC"
+        "name": "Mise à jour des fonctionnalités de climatisation"
       },
       "refresh_schedule": {
         "name": "Calendrier de rafraîchissement"
@@ -203,6 +203,32 @@
           },
           "zone_type": {
             "name": "Type de zone"
+          },
+          "swing_mode": {
+            "name": "Balançoire (verticale)",
+            "state": {
+              "auto": "Auto",
+              "off": "Désactivé",
+              "on": "Activé",
+              "up": "Haut",
+              "mid_up": "Milieu (haut)",
+              "mid": "Milieu",
+              "mid_down": "Milieu (bas)",
+              "down": "Bas"
+            }
+          },
+          "swing_horizontal_mode": {
+            "name": "Balançoire (horizontale)",
+            "state": {
+              "auto": "Auto",
+              "off": "Désactivé",
+              "on": "Activé",
+              "left": "À gauche",
+              "mid_left": "Au milieu (à gauche)",
+              "mid": "Milieu",
+              "mid_right": "Au milieu (à droite)",
+              "right": "À droite"
+            }
           }
         }
       }
@@ -1236,6 +1262,10 @@
     "restore_previous_state": {
       "name": "Rétablir l'état antérieur",
       "description": "Rétablir une zone dans l'état où elle se trouvait avant la dernière opération de superposition. S'il n'y a pas d'état capturé, il y a reprise de la programmation."
+    },
+    "turn_off_all_zones": {
+      "name": "Éteindre toutes les pièces",
+      "description": "Configurez chaque zone climatique (chauffage + climatisation) sur un mode « OFF » manuel. Cela correspond au bouton « Éteindre toutes les pièces » de l'application Tado : les programmations restent désactivées jusqu'à ce que vous réactiviez manuellement chaque zone."
     }
   },
   "selector": {
@@ -1351,16 +1381,18 @@
     },
     "resume_schedule_failed": {
       "message": "Échec de la planification de la reprise pour {entity_id} — le cloud a rejeté l'appel. Veuillez réessayer."
+    },
+    "turn_off_all_no_climate_zones": {
+      "message": "Aucune zone de chauffage ou de climatisation n'a été détectée dans cette maison Tado — il n'y a rien à désactiver."
+    },
+    "turn_off_all_failed_all": {
+      "message": "Impossible de désactiver une zone. Le cloud de Tado a rejeté toutes les requêtes au cours de ce cycle. Motifs : {reasons}. Vérifiez le quota API de l'intégration ou réessayez."
     }
   },
   "issues": {
     "auth_token_expired": {
       "title": "Tado CE : Authentification expirée",
       "description": "Le jeton de rafraîchissement pour le foyer **{home_id}** a expiré. Veuillez reconfigurer l'intégration pour vous réauthentifier.\n\nAllez dans **Réglages → Appareils et services → Tado CE → Reconfigurer**."
-    },
-    "deprecated_yaml_config": {
-      "title": "Tado CE : Clé de configuration obsolète",
-      "description": "La clé de configuration **{key}** est obsolète et sera supprimée dans une prochaine version. Veuillez mettre à jour votre configuration."
     },
     "svc_sensor_missing": {
       "title": "La commande intelligente des vannes est désactivée pour l'{zone_name}",

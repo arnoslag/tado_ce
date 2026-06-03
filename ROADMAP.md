@@ -8,16 +8,15 @@ For completed features, see [CHANGELOG.md](CHANGELOG.md).
 
 ## Up Next
 
-**v4.0.0 shipped — May 2026.** Headline changes: HomeKit local
-control, Smart Valve Control (Offset Sync + Valve Target modes),
-Weather Compensation, multi-home support, actionable insights, and a
-redesigned Options Flow. See [CHANGELOG.md](CHANGELOG.md) for what
-changed for users coming from v3.5.3.
+**v4.1.0 beta cycle.** Foundation work on the persistence layer (re-pair-aware caches), adaptive polling rework (universal tier-aware reserve, round-robin drift refresh), HomeKit pairing reliability (named-exception detection + Repair issue), and State Restore atomicity. Each beta carries one architectural change so regressions are easy to attribute. A beta-tester recruitment thread will be posted in [GitHub Discussions](https://github.com/hiall-fyi/tado_ce/discussions) once the first architectural beta is ready to cut.
 
-The next milestone is gathering field feedback and triaging which
-items below to schedule for the 4.x cycle.
+All AC writes (target temperature, HVAC mode, swing, fan, timers) currently go through the cloud — see the AC entry below for why HomeKit local control on Smart AC Control V3+ isn't on the active roadmap.
 
 ## Future Consideration
+
+### AC
+
+- **Smart AC Control V3+ standalone HomeKit pairing** ([Discussion #271](https://github.com/hiall-fyi/tado_ce/discussions/271) - @MacrosorcH) — Smart AC Control units are autonomous WiFi devices, each with its own 8-digit HomeKit code, paired separately from the Internet Bridge. Tado CE only handles the bridge pairing today, so AC zones use the cloud path for every operation regardless of HomeKit configuration. Adding standalone-unit support means a separate pairing flow per AC unit, multi-pairing controller management, and HAP HeaterCooler service handling on top of the existing Thermostat path (different characteristics, different state machine). Not actively planned — I don't have Smart AC Control hardware to develop or test against, and this class of feature can't be reliably built blind.
 
 ### Smart Valve Control
 
@@ -34,6 +33,24 @@ items below to schedule for the 4.x cycle.
 - **Local Only Mode** — A toggle that stops all cloud polling after initial setup, running purely off HomeKit bridge data. Technically feasible — the coordinator already skips cloud calls when HomeKit provides live data. Tradeoff: cloud-only data (schedules, battery, heating power, geofencing) would go stale. Could include a daily cloud check for diagnostics.
 
 - **Periodic Full Sync** — Currently `zones_info`, `offsets`, `schedules`, and `ac_capabilities` only refresh on the first poll after restart. A periodic full sync (e.g. every 6 hours) would keep this data fresh without requiring a restart. Low priority — this data rarely changes.
+
+### v5.0.0 — Legacy cleanup
+
+A spring-clean release that drops backward-compat code accumulated through the v3.x and v4.x cycles. The cleanup is laser-focused on dead surface area, not behaviour change.
+
+**Minimum supported upgrade path: v4.x.x.** Installs running v3.x or earlier should upgrade to v4.x first (any v4 release is fine), then to v5.0.0. v5.0.0 will not auto-migrate v3.x option keys, entity unique_ids, or storage layouts; the migration code that handled those upgrades will be removed. The v3 to v4 migration path stays open through every v4.x release, so there is no rush to upgrade in one jump.
+
+Planned removals:
+
+- **`weather_compensation` legacy option key migration** — pre-v4.0.0-beta.15 stored Smart Comfort presets under `weather_compensation`; the rename to `smart_comfort_mode` ships with a read-time fallback that has lived since beta.15. v5.0.0 replaces the read-time fallback with a one-shot startup migration that copies the value forward and removes the old key, so neither path needs to be carried in steady-state code.
+- **`bridge_enrichment.LEGACY_UNIQUE_ID_MAP`** — backward-compat plumbing for an earlier entity unique_id rename. Carrying it costs extra registry lookups on every bridge enrichment cycle.
+- **Entity naming drift cleanup** — Two slug points accumulated through the v3.x and v4.x cycles. Neither is user-blocking, but they read as polish gaps when listed side by side. Bundling them gives v5.0.0 a clean entity-naming baseline.
+  - `calendar.heating_schedule_schedule` doubled slug — the calendar device is named "Heating Schedule" and the translation_key is `schedule`, so HA derives a doubled slug for fresh v3.0+ installs. v2.3.1-migrated users still see `calendar.lounge` and are unaffected. Either rename the device or the translation_key (the rename is the breaking-change part, and v5 already removes migration code, so this rides along).
+  - `quota_reserve_enabled` / `weather_state` `unique_id_suffix` divergence from `translation_key` — internal-only inconsistency, no user-visible effect, but it costs an extra mental jump every time the registry is audited. Align suffix to translation_key.
+- **Retire `API_REFERENCE.md`** — The doc currently mixes three things: an internal API call code taxonomy (codes 1-8) that users never see, write-optimisation and sync-type material that already lives in FEATURES_GUIDE, and three genuinely user-useful sections (rate-limit reset detection, per-tier polling guidance, and a short troubleshooting list). Fold the useful sections into FEATURES_GUIDE (Smart Polling already covers the same ground), drop the README and FEATURES_GUIDE links, and delete the file. v5.0.0 because it removes a doc users may have linked to externally; the move gives the redirect a clean version boundary.
+- **Climate AC + Heating structural mirror** — `climate_ac.py` and `climate_heating.py` repeat the same setup shape (`async_added_to_hass`, `async_will_remove_from_hass`, zone-config listener wiring, temp-limit refresh) with only default temperature and log-prefix differences. Sharing a base class would save around 120 LOC. Gated on a full hardening-tests pass and a cross-module audit first — the two paths are intentionally cloned today and have absorbed several family-level bugs over the v4.x cycle, so the refactor needs solid scaffolding before it lands.
+
+Anything else flagged in the v5 audit will be added here as it surfaces. No timeline yet.
 
 ### Long-Term Exploration
 

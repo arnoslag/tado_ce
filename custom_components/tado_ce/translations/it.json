@@ -153,10 +153,10 @@
     },
     "button": {
       "resume_all": {
-        "name": "Riprendi tutto"
+        "name": "Riprendi tutte le pianificazioni"
       },
       "refresh_ac": {
-        "name": "Aggiorna AC"
+        "name": "Aggiornamento delle funzionalità del climatizzatore"
       },
       "refresh_schedule": {
         "name": "Programma di aggiornamento"
@@ -203,6 +203,32 @@
           },
           "zone_type": {
             "name": "Tipo di zona"
+          },
+          "swing_mode": {
+            "name": "Altalena (verticale)",
+            "state": {
+              "auto": "Auto",
+              "off": "Spento",
+              "on": "Acceso",
+              "up": "Su",
+              "mid_up": "Centro (in alto)",
+              "mid": "A metà",
+              "mid_down": "Centro (in basso)",
+              "down": "Giù"
+            }
+          },
+          "swing_horizontal_mode": {
+            "name": "Altalena (orizzontale)",
+            "state": {
+              "auto": "Auto",
+              "off": "Spento",
+              "on": "Acceso",
+              "left": "Sinistra",
+              "mid_left": "Centro (sinistra)",
+              "mid": "A metà",
+              "mid_right": "Centro (a destra)",
+              "right": "Destra"
+            }
           }
         }
       }
@@ -1236,6 +1262,10 @@
     "restore_previous_state": {
       "name": "Ripristino dello stato precedente",
       "description": "Ripristina lo stato di una zona prima dell'ultima operazione di sovrapposizione. Se non esiste uno stato catturato, riprende la pianificazione."
+    },
+    "turn_off_all_zones": {
+      "name": "Disattiva tutte le stanze",
+      "description": "Imposta ogni zona climatica (riscaldamento + aria condizionata) su \"OFF\" manuale. Questa funzione riproduce il pulsante \"Spegni tutte le stanze\" dell'app Tado: le programmazioni rimangono disattivate finché non si riattiva manualmente ciascuna zona."
     }
   },
   "selector": {
@@ -1351,16 +1381,18 @@
     },
     "resume_schedule_failed": {
       "message": "Impossibile riprendere la pianificazione per {entity_id}: il cloud ha rifiutato la richiesta. Riprovare."
+    },
+    "turn_off_all_no_climate_zones": {
+      "message": "In questa casa Tado non sono state rilevate zone di riscaldamento o climatizzazione: non c'è nulla da spegnere."
+    },
+    "turn_off_all_failed_all": {
+      "message": "Impossibile disattivare alcuna zona. Il cloud di Tado ha rifiutato tutte le richieste in questo ciclo. Motivi: {reasons}. Controlla la quota API dell'integrazione o riprova."
     }
   },
   "issues": {
     "auth_token_expired": {
       "title": "Tado CE: Autenticazione scaduta",
       "description": "Il token di aggiornamento per la casa **{home_id}** è scaduto. Si prega di riconfigurare l'integrazione per effettuare nuovamente l'autenticazione.\n\nAccedere a **Impostazioni → Dispositivi e servizi → Tado CE → Riconfigura**."
-    },
-    "deprecated_yaml_config": {
-      "title": "Tado CE: Chiave di configurazione deprecata",
-      "description": "La chiave di configurazione **{key}** è deprecata e sarà rimossa in una versione futura. Aggiornare la configurazione."
     },
     "svc_sensor_missing": {
       "title": "Controllo intelligente delle valvole disattivato per l'{zone_name}",

@@ -266,13 +266,24 @@ def calculate_adaptive_interval(
         return _calculate_low_quota_interval(ctx)
 
     return _calculate_day_night_interval(ctx, config_manager)
-def should_pause_polling(ratelimit_data: dict[str, Any], config_manager: ConfigurationManager) -> tuple[bool, str]:
+def should_pause_polling(
+    ratelimit_data: dict[str, Any],
+    config_manager: ConfigurationManager,
+    *,
+    was_paused: bool = False,
+) -> tuple[bool, str]:
     """Return (should_pause, user_facing_reason) when quota is too low to keep polling.
 
     Pausing reserves the last few calls so the user can still set
     temperature, change mode, etc. Resumes automatically once the
     reset time has passed so we can detect the actual reset from the
     next API response.
+
+    `was_paused` lets the caller suppress the "resuming polling" INFO
+    line when polling was never actually paused (e.g. high-tier user
+    with plenty of quota). Without it, the INFO line would fire every
+    cycle once the expected reset window had passed but the API
+    response hadn't yet refreshed `last_reset_utc`.
     """
     if not config_manager.get_quota_reserve_enabled():
         return False, ""
@@ -285,11 +296,12 @@ def should_pause_polling(ratelimit_data: dict[str, Any], config_manager: Configu
             now_utc = dt_util.utcnow()
 
             if now_utc >= next_reset:
-                _LOGGER.info(
-                    "Polling: expected reset time %s UTC has passed — "
-                    "resuming polling to pick up the actual reset",
-                    next_reset.strftime("%H:%M"),
-                )
+                if was_paused:
+                    _LOGGER.info(
+                        "Polling: expected reset time %s UTC has passed — "
+                        "resuming polling to pick up the actual reset",
+                        next_reset.strftime("%H:%M"),
+                    )
                 return False, ""
         except (ValueError, TypeError) as e:
             _LOGGER.debug(
@@ -403,22 +415,21 @@ def get_polling_interval(
             e,
         )
 
-    # Honour the user's explicit custom interval (even below
-    # MIN_POLLING_INTERVAL — the adaptive clamp would otherwise
-    # silently override high-quota users' sub-5-min targets). Only
-    # override when adaptive shows quota is *genuinely* insufficient
-    # (adaptive > custom AND adaptive > MIN_POLLING_INTERVAL, i.e.
-    # not just bumping into the clamp floor).
+    # Honour the user's explicit custom interval unless adaptive math
+    # shows the quota cannot sustain it. The adaptive floor is now
+    # physics-based (1 min), so any `adaptive > custom` outcome
+    # represents a real quota constraint rather than a clamp artefact.
+    # The previous secondary check (is adaptive bumping into the
+    # floor?) is no longer needed.
     if user_set_custom and custom_interval is not None:
-        if adaptive_interval is not None:
-            if adaptive_interval > custom_interval and adaptive_interval > MIN_POLLING_INTERVAL:
-                _LOGGER.warning(
-                    "Polling: custom interval %s min would burn through "
-                    "the remaining quota — using adaptive %s min instead "
-                    "to protect the day's calls",
-                    custom_interval, adaptive_interval,
-                )
-                return adaptive_interval
+        if adaptive_interval is not None and adaptive_interval > custom_interval:
+            _LOGGER.warning(
+                "Polling: custom interval %s min would burn through "
+                "the remaining quota — using adaptive %s min instead "
+                "to protect the day's calls",
+                custom_interval, adaptive_interval,
+            )
+            return adaptive_interval
         _LOGGER.debug(
             "Polling: using custom %s interval %s min",
             "day" if daytime else "night",

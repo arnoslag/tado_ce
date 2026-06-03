@@ -153,10 +153,10 @@
     },
     "button": {
       "resume_all": {
-        "name": "Reanudar todo"
+        "name": "Reanudar todos los horarios"
       },
       "refresh_ac": {
-        "name": "Refrescar AC"
+        "name": "Actualizar las funciones del aire acondicionado"
       },
       "refresh_schedule": {
         "name": "Programa de actualización"
@@ -203,6 +203,32 @@
           },
           "zone_type": {
             "name": "Tipo de zona"
+          },
+          "swing_mode": {
+            "name": "Columpio (vertical)",
+            "state": {
+              "auto": "Auto",
+              "off": "Apagado",
+              "on": "Encendido",
+              "up": "Arriba",
+              "mid_up": "Medio (arriba)",
+              "mid": "Medio",
+              "mid_down": "Centro (abajo)",
+              "down": "Abajo"
+            }
+          },
+          "swing_horizontal_mode": {
+            "name": "Columpio (horizontal)",
+            "state": {
+              "auto": "Auto",
+              "off": "Apagado",
+              "on": "Encendido",
+              "left": "Izquierda",
+              "mid_left": "Centro (izquierda)",
+              "mid": "Medio",
+              "mid_right": "Centro (derecha)",
+              "right": "Derecha"
+            }
           }
         }
       }
@@ -1236,6 +1262,10 @@
     "restore_previous_state": {
       "name": "Restaurar estado anterior",
       "description": "Restaura una zona a su estado anterior a la última operación de superposición. Si no existe ningún estado capturado, vuelve a reanudar la programación."
+    },
+    "turn_off_all_zones": {
+      "name": "Apagar todas las habitaciones",
+      "description": "Pon todas las zonas climáticas (calefacción + aire acondicionado) en un modo de apagado manual. Esto equivale al botón «Apagar todas las habitaciones» de la aplicación de Tado: las programaciones se desactivan hasta que reanudes manualmente cada zona."
     }
   },
   "selector": {
@@ -1351,16 +1381,18 @@
     },
     "resume_schedule_failed": {
       "message": "Se ha producido un error al programar la reanudación de {entity_id}: la nube ha rechazado la solicitud. Inténtalo de nuevo."
+    },
+    "turn_off_all_no_climate_zones": {
+      "message": "No se han encontrado zonas de calefacción ni de aire acondicionado en esta casa Tado; no hay nada que apagar."
+    },
+    "turn_off_all_failed_all": {
+      "message": "No se ha podido desactivar ninguna zona. La nube de Tado ha rechazado todas las solicitudes de este ciclo. Motivos: {reasons}. Comprueba el límite de la API de la integración o vuelve a intentarlo."
     }
   },
   "issues": {
     "auth_token_expired": {
       "title": "Tado CE: Autenticación expirada",
       "description": "El token de actualización para el hogar **{home_id}** ha caducado. Vuelva a configurar la integración para volver a autenticarse.\n\nVaya a **Configuración → Dispositivos y servicios → Tado CE → Reconfigurar**."
-    },
-    "deprecated_yaml_config": {
-      "title": "Tado CE: Clave de configuración obsoleta",
-      "description": "La clave de configuración **{key}** está obsoleta y se eliminará en una versión futura. Por favor, actualice su configuración."
     },
     "svc_sensor_missing": {
       "title": "Control inteligente de válvulas desactivado para {zone_name}",

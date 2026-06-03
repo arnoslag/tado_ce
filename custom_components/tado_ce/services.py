@@ -35,6 +35,8 @@ from .const import (
     SERVICE_SET_OPEN_WINDOW_MODE,
     SERVICE_SET_TEMP_OFFSET,
     SERVICE_SET_WATER_HEATER_TIMER,
+    SERVICE_TURN_OFF_ALL_ZONES,
+    is_climate_zone,
 )
 from .helpers import async_trigger_immediate_refresh, build_timer_termination, mask_serial
 
@@ -683,6 +685,96 @@ async def handle_set_water_heater_timer(hass: HomeAssistant, call: ServiceCall) 
             success_count, total,
             ", ".join(eid for eid, _ in failures),
         )
+
+
+async def handle_turn_off_all_zones(hass: HomeAssistant, call: ServiceCall) -> None:
+    """Place every climate zone (heating + AC) into a MANUAL OFF overlay.
+
+    Mirrors the Tado app's "Turn OFF all rooms" button. Schedules
+    stay suppressed until the user manually resumes each zone (or
+    calls `tado_ce.resume_schedule`). Hot water is out of scope —
+    the Tado app's own button targets climate zones only.
+
+    Single-home install: targets every climate zone in one call.
+    Multi-home install: raises a translated `multiple_entries`
+    error so the caller picks one home explicitly (mirrors
+    `set_away_config` semantics).
+
+    Skips capture-state by design — the user's intent is permanent
+    until-resumed, not a temporary override that needs restoration.
+    Adding N capture entries to a path that's typed as "OFF until
+    user resumes" would surface as spurious restoration events
+    later.
+
+    Setting payload uses the canonical OFF shape from
+    `climate_heating.py` and `climate_ac.py`:
+        {"type": "HEATING" | "AIR_CONDITIONING", "power": "OFF"}
+    Termination is fresh `{"type": "MANUAL"}` — never replays a
+    captured response shape, so the read-only-fields trap from
+    earlier overlay-restoration paths does not apply here.
+    """
+    coord = _resolve_single_coordinator(hass)
+
+    should_block, reason = await _ratelimit.async_check_bootstrap_reserve(
+        hass, coordinator=coord,
+    )
+    if should_block:
+        await _ratelimit.async_show_api_limit_notification(hass, reason)
+        raise HomeAssistantError(
+            translation_domain=DOMAIN,
+            translation_key="api_quota_critically_low",
+        )
+
+    zones_info = coord.data_loader.get_cached("zones_info")
+    if not zones_info or not isinstance(zones_info, list):
+        raise HomeAssistantError(
+            translation_domain=DOMAIN,
+            translation_key="turn_off_all_no_climate_zones",
+        )
+
+    target_zones: list[tuple[str, str]] = [
+        (str(zone["id"]), zone["type"])
+        for zone in zones_info
+        if is_climate_zone(zone.get("type") or "")
+    ]
+    if not target_zones:
+        raise HomeAssistantError(
+            translation_domain=DOMAIN,
+            translation_key="turn_off_all_no_climate_zones",
+        )
+
+    failures: list[tuple[str, str]] = []
+    success_count = 0
+    for zone_id, zone_type in target_zones:
+        try:
+            ok = await coord.api_client.set_zone_overlay(
+                zone_id,
+                {"type": zone_type, "power": "OFF"},
+                {"type": "MANUAL"},
+            )
+            if ok:
+                success_count += 1
+            else:
+                failures.append((zone_id, "cloud rejected the call"))
+        except (ValueError, TypeError, KeyError, AttributeError) as e:
+            failures.append((zone_id, str(e)))
+
+    if success_count == 0:
+        _raise_service_error(
+            "turn_off_all_failed_all",
+            reasons=", ".join(f"zone {z}: {r}" for z, r in failures[:3]),
+        )
+    elif failures:
+        _LOGGER.warning(
+            "Services: turn_off_all_zones succeeded on %d of %d zone(s); "
+            "failed for %s",
+            success_count, len(target_zones),
+            ", ".join(z for z, _ in failures),
+        )
+
+    # One coordinator-wide refresh — picks up the new state for every
+    # zone in a single poll, regardless of how many succeeded.
+    await coord.async_request_refresh()
 
 
 async def handle_resume_schedule(hass: HomeAssistant, call: ServiceCall) -> None:
@@ -1382,6 +1474,13 @@ async def _async_register_services(hass: HomeAssistant) -> None:
                 vol.Required("entity_id"): cv.entity_ids,
             },
         ),
+    )
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_TURN_OFF_ALL_ZONES,
+        functools.partial(handle_turn_off_all_zones, hass),
+        schema=vol.Schema({}),
     )
 
     hass.services.async_register(

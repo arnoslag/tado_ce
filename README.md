@@ -6,7 +6,7 @@
 ![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2025.11%2B-blue?style=for-the-badge&logo=home-assistant) ![Python](https://img.shields.io/badge/Python-3.13%2B-blue?style=for-the-badge&logo=python&logoColor=white) ![Tado](https://img.shields.io/badge/Tado-V2%2FV3%2FV3%2B-1E3A8A?style=for-the-badge) ![HACS](https://img.shields.io/badge/HACS-Default-41BDF5?style=for-the-badge)
 
 <!-- Status -->
-![Stable](https://img.shields.io/badge/Stable-4.0.0-brightgreen?style=for-the-badge) ![License](https://img.shields.io/badge/License-AGPL--3.0-lightgrey?style=for-the-badge) ![Coverage](https://img.shields.io/badge/Coverage-92%25-green?style=for-the-badge)
+![Stable](https://img.shields.io/badge/Stable-4.0.1-brightgreen?style=for-the-badge) ![Beta](https://img.shields.io/badge/Beta-4.1.0--beta.1-purple?style=for-the-badge) ![License](https://img.shields.io/badge/License-AGPL--3.0-lightgrey?style=for-the-badge) ![Coverage](https://img.shields.io/badge/Coverage-93%25-green?style=for-the-badge)
 
 <!-- Community -->
 ![GitHub stars](https://img.shields.io/github/stars/hiall-fyi/tado_ce?style=for-the-badge&logo=github) ![GitHub issues](https://img.shields.io/github/issues/hiall-fyi/tado_ce?style=for-the-badge&logo=github) ![GitHub Release Date](https://img.shields.io/github/release-date/hiall-fyi/tado_ce?style=for-the-badge&logo=github)
@@ -74,6 +74,8 @@ Tado X is intentionally out of scope — those devices are Matter-over-Thread an
 - Tado V2, V3, or V3+ hardware (see [Supported devices](#supported-devices))
 - Optional but recommended: an Internet Bridge V3+ for HomeKit local control
 
+> **Heads up for v3.x users.** A future v5.0.0 will drop the in-place migration code that upgrades v3.x option keys, entity IDs, and storage layouts. If you're on v3.5.3 or earlier, upgrade to any v4.x release first (your settings carry over automatically), then upgrade to v5.0.0 when it lands. Running v3.x to v5.0.0 in one jump won't be supported. No timeline for v5.0.0 yet, so there's no rush.
+
 ### 1. Install via HACS
 
 Tado CE is in the HACS default store, so no custom-repository setup is needed.
@@ -113,13 +115,14 @@ Tado CE: Integration loaded successfully
 
 ### 4. Enable HomeKit local control (recommended)
 
-If you have an Internet Bridge V3 or V3+, pair it to Home Assistant via HomeKit:
+If you have an Internet Bridge V3 or V3+, pair it directly with Tado CE:
 
-1. In the Tado app: **Settings → Home Information → HomeKit** — enable HomeKit and note the 8-digit pairing code.
-2. In Home Assistant: **Settings → Devices & Services → Add Integration → HomeKit Device**, then enter the code.
-3. Open Tado CE's **Configure → General Settings → Hardware Connections → HomeKit**, enable it, and restart Home Assistant.
+1. Enable HomeKit on your Tado Internet Bridge — follow Tado's own walkthrough at [support.tado.com — How do I set up tado° with Apple HomeKit?](https://support.tado.com/en/articles/3387324-how-do-i-set-up-tado-with-apple-homekit) Note the 8-digit code (printed on the side of the bridge, also shown in the Tado app once HomeKit is enabled).
+2. In Home Assistant, open Tado CE's **Configure → General Settings → Hardware Connections → HomeKit**, enable it, and enter the code when prompted.
 
-Temperature and humidity entities will now show `data_source: homekit` when values arrive locally. See [FEATURES_GUIDE.md](FEATURES_GUIDE.md#homekit-local-control) for details.
+Tado CE drives the pairing itself, so don't add the bridge through Home Assistant's standard **HomeKit Device** integration first. The Tado bridge only allows one HomeKit controller at a time, and a pre-existing pairing will block Tado CE. If you've already paired the bridge with Apple Home or HomeKit Device, unpair there before enabling local control here.
+
+Temperature and humidity entities will then show `data_source: homekit` when values arrive locally. See [FEATURES_GUIDE.md](FEATURES_GUIDE.md#homekit-local-control) for details.
 
 ### 5. Configure
 
@@ -135,7 +138,7 @@ Full Home Assistant `climate.*`, `water_heater.*`, `sensor.*`, and `binary_senso
 
 ### HomeKit local control
 
-With an Internet Bridge V3+ paired, Tado CE uses HomeKit for temperature reads, humidity reads, target-temperature writes, and HVAC-mode writes. Updates arrive in around 2 seconds over your LAN — cloud-only mode is bound by your polling interval, typically 5–30 minutes. The cloud API is used only for features HomeKit doesn't expose (schedules, geofencing, the Tado app's calibration engine).
+With an Internet Bridge V3+ paired, Tado CE uses HomeKit for temperature reads, humidity reads, target-temperature writes, and HVAC-mode writes on heating zones. Updates arrive in around 2 seconds over your LAN; cloud-only mode is bound by your polling interval, typically 5–30 minutes. The cloud API is used for features HomeKit doesn't expose (schedules, geofencing, the Tado app's calibration engine) and for everything Smart AC Control V3+ does — those units are standalone WiFi accessories with their own HomeKit pairing, separate from the bridge, and Tado CE doesn't currently handle that pairing flow.
 
 When the bridge is unreachable, everything falls back to cloud automatically. A `data_source` attribute on each temperature sensor reports whether the current value came from HomeKit or cloud, and the HomeKit Connected sensor tracks how many API calls local control has saved you.
 
@@ -226,7 +229,7 @@ Automations that need to act on Tado CE entities right after Home Assistant star
 | Smart Thermostat V2 | HEATING | Full (community-verified) | ❌ (V2 bridge) |
 | Smart Thermostat V3 / V3+ | HEATING | Full | ✅ |
 | Smart Radiator Thermostat (SRT / VA02) | HEATING | Full | ✅ |
-| Smart AC Control V3 / V3+ | AIR_CONDITIONING | Full | ✅ (temperature only) |
+| Smart AC Control V3 / V3+ | AIR_CONDITIONING | Full (cloud) | ❌ (standalone HomeKit pairing not handled — see note below) |
 | Wireless Temperature Sensor | HEATING | Full | ❌ (not a HomeKit accessory) |
 | Internet Bridge V3+ | Infrastructure | Required for local control | — |
 | Tado X series | Matter / Thread | Not supported | — |
@@ -247,7 +250,7 @@ Yes, though there's usually no reason to. Both integrations read from the same T
 <details>
 <summary><strong>Does HomeKit pairing interfere with other HomeKit apps (Apple Home, etc.)?</strong></summary>
 
-No. Home Assistant's HomeKit Device integration pairs as a second controller — your existing Apple Home setup keeps working unchanged.
+The Tado bridge only allows one HomeKit controller at a time, so Tado CE and Apple Home (or Home Assistant's standard HomeKit Device integration) can't both pair with it directly. If you want to keep your Tado zones in Apple Home, unpair the bridge there first and then pair with Tado CE. You can re-expose the resulting `climate.*` entities to Apple Home through Home Assistant's **HomeKit Bridge** integration, which is a separate component that publishes HA entities back out as a HomeKit accessory.
 
 </details>
 

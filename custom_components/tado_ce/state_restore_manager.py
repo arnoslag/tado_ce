@@ -43,6 +43,14 @@ _STORAGE_BASE_NAME = "state_restore"
 STORE_VERSION = 1
 SAVE_DELAY = 5
 
+# Defensive gate against transient overlay-cleared events. The Tado
+# API can return a zone with overlay=null on a single poll during
+# quota-reset windows or partial responses; firing the restoration
+# event on a single observation produced false-positive triggers.
+# Requiring N consecutive polls before firing filters those out
+# without changing steady-state behaviour.
+CONSECUTIVE_CLEARED_THRESHOLD = 2
+
 
 @dataclass
 class CapturedState:
@@ -128,6 +136,13 @@ class StateRestoreManager:
         # Tracks whether a zone had an overlay in the previous poll so
         # `on_poll_update` can detect timer expiry (overlay → no overlay).
         self._previous_overlay_states: dict[str, bool] = {}
+        # Counts consecutive polls reporting overlay=null after a zone's
+        # overlay was last seen. Fires the restoration event only on
+        # CONSECUTIVE_CLEARED_THRESHOLD, defending against transient
+        # overlay-null blips during quota-reset windows or partial poll
+        # responses. Reset to 0 the moment an overlay re-appears;
+        # reset to 0 once the event fires.
+        self._consecutive_cleared: dict[str, int] = {}
         self._store: Store[dict[str, Any]] = Store(
             hass,
             STORE_VERSION,
@@ -354,6 +369,12 @@ class StateRestoreManager:
         cleared the overlay outside HA — either way the user is back
         on the schedule, so the captured pre-overlay state is no
         longer needed and we surface a restoration event.
+
+        Defensive: fires only after CONSECUTIVE_CLEARED_THRESHOLD (2)
+        consecutive polls report overlay=null. A single poll showing
+        a missing overlay can be a transient (quota-reset window
+        partial response, brief upstream blip) rather than a real
+        clear; requiring two consecutive polls filters those out.
         """
         zone_states = get_zone_states(coordinator_data)
 
@@ -364,14 +385,40 @@ class StateRestoreManager:
             has_overlay = bool(zone_data and zone_data.get("overlay"))
             had_overlay = self._previous_overlay_states.get(zone_id, False)
 
-            if had_overlay and not has_overlay and key in self._captured:
+            if has_overlay:
+                # Overlay re-appeared — reset the consecutive-cleared
+                # counter so transient blips don't accumulate across
+                # unrelated polls.
+                self._consecutive_cleared.pop(zone_id, None)
+                continue
+
+            if not had_overlay:
+                # Steady-state "no overlay" — not a transition we care
+                # about. Counter stays at 0.
+                continue
+
+            # Transition: had_overlay=True, has_overlay=False.
+            count = self._consecutive_cleared.get(zone_id, 0) + 1
+            self._consecutive_cleared[zone_id] = count
+
+            if count < CONSECUTIVE_CLEARED_THRESHOLD:
+                _LOGGER.debug(
+                    "State Restore: zone %s overlay missing on poll %d/%d — "
+                    "waiting for confirmation before firing restoration event",
+                    zone_id, count, CONSECUTIVE_CLEARED_THRESHOLD,
+                )
+                continue
+
+            if key in self._captured:
                 _LOGGER.info(
-                    "State Restore: zone %s overlay cleared — restoration "
-                    "now available for the captured pre-overlay state",
-                    zone_id,
+                    "State Restore: zone %s overlay cleared (confirmed across "
+                    "%d consecutive polls) — restoration now available for "
+                    "the captured pre-overlay state",
+                    zone_id, count,
                 )
                 self._fire_restoration_event(captured, zone_data)
                 self._captured.pop(key, None)
+                self._consecutive_cleared.pop(zone_id, None)
                 self._schedule_persist()
 
         for zone_id_str in zone_states:
