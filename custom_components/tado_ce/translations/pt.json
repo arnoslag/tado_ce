@@ -809,7 +809,7 @@
         }
       },
       "mold_risk_pct": {
-        "name": "Risco de bolor %",
+        "name": "Indicador de risco de bolor",
         "state_attributes": {
           "room_temperature": {
             "name": "Temperatura ambiente"

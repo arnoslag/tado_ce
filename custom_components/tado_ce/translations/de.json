@@ -809,7 +809,7 @@
         }
       },
       "mold_risk_pct": {
-        "name": "Schimmelpilzrisiko %",
+        "name": "Indikator für Schimmelgefahr",
         "state_attributes": {
           "room_temperature": {
             "name": "Raumtemperatur"

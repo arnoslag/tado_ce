@@ -1,12 +1,4 @@
-"""Tado CE coordinator — adaptive polling, sub-system orchestration, entity propagation.
-
-Wraps Home Assistant's `DataUpdateCoordinator` with the integration's
-own polling logic (day / night windows, quota-aware backoff, HomeKit
-skip rules) and threads cloud + bridge + HomeKit data through the
-sub-systems (smart-valve controllers, offset sync, weather
-compensation, state restore, insights). Each config entry gets its
-own coordinator instance.
-"""
+"""Tado CE coordinator — adaptive polling, sub-system orchestration, entity propagation."""
 
 from __future__ import annotations
 
@@ -39,6 +31,9 @@ from .const import (
     OUTDOOR_TEMP_HISTORY_MAX,
     OVERLAY_MODE_DEFAULT,
     TIMER_DURATION_DEFAULT,
+    ZONES_INFO_FREE_TIER_THRESHOLD,
+    ZONES_INFO_REFRESH_SECONDS_FREE,
+    ZONES_INFO_REFRESH_SECONDS_PAID,
 )
 from .exceptions import TadoAuthError, TadoBridgeApiError, TadoSyncError
 from .helpers import mask_serial
@@ -50,6 +45,7 @@ from .weather_compensation import (
 )
 from .write_health_tracker import WriteHealthTracker
 from .write_optimizer import ActionDebouncer, DeviceSyncQueue, RefreshCoalescer
+from .zone_fingerprint import ZoneFingerprintDelta, ZoneFingerprintTracker
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -129,16 +125,13 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         self.home_id: str = entry.data.get("home_id") or "default"
 
-        # Freshness tracking
         self.entity_freshness: dict[str, float] = {}
         self._freshness_lock = asyncio.Lock()
         self._freshness_cleanup_cancel: Callable[[], None] | None = None
         self._global_sequence: int = 0
 
-        # Heating cycle timeout cancel handle
         self._heating_cycle_timeout_cancel: Callable[[], None] | None = None
 
-        # Overlay/timer cache
         self.overlay_mode: str = OVERLAY_MODE_DEFAULT
         self.timer_duration: int = TIMER_DURATION_DEFAULT
 
@@ -162,7 +155,6 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # after reload. Avoids transient hass.data[DOMAIN_*] keys.
         self._pending_cleanup: dict[str, dict[str, bool]] = {}
 
-        # Insight history tracker (persistent insight duration tracking)
         self.insight_history = InsightHistoryTracker(hass, self.home_id)
 
         # Insight collector mutable state — owned by coordinator so duration
@@ -172,9 +164,11 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._insight_anomaly_start_times: dict[str, datetime] = {}
         self._insight_humidity_histories: dict[str, list[Any]] = {}
 
-        # Full sync tracking
         self._last_full_sync: datetime | None = None
         self._cached_ratelimit: dict[str, Any] | None = None
+
+        self._zone_fingerprint = ZoneFingerprintTracker()
+        self._request_full_sync_next_cycle: bool = False
 
         # Polling pause state — set when should_pause_polling returns
         # True, cleared on the first cycle that returns False after a
@@ -191,7 +185,6 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Bridge API client (lazy-init from options when bridge credentials present)
         self.bridge_api_client: TadoBridgeApiClient | None = None
 
-        # Bridge health tracking (init when bridge credentials present)
         self.bridge_health_tracker: BridgeHealthTracker | None = None
         self._bridge_first_fetch_logged: bool = False
 
@@ -207,7 +200,6 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.homekit_provider: HomeKitLocalProvider | None = None
         self.state_reconciler: StateReconciler | None = None
 
-        # HomeKit polling optimization state
         self._last_cloud_zone_fetch: datetime | None = None
         self._last_weather_fetch: datetime | None = None
         self._prev_homekit_connected: bool = False
@@ -222,7 +214,6 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._homekit_write_latency_sum: float = 0.0
         self._homekit_write_latency_count: int = 0
 
-        # Write-side circuit breaker (initialized when HomeKit is enabled)
         self.write_health_tracker: WriteHealthTracker | None = None
 
         # Smart Valve Control — per-zone proportional offset controllers
@@ -231,8 +222,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Offset Sync — per-zone device offset controllers
         self.offset_sync_controllers: dict[str, OffsetSyncController] = {}
 
-        # Per-zone transition locks serialize controller lifecycle changes
-        # (see .kiro/specs/svc-lifecycle-hardening/ for the design).
+        # Per-zone locks serialise controller lifecycle changes.
         self._zone_transition_locks: dict[str, asyncio.Lock] = {}
 
         # Set by async_shutdown_valve_controllers to prevent queued transitions
@@ -243,7 +233,6 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._wc_state = WeatherCompensationState()
         self._wc_state_loaded: bool = False
 
-        # Write optimization components
         self._action_debouncer = ActionDebouncer(
             default_window=float(config_manager.get_smart_actions_debounce_seconds()),
         )
@@ -302,45 +291,19 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._homekit_write_latency_count = 0
 
     def publish_entity_data(self, zone_id: str, key: str, data: dict[str, Any]) -> None:
-        """Publish computed entity data for cross-component consumption.
-
-        Published data is in-memory only and does not persist across restarts.
-        Consumers should handle None returns from get_entity_data() gracefully
-        during the startup gap (before entities have processed their first poll).
-
-        Entities call this to share their computed values (e.g. condensation
-        risk, window predicted state) so insight collectors and other
-        components can read without hass.states.get() coupling.
-
-        Args:
-            zone_id: Zone ID string.
-            key: Data key (e.g. "condensation_risk", "window_predicted").
-            data: Dict of computed values (e.g. {"state": "High", "recommendation": "..."}).
-        """
+        """Publish in-memory computed entity data; consumers must tolerate None during the startup gap."""
         if zone_id not in self.entity_data:
             self.entity_data[zone_id] = {}
         self.entity_data[zone_id][key] = data
 
     def get_entity_data(self, zone_id: str, key: str) -> dict[str, Any] | None:
-        """Read published entity data for a zone.
-
-        Args:
-            zone_id: Zone ID string.
-            key: Data key (e.g. "condensation_risk", "window_predicted").
-
-        Returns:
-            Dict of computed values, or None if not published yet.
-        """
+        """Read published entity data for a zone, or None if not published yet."""
         return self.entity_data.get(zone_id, {}).get(key)
 
     async def _async_post_sync_processing(
         self, zone_data: dict[str, Any] | list[Any] | None, weather_data: dict[str, Any] | list[Any] | None,
     ) -> dict[str, Any]:
-        """Run post-sync processing: history detection, cache reads, bridge, WC.
-
-        Returns the assembled result dict.
-        """
-        # Detect API reset time from history
+        """Run post-sync processing: history detection, cache reads, bridge, WC."""
         from .ratelimit import (
             async_detect_reset_from_history,
             async_update_ratelimit_reset_time,
@@ -375,13 +338,10 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         schedules_data = self.data_loader.get_cached("schedules")
         ac_capabilities = self.data_loader.get_cached("ac_capabilities")
 
-        # Accumulate outdoor temp history
         await self._accumulate_outdoor_temp_history(weather_data)
 
-        # Notify HeatingCycleCoordinator of zone updates
         await self._notify_heating_cycle_updates(zone_data)
 
-        # Cleanup expired entity freshness entries
         await self._cleanup_entity_freshness()
 
         # Save dirty data (piggyback on poll cycle)
@@ -396,10 +356,8 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if first_bridge is not None:
                 self._cached_bridge_data = first_bridge
         bridge_data = self._cached_bridge_data
-        # Start independent bridge poll if credentials present and not yet running
         self._ensure_bridge_poll_running()
 
-        # Lazy-load persisted weather compensation state on first poll
         if not self._wc_state_loaded and self.config_manager.get_wc_enabled():
             raw = await self.data_loader.async_load_wc_state()
             if raw and isinstance(raw, dict):
@@ -467,10 +425,8 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         finally:
             self.data = previous_data
 
-        # State restore: Away → Home clears captured states, then detect timer expiration
         await self._handle_state_restore_updates(home_state_data, result)
 
-        # Smart Valve Control: evaluate all active controllers after poll
         for controller in self.valve_controllers.values():
             try:
                 await controller.async_evaluate()
@@ -481,7 +437,6 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     controller.zone_id, exc_info=True,
                 )
 
-        # Offset Sync: evaluate all active offset sync controllers after poll
         for controller_os in self.offset_sync_controllers.values():
             try:
                 await controller_os.async_evaluate()
@@ -498,7 +453,6 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Fetch data from Tado API. Dynamically adjusts update_interval."""
         was_failing = self.last_update_success is False
 
-        # 1. Load ratelimit and check quota
         self._load_ratelimit_from_cache()
         if self._cached_ratelimit:
             should_pause, reason = should_pause_polling(
@@ -520,7 +474,6 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 raise UpdateFailed(reason, retry_after=retry_after)
             self._was_paused = False
 
-        # 2. Set adaptive interval for NEXT poll
         homekit_connected = (
             self.homekit_provider is not None
             and self.homekit_provider.is_connected
@@ -530,7 +483,6 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         self.update_interval = timedelta(minutes=new_interval)
 
-        # 2b. HomeKit connection transition logging
         if homekit_connected != self._prev_homekit_connected:
             if homekit_connected:
                 _LOGGER.info(
@@ -544,13 +496,10 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 )
             self._prev_homekit_connected = homekit_connected
 
-        # 2c. Load polling-mode flags for this cycle
         do_full_sync = self._should_do_full_sync()
 
-        # Check if this is a write-triggered refresh (zone data only)
         zone_only, force_zone_fetch = self.refresh_handler.consume_pending_flags()
 
-        # 2d. Compute skip_zone_states / skip_weather based on config + HomeKit state
         cm = self.config_manager
 
         # If user explicitly set a custom polling interval, respect it —
@@ -615,13 +564,13 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         if do_full_sync:
             self._last_full_sync = dt_util.utcnow()
+            self._request_full_sync_next_cycle = False
             # Full sync's _sync_offsets pass already pulled fresh offsets,
             # so the periodic drift refresh in _maybe_resync_offsets can
             # skip the next interval rather than double-fetching.
             if cm.get_offset_enabled():
                 self._last_offset_resync = dt_util.utcnow()
 
-        # Update cloud zone fetch timestamp when zoneStates was fetched
         # Reset HomeKit savings counters when API quota resets.
         # Detection: remaining jumps up significantly (e.g. 100 → 5000).
         # This mirrors api_client._calculate_live_ratelimit's reset detection.
@@ -654,7 +603,6 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         else:
             self.record_homekit_read_saved()
 
-        # Update weather fetch timestamp
         if not skip_weather and cm.get_weather_enabled() and not zone_only:
             self._last_weather_fetch = dt_util.utcnow()
 
@@ -676,9 +624,24 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "yes" if do_full_sync else "no",
         )
 
-        # 4. Post-sync processing: cache reads, bridge, WC, state restore
         zone_data = self.data_loader.get_cached("zones")
         weather_data = self.data_loader.get_cached("weather")
+
+        zone_states = (
+            zone_data.get("zoneStates") if isinstance(zone_data, dict) else None
+        )
+        delta = self._zone_fingerprint.update(zone_states)
+        if (
+            not delta.is_first_poll
+            and not delta.is_empty_response
+            and (delta.added or delta.removed)
+        ):
+            _LOGGER.info(
+                "Zone topology changed: added=%s removed=%s",
+                sorted(delta.added), sorted(delta.removed),
+            )
+            await self._handle_zone_delta(delta)
+
         return await self._async_post_sync_processing(zone_data, weather_data)
 
     async def _maybe_resync_offsets(
@@ -769,11 +732,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def _accumulate_outdoor_temp_history(
         self, weather_data: dict[str, Any] | list[Any] | None,
     ) -> None:
-        """Accumulate outdoor temperature from weather data into history buffer.
-
-        Appends new reading, trims to max size, and persists.
-        History is eager-loaded during setup in _async_wire_and_start_coordinator().
-        """
+        """Append the latest outdoor reading to the history ring buffer and persist."""
         if not weather_data:
             return
         outdoor_temp = (weather_data.get("outsideTemperature") or {}).get("celsius")  # type: ignore[union-attr]
@@ -804,11 +763,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def _notify_heating_cycle_updates(
         self, zone_data: dict[str, Any] | list[Any] | None,
     ) -> None:
-        """Notify HeatingCycleCoordinator of zone temperature updates.
-
-        Iterates zone states and forwards target/current temperature pairs
-        so the heating cycle coordinator can track heating cycles.
-        """
+        """Forward each zone's target / current temperature to the heating-cycle coordinator."""
         if not self.heating_cycle_coordinator or not zone_data:
             return
         # Tado API may return null for 'zoneStates'; 'or {}' handles None correctly
@@ -837,11 +792,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         home_state_data: dict[str, Any] | list[Any] | None,
         result: dict[str, Any],
     ) -> None:
-        """Handle state restore housekeeping after poll.
-
-        Clears all captured states on Away → Home transition, then
-        forwards the poll result for timer expiry detection.
-        """
+        """Clear captures on Away → Home and forward the poll result for timer-expiry detection."""
         if not self._sr_manager:
             return
         old_home_state = self.data.get("home_state", {}) if self.data else {}
@@ -857,9 +808,25 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         self._sr_manager.on_poll_update(result)
 
+    def _zones_info_refresh_seconds(self) -> int:
+        # Falls back to the paid interval until the ratelimit cache
+        # populates so a valid paid-tier user doesn't get the slower
+        # cadence on the first poll after restart.
+        rl = self.data_loader.get_cached("ratelimit")
+        if isinstance(rl, dict):
+            limit = rl.get("limit")
+            if isinstance(limit, int) and limit <= ZONES_INFO_FREE_TIER_THRESHOLD:
+                return ZONES_INFO_REFRESH_SECONDS_FREE
+        return ZONES_INFO_REFRESH_SECONDS_PAID
+
     def _should_do_full_sync(self) -> bool:
-        """Check if full sync needed (vs quick). Only on first poll after restart/reload."""
-        return self._last_full_sync is None
+        """Whether the next sync should fetch device-info as well as zone state."""
+        if self._last_full_sync is None:
+            return True
+        if self._request_full_sync_next_cycle:
+            return True
+        age = (dt_util.utcnow() - self._last_full_sync).total_seconds()
+        return age >= self._zones_info_refresh_seconds()
 
     def _weather_skip_floor_minutes(self) -> int:
         """Weather refresh floor (in minutes) when HomeKit is connected.
@@ -953,12 +920,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._bridge_poll_task = asyncio.create_task(self._async_bridge_poll_loop())
 
     async def _async_bridge_poll_loop(self) -> None:
-        """Poll bridge API on a fixed interval, independent of coordinator cycle.
-
-        Updates cached bridge data and notifies entity listeners so bridge
-        sensors (boiler flow temperature, wiring state, etc.) stay fresh
-        regardless of the cloud polling interval.
-        """
+        """Poll bridge API on a fixed interval, independent of the cloud polling cycle."""
         # Initial fetch immediately (don't wait for first interval)
         try:
             bridge_data = await self._async_fetch_bridge_data()
@@ -989,11 +951,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 )
 
     def _update_bridge_in_coordinator_data(self) -> None:
-        """Update bridge data in coordinator.data and notify listeners.
-
-        Writes the cached bridge data into the coordinator's data dict
-        so bridge sensors pick it up on their next _handle_coordinator_update.
-        """
+        """Write cached bridge data into coordinator.data and notify listeners."""
         if self.data is None or self._cached_bridge_data is None:
             return
         self.data["bridge"] = self._cached_bridge_data
@@ -1120,11 +1078,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._save_homekit_savings()
 
     def record_homekit_write_saved(self, zone_id: str | None = None) -> None:
-        """Record one HomeKit write saving, update reconciler, and persist.
-
-        Args:
-            zone_id: Zone ID for state reconciler tracking (optional).
-        """
+        """Record one HomeKit write saving, update reconciler, and persist."""
         self._homekit_writes_saved += 1
         if zone_id and self.state_reconciler:
             self.state_reconciler.record_local_write(zone_id)
@@ -1133,20 +1087,14 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def async_capture_state(
         self, zone_id: str, entity_type: str, source: str,
     ) -> None:
-        """Capture zone state before overlay change (null-safe).
-
-        No-op when state restore is disabled (_sr_manager is None).
-        """
+        """Capture zone state before overlay change; no-op when state restore is disabled."""
         if self._sr_manager is not None:
             await self._sr_manager.capture(zone_id, entity_type, source=source)
 
     async def async_restore_state(
         self, zone_id: str, entity_type: str,
     ) -> CapturedState | None:
-        """Restore captured state for a zone (null-safe).
-
-        Returns captured state, or None when unavailable.
-        """
+        """Restore captured state for a zone (null-safe)."""
         if self._sr_manager is None:
             return None
         return await self._sr_manager.restore(zone_id, entity_type)
@@ -1304,6 +1252,55 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Persist and shut down state restore manager (null-safe)."""
         if self._sr_manager is not None:
             await self._sr_manager.async_shutdown()
+
+    async def _handle_zone_delta(self, delta: ZoneFingerprintDelta) -> None:
+        """Invalidate caches and prune zombie zone-keyed entries on topology change.
+
+        Best-effort: a single store's prune failure is logged and never
+        blocks the remaining stores.
+        """
+        from .data_loader import _CACHE_DIRTY
+        from .helpers import prune_zone_keyed_dict
+
+        if delta.added or delta.removed:
+            self.data_loader._cache["zones_info"] = _CACHE_DIRTY
+            self._request_full_sync_next_cycle = True
+
+        if not delta.removed:
+            return
+
+        current_zones = self._zone_fingerprint._previous or frozenset()
+
+        for store_name in ("schedules", "zone_config", "smart_comfort_cache"):
+            try:
+                data = await self.data_loader.async_load_auxiliary(store_name)
+                if not isinstance(data, dict):
+                    continue
+                removed = prune_zone_keyed_dict(data, current_zones)
+                if removed:
+                    await self.data_loader.async_update_store(store_name, data)
+                    _LOGGER.info(
+                        "Persistence: pruned %d stale entries from %s",
+                        removed, store_name,
+                    )
+            except Exception:
+                _LOGGER.warning(
+                    "Persistence: prune of %s failed; continuing",
+                    store_name, exc_info=True,
+                )
+
+        if self._sr_manager is not None:
+            try:
+                removed = self._sr_manager.prune_stale_captures(current_zones)
+                if removed:
+                    _LOGGER.info(
+                        "State Restore: pruned %d stale capture(s)", removed,
+                    )
+            except Exception:
+                _LOGGER.warning(
+                    "Persistence: prune of state_restore failed",
+                    exc_info=True,
+                )
 
     # ------------------------------------------------------------------
     # Smart Valve Control lifecycle

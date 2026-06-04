@@ -809,7 +809,7 @@
         }
       },
       "mold_risk_pct": {
-        "name": "Risque de contamination par les moisissures (%)",
+        "name": "Indicateur de risque de moisissure",
         "state_attributes": {
           "room_temperature": {
             "name": "Température ambiante"

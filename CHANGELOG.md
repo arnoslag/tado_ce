@@ -2,6 +2,37 @@
 
 All notable changes to Tado CE will be documented in this file.
 
+## [4.1.0-beta.2] - 2026-06-04
+
+This beta tackles three connected things: re-pair survival, restoration that doesn't replay stale snapshots, and a consistent "click does, dashboard reflects, fails cleanly" feel across every control. It also fixes device-state sensors freezing at boot until restart, makes the Refresh AC Capabilities button actually refresh again, and gets `tado_ce_ready` to boot-time automations instead of firing before they're listening.
+
+### Persistence
+
+- **Auto-detect Tado-side zone changes** ([Discussion #280](https://github.com/hiall-fyi/tado_ce/discussions/280) - @Trebor87) — re-pair, hardware swap, and zone add/remove on the Tado side now triggers cache invalidation automatically. The integration picks up the change on the next quick poll (5-30 min depending on cadence) and refetches the affected entries. The Refresh AC Capabilities hub button stays as a manual escape hatch.
+- **Stale zone cleanup** — when a zone is removed in the Tado app, the integration now drops every cached reference to it on the next poll rather than carrying stale data until the next HA restart.
+- **Device state stays current** ([#286](https://github.com/hiall-fyi/tado_ce/issues/286) - @Fred224) — the Connection, firmware version, and battery sensors used to freeze at boot-time values until you restarted HA. They now refresh on a periodic cadence (hourly on paid Auto-Assist tiers, every 4 hours on the free tier), so an AC controller that drops Tado's cloud uplink (E04 errors, mains blip, Wi-Fi flap) actually shows up as Disconnected within the cycle, and reconnections clear it the same way.
+
+### Bug fixes
+
+- **`tado_ce_ready` event now reaches boot-time automations** ([#287](https://github.com/hiall-fyi/tado_ce/issues/287) - @Newreader) — the event was firing as soon as the integration finished its setup, which on a cold HA start happens before automation triggers register their listeners. Anyone with an automation triggered by `tado_ce_ready` saw it never run after a restart, only after a manual reload. Fixed by deferring the fire until HA has fully started; the reload path is unchanged because that one runs while HA is already up.
+- **Refresh AC Capabilities button now actually refreshes** — since v4.0.0-beta.5's storage migration, the button was deleting a legacy file path that no longer exists, so the cache stayed populated and the re-fetch was silently skipped. Pressing the button now properly invalidates the cache and forces a fresh fetch from Tado, which is what you needed it to do all along after re-pairing a Smart AC controller.
+
+### State Restore
+
+- **Captures only persist on successful cloud writes** ([#278](https://github.com/hiall-fyi/tado_ce/issues/278) - @Newreader, root-cause companion to v4.0.1's defensive 2-poll gate) — previously a snapshot was saved before the cloud write fired, so a failed write left a stale entry that could be replayed by a later overlay-cleared event. Captures now correspond to known-applied state changes only.
+
+### User-action consistency
+
+- **Every user action updates the dashboard immediately and rolls back on failure** — temperature sliders already worked this way; HVAC mode dropdowns, timer buttons, water-heater on/off, boost/smart-boost buttons, and the `tado_ce.turn_off_all_zones`, `tado_ce.resume_schedule`, `tado_ce.set_open_window_mode`, and `tado_ce.restore_previous_state` services now match. The dashboard updates the moment you click. If the cloud rejects or times out, the dashboard rolls back and an error toast surfaces in the UI.
+
+### i18n
+
+- **Mold Risk % renamed to Mold Risk Indicator** ([#90](https://github.com/hiall-fyi/tado_ce/issues/90) - @ChrisMarriott38) — the numeric humidity sensor (added in v2.0.1) used to display as `Mold Risk %`, which read like "percentage of mold risk" but is actually surface relative humidity. The trailing `%` also caused a slug collision on fresh installs because HA's slugify drops it, so the entity was landing as `sensor.<zone>_mold_risk_2`. The friendly name is now `Mold Risk Indicator` across all seven locales (DE, ES, FR, IT, NL, PT translated via DeepL). Existing installs are unaffected: `entity_id`, `unique_id`, `device_class=HUMIDITY` (so HA still appends `%` in the UI), and all attribute names stay the same. Only the UI label changes, and fresh installs from this beta onward get a clean auto-generated slug without the `_2` suffix.
+
+### Home Assistant compatibility
+
+- **Removed a HA Core deprecation warning** — Tado CE was using a device-tracker import path that HA Core marked deprecated and is removing in HA 2027.6. Switched to the current path. The "deprecated alias TrackerEntity was used from tado_ce" warning that appeared on every startup is gone. No behavioural change.
+
 ## [4.0.1] - 2026-06-03
 
 The biggest user-visible change is the AC swing dropdown split into separate vertical and horizontal axes, which already shipped to beta testers as v4.1.0-beta.1. AC users on fine-grained swing units (Mitsubishi, Fujitsu, similar) can now park each axis independently instead of being forced into a single sweeping motion.
@@ -14,9 +45,9 @@ Beyond the swing change, this release rolls up swing-fix polish, an AC HomeKit d
 
 ### Bug Fixes
 
-- **State Restore: defensive 2-poll confirmation gate before firing the restoration event** ([#278](https://github.com/hiall-fyi/tado_ce/issues/278) - @Newreader) — The State Restore Manager was firing `tado_ce_state_restoration_available` the moment a single poll reported `overlay=null` on a zone that previously had an overlay. A single observation can be a transient (quota-reset window, partial poll response, brief upstream blip) rather than a real overlay clear. The integration now requires two consecutive polls reporting `overlay=null` on the same zone before firing the event, filtering out transients without changing steady-state behaviour. The event still fires on real overlay clears (timer expiry, user resume from Tado app), just one polling cycle later (~5–12 minutes depending on cadence). FEATURES_GUIDE adds a defensive listener pattern (delay + re-check) for any automation subscribed to this event. Reported by @Newreader after observing a frost-protection overlay reverting to schedule heat in his setup; the underlying mechanism (whether transient API response or upstream Tado server behaviour) is still under investigation, but the defensive gate addresses the symptom regardless.
-- **Polling resume log line no longer fires when never paused** — `should_pause_polling` was logging "expected reset time XX:XX UTC has passed — resuming polling" on every poll cycle once `last_reset_utc + 24h` had elapsed, even on tiers where polling was never paused (anyone on 1000+ tier under normal load). The Tado API doesn't always refresh the `last_reset_utc` header promptly after a quota reset, so the condition stayed True every cycle and the log filled with duplicates. The line now only fires on an actual paused → unpaused transition. Cosmetic fix; no behavioural change.
-- **Drift refresh log line surfaces per-cycle quota cost** ([#277](https://github.com/hiall-fyi/tado_ce/issues/277) - @wrowlands3) — `Offset Sync: drift refresh complete` now ends with `... N cloud call(s) used this cycle` so users can audit drift refresh quota usage without inferring N from rate-limit decrement traces. FEATURES_GUIDE Smart Polling adds a worked daily-total formula and notes the LOW_QUOTA pause threshold.
+- **State Restore: defensive 2-poll confirmation before firing the restoration event** ([#278](https://github.com/hiall-fyi/tado_ce/issues/278) - @Newreader) — the `tado_ce_state_restoration_available` event was firing the moment a single poll showed a zone's overlay had cleared. A single observation can be a transient (quota-reset window, partial poll response, brief upstream blip) rather than a real overlay clear. The integration now waits for two consecutive polls confirming the same overlay clear before firing the event, filtering out transients without changing steady-state behaviour. The event still fires on real overlay clears (timer expiry, user resume from Tado app), just one polling cycle later (~5–12 minutes depending on cadence). FEATURES_GUIDE adds a defensive listener pattern (delay + re-check) for any automation subscribed to this event. Reported by @Newreader after observing a frost-protection overlay reverting to schedule heat in his setup; the underlying mechanism (whether transient API response or upstream Tado server behaviour) is still under investigation, but the defensive gate addresses the symptom regardless.
+- **Polling resume log line no longer fires when never paused** — the polling-pause check was logging "expected reset time XX:XX UTC has passed — resuming polling" on every poll cycle once 24 hours had elapsed since the last quota reset, even on tiers where polling was never paused (anyone on 1000+ tier under normal load). The Tado API doesn't always refresh its quota-reset timestamp promptly, so the condition stayed True every cycle and the log filled with duplicates. The line now only fires on an actual paused → unpaused transition. Cosmetic fix; no behavioural change.
+- **Drift refresh log line surfaces per-cycle quota cost** ([#277](https://github.com/hiall-fyi/tado_ce/issues/277) - @wrowlands3) — `Offset Sync: drift refresh complete` now ends with `... N cloud call(s) used this cycle` so users can audit drift refresh quota usage without inferring N from rate-limit decrement traces. FEATURES_GUIDE Smart Polling adds a worked daily-total formula and notes the quota-low pause threshold.
 - **Adaptive polling now scales correctly across quota tiers** ([#276](https://github.com/hiall-fyi/tado_ce/issues/276) - @churchofnoise) — The narrowing direction of the adaptive math was capped at 5 minutes regardless of available quota, leaving 20K legacy-tier users polling 1/3 of what their quota afforded. The cap is now 1 minute (Tado's cloud doesn't update faster than that anyway), so high-quota users get sub-5-minute polling automatically. 100-call free tier and 1,000-call transitional tier unchanged because the math widens well above the floor on those budgets.
 - **Swing dropdowns now follow physical louver order** ([#270](https://github.com/hiall-fyi/tado_ce/issues/270) - @BirbByte) — On units that report fine-grained positions, the dropdown was alphabetical (`Down / Mid / Mid (down) / Mid (up) / Up`), which doesn't map to where the louver actually sits. Vertical now reads top-to-bottom (`Auto, Up, Mid (up), Mid, Mid (down), Down, On`) and horizontal reads left-to-right (`Auto, Left, Mid (left), Mid, Mid (right), Right, On`), matching the Tado app and most AC remotes. Unknown values Tado adds in future fall through alphabetically at the tail so they stay visible.
 - **Swing dropdown icons are now consistent** ([#270](https://github.com/hiall-fyi/tado_ce/issues/270) - @BirbByte) — `On` was picking up Home Assistant's built-in `mdi:swap-vertical` while the fixed positions had no icon at all, which looked uneven. Each swing value now ships its own icon: directional arrows for the position values, the auto-mode glyph for `Auto`, the swap glyphs for continuous `On`, and a small dot for `Off`.
@@ -131,7 +162,7 @@ Existing v3.5.3 installs upgrade in place — data, schedules, and HomeKit pairi
 - **Heating controls no longer get stuck after a silent HomeKit failure** — If a HomeKit write completed locally but never reached Tado's servers, the integration could keep showing "heating" indefinitely and skip subsequent commands. Writes are now verified against Tado's cloud, the stale state is cleared if not confirmed, and future writes for that zone fall through to cloud until HomeKit recovers.
 - **Service calls now refresh the entity immediately** ([Discussion #219](https://github.com/hiall-fyi/tado_ce/discussions/219) - @jeverley) — `set_open_window_mode`, `restore_previous_state`, `resume_schedule`, `set_climate_timer`, and `set_water_heater_timer` used to update the Tado app instantly but leave the HA entity stale until the next poll. They now trigger an immediate refresh.
 - **Failed service calls now surface as errors instead of silent success** — `set_temperature_offset`, `set_climate_timer`, and `set_water_heater_timer` used to swallow per-zone failures and report overall success even when no write actually landed. They now raise an error visible in the HA UI when every zone fails, and log a warning for partial failures.
-- **`restore_previous_state` and `resume_schedule` now actually restore the zone** ([#267](https://github.com/hiall-fyi/tado_ce/issues/267) - @apilone) — Calling `restore_previous_state` after changing a zone could leave the cloud unchanged while the HA log claimed "Restore executed". Two problems stacked: the captured pre-overlay state was replayed to Tado's cloud verbatim — including response-only fields the PUT endpoint rejects with HTTP 422 — and the service didn't check the API's return value, so the failure was swallowed and the captured baseline was consumed before the call even ran. The service now sanitises the termination dict before sending, checks the cloud's response, and only clears the captured state when the call lands. On failure you get a clear error in the HA UI and the captured state stays in the store so you can retry. `resume_schedule` had the same fire-and-forget pattern and is fixed alongside.
+- **`restore_previous_state` and `resume_schedule` now actually restore the zone** ([#267](https://github.com/hiall-fyi/tado_ce/issues/267) - @apilone) — Calling `restore_previous_state` after changing a zone could leave the cloud unchanged while the HA log claimed "Restore executed". Two problems stacked: the saved state was being sent back to Tado in a format Tado's cloud rejected, and the service ignored the rejection and cleared the saved state anyway. The service now strips out fields Tado's cloud rejects before sending, checks Tado's response, and only clears the saved state when the call actually lands. On failure you get a clear error in the HA UI and the saved state stays put so you can retry. `resume_schedule` had the same problem and is fixed alongside.
 - **Early Start and Child Lock switches roll back on failed writes** — If the API rejected a switch write (e.g. during a rate-limit window), the switch used to stay in the optimistic new state until the next refresh. The switch now reverts when the underlying API call reports failure.
 - **Presence Mode "Auto" no longer briefly shows "Home" when you're away** — Switching to Auto used to overwrite the cached presence with "Home" for one poll cycle. Auto now leaves the cached presence alone and lets the next poll fill in the real value from geofencing.
 - **Presence labels match across the Hub select and climate cards** ([Discussion #219](https://github.com/hiall-fyi/tado_ce/discussions/219) - @dragorex71) — On non-English Home Assistant installations, the Hub presence select and the climate card preset showed different translations (e.g. "Casa" vs "In casa" in Italian). All six supported languages now match.
@@ -146,7 +177,7 @@ Existing v3.5.3 installs upgrade in place — data, schedules, and HomeKit pairi
 
 ### Improvements
 
-- **All data now uses Home Assistant's built-in storage** — Zone states, weather, rate limits, schedules, HomeKit pairings, and per-zone state files moved from custom JSON files to HA's native Store system. The migration runs once on first startup; old files are renamed (not deleted) so you can roll back if needed. No more blocking file reads on the main thread.
+- **All data now uses Home Assistant's built-in storage** — Zone states, weather, rate limits, schedules, HomeKit pairings, and per-zone state files moved from custom JSON files to Home Assistant's standard storage. The move runs once on first startup; old files are renamed (not deleted) so you can roll back if needed. Startup is faster and HA stays responsive while saving.
 - **Token refreshes ~50% less often** — The integration used to refresh access tokens every 5 minutes, but Tado issues them for roughly 10 minutes. It now reads the actual expiry from Tado's response and only refreshes when the token is about to expire.
 - **Boiler flow temperature updates every 60 seconds** ([#237](https://github.com/hiall-fyi/tado_ce/issues/237) - @ChrisMarriott38) — The boiler flow sensor used to be tied to your cloud polling interval (up to 30 minutes between updates). It now polls the bridge independently every 60 seconds. The bridge API doesn't count against your Tado quota.
 - **Custom polling interval applies everywhere** ([#239](https://github.com/hiall-fyi/tado_ce/issues/239) - @ChrisMarriott38) — If you set a custom day or night polling interval, all data (zone states, humidity, heating power, weather, boiler flow temperature) refreshes at that rate. Previously, HomeKit's Cloud Data Refresh setting could override your custom interval for some data.
@@ -197,9 +228,9 @@ Existing v3.5.3 installs upgrade in place — data, schedules, and HomeKit pairi
 - **Fixed stale insights sticking around after resolving** — The Home Insights sensor could show issues that had already resolved but were still within the reappearance grace period. For example, a mold risk warning that cleared would keep showing in the "persistent issues" list for up to an hour. Now only genuinely active issues appear.
 
 ### Improvements
-- **More resilient API calls** — All API operations (temperature offsets, child lock, zone overlays, presence lock, schedules, meter readings, away configuration) now automatically retry when the Tado cloud returns a transient 403 error. Previously, only the main polling calls had retry logic — actions like changing temperature or toggling child lock would silently fail on a temporary CDN/WAF block. Now every cloud API call retries up to 3 times with exponential backoff before giving up.
+- **More resilient API calls** — All API operations (temperature offsets, child lock, zone overlays, presence lock, schedules, meter readings, away configuration) now automatically retry when the Tado cloud returns a transient 403 error. Previously, only the main polling calls had retry logic — actions like changing temperature or toggling child lock would silently fail on a brief block from Tado's network protection layer. Now every cloud API call retries up to 3 times with increasing delays before giving up.
 - **Token refresh also retries on 403** — If the Tado login server returns a transient 403 during token refresh, the integration now retries instead of immediately failing. Real authentication errors (401, invalid_grant) are still handled instantly without retry.
-- **Dangling async tasks fixed** — Background tasks in the write optimizer (action debouncer and refresh coalescer) now properly track their lifecycle and log exceptions instead of silently swallowing them. Cleanup on shutdown cancels all pending tasks.
+- **Background tasks shut down cleanly** — The write-batching system's background tasks (slider debounce and refresh coalescing) now log errors instead of failing silently, and cancel pending work on shutdown.
 
 _Performance & storage_
 
@@ -232,7 +263,7 @@ _Insights & comfort_
 
 _Performance & storage_
 
-- **Faster Startup** — The insights engine loads only the modules it needs instead of pulling in the entire 3,000-line file on every restart.
+- **Faster Startup** — The Insights feature now loads only the parts you have enabled instead of everything on every restart.
 
 _Data integrity_
 
@@ -264,11 +295,11 @@ _Data integrity_
 - **Schedule Preview** — Heating and AC climate entities now show a `scheduled_target_temperature` attribute with the current schedule target, so you can see what temperature the zone would be at without an overlay.
 
 ### Bug Fixes
-- **Fixed Hassfest Validation Failure** — The window detection mode selector was using title-case option keys (`Active`, `Passive`, `Auto`) which failed Home Assistant's Hassfest validation. Lowercased across all 7 languages. No user action needed — option labels in the UI are unchanged.
+- **Fixed Window Detection mode selector compatibility** — The window detection mode selector used capitalised option keys (`Active`, `Passive`, `Auto`) which Home Assistant's integration checks now reject. Switched to lowercase across all 7 languages. No user action needed — option labels in the UI are unchanged.
 
 ### Improvements
 - **UFH Buffer Now Per-Zone** — Underfloor heating buffer is now configured per zone (via Zone Configuration) instead of a global setting. Zones with heating type set to Underfloor automatically get the buffer applied.
-- **Atomic Writes for Zone Config & Outdoor Temp** — Zone configuration and outdoor temperature history files now use the same crash-safe tempfile-then-rename pattern as other data files, so an unexpected shutdown can't leave these files half-written.
+- **Crash-safe saves for zone config and outdoor temperature history** — These files now use the same crash-safe save method as other Tado CE data, so an unexpected shutdown can't leave them half-written.
 - **Translation Sync** — Added missing Adaptive Preheat Mode selector translations across all 7 languages (German, Spanish, French, Italian, Dutch, Portuguese).
 
 ## [3.3.1] - 2026-03-21
@@ -637,7 +668,7 @@ _Other_
 ## [1.9.2] - 2026-02-01
 
 ### Bug Fixes
-- **Fixed grey loading state on climate card** ([#44](https://github.com/hiall-fyi/tado_ce/issues/44) - @chinezbrun) — The climate card showed a grey "loading" overlay for several seconds after any state change. Resolved by updating optimistic state synchronously instead of waiting for the async roundtrip.
+- **Fixed grey loading state on climate card** ([#44](https://github.com/hiall-fyi/tado_ce/issues/44) - @chinezbrun) — The climate card showed a grey "loading" overlay for several seconds after any state change. The card now shows the new value immediately instead of waiting for Tado's cloud to confirm.
 
 ## [1.9.1] - 2026-01-31
 
@@ -727,10 +758,10 @@ _Other_
 ## [1.6.0] - 2026-01-25
 
 ### Features
-- **Faster API calls — migrated to native async** — The integration no longer spawns subprocesses to run Tado API calls. All HTTP requests now use HA's native aiohttp client, reducing per-call overhead from ~100ms to <10ms and eliminating the stability issues associated with subprocess-based calls.
+- **Faster API calls** — Tado API calls now run directly inside Home Assistant instead of through a separate process. Each call's overhead drops from ~100ms to <10ms, and the stability issues from the old approach are gone.
 
 ### Bug Fixes
-- **Fixed database migration issue from older versions** — Upgrading from pre-1.5 releases could fail mid-migration, leaving entities in an inconsistent state. Migration is now idempotent and can recover from partial prior runs.
+- **Fixed database migration issue from older versions** — Upgrading from pre-1.5 releases could fail mid-migration, leaving entities in an inconsistent state. Upgrades can now resume safely if a previous attempt was interrupted partway through.
 - **Fixed `climate.set_temperature` ignoring the mode you selected** — Passing `hvac_mode` along with `temperature` to the service was being silently dropped — only the temperature was applied. Now both fields are honoured in the same call.
 
 ## [1.5.5] - 2026-01-24
@@ -780,7 +811,7 @@ _Other_
 - **Hot water temperature control** — Tank-based hot water zones now expose a water heater entity with temperature and mode control, matching what the Tado app offers.
 
 ### Improvements
-- **Faster API calls with async architecture** — The integration's API layer has been rewritten using async I/O, eliminating subprocess overhead and improving per-call latency.
+- **Faster API calls** — The way Tado CE talks to Tado's cloud has been reworked. Each call is faster and the integration uses fewer system resources.
 
 ## [1.4.1] - 2026-01-23
 

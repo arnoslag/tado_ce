@@ -89,11 +89,7 @@ class StateReconciler:
         new_source: str,
         value: float | int | None,
     ) -> None:
-        """Log only when the merge source for a zone characteristic changes.
-
-        Logging every poll would drown the debug log; only the
-        cloud→homekit / homekit→cloud transitions are interesting.
-        """
+        """Log only when the merge source for a zone characteristic changes."""
         key = f"{zone_id}_{characteristic}"
         prev_source = self._prev_sources.get(key)
         if prev_source != new_source:

@@ -1,10 +1,4 @@
-"""Tado CE repair-issue helpers — surface auth / config problems via HA's UI.
-
-Wraps `homeassistant.helpers.issue_registry` with stable issue
-IDs so other modules can create or dismiss repair notifications
-without re-deriving the ID format. Auth issues are per-home so
-multi-home users don't lose context across entries.
-"""
+"""Tado CE repair-issue helpers — surface auth / config problems via HA's UI."""
 
 from __future__ import annotations
 

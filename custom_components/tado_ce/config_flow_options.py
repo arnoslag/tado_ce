@@ -156,21 +156,7 @@ _RESET_SCOPE_OPTIONS = [
 
 
 class TadoCEOptionsFlow(config_entries.OptionsFlow):
-    """Handle options flow for Tado CE with menu-based navigation.
-
-    Menu options:
-    - Global Settings: 4 collapsed sections (CE Exclusive, Tado Data, Settings, Polling & API)
-    - Zone Sensor Config: Per-zone external sensor picker with EntitySelector
-
-    CORE features (always ON, not in UI):
-    - Zone Diagnostics, Device Controls, Boost Buttons, Environment Sensors
-
-    Moved to Per-Zone configuration (still active):
-    - ufh_buffer_minutes (read by Smart Comfort per-zone)
-
-    Removed (no consumers):
-    - ufh_zones, adaptive_preheat_zones
-    """
+    """Handle options flow for Tado CE with menu-based navigation."""
 
     def __init__(self, config_entry: ConfigEntry) -> None:
         """Initialize options flow."""
@@ -193,18 +179,7 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
         )
 
     def _build_general_schema(self) -> vol.Schema:
-        """Build the General Settings form schema — toggles only.
-
-        12 BooleanSelector fields grouped in 4 sections by feature
-        origin / user mental model:
-        - Tado Features (Tado-native: weather, home state, mobile,
-          offsets, schedule calendar)
-        - Hardware Connections (physical bridges: Internet Bridge,
-          HomeKit)
-        - Smart Automations (tado_ce value-add: Smart Comfort,
-          Thermal Analytics, Adaptive Preheat, Weather Compensation)
-        - Advanced (Per-Zone Configuration)
-        """
+        """Build the General Settings form schema — toggles grouped by mental model (Tado / hardware / automation / advanced)."""
         opt = self.config_entry.options.get
         return vol.Schema(
             {
@@ -296,11 +271,7 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
         self,
         zones_with_heating_power: list[dict[str, str]],
     ) -> vol.Schema:
-        """Build the Advanced Settings form schema — conditional tuning only.
-
-        Only includes sections for features currently enabled in General Settings.
-        Polling & API section is always visible.
-        """
+        """Build the Advanced Settings form — conditional tuning per enabled feature; Polling & API always visible."""
         options = self.config_entry.options
         opt = options.get
         sections: dict[vol.Required, Any] = {}
@@ -456,12 +427,7 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
         user_input: dict[str, Any],
         processed: dict[str, Any],
     ) -> None:
-        """Flatten General Settings section dicts to top-level toggle keys.
-
-        Section keys are by mental-model grouping (Tado-native vs
-        tado_ce value-add vs hardware), not storage structure — the
-        toggles themselves keep their legacy keys for migration safety.
-        """
+        """Flatten General Settings section dicts to top-level toggle keys (sections are mental-model only)."""
         for section_key in (
             "tado_features",
             "hardware_connections",
@@ -477,10 +443,7 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                 processed[key] = value
 
     def _detect_first_enable(self, new_options: dict[str, Any]) -> str | None:
-        """Detect if a feature was just enabled for the first time.
-
-        Returns the step_id to redirect to, or None if no sub-flow needed.
-        """
+        """Detect if a feature was just enabled — return sub-flow step_id, or None if no sub-flow needed."""
         prev = self.config_entry.options
 
         # Bridge: first enable AND no credentials stored
@@ -705,10 +668,7 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
         )
 
     def _apply_reset(self, scope: str) -> dict[str, Any]:
-        """Apply reset defaults for the given scope.
-
-        Returns new options dict with defaults applied.
-        """
+        """Apply reset defaults for the given scope, returning new options dict."""
         current = dict(self.config_entry.options)
         if scope == "everything":
             for toggle in _ALL_TOGGLE_KEYS:

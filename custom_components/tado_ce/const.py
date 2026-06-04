@@ -399,6 +399,14 @@ HOMEKIT_WEATHER_SKIP_MINUTES: Final[int] = 30
 # half hour.
 OFFSET_DRIFT_REFRESH_SECONDS: Final[int] = 30 * 60
 
+# Without a periodic refresh, `connectionState` / `currentFwVersion` /
+# `batteryState` freeze at boot — they only land in zone-info, not in
+# per-cycle zone state. Free-tier interval is longer so the refresh
+# stays under ~6% of daily quota.
+ZONES_INFO_REFRESH_SECONDS_PAID: Final[int] = 60 * 60
+ZONES_INFO_REFRESH_SECONDS_FREE: Final[int] = 4 * 60 * 60
+ZONES_INFO_FREE_TIER_THRESHOLD: Final[int] = 200
+
 # =============================================================================
 # Climate Zone Type Helper
 # =============================================================================

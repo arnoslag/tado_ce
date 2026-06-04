@@ -1,11 +1,4 @@
-"""Smart Valve Controller — per-zone proportional-offset TRV control.
-
-Adjusts each TRV's target temperature using an external sensor so the
-room reaches the user's desired temperature instead of the temperature
-the TRV's built-in sensor reads. Writes go directly to the TRV via
-HomeKit (preferred) or the cloud API (fallback), bypassing the climate
-entity pipeline.
-"""
+"""Smart Valve Controller — per-zone proportional-offset TRV control via external sensor; writes via HomeKit (preferred) or cloud."""
 
 from __future__ import annotations
 

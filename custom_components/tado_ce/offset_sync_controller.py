@@ -1,10 +1,4 @@
-"""Offset Sync Controller — per-zone device offset synchronisation.
-
-Writes device temperature offsets so the Tado API (and app) displays the
-external sensor's reading instead of the TRV's built-in sensor. With
-accurate temperature data, Tado's own modulation algorithm works
-correctly without external compensation.
-"""
+"""Offset Sync Controller — per-zone device offset synchronisation so Tado sees the external sensor's reading."""
 
 from __future__ import annotations
 

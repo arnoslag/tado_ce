@@ -8,9 +8,22 @@ For completed features, see [CHANGELOG.md](CHANGELOG.md).
 
 ## Up Next
 
-**v4.1.0 beta cycle.** Foundation work on the persistence layer (re-pair-aware caches), adaptive polling rework (universal tier-aware reserve, round-robin drift refresh), HomeKit pairing reliability (named-exception detection + Repair issue), and State Restore atomicity. Each beta carries one architectural change so regressions are easy to attribute. A beta-tester recruitment thread will be posted in [GitHub Discussions](https://github.com/hiall-fyi/tado_ce/discussions) once the first architectural beta is ready to cut.
+**v4.1.0 beta cycle.** Architectural foundation work first, doc + observability polish second, with one focused theme per beta cut so regressions are easy to attribute. Beta-tester recruitment thread is live at [Discussion #285](https://github.com/hiall-fyi/tado_ce/discussions/285).
 
-All AC writes (target temperature, HVAC mode, swing, fan, timers) currently go through the cloud — see the AC entry below for why HomeKit local control on Smart AC Control V3+ isn't on the active roadmap.
+| Beta | Theme | Notes |
+|---|---|---|
+| beta.3 | Adaptive polling rework (universal tier-aware reserve) | Replaces the `100`-call assumption baked into the drift-refresh gate, calendar low-quota check, and polling-interval switch. Bundles two error-handling improvements: a revoked or rotated token will trigger reauth instead of falling through to cache, and a rate-limit response with an explicit retry window will be honoured instead of using the configured polling interval. |
+| beta.4 | Drift refresh round-robin | Advance through climate zones one per cycle instead of all every cycle. Same total drift coverage, no burst pattern. Closes [#277](https://github.com/hiall-fyi/tado_ce/issues/277). |
+| beta.5 | HomeKit pairing reliability | `aiohomekit` named-exception detection plus a Repair issue when the bridge issues a new HomeKit Setup ID after factory reset. Stops the silent-retry loop. |
+| beta.6 | Doc maturity batch | New "Settings configured in the Tado app, not Tado CE" section in FEATURES_GUIDE (covers hysteresis / Acceptance Range / Minimum On/Off Time / Smart Schedule preheating-level / open-window-detection mode and similar Tado-app-only knobs). Plus a `Computed by:` line on every FEATURES_GUIDE feature section to clarify whether the value is computed by Tado server or by Tado CE. |
+| beta.7 | Skills detection + Air Comfort prep | Read `/api/homes/{home_id}/skills` once per session to detect Auto-Assist enablement. Surface as a hub diagnostic sensor and use the signal to disambiguate Tado CE's predicted features from Tado server's paid equivalents in docs and Repair issues. Air Comfort ([#64](https://github.com/hiall-fyi/tado_ce/issues/64)) schema design lands alongside. |
+| beta.8 | Air Comfort feature ([#64](https://github.com/hiall-fyi/tado_ce/issues/64)) | Per-zone Air Freshness from window-opening history and AC activity (zero extra API calls). Optional Outdoor Air Quality external-sensor input via Options Flow, same pattern as external temperature / humidity. |
+| beta.9 | Hysteresis attribute investigation + legacy REST audit | Investigate whether per-zone hysteresis / minimum-on-off settings are readable on the legacy REST surface and surface them as climate attributes if so. Plus an internal endpoint catalogue cataloguing every endpoint Tado CE depends on, classifying each by criticality, and documenting graceful-degradation behaviour — bridges into the v5 cleanup work. |
+| GA | Polish + final review | Final FEATURES_GUIDE editing pass, full quality-check sweep, release announcement. |
+
+Cadence is themes-not-dates. Each beta lands when its work is clean and stable.
+
+All AC writes (target temperature, HVAC mode, swing, fan, timers) currently go through the cloud. See the AC entry below for why HomeKit local control on Smart AC Control V3+ isn't on the active roadmap.
 
 ## Future Consideration
 
@@ -32,8 +45,6 @@ All AC writes (target temperature, HVAC mode, swing, fan, timers) currently go t
 
 - **Local Only Mode** — A toggle that stops all cloud polling after initial setup, running purely off HomeKit bridge data. Technically feasible — the coordinator already skips cloud calls when HomeKit provides live data. Tradeoff: cloud-only data (schedules, battery, heating power, geofencing) would go stale. Could include a daily cloud check for diagnostics.
 
-- **Periodic Full Sync** — Currently `zones_info`, `offsets`, `schedules`, and `ac_capabilities` only refresh on the first poll after restart. A periodic full sync (e.g. every 6 hours) would keep this data fresh without requiring a restart. Low priority — this data rarely changes.
-
 ### v5.0.0 — Legacy cleanup
 
 A spring-clean release that drops backward-compat code accumulated through the v3.x and v4.x cycles. The cleanup is laser-focused on dead surface area, not behaviour change.
@@ -48,7 +59,10 @@ Planned removals:
   - `calendar.heating_schedule_schedule` doubled slug — the calendar device is named "Heating Schedule" and the translation_key is `schedule`, so HA derives a doubled slug for fresh v3.0+ installs. v2.3.1-migrated users still see `calendar.lounge` and are unaffected. Either rename the device or the translation_key (the rename is the breaking-change part, and v5 already removes migration code, so this rides along).
   - `quota_reserve_enabled` / `weather_state` `unique_id_suffix` divergence from `translation_key` — internal-only inconsistency, no user-visible effect, but it costs an extra mental jump every time the registry is audited. Align suffix to translation_key.
 - **Retire `API_REFERENCE.md`** — The doc currently mixes three things: an internal API call code taxonomy (codes 1-8) that users never see, write-optimisation and sync-type material that already lives in FEATURES_GUIDE, and three genuinely user-useful sections (rate-limit reset detection, per-tier polling guidance, and a short troubleshooting list). Fold the useful sections into FEATURES_GUIDE (Smart Polling already covers the same ground), drop the README and FEATURES_GUIDE links, and delete the file. v5.0.0 because it removes a doc users may have linked to externally; the move gives the redirect a clean version boundary.
-- **Climate AC + Heating structural mirror** — `climate_ac.py` and `climate_heating.py` repeat the same setup shape (`async_added_to_hass`, `async_will_remove_from_hass`, zone-config listener wiring, temp-limit refresh) with only default temperature and log-prefix differences. Sharing a base class would save around 120 LOC. Gated on a full hardening-tests pass and a cross-module audit first — the two paths are intentionally cloned today and have absorbed several family-level bugs over the v4.x cycle, so the refactor needs solid scaffolding before it lands.
+- **Climate AC + Heating structural mirror** — `climate_ac.py` and `climate_heating.py` repeat the same setup shape (`async_added_to_hass`, `async_will_remove_from_hass`, zone-config listener wiring, temp-limit refresh) with only default temperature and log-prefix differences. Sharing a base class would save around 120 LOC. Gated on a thorough test-suite review and a cross-file consistency check first — the two paths are intentionally cloned today and have absorbed several recurring shape-similar bugs over the v4.x cycle, so the refactor needs solid scaffolding before it lands.
+- **Four feature toggles that have no UI surface** — `zone_diagnostics_enabled`, `device_controls_enabled`, `boost_buttons_enabled`, `environment_sensors_enabled` are stored as config keys but no Options Flow row, no `strings.json` entry, and no selector lets you actually flip them. They sit at the default `True` on every install. Net cost is around 130 LOC carried for a runtime path that nobody can trigger, same shape as Test Mode (retired in v4.0.0-beta.7). Drop the toggles. If anyone later surfaces a real need to disable one of these, it will land in v5.x as a normal feature flag rather than as an inherited dead toggle.
+- **AC swing legacy mode migration shim** — `climate_ac._migrate_legacy_swing_mode` has carried a deprecation warning since v4.1.0-beta.1 stating "removed in v4.2". If v4.2 ships before v5.0.0 the shim retires there; otherwise it rides along with v5 cleanup, slightly later than the original promise. Track in the v5 punch list either way.
+- **`entity_cleanup.py` v3.x branches** — eighteen `legacy_suffixes=` lists carry v3.x `unique_id` shapes for entities that have since been renamed or moved. Once v5.0.0 ships with the minimum-upgrade-from-v4.x rule in force, every v3.x branch in those lists is unreachable and can drop. Roughly 150 LOC depending on how many lists go fully empty after the cull.
 
 Anything else flagged in the v5 audit will be added here as it surfaces. No timeline yet.
 

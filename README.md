@@ -6,7 +6,7 @@
 ![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2025.11%2B-blue?style=for-the-badge&logo=home-assistant) ![Python](https://img.shields.io/badge/Python-3.13%2B-blue?style=for-the-badge&logo=python&logoColor=white) ![Tado](https://img.shields.io/badge/Tado-V2%2FV3%2FV3%2B-1E3A8A?style=for-the-badge) ![HACS](https://img.shields.io/badge/HACS-Default-41BDF5?style=for-the-badge)
 
 <!-- Status -->
-![Stable](https://img.shields.io/badge/Stable-4.0.1-brightgreen?style=for-the-badge) ![Beta](https://img.shields.io/badge/Beta-4.1.0--beta.1-purple?style=for-the-badge) ![License](https://img.shields.io/badge/License-AGPL--3.0-lightgrey?style=for-the-badge) ![Coverage](https://img.shields.io/badge/Coverage-93%25-green?style=for-the-badge)
+![Stable](https://img.shields.io/badge/Stable-4.0.1-brightgreen?style=for-the-badge) ![Beta](https://img.shields.io/badge/Beta-4.1.0--beta.2-purple?style=for-the-badge) ![License](https://img.shields.io/badge/License-AGPL--3.0-lightgrey?style=for-the-badge) ![Coverage](https://img.shields.io/badge/Coverage-93%25-green?style=for-the-badge)
 
 <!-- Community -->
 ![GitHub stars](https://img.shields.io/github/stars/hiall-fyi/tado_ce?style=for-the-badge&logo=github) ![GitHub issues](https://img.shields.io/github/issues/hiall-fyi/tado_ce?style=for-the-badge&logo=github) ![GitHub Release Date](https://img.shields.io/github/release-date/hiall-fyi/tado_ce?style=for-the-badge&logo=github)
@@ -218,7 +218,7 @@ Highlights:
 
 Tado CE exposes services for climate control, hot water timers, open-window mode, temperature offsets, restoring previous state, and more. All services appear under **Developer Tools → Services** with parameter documentation. See [FEATURES_GUIDE.md](FEATURES_GUIDE.md#services) for full details and examples.
 
-Automations that need to act on Tado CE entities right after Home Assistant starts can listen for the `tado_ce_ready` event instead of guessing timing with delays — the event fires once all climate entities have real data, with `home_id`, `entry_id`, and `zone_count` in the payload.
+Automations that need to act on Tado CE entities right after Home Assistant starts can listen for the `tado_ce_ready` event instead of guessing timing with delays. The event fires once all climate entities have real data and Home Assistant itself has finished starting, so boot-time automation triggers are guaranteed to be listening when it lands. Payload carries `home_id`, `entry_id`, and `zone_count`.
 
 ---
 

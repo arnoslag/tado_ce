@@ -21,7 +21,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
-from .helpers import get_zone_states, parse_iso_datetime
+from .helpers import get_zone_states, parse_iso_datetime, prune_zone_keyed_dict
 from .storage import async_migrate_json_to_store
 
 if TYPE_CHECKING:
@@ -307,6 +307,10 @@ class StateRestoreManager:
                 _LOGGER.debug("State Restore: consumed %s for restoration", key)
             return state
 
+    def prune_stale_captures(self, current_zones: frozenset[str]) -> int:
+        """Drop captures whose zone_id is no longer in current_zones; return removed count."""
+        return prune_zone_keyed_dict(self._captured, current_zones)
+
     async def peek(
         self,
         zone_id: str,
@@ -397,7 +401,6 @@ class StateRestoreManager:
                 # about. Counter stays at 0.
                 continue
 
-            # Transition: had_overlay=True, has_overlay=False.
             count = self._consecutive_cleared.get(zone_id, 0) + 1
             self._consecutive_cleared[zone_id] = count
 

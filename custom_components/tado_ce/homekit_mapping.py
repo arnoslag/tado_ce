@@ -1,11 +1,4 @@
-"""Tado CE HomeKit mapping — link HomeKit accessories to cloud zone IDs by serial.
-
-Tado HomeKit accessories advertise their device serial via
-characteristic 0x30; the cloud API returns the same serial inside
-each zone's `devices` list. This module joins the two sources so
-the integration can target writes to the right HomeKit accessory
-ID (`aid`) for each zone.
-"""
+"""Tado CE HomeKit mapping — link HomeKit accessories to cloud zone IDs by serial."""
 
 from __future__ import annotations
 
@@ -33,13 +26,7 @@ def build_serial_mapping(
     accessories: list[dict[str, Any]],
     cloud_zones_info: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    """Build the serial-to-zone and zone-to-aids mapping from HomeKit + cloud data.
-
-    Reads the serial-number characteristic (0x30) from every HomeKit
-    accessory, joins it against the device serials returned by the
-    cloud API, and skips the bridge accessory (model IB01) since it
-    isn't tied to a heating zone.
-    """
+    """Build the serial-to-zone and zone-to-aids mapping from HomeKit + cloud data."""
     empty_result: dict[str, Any] = {
         "serial_to_zone": {},
         "zone_to_aids": {},
@@ -61,8 +48,7 @@ def build_serial_mapping(
         )
         return empty_result
 
-    # Cloud-side index: zone_id → {device serials}, skipping zones with
-    # no usable id (Tado IDs start from 1).
+    # Skip zones with no usable id (Tado IDs start from 1).
     zone_serials: dict[str, set[str]] = {}
     for zone in cloud_zones_info:
         raw_id = zone.get("id")
@@ -88,10 +74,9 @@ def build_serial_mapping(
         serial = model = None
         for svc in acc.get("services", []):
             for char in svc.get("characteristics", []):
-                # aiohomekit normalises type UUIDs to the full
-                # 0000XXXX-0000-1000-8000-0026BB765291 form. Strip
-                # the suffix and compare as ints so leading zeros
-                # round-trip cleanly.
+                # aiohomekit normalises type UUIDs to the full UUID
+                # form — strip the suffix and compare as ints so
+                # leading zeros round-trip cleanly.
                 raw_type = char.get("type", "")
                 if "-" in raw_type:
                     ctype = raw_type.split("-")[0].upper()
@@ -153,9 +138,9 @@ def validate_mapping(
 ) -> bool:
     """Return True when the cached mapping looks healthy, False to force a rebuild.
 
-    Drops mappings containing zone "0" (a known corruption shape
-    from earlier builds) and any zone IDs not present in the
-    current cloud zone set.
+    Drops mappings containing zone "0" (a known corruption shape from
+    earlier builds) and any zone IDs not present in the current cloud
+    zone set.
     """
     serial_to_zone = mapping.get("serial_to_zone", {})
     zone_to_aids = mapping.get("zone_to_aids", {})

@@ -809,7 +809,7 @@
         }
       },
       "mold_risk_pct": {
-        "name": "Schimmel Risico %",
+        "name": "Indicator voor schimmelrisico",
         "state_attributes": {
           "room_temperature": {
             "name": "Kamertemperatuur"

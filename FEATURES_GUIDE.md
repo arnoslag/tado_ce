@@ -912,7 +912,7 @@ automation:
 
 Puts a zone back to whatever it was doing before the last change. Works with heating, AC, and hot water.
 
-State is saved automatically before any overlay action (timers, temperature changes, open window mode, preheat). If nothing was saved, it falls back to resuming the schedule. Saved state survives HA restarts and clears when you arrive home.
+State is saved automatically the moment an overlay action lands successfully (timers, temperature changes, open window mode, preheat). If the cloud rejects or times out, nothing is saved, so a failed write can never leave a stale snapshot to replay later. If no state was ever saved for the zone, restore falls back to resuming the schedule. Saved state survives HA restarts and clears when you arrive home.
 
 ```yaml
 # Restore a single zone
@@ -1000,7 +1000,7 @@ Three buttons live on the Tado CE Hub device (Settings → Devices & Services �
 | Button | What it does | When to press |
 |--------|--------------|---------------|
 | **Resume All Schedules** (`button.tado_ce_{home_id}_resume_all`) | Clears the manual overlay on every zone in one press, returning all rooms to their Tado schedule. Equivalent to calling `tado_ce.resume_schedule` per zone. | After a holiday-mode or wide automation override, when you want everything back on schedule at once. |
-| **Refresh AC Capabilities** (`button.tado_ce_{home_id}_refresh_ac`) | Drops the cached AC capabilities file and re-fetches from Tado's cloud. The cache is install-lifetime by default — a Tado-side capability change (firmware bump adding new fan / swing options, controller re-pair issuing a new zone ID) won't surface until you press this. Costs one cloud call per AC zone (typically 1–3 calls). Only appears when the home has at least one AC zone. | After re-pairing a controller, after replacing an AC unit, after a Tado firmware update on AC controllers, or whenever AC capabilities look wrong in HA (e.g. HVAC modes showing `[OFF]` only). |
+| **Refresh AC Capabilities** (`button.tado_ce_{home_id}_refresh_ac`) | Marks the cached AC capabilities as stale and re-fetches from Tado's cloud on the next poll. From v4.1.0-beta.2 onwards, re-pair / hardware swap / zone add / zone remove on the Tado side trigger this automatically, so the button is a manual escape hatch for cases where the integration didn't observe the change (HA was offline during the swap, capabilities cache is genuinely wrong, etc.). Costs one cloud call per AC zone (typically 1–3 calls). Only appears when the home has at least one AC zone. | After replacing an AC unit, after a Tado firmware update that adds new fan / swing options, or whenever AC capabilities look wrong in HA (e.g. HVAC modes showing `[OFF]` only) and you don't want to wait for the next poll. |
 | **Refresh Schedule** (`button.tado_ce_{home_id}_zone_{zone_id}_refresh_schedule`, per heating zone) | Re-fetches a single zone's schedule from Tado and writes it through the cache. Only appears when Schedule Calendar is enabled (Settings → Tado CE → Configure → Schedule Calendar). Costs one cloud call per zone. | After editing a schedule in the Tado app and wanting it visible in HA's calendar entity immediately, rather than waiting for the next sync. |
 
 These buttons are visible in the device page's Controls section. Their entity_ids stay stable across reloads, so they can be wired into automations or dashboards if you want quick-access tiles.
@@ -1021,10 +1021,10 @@ Tado CE fires several HA events that automations can subscribe to. Most fire on 
 
 | Event | Fires when | Defensive listener pattern |
 |-------|-----------|---------------------------|
-| `tado_ce_ready` | First API sync complete after setup / reload | Safe — once-per-session edge. No defence needed |
+| `tado_ce_ready` | First API sync complete after setup or reload, deferred until Home Assistant has finished its overall startup so boot-time automation triggers are listening | Safe — once-per-session edge. No defence needed |
 | `tado_ce_window_predicted` | Window-open prediction crosses the detection threshold | Smoothed by 3-reading window on Low sensitivity. Listener can act immediately |
 | `tado_ce_window_predicted_cleared` | Detection clears | Same smoothing. Safe to act immediately |
-| `tado_ce_state_restoration_available` | A captured pre-overlay state becomes restorable (overlay timer expired or cleared) | **Edge-triggered.** v4.0.1 onwards: the integration requires 2 consecutive polls reporting overlay=null before firing. A defensive listener pattern (delay + re-check) is still recommended for any automation that writes back to Tado |
+| `tado_ce_state_restoration_available` | A saved pre-overlay state becomes restorable (overlay timer expired or cleared) | **Edge-triggered.** v4.0.1 onwards: the integration requires 2 consecutive polls confirming the overlay is gone before firing. v4.1.0 onwards: the saved state itself only persists when the original cloud write was confirmed, so a failed write can never feed this event later. A defensive listener pattern (delay + re-check) is still recommended for any automation that writes back to Tado |
 | `tado_ce_schedule_updated` | A zone's schedule re-fetched from Tado | Safe — user-initiated path. No defence needed |
 
 **Defensive listener pattern (recommended for `tado_ce_state_restoration_available` and any future edge-triggered event that writes back to Tado):**
@@ -1841,7 +1841,7 @@ Tado CE fires HA bus events at key moments — you can use these as automation t
 
 ### Startup Ready Event
 
-Fires once after the integration finishes loading and all entities have real data from the Tado API. Use this instead of `homeassistant.start` with delays or `wait_template` chains when your boot automations need to act on Tado CE entities.
+Fires once after the integration finishes loading and all entities have real data from the Tado API. On a cold Home Assistant start the event is held until Home Assistant itself has finished starting, so an automation triggered by `tado_ce_ready` is guaranteed to be listening when the event lands. Use this instead of `homeassistant.start` with delays or `wait_template` chains when your boot automations need to act on Tado CE entities.
 
 | Event | When | Payload |
 |-------|------|---------|
@@ -1992,6 +1992,8 @@ Each zone creates several entity types depending on the zone's capabilities and 
 | Thermal Analytics | Thermal inertia, heating rate, preheat time sensors | **General Settings → Smart Automations → Thermal Analytics** toggle |
 
 > To hide entities you don't use, **disable the entity in HA's entity registry** (Settings → Devices & Services → Tado CE → entity → Disable). The integration continues to compute and publish them, but they won't appear on dashboards or in automations.
+
+**Device-state refresh cadence (Battery, Connection, Firmware version):** these sensors read from Tado's device-info endpoint, which the integration refreshes on a periodic schedule and whenever a Tado-side topology change is detected. The cadence depends on your daily API quota. Paid Auto-Assist accounts refresh hourly, so a controller dropping its cloud uplink (E04 errors, mains blip, Wi-Fi flap) shows up within the hour. Free-tier accounts refresh every four hours to keep the periodic cost under roughly six per cent of the daily quota. A re-pair or hardware swap triggers an immediate refresh on top of the periodic schedule.
 
 ---
 
@@ -2246,7 +2248,7 @@ These sensors include a `recommendation` attribute with actionable guidance:
 - `sensor.{zone}_comfort_level` — context-aware (considers if HVAC is active)
 - `sensor.{zone}_condensation_risk` — AC-specific prevention
 - `sensor.{zone}_battery` — battery replacement reminders
-- `sensor.{zone}_connection` — device troubleshooting
+- `binary_sensor.{zone}_connection` — device troubleshooting (also exposes `last_seen` and `offline_minutes` for offline-duration automations)
 - `sensor.tado_ce_api_status` — quota management suggestions
 
 Empty string when no action needed.

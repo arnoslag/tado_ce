@@ -1,11 +1,4 @@
-"""Tado CE HomeKit client — pairing, connection lifecycle, exponential-backoff reconnect.
-
-Wraps `aiohomekit`'s Controller and IpPairing for one Tado bridge:
-two-step pairing flow (used by the config flow), persistence of
-the pairing credentials in HA Store, automatic reconnect with
-exponential backoff plus jitter, and post-reconnect callbacks
-(re-subscribe events, reset write-health circuit).
-"""
+"""Tado CE HomeKit client — pairing, connection lifecycle, exponential-backoff reconnect."""
 
 from __future__ import annotations
 
@@ -59,7 +52,6 @@ class HomeKitClient:
         self._store: Store[dict[str, Any]] = Store(
             hass, _STORE_VERSION, f"tado_ce/homekit_pairing_{home_id}",
         )
-        # Old JSON path for migration
         from .const import get_data_file
 
         self._old_pairing_path = get_data_file("homekit_pairing", home_id)
@@ -69,11 +61,9 @@ class HomeKitClient:
         self._reconnect_task: asyncio.Task[None] | None = None
         self._closing = False
 
-        # Zone mapping (set after pairing/connect)
         self._serial_to_zone: dict[str, str] = {}
         self._zone_to_aids: dict[str, list[int]] = {}
 
-        # Connection stats
         self._last_connected: str | None = None
         self._last_disconnected: str | None = None
         self._reconnect_count = 0
@@ -285,13 +275,7 @@ class HomeKitClient:
         pin: str,
         bridge_hkid: str | None = None,
     ) -> dict[str, Any]:
-        """Run the HomeKit two-step pairing flow with `pin`, returning the credentials.
-
-        When `bridge_hkid` is None we discover the first unpaired
-        Tado bridge on the network. Raises on wrong PIN, already
-        paired, or network errors so the config flow can map to the
-        right user-facing error.
-        """
+        """Run the HomeKit two-step pairing flow with `pin`, returning the credentials."""
         controller = await self._ensure_controller()
 
         if bridge_hkid is None:
@@ -398,11 +382,7 @@ async def async_step_homekit_pairing(
     flow: TadoCEOptionsFlow,
     user_input: dict[str, Any] | None = None,
 ) -> ConfigFlowResult:
-    """Drive the options-flow HomeKit pairing sub-step.
-
-    First call shows the PIN form; second call runs the pairing,
-    builds the serial-to-zone mapping, and persists both.
-    """
+    """Drive the options-flow HomeKit pairing sub-step."""
     from homeassistant.helpers.selector import TextSelector, TextSelectorConfig, TextSelectorType
     import voluptuous as vol
 
@@ -475,10 +455,9 @@ async def async_step_homekit_unpair(
 ) -> ConfigFlowResult:
     """Drive the options-flow HomeKit unpairing sub-step.
 
-    First call shows confirmation; second call performs the unpair
-    and clears local credentials, even if the bridge can't be
-    contacted (so a permanently-offline bridge doesn't trap the
-    user with no recovery path).
+    Performs the unpair and clears local credentials, even if the
+    bridge can't be contacted (so a permanently-offline bridge
+    doesn't trap the user with no recovery path).
     """
     import voluptuous as vol
 

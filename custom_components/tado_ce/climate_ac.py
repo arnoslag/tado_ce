@@ -192,10 +192,7 @@ def build_fan_mapping(fan_levels: set[Any]) -> tuple[dict[str, Any], dict[str, A
 def _build_fan_modes(
     ac_caps: dict[str, Any], zone_id: str,
 ) -> tuple[dict[str, Any], dict[str, Any], list[str]]:
-    """Build fan mode mappings from AC capabilities.
-
-    Returns (tado_to_ha, ha_to_tado, fan_modes_list).
-    """
+    """Build fan mode mappings from AC capabilities."""
     fan_levels: set[str] = set()
     for mode_caps in ac_caps.values():
         if isinstance(mode_caps, dict):
@@ -443,11 +440,7 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
         return HVACAction.IDLE
 
     async def async_added_to_hass(self) -> None:
-        """Restore last target temperature and wire HomeKit / config listeners.
-
-        CoordinatorEntity already subscribes to the coordinator, so we
-        only attach the zone-config and HomeKit-update listeners here.
-        """
+        """Restore last target temperature and wire HomeKit / config listeners."""
         await super().async_added_to_hass()
 
         # Restore last known target temperature across HA restarts
@@ -634,13 +627,7 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
 
     @callback
     def _handle_coordinator_update(self) -> None:
-        """Handle coordinator data update.
-
-        Replaces manual SIGNAL_ZONES_UPDATED and
-        SIGNAL_AC_CAPABILITIES_UPDATED handlers. CoordinatorEntity calls
-        this automatically after each coordinator poll.
-        Also reloads AC capabilities from coordinator.data if changed.
-        """
+        """Handle coordinator data update; reload AC capabilities if changed."""
         # Reload AC capabilities from coordinator data (replaces SIGNAL_AC_CAPABILITIES_UPDATED)
         coord_data = self.coordinator.data or {}
         ac_caps_all = coord_data.get("ac_capabilities") or {}
@@ -925,8 +912,8 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
         """Set the target temperature, optionally folding in an HVAC mode change.
 
         Bundles temperature + mode into a single overlay write when
-        both are supplied so the cloud sees one transition rather
-        than two.
+        both are supplied so the cloud sees one transition rather than
+        two.
         """
         temperature = kwargs.get(ATTR_TEMPERATURE)
         hvac_mode = kwargs.get(ATTR_HVAC_MODE)
@@ -1126,10 +1113,6 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
         client = self.coordinator.api_client
 
         if hvac_mode == HVACMode.OFF:
-            await self.coordinator.async_capture_state(
-                self._zone_id, self._entity_type, "set_hvac_mode",
-            )
-
             setting = {
                 "type": "AIR_CONDITIONING",
                 "power": "OFF",
@@ -1141,6 +1124,7 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
                 hvac_mode=HVACMode.OFF,
                 hvac_action=HVACAction.OFF,
                 reason="set OFF mode",
+                capture_source="set_hvac_mode",
             )
             self._last_write_source = "cloud"
 
@@ -1644,31 +1628,25 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
         """
         await _check_bootstrap_reserve_or_raise(self.hass, f"AC {self._zone_name}", coordinator=self.coordinator)
 
-        await self.coordinator.async_capture_state(
-            self._zone_id, self._entity_type, "set_timer",
+        client = self.coordinator.api_client
+        setting = self._build_ac_setting(
+            temperature, None, None, None, None,
+        )
+        termination = build_timer_termination(
+            duration_minutes=duration_minutes, overlay=overlay,
+            hass=self.hass, zone_id=self._zone_id, entry_id=self._entry_id,
         )
 
-        api_success = False
         try:
-            async with asyncio.timeout(10):
-                api_success = await self._async_set_ac_overlay(
-                    temperature=temperature,
-                    mode=None,
-                    duration_minutes=duration_minutes,
-                    overlay=overlay,
-                )
-        except TimeoutError:
-            _LOGGER.warning(
-                "Climate AC: %s set_timer write timed out after 10s",
-                self._zone_name,
+            await api_call_with_rollback(
+                self,
+                client.set_zone_overlay(self._zone_id, setting, termination),
+                hvac_mode=self._attr_hvac_mode or HVACMode.COOL,
+                hvac_action=self._calculate_hvac_action(),
+                target_temp=temperature,
+                reason=f"set timer at {temperature}°C",
+                capture_source="set_timer",
             )
-        except Exception as e:
-            _LOGGER.warning(
-                "Climate AC: %s set_timer write failed (%s)",
-                self._zone_name, e,
-            )
-
-        if api_success:
-            await async_trigger_immediate_refresh(self.hass, self.entity_id, "set_timer")
-
-        return api_success
+        except HomeAssistantError:
+            return False
+        return True

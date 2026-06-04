@@ -1,12 +1,4 @@
-"""Tado CE entry lifecycle — per-config-entry component setup + teardown.
-
-Owns the order in which the API tracker, API client, and HomeKit
-client are constructed during entry setup, and mirrors that order
-on teardown. The HomeKit branch is the trickiest part: connecting
-to the bridge, validating the cached zone mapping, rebuilding it
-when stale, and scheduling a deferred rebuild when zones_info
-isn't loaded yet.
-"""
+"""Tado CE entry lifecycle — per-config-entry component setup + teardown."""
 
 from __future__ import annotations
 
@@ -35,19 +27,12 @@ async def async_create_entry_components(
     home_id: str | None,
     data_loader: DataLoader | None = None,
 ) -> dict[str, Any]:
-    """Build the API tracker, API client, and (optionally) HomeKit client for one entry.
-
-    Returns a dict the coordinator constructor consumes — when
-    HomeKit is connected but the cached mapping is empty, a
-    `_deferred_homekit_rebuild` callable is included so the
-    coordinator can retry once the first poll lands.
-    """
+    """Build API tracker + client + optional HomeKit client; returns dict for the coordinator constructor."""
     from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
     from .api_call_tracker import APICallTracker
     from .api_client import TadoApiClient
     from .const import DATA_DIR
-    # Create per-entry API call tracker
     retention_days = config_manager.get_api_history_retention_days()
     api_tracker = APICallTracker(
         hass, DATA_DIR, retention_days=retention_days, home_id=home_id, config_manager=config_manager,
@@ -73,7 +58,6 @@ async def async_create_entry_components(
 
     await hass.async_add_executor_job(load_version)
 
-    # Create HomeKit client if enabled
     homekit_client = None
     if config_manager.get_homekit_enabled():
         from .homekit_client import HomeKitClient
@@ -94,7 +78,6 @@ async def async_create_entry_components(
 
             # Validate cached mapping against cloud zone IDs
             if serial_to_zone and mapping:
-                # Load zones_info for validation
                 if data_loader:
                     zi_for_validation = await hass.async_add_executor_job(data_loader.load_zones_info_file)
                 else:
@@ -116,7 +99,7 @@ async def async_create_entry_components(
                     "rebuilding from bridge accessories + cloud zones",
                 )
                 accessories = await homekit_client.async_list_accessories()
-                # Load zones_info from disk (coordinator not created yet)
+                # zones_info: load from disk — coordinator not created yet
                 if data_loader:
                     zones_info = await hass.async_add_executor_job(data_loader.load_zones_info_file)
                 else:
@@ -165,7 +148,6 @@ async def async_create_entry_components(
                     "rebuild after the first coordinator poll",
                 )
 
-                # Schedule one-shot retry after first coordinator refresh
                 async def _deferred_homekit_rebuild(
                     coord: TadoDataUpdateCoordinator,
                     _hk_client: Any = homekit_client,
@@ -236,21 +218,12 @@ async def async_cleanup_entry_components(
     hass: HomeAssistant,
     coordinator: TadoDataUpdateCoordinator | None,
 ) -> None:
-    """Tear down per-entry timers + managers + HomeKit client in reverse setup order.
-
-    Each manager that holds local state flushes to disk before
-    cleanup so an integration reload doesn't lose
-    Smart Comfort / preheat history (HA's normal final-write
-    event doesn't fire on reload).
-    """
+    """Tear down per-entry timers + managers + HomeKit client in reverse setup order; flushes state to survive reloads."""
     if coordinator is None:
         return
 
     def _attr(field: str) -> Any:
-        """Get field from coordinator, or None if missing."""
         return getattr(coordinator, field, None)
-
-    # --- Cancel per-entry timers ---
 
     cancel_func: Callable[[], None] | None = _attr("_freshness_cleanup_cancel")
     if cancel_func:

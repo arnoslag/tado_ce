@@ -416,11 +416,9 @@ def get_polling_interval(
         )
 
     # Honour the user's explicit custom interval unless adaptive math
-    # shows the quota cannot sustain it. The adaptive floor is now
+    # shows the quota cannot sustain it. The adaptive floor is
     # physics-based (1 min), so any `adaptive > custom` outcome
     # represents a real quota constraint rather than a clamp artefact.
-    # The previous secondary check (is adaptive bumping into the
-    # floor?) is no longer needed.
     if user_set_custom and custom_interval is not None:
         if adaptive_interval is not None and adaptive_interval > custom_interval:
             _LOGGER.warning(

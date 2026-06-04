@@ -438,27 +438,11 @@ def build_timer_termination(
 ) -> dict[str, Any]:
     """Build termination dict for set_timer / set_overlay calls.
 
-    Consolidates the duplicated termination-building logic from:
-    - TadoClimate.async_set_timer (heating.py)
-    - TadoACClimate.async_set_timer (ac.py)
-    - TadoACClimate._async_set_ac_overlay (ac.py)
-
     Priority:
-    1. If duration_minutes provided → TIMER termination
-    2. If overlay == 'next_time_block' → TADO_MODE termination
-    3. If overlay == 'manual' → MANUAL termination
-    4. Otherwise → per-zone overlay termination (from config)
-
-    Args:
-        duration_minutes: Timer duration in minutes (takes highest priority)
-        overlay: Overlay type string ('next_time_block', 'manual', or None)
-        hass: Home Assistant instance (needed for per-zone config fallback)
-        zone_id: Zone ID (needed for per-zone config fallback)
-        entry_id: Config entry ID (needed for per-zone config fallback)
-
-    Returns:
-        Termination dict for Tado API, e.g. {"type": "TIMER", "durationInSeconds": 3600}
-
+    1. duration_minutes → TIMER
+    2. overlay='next_time_block' → TADO_MODE
+    3. overlay='manual' → MANUAL
+    4. fallback → per-zone overlay termination
     """
     if duration_minutes:
         return {"type": "TIMER", "durationInSeconds": duration_minutes * 60}
@@ -477,3 +461,19 @@ def build_timer_termination(
 
     # Ultimate fallback
     return {"type": "MANUAL"}
+
+
+def prune_zone_keyed_dict(
+    d: dict[str, Any],
+    current_zones: frozenset[str],
+) -> int:
+    """Drop entries whose zone_id is no longer in current_zones; return removed count.
+
+    Recognised key shapes:
+    - "zone_id"           — DataLoader dict stores
+    - "zone_id:entity"    — state_restore key shape (split on first colon)
+    """
+    to_drop = {k for k in d if k.split(":", 1)[0] not in current_zones}
+    for k in to_drop:
+        d.pop(k, None)
+    return len(to_drop)
