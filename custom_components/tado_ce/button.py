@@ -53,7 +53,6 @@ async def async_setup_entry(
     # Get config manager to check feature toggles
     config_manager = coordinator.config_manager
     schedule_calendar_enabled = config_manager.get_schedule_calendar_enabled() if config_manager else False
-    boost_buttons_enabled = config_manager.get_boost_buttons_enabled() if config_manager else True
 
     buttons: list[ButtonEntity] = []
 
@@ -78,8 +77,8 @@ async def async_setup_entry(
                     for duration in DEFAULT_TIMER_PRESETS
                 )
 
-            # Create boost buttons for heating zones (controlled by boost_buttons_enabled)
-            if zone_type == "HEATING" and boost_buttons_enabled:
+            # Create boost buttons for heating zones
+            if zone_type == "HEATING":
                 # Boost button (official Tado-style: max temp for 30 min)
                 buttons.append(
                     TadoBoostButton(coordinator, zone_id, zone_name, home_id),

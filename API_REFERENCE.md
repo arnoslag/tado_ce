@@ -176,13 +176,17 @@ Maximum headroom for manual actions and automations.
 ### For 1000 Calls/Day Limit
 
 Enable features as needed:
-- Weather Sensors and Home State Sync are low-cost (1 call each per sync)
-- Smart Day/Night polling keeps you well within budget
+- Weather Sensors and Home State Sync are low-cost, and each refreshes on its own floor (weather every 30 min, presence every 5 min) rather than on the zone-state cadence
+- The adaptive polling floor is a flat 5 min, so a healthy-quota moment can't drop you to 1-min polling
 - Typical usage with default settings: ~90–180 calls/day
 
 ### For Auto-Assist Users (20,000 calls/day)
 
-Enable all features without concern. Even with 5-minute polling, ~576 calls/day (well under 20,000).
+Enable all features without concern. The adaptive floor is a flat 5 min, the same as every other plan: a bigger quota doesn't buy a faster automatic cadence because zone temperature doesn't change any faster. With weather and presence on their own slower floors, you stay well under 20,000. If you want faster than 5 min, set a custom polling interval and it's honoured as-is.
+
+### How often each data type refreshes
+
+The polling interval governs zone temperature and mode only. Slow-changing data refreshes on its own floor so a fast cadence doesn't burn quota re-reading it: weather every 30 min, presence and mobile-device locations every 5 min, device firmware/battery/connection hourly (paid) or every 4 h (free). When HomeKit local control is connected, these widen to your Cloud Data Refresh dial. Full table in [FEATURES_GUIDE → Smart Polling](FEATURES_GUIDE.md#-smart-polling).
 
 ---
 
@@ -238,4 +242,4 @@ Two categories of Store, both keyed per home (multi-home isolation):
 
 ---
 
-**Last Updated:** v4.0.0 (2026-05-23)
+**Last Updated:** v4.0.2 (2026-06-07)

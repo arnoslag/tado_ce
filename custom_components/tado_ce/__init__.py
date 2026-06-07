@@ -290,7 +290,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     def _ensure_data_dir() -> None:
         try:
             DATA_DIR.mkdir(parents=True, exist_ok=True)
-        except Exception:
+        except OSError:
             _LOGGER.warning(
                 "Setup: could not create DATA_DIR — Tado CE data "
                 "files cannot be persisted, will retry on next "

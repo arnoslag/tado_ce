@@ -92,7 +92,10 @@ class InsightContext:
         )
 
         return cls(
-            environment_enabled=cfg.get_environment_sensors_enabled(),
+            # Environment sensors are always on (the old config toggle was
+            # never user-reachable); keep the gate field for the collector's
+            # per-cycle insight gating, which other features still share.
+            environment_enabled=True,
             preheat_enabled=cfg.get_adaptive_preheat_enabled(),
             thermal_enabled=cfg.get_thermal_analytics_enabled(),
             schedule_enabled=cfg.get_schedule_calendar_enabled(),

@@ -441,7 +441,7 @@ async def _check_bootstrap_reserve(hass: HomeAssistant, entity_ids: list[str]) -
         return _coord
     except HomeAssistantError:
         raise
-    except Exception as err:
+    except (OSError, ValueError, KeyError) as err:
         _LOGGER.warning(
             "Services: API quota reserve check failed (%s) — letting "
             "the call through without the safety check",
@@ -684,28 +684,17 @@ async def handle_set_water_heater_timer(hass: HomeAssistant, call: ServiceCall) 
 async def handle_turn_off_all_zones(hass: HomeAssistant, call: ServiceCall) -> None:
     """Place every climate zone (heating + AC) into a MANUAL OFF overlay.
 
-    Mirrors the Tado app's "Turn OFF all rooms" button. Schedules
-    stay suppressed until the user manually resumes each zone (or
-    calls `tado_ce.resume_schedule`). Hot water is out of scope —
-    the Tado app's own button targets climate zones only.
+    Mirrors the Tado app's "Turn OFF all rooms"; schedules stay
+    suppressed until the user resumes each zone (or calls
+    `tado_ce.resume_schedule`). Hot water is out of scope.
 
-    Single-home install: targets every climate zone in one call.
-    Multi-home install: raises a translated `multiple_entries`
-    error so the caller picks one home explicitly (mirrors
-    `set_away_config` semantics).
+    Multi-home installs raise a translated `multiple_entries` error so
+    the caller picks one home (same as `set_away_config`).
 
-    Skips capture-state by design — the user's intent is permanent
-    until-resumed, not a temporary override that needs restoration.
-    Adding N capture entries to a path that's typed as "OFF until
-    user resumes" would surface as spurious restoration events
-    later.
-
-    Setting payload uses the canonical OFF shape from
-    `climate_heating.py` and `climate_ac.py`:
-        {"type": "HEATING" | "AIR_CONDITIONING", "power": "OFF"}
-    Termination is fresh `{"type": "MANUAL"}` — never replays a
-    captured response shape, so the read-only-fields trap from
-    earlier overlay-restoration paths does not apply here.
+    Payload is the canonical OFF shape `{"type": "HEATING" |
+    "AIR_CONDITIONING", "power": "OFF"}` with a fresh
+    `{"type": "MANUAL"}` termination. Deliberately skips capture-state:
+    the override is permanent-until-resumed, not a restorable temporary one.
     """
     coord = _resolve_single_coordinator(hass)
 
@@ -874,7 +863,16 @@ async def handle_set_temp_offset(hass: HomeAssistant, call: ServiceCall) -> None
                 # distinguish total / partial / clean cases.
                 success_count = 0
                 for serial in serials:
-                    if await _coord.api_client.set_device_offset(serial, offset):  # type: ignore[arg-type]
+                    if await run_service_call(
+                        hass=hass,
+                        coordinator=_coord,
+                        zone_id=zone_id,
+                        entity_type="climate",
+                        api_coro=_coord.api_client.set_device_offset(serial, offset),  # type: ignore[arg-type]
+                        capture_source=None,
+                        refresh_entity_id=None,
+                        reason="set_temp_offset",
+                    ):
                         success_count += 1
 
                 if success_count == 0:
@@ -997,7 +995,16 @@ async def handle_add_meter_reading(hass: HomeAssistant, call: ServiceCall) -> No
     reading = call.data.get("reading")
     date = call.data.get("date")
 
-    success = await _coord.api_client.add_meter_reading(reading, date)  # type: ignore[arg-type]
+    success = await run_service_call(
+        hass=hass,
+        coordinator=_coord,
+        zone_id="",
+        entity_type="meter_reading",
+        api_coro=_coord.api_client.add_meter_reading(reading, date),  # type: ignore[arg-type]
+        capture_source=None,
+        refresh_entity_id=None,
+        reason="add_meter_reading",
+    )
 
     if not success:
         _LOGGER.warning(
@@ -1021,7 +1028,16 @@ async def handle_identify_device(hass: HomeAssistant, call: ServiceCall) -> None
             translation_key="api_quota_critically_low",
         )
 
-    success = await _coord.api_client.identify_device(device_serial)  # type: ignore[arg-type]
+    success = await run_service_call(
+        hass=hass,
+        coordinator=_coord,
+        zone_id="",
+        entity_type="device",
+        api_coro=_coord.api_client.identify_device(device_serial),  # type: ignore[arg-type]
+        capture_source=None,
+        refresh_entity_id=None,
+        reason="identify_device",
+    )
 
     if not success:
         _LOGGER.warning(
@@ -1052,15 +1068,22 @@ async def handle_set_away_config(hass: HomeAssistant, call: ServiceCall) -> None
     if ent:
         zone_id = ent.zone_id  # type: ignore[attr-defined]
         if zone_id:
-            success = await _coord.api_client.set_away_configuration(
-                zone_id,
-                mode,  # type: ignore[arg-type]
-                temperature,
-                comfort_level,
+            success = await run_service_call(
+                hass=hass,
+                coordinator=_coord,
+                zone_id=zone_id,
+                entity_type="climate",
+                api_coro=_coord.api_client.set_away_configuration(
+                    zone_id,
+                    mode,  # type: ignore[arg-type]
+                    temperature,
+                    comfort_level,
+                ),
+                capture_source=None,
+                refresh_entity_id=entity_id,
+                reason="set_away_config",
             )
-            if success:
-                await async_trigger_immediate_refresh(hass, entity_id, "set_away_config")  # type: ignore[arg-type]
-            else:
+            if not success:
                 _LOGGER.warning(
                     "Services: set_away_configuration failed for "
                     "%s — the cloud rejected the call, please retry",
@@ -1100,13 +1123,21 @@ async def handle_activate_open_window(hass: HomeAssistant, call: ServiceCall) ->
         if ent:
             zone_id = ent.zone_id  # type: ignore[attr-defined]
             if zone_id:
-                success = await _coord.api_client.activate_open_window(zone_id)
+                success = await run_service_call(
+                    hass=hass,
+                    coordinator=_coord,
+                    zone_id=zone_id,
+                    entity_type="climate",
+                    api_coro=_coord.api_client.activate_open_window(zone_id),
+                    capture_source=None,
+                    refresh_entity_id=entity_id,
+                    reason="activate_open_window",
+                )
                 if success:
                     _LOGGER.debug(
                         "Services: activated open window for %s",
                         entity_id,
                     )
-                    await async_trigger_immediate_refresh(hass, entity_id, "activate_open_window")
                 else:
                     _LOGGER.warning(
                         "Services: activate_open_window failed for "
@@ -1148,13 +1179,21 @@ async def handle_deactivate_open_window(hass: HomeAssistant, call: ServiceCall) 
         if ent:
             zone_id = ent.zone_id  # type: ignore[attr-defined]
             if zone_id:
-                success = await _coord.api_client.deactivate_open_window(zone_id)
+                success = await run_service_call(
+                    hass=hass,
+                    coordinator=_coord,
+                    zone_id=zone_id,
+                    entity_type="climate",
+                    api_coro=_coord.api_client.deactivate_open_window(zone_id),
+                    capture_source=None,
+                    refresh_entity_id=entity_id,
+                    reason="deactivate_open_window",
+                )
                 if success:
                     _LOGGER.debug(
                         "Services: deactivated open window for %s",
                         entity_id,
                     )
-                    await async_trigger_immediate_refresh(hass, entity_id, "deactivate_open_window")
                 else:
                     _LOGGER.warning(
                         "Services: deactivate_open_window failed "

@@ -109,6 +109,11 @@ class TadoDeviceTracker(CoordinatorEntity["TadoDataUpdateCoordinator"], TrackerE
         self._location = None
         self._bearing: float | None = None
         self._relative_distance: float | None = None
+        # WHY: when _is_home is None (Unknown state), surface why — Tado app's
+        # geo-tracking is on but the device hasn't reported a location block.
+        # On Android this is usually the Tado app being denied background
+        # location permission by the OS (battery optimisation, Doze mode).
+        self._location_status: str | None = None
 
     @callback
     def _handle_coordinator_update(self) -> None:
@@ -146,6 +151,7 @@ class TadoDeviceTracker(CoordinatorEntity["TadoDataUpdateCoordinator"], TrackerE
             "model": metadata.get("model"),
             "bearing": self._bearing,
             "relative_distance": self._relative_distance,
+            "location_status": self._location_status,
         }
 
     @callback
@@ -164,11 +170,15 @@ class TadoDeviceTracker(CoordinatorEntity["TadoDataUpdateCoordinator"], TrackerE
                             self._is_home = location.get("atHome")
                             self._bearing = (location.get("bearingFromHome") or {}).get("degrees")
                             self._relative_distance = location.get("relativeDistanceFromHomeFence")
+                            self._location_status = "reporting"
                         else:
-                            # No location block usually means the user
-                            # has the app open but background location
-                            # is currently denied — surface as unknown.
+                            # No location block usually means the device's
+                            # background location is currently denied —
+                            # most commonly Android battery optimisation
+                            # killing the Tado app's location service, or
+                            # the user denying "always" permission.
                             self._is_home = None
+                            self._location_status = "no_location_reported"
 
                         self._attr_available = True
                         return

@@ -159,10 +159,54 @@ Automatically adjusts API polling frequency based on time of day, remaining quot
 Smart Polling includes multiple strategies:
 
 - **Day/Night Polling** — more frequent during day, less at night
-- **Adaptive Polling** — auto-adjusts based on remaining quota and your tier (1 min floor on the 20,000-call legacy tier, widening on the 1,000 and 100-call tiers as the budget gets tighter; 120 min ceiling)
+- **Adaptive Polling** — auto-adjusts based on remaining quota, with a flat 5 min floor and a 120 min ceiling. The floor is the same whatever your daily call limit; a bigger quota doesn't buy a faster automatic cadence because zone temperature doesn't change any faster. Want faster than 5 min? Set a custom interval.
+- **Per-Type Refresh** — slow-changing data (weather, presence, mobile locations) refreshes on its own schedule instead of riding the zone-state cadence, so a fast poll doesn't burn quota re-reading data that hasn't changed
+- **HomeKit Defer** — when HomeKit local control is connected, the cloud cadence follows your Cloud Data Refresh dial instead of the adaptive quota maths
 - **Quota Reserve Protection** — pauses polling when quota critically low (≤5%), auto-resumes after reset
 - **Bootstrap Reserve** — hard limit of 3 API calls never used, reserved for auto-recovery after reset
 - **Custom Intervals** — override with fixed intervals (1–1440 min)
+
+### How often each data type refreshes
+
+Different kinds of data change at different speeds, so Tado CE refreshes them at different rates. A fast zone-state cadence no longer drags the slow-changing data along with it.
+
+| Data | Refreshes | Why |
+|------|-----------|-----|
+| Zone temperature / mode | Your polling interval (adaptive or custom) | Changes minute-to-minute |
+| Weather | At most every 30 min | Outdoor weather moves slowly |
+| Home presence (Home/Away) | At most every 5 min | Changes only when you cross the geofence |
+| Mobile device locations | At most every 5 min (when Frequent Mobile Sync is on) | Changes only when a phone crosses the geofence |
+| Device firmware / battery / connection | Hourly (paid tier) / every 4 h (free tier) | Rarely changes |
+
+When HomeKit local control is connected, these floors widen to your **Cloud Data Refresh** dial (Settings → Tado CE → Configure → HomeKit) if that's slower.
+
+#### Home presence vs mobile device locations
+
+These two sound like the same thing and people often mix them up, so it's worth being clear about which is which. They're two separate Tado endpoints that answer two different questions:
+
+- **Home presence** (Home State Sync) answers *"is the home as a whole Home or Away right now?"* Tado works this out from everyone's phones together and gives you one Home/Away answer for the household. This is what drives the **Presence Mode** entity and Away Mode automations.
+- **Mobile device locations** (Mobile Device Tracking) answers *"which individual phones are home right now?"* You get a `device_tracker` entity per phone, so you can tell who specifically is in or out, not just whether anyone is.
+
+Think of the mobile locations as the raw input and home presence as the verdict Tado derives from them. They're separate toggles because you might want one without the other: just the household Home/Away verdict for heating automations (Home State Sync alone), or per-person trackers as well (add Mobile Device Tracking). Each is an independent cloud call, which is why they're listed separately above, and each only earns its keep if you've turned it on.
+
+### What changed across versions, and what it saves you
+
+The per-type floors are new in v4.0.2. Here's what a polling cycle actually costs in cloud calls, traced through each version, for a cloud-only setup with weather, home presence, and Frequent Mobile Sync all enabled.
+
+If you're on the **default 30-minute day interval**, your call count barely moves between versions, because the slow-changing data was already only fetched every 30 minutes at that cadence. The change matters when your zones poll **faster** than 30 minutes, either because you set a fast custom interval or, on v4.0.1 / v4.1.0-beta.2 with a large quota, because the adaptive logic dropped to 1-minute polling on its own.
+
+At a **1-minute zone cadence**, the difference is large, because before v4.0.2 the weather, presence, and mobile-location calls all rode that same 1-minute cadence:
+
+| Data type | pre-v4.0.2 (rode the zone cadence) | v4.0.2 (own floor) |
+|-----------|-----------------------------------|--------------------|
+| Weather | ~960 calls/day | ~36 calls/day (30-min floor) |
+| Home presence | ~960 calls/day | ~196 calls/day (5-min floor) |
+| Mobile locations | ~960 calls/day | ~196 calls/day (5-min floor) |
+| **Total auxiliary calls** | **~2,900 calls/day** | **~430 calls/day** |
+
+That's the change [#289](https://github.com/hiall-fyi/tado_ce/issues/289) was about: a 1,000-call-tier home with HomeKit connected, where the zone temperatures came over HomeKit for free but the auxiliary calls kept firing every minute and drained the daily quota. Two things fixed it together. The auxiliary data now refreshes on its own slower floor regardless of how fast your zones poll, and the adaptive floor itself went back to a flat 5 minutes, so a healthy quota no longer pushes the cadence down to 1 minute in the first place. Zone temperatures, separately, have arrived locally over HomeKit since v4.0.0 if you've paired the bridge, which takes the single biggest call off the cycle entirely.
+
+(The ~960 figures assume the fast cadence held all day; in practice on v4.0.1 the adaptive logic would widen the interval itself as quota ran low, so a real day landed somewhere below that. The point is the shape, not a guaranteed daily total.)
 
 ### Configuration
 
@@ -177,21 +221,21 @@ Smart Polling includes multiple strategies:
 
 **Optional Sensors (affect API usage):**
 
-| Option | Default | API Calls Saved |
-|--------|---------|-----------------|
-| Enable Weather Sensors | Off | 1 call per sync |
-| Enable Mobile Device Tracking | Off | 1 call per full sync (at startup, plus every poll if Frequent Sync is enabled) |
-| Enable Home State Sync | Off | Required for Away Mode |
+| Option | Default | API Cost |
+|--------|---------|----------|
+| Enable Weather Sensors | Off | ~1 call per refresh, at most every 30 min |
+| Enable Mobile Device Tracking | Off | 1 call at startup; with Frequent Sync on, ~1 call per refresh at most every 5 min |
+| Enable Home State Sync | Off | Required for Away Mode; ~1 call per refresh at most every 5 min |
 
 ### How It Works
 
 **Adaptive Polling Formula:**
 ```
 Interval = (Time Until Reset / Remaining Calls) / 0.90
-Clamped to: 1 min (floor) – 120 min (ceiling)
+Clamped to: 5 min (floor) – 120 min (ceiling)
 ```
 
-The 1 min floor is a physics limit (Tado's cloud doesn't update faster than that, so polling sub-minute would just re-read the same value). On the 100-call tier the formula naturally widens well above the floor, so the floor only bites for users on the 1,000-call transitional or 20,000-call legacy quotas.
+The floor is a flat 5 minutes whatever your daily call limit. The maths already widens the interval on its own when quota is tight, so the floor is just the fast end: the point past which a faster cadence buys you nothing because zone temperature doesn't change that quickly. A bigger quota doesn't lower the floor (it would only burn calls re-reading the same temperature), so if you genuinely want faster than 5 minutes, set a custom interval and it's honoured as long as your quota can sustain it.
 
 **Day/Night Aware (v2.0.1):**
 - Night period: Fixed 120 min interval to conserve quota
@@ -240,7 +284,7 @@ Expected: Day 32 syncs × 2 = 64, Night 4 × 2 = 8, Full sync 4 × 2 = 8 → ~80
 
 #### Scenario 2: High Quota (1000+) Adaptive
 
-Leave custom intervals empty. Adaptive polling reads your tier from Tado's response headers and picks an interval that fits the budget, narrowing to 1 minute on the 20,000-call legacy tier where the budget allows it. Enable all optional sensors. Adaptive will widen the interval automatically if quota drops critically low.
+Leave custom intervals empty. Adaptive polling reads your remaining quota from Tado's response headers and picks an interval that fits the budget, down to the flat 5-minute floor when quota is healthy. The floor is the same on every plan: a bigger quota doesn't poll faster on its own, because your room temperature doesn't change any faster. Enable all optional sensors. Adaptive will widen the interval automatically if quota drops critically low, and if you genuinely want faster than 5 minutes, set a custom interval, which is honoured as long as your quota can sustain it.
 
 #### Scenario 3: Disable Optional Sensors to Save Calls
 
@@ -2392,4 +2436,4 @@ Look for `Bridge API full response` in logs to verify the API is returning data.
 
 ---
 
-**Last Updated:** v4.0.1 (2026-06-03)
+**Last Updated:** v4.0.2 (2026-06-07)

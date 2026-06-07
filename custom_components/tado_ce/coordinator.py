@@ -10,6 +10,7 @@ import sys
 import time
 from typing import TYPE_CHECKING, Any
 
+import aiohttp
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import (
@@ -25,18 +26,19 @@ from .const import (
     ENTITY_FRESHNESS_EXPIRY_SECONDS,
     HOMEKIT_SAVINGS_RESET_MIN_JUMP,
     HOMEKIT_SAVINGS_RESET_RATIO,
-    HOMEKIT_WEATHER_SKIP_MINUTES,
-    LOW_QUOTA_THRESHOLD,
+    MOBILE_DEVICES_MIN_REFRESH_MINUTES,
     OFFSET_DRIFT_REFRESH_SECONDS,
     OUTDOOR_TEMP_HISTORY_MAX,
     OVERLAY_MODE_DEFAULT,
+    PRESENCE_MIN_REFRESH_MINUTES,
     TIMER_DURATION_DEFAULT,
+    WEATHER_MIN_REFRESH_MINUTES,
     ZONES_INFO_FREE_TIER_THRESHOLD,
     ZONES_INFO_REFRESH_SECONDS_FREE,
     ZONES_INFO_REFRESH_SECONDS_PAID,
 )
-from .exceptions import TadoAuthError, TadoBridgeApiError, TadoSyncError
-from .helpers import mask_serial
+from .exceptions import TadoAuthError, TadoBridgeApiError, TadoRateLimitError, TadoSyncError
+from .helpers import low_quota_threshold, mask_serial
 from .insight_history import InsightHistoryTracker
 from .polling import get_polling_interval, should_pause_polling
 from .ratelimit import _sanitize_retry_after
@@ -182,6 +184,10 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # OFFSET_DRIFT_REFRESH_SECONDS.
         self._last_offset_resync: datetime | None = None
 
+        # Beta.3: rate-limit window observability + once-per-transition log gating
+        self._rate_limited_until: datetime | None = None
+        self._cloud_unavailable_logged: bool = False
+
         # Bridge API client (lazy-init from options when bridge credentials present)
         self.bridge_api_client: TadoBridgeApiClient | None = None
 
@@ -202,6 +208,8 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         self._last_cloud_zone_fetch: datetime | None = None
         self._last_weather_fetch: datetime | None = None
+        self._last_home_state_fetch: datetime | None = None
+        self._last_mobile_devices_fetch: datetime | None = None
         self._prev_homekit_connected: bool = False
         self._homekit_reads_saved: int = 0
         self._homekit_writes_saved: int = 0
@@ -251,6 +259,27 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def outdoor_temp_history(self) -> list[float]:
         """Return outdoor temp history (read-only access for sensors)."""
         return self._outdoor_temp_history
+
+    @property
+    def is_homekit_active(self) -> bool:
+        """Return True when HomeKit local provider is wired and currently connected."""
+        return self.homekit_provider is not None and self.homekit_provider.is_connected
+
+    def _log_cloud_unavailable(self, exc: Exception) -> None:
+        """Log INFO on the first cloud→unreachable transition (idempotent)."""
+        if not self._cloud_unavailable_logged:
+            _LOGGER.info(
+                "Coordinator: Tado cloud unreachable (%s) — keeping "
+                "entities live on HomeKit local data",
+                exc,
+            )
+            self._cloud_unavailable_logged = True
+
+    def _log_cloud_available(self) -> None:
+        """Log INFO on the cloud→reachable transition (idempotent)."""
+        if self._cloud_unavailable_logged:
+            _LOGGER.info("Coordinator: Tado cloud reachable again")
+            self._cloud_unavailable_logged = False
 
     @property
     def action_debouncer(self) -> ActionDebouncer:
@@ -304,6 +333,13 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self, zone_data: dict[str, Any] | list[Any] | None, weather_data: dict[str, Any] | list[Any] | None,
     ) -> dict[str, Any]:
         """Run post-sync processing: history detection, cache reads, bridge, WC."""
+        if self._cloud_unavailable_logged:
+            from .repair_helpers import async_dismiss_rate_limit_issue
+
+            self._log_cloud_available()
+            async_dismiss_rate_limit_issue(self.hass, self.home_id)
+            self._rate_limited_until = None
+
         from .ratelimit import (
             async_detect_reset_from_history,
             async_update_ratelimit_reset_time,
@@ -430,7 +466,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         for controller in self.valve_controllers.values():
             try:
                 await controller.async_evaluate()
-            except Exception:
+            except (TimeoutError, aiohttp.ClientError, ValueError, KeyError):
                 _LOGGER.warning(
                     "Smart Valve: zone %s evaluation raised an exception — "
                     "controller will retry on next poll",
@@ -440,7 +476,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         for controller_os in self.offset_sync_controllers.values():
             try:
                 await controller_os.async_evaluate()
-            except Exception:
+            except (TimeoutError, aiohttp.ClientError, ValueError, KeyError):
                 _LOGGER.warning(
                     "Offset Sync: zone %s evaluation raised an exception — "
                     "controller will retry on next poll",
@@ -519,16 +555,20 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             elapsed = (dt_util.utcnow() - self._last_cloud_zone_fetch).total_seconds() / 60
             skip_zone_states = elapsed < cloud_sync_minutes
 
-        # Weather fetch frequency reduction when HomeKit connected.
-        # Same principle as skip_zone_states: respect user's custom interval,
-        # and when HomeKit is connected use the larger of the 30-min default
-        # and the user's `homekit_cloud_sync_minutes` setting so the same
-        # dial that throttles zone-state cloud sync also throttles weather.
-        skip_weather = False
-        if homekit_connected and self._last_weather_fetch is not None and not user_has_custom:
-            weather_age = (dt_util.utcnow() - self._last_weather_fetch).total_seconds() / 60
-            weather_floor = self._weather_skip_floor_minutes()
-            skip_weather = weather_age < weather_floor
+        # Slow-changing data gates on its own per-type floor, so a fast zone
+        # cycle doesn't drag it along (see _should_skip_by_floor).
+        skip_weather = self._should_skip_by_floor(
+            self._last_weather_fetch, WEATHER_MIN_REFRESH_MINUTES,
+            homekit_connected=homekit_connected,
+        )
+        skip_home_state = self._should_skip_by_floor(
+            self._last_home_state_fetch, PRESENCE_MIN_REFRESH_MINUTES,
+            homekit_connected=homekit_connected,
+        )
+        skip_mobile_devices = self._should_skip_by_floor(
+            self._last_mobile_devices_fetch, MOBILE_DEVICES_MIN_REFRESH_MINUTES,
+            homekit_connected=homekit_connected,
+        )
 
         try:
             await self.api_client.async_sync(
@@ -537,10 +577,26 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 zone_only=zone_only,
                 weather_enabled=cm.get_weather_enabled() and not skip_weather,
                 mobile_devices_enabled=cm.get_mobile_devices_enabled(),
-                mobile_devices_frequent_sync=cm.get_mobile_devices_frequent_sync(),
+                mobile_devices_frequent_sync=(
+                    cm.get_mobile_devices_frequent_sync() and not skip_mobile_devices
+                ),
                 offset_enabled=cm.get_offset_enabled(),
-                home_state_sync_enabled=cm.get_home_state_sync_enabled(),
+                home_state_sync_enabled=cm.get_home_state_sync_enabled() and not skip_home_state,
             )
+        except TadoRateLimitError as e:
+            from .repair_helpers import async_create_rate_limit_issue
+
+            self._rate_limited_until = dt_util.utcnow() + timedelta(seconds=e.retry_after)
+            async_create_rate_limit_issue(self.hass, self.home_id, retry_after=e.retry_after)
+
+            if self.is_homekit_active:
+                self._log_cloud_unavailable(e)
+                return self.data or {}
+
+            raise UpdateFailed(
+                f"Tado API rate-limited, retry after {max(1, e.retry_after // 60)} min",
+                retry_after=float(e.retry_after),
+            ) from e
         except TadoAuthError as e:
             from .repair_helpers import async_create_auth_issue
 
@@ -549,18 +605,10 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "Refresh token expired — user must re-authenticate",
             ) from e
         except TadoSyncError as e:
-            # When HomeKit is connected we keep the entities live on
-            # local data instead of raising UpdateFailed — the user
-            # would otherwise see "Failed to update" on every entity
-            # for a transient cloud blip.
-            if self.homekit_provider and self.homekit_provider.is_connected:
-                _LOGGER.warning(
-                    "Coordinator: Tado cloud sync failed (%s) — keeping "
-                    "entities live on HomeKit data, will retry on next poll",
-                    e,
-                )
-            else:
-                raise UpdateFailed(f"Tado CE sync failed: {e}") from e
+            if self.is_homekit_active:
+                self._log_cloud_unavailable(e)
+                return self.data or {}
+            raise UpdateFailed(f"Tado CE sync failed: {e}") from e
 
         if do_full_sync:
             self._last_full_sync = dt_util.utcnow()
@@ -605,6 +653,15 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         if not skip_weather and cm.get_weather_enabled() and not zone_only:
             self._last_weather_fetch = dt_util.utcnow()
+        if not skip_home_state and cm.get_home_state_sync_enabled() and not zone_only:
+            self._last_home_state_fetch = dt_util.utcnow()
+        if (
+            not skip_mobile_devices
+            and cm.get_mobile_devices_enabled()
+            and cm.get_mobile_devices_frequent_sync()
+            and not zone_only
+        ):
+            self._last_mobile_devices_fetch = dt_util.utcnow()
 
         if was_failing:
             _LOGGER.info(
@@ -651,35 +708,18 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     ) -> None:
         """Re-fetch device offsets from Tado when the cache may be stale.
 
-        Tado's adaptive calibration can change a stored device offset
-        without HA having written it (manual edit in the Tado app, or
-        Tado's own learning loop). The Offset Sync controller's
-        per-write readback gate only confirms what we wrote
-        landed; later server-side drift goes unnoticed and the next
-        evaluation calculates `desired = external - (inside - cached)`
-        from the wrong baseline, which can drag the cache to ±10°C.
-
-        This method runs from `_async_post_sync_processing` and gates a
-        re-fetch on three conditions:
+        Runs from `_async_post_sync_processing` to catch server-side
+        offset drift (Tado's own calibration or a manual Tado-app edit)
+        that HA never wrote and so never readback-verified. Gated on
+        three conditions, all must hold:
 
         1. Offset feature enabled.
-        2. The drift-refresh floor has passed since the last full sync
-           or drift refresh. When HomeKit is connected the floor is
-           `max(OFFSET_DRIFT_REFRESH_SECONDS, homekit_cloud_sync_minutes)`
-           so the user's HomeKit Cloud Refresh setting governs how
-           often this fires — same dial as the zone-state cloud sync.
-           When HomeKit is not connected the 30-minute floor applies
-           on its own (the drift refresh is the only safety net for
-           stale offsets without local data).
-        3. API quota is not low (>= LOW_QUOTA_THRESHOLD remaining) —
-           the readback gate keeps the cache safe even when this
-           refresh is skipped, so it is fine to back off under quota
-           pressure.
-
-        Skipping in (3) is safe but not free — every minute the cache
-        runs without resync is a minute the next Offset Sync evaluation
-        could compute from a stale baseline. The trade-off favours not
-        burning the user's last quota on a defence-in-depth refresh.
+        2. Drift-refresh floor elapsed. With HomeKit connected the floor
+           is `max(OFFSET_DRIFT_REFRESH_SECONDS, homekit_cloud_sync_minutes)`;
+           otherwise `OFFSET_DRIFT_REFRESH_SECONDS` alone.
+        3. Quota not below the tier-aware low-quota threshold — safe to
+           skip under quota pressure because the per-write readback gate
+           still protects the cache.
         """
         if not self.config_manager.get_offset_enabled():
             return
@@ -704,7 +744,8 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         if isinstance(ratelimit_data, dict):
             remaining = ratelimit_data.get("remaining")
-            if isinstance(remaining, int) and remaining < LOW_QUOTA_THRESHOLD:
+            limit = ratelimit_data.get("limit")
+            if isinstance(remaining, int) and remaining < low_quota_threshold(limit):
                 _LOGGER.debug(
                     "Offset Sync: skipping drift refresh — Tado API quota "
                     "low (%s call(s) remaining)",
@@ -828,19 +869,27 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         age = (dt_util.utcnow() - self._last_full_sync).total_seconds()
         return age >= self._zones_info_refresh_seconds()
 
-    def _weather_skip_floor_minutes(self) -> int:
-        """Weather refresh floor (in minutes) when HomeKit is connected.
+    def _should_skip_by_floor(
+        self,
+        last_fetch: datetime | None,
+        base_floor_minutes: int,
+        *,
+        homekit_connected: bool,
+    ) -> bool:
+        """Return True when a slow-data fetch is still within its floor.
 
-        Returns the larger of `HOMEKIT_WEATHER_SKIP_MINUTES` (30) and the
-        user's `homekit_cloud_sync_minutes` setting, so the same dial that
-        throttles zone-state cloud sync also throttles weather. Schema
-        clamps `homekit_cloud_sync_minutes` to [5, 120], so the result is
-        always in [30, 120].
+        The floor applies in ALL cadence states (adaptive, custom, HomeKit) so
+        a fast zone cycle never drags slow data along. When HomeKit is
+        connected the floor widens to the user's cloud-sync dial, same as the
+        zone-state and offset-drift paths.
         """
-        return max(
-            HOMEKIT_WEATHER_SKIP_MINUTES,
-            self.config_manager.get_homekit_cloud_sync_minutes(),
-        )
+        if last_fetch is None:
+            return False  # never fetched → must fetch
+        floor = base_floor_minutes
+        if homekit_connected:
+            floor = max(base_floor_minutes, self.config_manager.get_homekit_cloud_sync_minutes())
+        elapsed = (dt_util.utcnow() - last_fetch).total_seconds() / 60
+        return elapsed < floor
 
     async def _async_fetch_bridge_data(self) -> dict[str, object] | None:
         """Fetch bridge API data with health tracking."""
@@ -1577,7 +1626,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     "mode": mode,
                 },
             )
-        except Exception:
+        except (KeyError, ValueError, AttributeError):
             _LOGGER.debug(
                 "Coordinator: could not raise sensor-missing repair for "
                 "zone %s — HA issue registry call failed",
@@ -1594,7 +1643,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 DOMAIN,
                 f"svc_sensor_missing_{zone_id}",
             )
-        except Exception:
+        except (KeyError, ValueError, AttributeError):
             _LOGGER.debug(
                 "Coordinator: could not clear sensor-missing repair for "
                 "zone %s — HA issue registry call failed",

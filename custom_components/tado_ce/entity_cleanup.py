@@ -238,10 +238,6 @@ def match_zone_only_suffix(unique_id: str, zone_only_patterns: frozenset[re.Patt
 FEATURE_CLEANUP_MAP: list[tuple[str, str, bool]] = [
     ("zone_configuration_enabled", "_cleanup_zone_config", True),
     ("thermal_analytics_enabled", "_cleanup_thermal_analytics", False),
-    ("environment_sensors_enabled", "_cleanup_environment_sensors", True),
-    ("zone_diagnostics_enabled", "_cleanup_zone_diagnostics", True),
-    ("boost_buttons_enabled", "_cleanup_boost_buttons", True),
-    ("device_controls_enabled", "_cleanup_device_controls", True),
     ("smart_comfort_enabled", "_cleanup_smart_comfort", False),
     ("schedule_calendar_enabled", "_cleanup_schedule_calendar", False),
     ("weather_enabled", "_cleanup_weather", False),

@@ -201,6 +201,17 @@ class TadoAuthMixin:
                 )
                 raise TadoAuthError(f"Token refresh failed after {MAX_RETRY_ATTEMPTS} attempts (403)")
 
+            if 400 <= resp.status < 500:
+                _LOGGER.warning(
+                    "Auth: refresh request rejected (HTTP %s) — %s",
+                    resp.status, error_text[:200],
+                )
+                # WHY: 4xx-non-401-non-403 means the refresh shape is wrong, not a
+                # transient CDN block. Retrying won't help. Raise so coordinator
+                # triggers reauth.
+                raise TadoAuthError(
+                    f"Token refresh rejected (HTTP {resp.status}): {error_text[:80]}",
+                )
             _LOGGER.warning(
                 "Auth: refresh failed with HTTP %s — %s",
                 resp.status, error_text[:200],

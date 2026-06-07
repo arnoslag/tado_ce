@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 from enum import StrEnum
 import logging
 import time
 from typing import TYPE_CHECKING, Any
+
+import aiohttp
 
 from .const import (
     ABSOLUTE_MAX_VALVE_TARGET,
@@ -249,7 +252,7 @@ class SmartValveController:
                     self._runtime.overlay_set_by_controller = True
                     self._runtime.last_evaluation_ts = time.monotonic()
                     return True
-            except Exception:
+            except (TimeoutError, aiohttp.ClientError, OSError):
                 _LOGGER.warning(
                     "Smart Valve: zone %s HomeKit write failed — falling "
                     "back to cloud",
@@ -298,7 +301,7 @@ class SmartValveController:
                 self._zone_id,
             )
             return False
-        except Exception:
+        except (TimeoutError, aiohttp.ClientError):
             _LOGGER.warning(
                 "Smart Valve: zone %s cloud write raised an exception — "
                 "will retry on next sensor change",
@@ -323,7 +326,7 @@ class SmartValveController:
                 self._zone_id,
             )
             return False
-        except Exception:
+        except (TimeoutError, aiohttp.ClientError):
             _LOGGER.warning(
                 "Smart Valve: zone %s clearing overlay raised an exception — "
                 "will retry next cycle",
@@ -692,7 +695,7 @@ class SmartValveController:
                         "accurate results.",
                         self._zone_id, mask_serial(serial), float(offset),
                     )
-        except Exception:
+        except (KeyError, TypeError, AttributeError):
             _LOGGER.debug(
                 "Smart Valve: zone %s could not check device offset — "
                 "continuing without the warning",

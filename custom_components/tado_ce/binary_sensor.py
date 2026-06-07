@@ -116,8 +116,8 @@ async def async_setup_entry(
         sensors.append(TadoBridgeConnectedSensor(coordinator))
         _LOGGER.debug("Binary Sensor: bridge connected sensor created")
 
-    # Device connection sensors (per device, when zone_diagnostics enabled)
-    if config_manager.get_zone_diagnostics_enabled() and zones_info:
+    # Device connection sensors (per device)
+    if zones_info:
         _create_device_connection_sensors(coordinator, zones_info, sensors)
 
     # Hot water power sensors (per HOT_WATER zone)

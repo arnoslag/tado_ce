@@ -477,3 +477,23 @@ def prune_zone_keyed_dict(
     for k in to_drop:
         d.pop(k, None)
     return len(to_drop)
+
+
+def retry_after_to_minutes(seconds: int) -> str:
+    """Format retry-after seconds as minute count for user-facing messages."""
+    # WHY: floor at 1 — a 30-second cooldown still reads "Try again in 1 min."
+    return str(max(1, seconds // 60))
+
+
+def low_quota_threshold(daily_limit: int | None) -> int:
+    """Return the low-quota threshold scaled to the daily-limit tier."""
+    # WHY: max(absolute floor, percent of daily limit). Floor keeps the
+    # 100-call free tier on existing behaviour; percent scales the gate so
+    # 1,000-call transitional and 20,000-call legacy tiers fire with
+    # proportional cushion (10%) rather than the same absolute cushion as
+    # the free tier (which would mean fires at 99% used on the legacy tier).
+    from .const import LOW_QUOTA_RESERVE_FLOOR, LOW_QUOTA_RESERVE_PERCENT
+
+    if daily_limit is None or daily_limit <= 0:
+        return LOW_QUOTA_RESERVE_FLOOR
+    return max(LOW_QUOTA_RESERVE_FLOOR, int(daily_limit * LOW_QUOTA_RESERVE_PERCENT))

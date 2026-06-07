@@ -34,7 +34,7 @@ from .const import (
     is_climate_zone,
     is_valid_device_offset,
 )
-from .exceptions import TadoAuthError, TadoSyncError
+from .exceptions import TadoAuthError, TadoRateLimitError, TadoSyncError
 from .helpers import mask_serial, parse_iso_datetime, retry_delay
 
 if TYPE_CHECKING:
@@ -490,13 +490,15 @@ class TadoApiClient(TadoAuthMixin):
             self._access_token = None
             self._token_expiry = None
             return True
-        _LOGGER.warning(
-            "API: token expired on %s %s — not retrying, will refresh on next call",
-            method, endpoint,
-        )
         self._access_token = None
         self._token_expiry = None
-        return False
+        _LOGGER.warning(
+            "API: token expired on %s %s — non-retryable, surfacing for reauth",
+            method, endpoint,
+        )
+        raise TadoAuthError(
+            f"Token rejected on non-retryable call {method} {endpoint}",
+        )
 
     async def _handle_403(
         self, method: str, endpoint: str, attempt: int,
@@ -518,11 +520,16 @@ class TadoApiClient(TadoAuthMixin):
         self._access_token = None
         self._token_expiry = None
         _LOGGER.warning(
-            "API: HTTP 403 after %s retry attempts on %s %s — clearing "
-            "token to force a refresh on the next call",
+            "API: HTTP 403 after %s retry attempts on %s %s — credentials "
+            "likely revoked, surfacing to coordinator for reauth",
             MAX_RETRY_ATTEMPTS, method, endpoint,
         )
-        return False
+        # WHY: persistent 403 after retries means transient-WAF-block hypothesis is
+        # exhausted. Per ha-coordinator-pattern.md §2.2, raise TadoAuthError so
+        # coordinator dispatches reauth instead of falling through to cache fallback.
+        raise TadoAuthError(
+            f"Persistent 403 after {MAX_RETRY_ATTEMPTS} retries on {method} {endpoint}",
+        )
 
     async def _resolve_api_url(self, endpoint: str, full_url: str | None) -> str | None:
         """Resolve the absolute URL — prefer `full_url` when given, else build from home ID."""
@@ -531,12 +538,9 @@ class TadoApiClient(TadoAuthMixin):
         config = await self._load_config()
         home_id = config.get("home_id")
         if not home_id:
-            _LOGGER.warning(
-                "API: no home_id configured — cannot resolve %s, "
-                "re-authenticate to fix",
-                endpoint,
+            raise TadoAuthError(
+                f"Home ID missing — cannot resolve {endpoint}, re-authenticate to fix",
             )
-            return None
         return f"{TADO_API_BASE}/homes/{home_id}/{endpoint}"
 
     async def _handle_error_status(
@@ -580,11 +584,16 @@ class TadoApiClient(TadoAuthMixin):
             return "return_success"
 
         if status == HTTPStatus.TOO_MANY_REQUESTS:
+            retry_after_seconds = self._rate_limit.get("reset_seconds", 0) or 0
             _LOGGER.warning(
-                "API: rate limit exceeded on %s — backing off until quota resets",
-                endpoint,
+                "API: HTTP 429 on %s %s — surfacing to coordinator for "
+                "honoured backoff (retry_after=%ss)",
+                method, endpoint, retry_after_seconds,
             )
-            return "return_none"
+            raise TadoRateLimitError(
+                f"Rate-limited on {method} {endpoint}",
+                retry_after=retry_after_seconds,
+            )
 
         if status >= HTTPStatus.INTERNAL_SERVER_ERROR and is_safe_to_retry:
             if attempt < MAX_RETRY_ATTEMPTS:
@@ -1021,6 +1030,9 @@ class TadoApiClient(TadoAuthMixin):
             raise
         except TadoSyncError:
             raise
+        except TadoRateLimitError:
+            await self.save_ratelimit("error")
+            raise
         except aiohttp.ClientError as e:
             _LOGGER.warning(
                 "API: %s sync hit a network error — coordinator will "
@@ -1029,14 +1041,6 @@ class TadoApiClient(TadoAuthMixin):
             )
             await self.save_ratelimit("error")
             raise TadoSyncError(f"Network error during sync: {e}") from e
-        except Exception as e:
-            _LOGGER.warning(
-                "API: %s sync raised an unexpected error — coordinator "
-                "will retry on next poll",
-                sync_type, exc_info=True,
-            )
-            await self.save_ratelimit("error")
-            raise TadoSyncError(f"Sync failed: {e}") from e
 
     async def async_resync_offsets(self, zones_info: list[Any]) -> int:
         """Public wrapper around `_sync_offsets` for the coordinator's drift-refresh path.

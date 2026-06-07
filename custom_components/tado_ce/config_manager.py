@@ -310,22 +310,6 @@ class ConfigurationManager:
         """Get thermal inertia detection threshold in °C (0.05-0.5, default 0.1)."""
         return self._get_float_option("heating_cycle_inertia_threshold", 0.1, 0.05, 0.5)
 
-    def get_zone_diagnostics_enabled(self) -> bool:
-        """Check if Zone Diagnostics entities are enabled (battery, connection, heating power sensors)."""
-        return self._get_option("zone_diagnostics_enabled", True)  # type: ignore[no-any-return]
-
-    def get_device_controls_enabled(self) -> bool:
-        """Check if Device Controls entities are enabled (child lock, early start switches)."""
-        return self._get_option("device_controls_enabled", True)  # type: ignore[no-any-return]
-
-    def get_boost_buttons_enabled(self) -> bool:
-        """Check if Boost Buttons are enabled."""
-        return self._get_option("boost_buttons_enabled", True)  # type: ignore[no-any-return]
-
-    def get_environment_sensors_enabled(self) -> bool:
-        """Check if Environment Sensors are enabled (mold risk, comfort level, condensation risk)."""
-        return self._get_option("environment_sensors_enabled", True)  # type: ignore[no-any-return]
-
     def get_thermal_analytics_enabled(self) -> bool:
         """Check if Thermal Analytics sensors are enabled."""
         return self._get_option("thermal_analytics_enabled", True)  # type: ignore[no-any-return]

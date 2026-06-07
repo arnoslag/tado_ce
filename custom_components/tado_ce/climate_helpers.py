@@ -61,7 +61,7 @@ def update_offset(
                 return None
             return value  # type: ignore[no-any-return]
         return None
-    except Exception:
+    except (KeyError, TypeError, AttributeError):
         # Caller keeps its previous offset — better than crashing the
         # climate entity over a transient cache read failure.
         return None
@@ -105,7 +105,7 @@ def update_preset_mode(coordinator: TadoDataUpdateCoordinator) -> str | None:
         if home_state:
             presence = home_state.get("presence", "HOME")
             return PRESET_HOME if presence == "HOME" else PRESET_AWAY
-    except Exception:
+    except (KeyError, AttributeError):
         _LOGGER.debug(
             "Climate: could not derive preset mode from home state — "
             "keeping previous value",
@@ -226,6 +226,11 @@ async def _attempt_with_rollback(
     )
     entity.async_write_ha_state()
 
+    import aiohttp
+
+    from .error_dispatch import dispatch_to_service_call
+    from .exceptions import TadoAuthError, TadoRateLimitError
+
     api_success = False
     try:
         async with asyncio.timeout(10):
@@ -236,9 +241,15 @@ async def _attempt_with_rollback(
             "state so the entity reflects the actual zone state",
             plan.log_prefix, entity._zone_name, plan.reason,
         )
-    except Exception as e:
+    except (TadoAuthError, TadoRateLimitError) as e:
+        for attr, value in plan.rollback.items():
+            setattr(entity, attr, value)
+        clear_optimistic_state(entity)
+        entity.async_write_ha_state()
+        dispatch_to_service_call(e, entity.coordinator.config_entry, entity.hass)
+    except aiohttp.ClientError as e:
         _LOGGER.warning(
-            "%s: %s — %s failed (%s), rolling back optimistic state",
+            "%s: %s — %s network error (%s), rolling back optimistic state",
             plan.log_prefix, entity._zone_name, plan.reason, e,
         )
 
@@ -276,8 +287,8 @@ async def _attempt_with_rollback(
     clear_optimistic_state(entity)
     entity.async_write_ha_state()
     raise HomeAssistantError(
-        f"{entity._zone_name}: {plan.reason} failed",
         translation_domain=DOMAIN,
+        translation_key="cloud_write_failed",
     )
 
 

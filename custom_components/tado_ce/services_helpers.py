@@ -6,6 +6,8 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING
 
+import aiohttp
+
 from .helpers import async_trigger_immediate_refresh
 
 if TYPE_CHECKING:
@@ -30,6 +32,9 @@ async def run_service_call(
     reason: str,
 ) -> bool:
     """Cloud write with timeout + capture-on-success + immediate refresh; bool return signals user-visible success."""
+    from .error_dispatch import dispatch_to_service_call
+    from .exceptions import TadoAuthError, TadoRateLimitError
+
     api_success = False
     try:
         async with asyncio.timeout(10):
@@ -40,9 +45,11 @@ async def run_service_call(
             reason, zone_id,
         )
         return False
-    except Exception as e:
+    except (TadoAuthError, TadoRateLimitError) as e:
+        dispatch_to_service_call(e, coordinator.config_entry, hass)
+    except aiohttp.ClientError as e:
         _LOGGER.warning(
-            "Services: %s for zone %s failed (%s)",
+            "Services: %s for zone %s network error (%s)",
             reason, zone_id, e,
         )
         return False
@@ -53,7 +60,7 @@ async def run_service_call(
     if capture_source is not None:
         try:
             await coordinator.async_capture_state(zone_id, entity_type, capture_source)
-        except Exception as e:
+        except (KeyError, AttributeError, OSError) as e:
             _LOGGER.warning(
                 "Services: capture-on-success for zone %s failed (%s); "
                 "user write succeeded, restoration may be unavailable",

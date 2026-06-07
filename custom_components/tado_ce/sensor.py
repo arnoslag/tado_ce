@@ -96,17 +96,16 @@ def _create_common_zone_sensors(
         TadoOverlaySensor(coordinator, zone_id, zone_name, zone_type),
     ]
     sensors.append(TadoZoneInsightsSensor(coordinator, zone_id, zone_name, zone_type))
-    if config_manager.get_environment_sensors_enabled():
-        sensors.extend(
-            [
-                TadoMoldRiskSensor(coordinator, zone_id, zone_name, zone_type),
-                TadoMoldRiskPercentageSensor(coordinator, zone_id, zone_name, zone_type),
-                TadoComfortLevelSensor(coordinator, zone_id, zone_name, zone_type),
-                TadoCondensationRiskSensor(coordinator, zone_id, zone_name, zone_type),
-                TadoSurfaceTemperatureSensor(coordinator, zone_id, zone_name, zone_type),
-                TadoDewPointSensor(coordinator, zone_id, zone_name, zone_type),
-            ],
-        )
+    sensors.extend(
+        [
+            TadoMoldRiskSensor(coordinator, zone_id, zone_name, zone_type),
+            TadoMoldRiskPercentageSensor(coordinator, zone_id, zone_name, zone_type),
+            TadoComfortLevelSensor(coordinator, zone_id, zone_name, zone_type),
+            TadoCondensationRiskSensor(coordinator, zone_id, zone_name, zone_type),
+            TadoSurfaceTemperatureSensor(coordinator, zone_id, zone_name, zone_type),
+            TadoDewPointSensor(coordinator, zone_id, zone_name, zone_type),
+        ],
+    )
     if config_manager.get_smart_comfort_enabled():
         sensors.extend(
             [
@@ -133,8 +132,7 @@ def _create_heating_zone_sensors(
     sensors.extend(
         _create_common_zone_sensors(coordinator, zone_id, zone_name, zone_type, config_manager),
     )
-    if config_manager.get_zone_diagnostics_enabled():
-        sensors.append(TadoHeatingPowerSensor(coordinator, zone_id, zone_name, zone_type))
+    sensors.append(TadoHeatingPowerSensor(coordinator, zone_id, zone_name, zone_type))
 
     thermal_analytics_zones = config_manager.get_thermal_analytics_zones()
     zone_thermal_enabled = (not thermal_analytics_zones) or (zone_id in thermal_analytics_zones)
@@ -392,18 +390,17 @@ async def async_setup_entry(
             exc_info=True,
         )
 
-    if config_manager.get_zone_diagnostics_enabled():
-        try:
-            await hass.async_add_executor_job(
-                _create_device_sensors, coordinator, data_loader, sensors,
-            )
-        except Exception as e:
-            _LOGGER.warning(
-                "Sensor: could not parse device list while creating "
-                "battery sensors (%s) — battery sensors will retry on "
-                "the next reload",
-                e,
-            )
+    try:
+        await hass.async_add_executor_job(
+            _create_device_sensors, coordinator, data_loader, sensors,
+        )
+    except Exception as e:
+        _LOGGER.warning(
+            "Sensor: could not parse device list while creating "
+            "battery sensors (%s) — battery sensors will retry on "
+            "the next reload",
+            e,
+        )
 
     # Bridge sensors (dynamic discovery)
     bridge_serial = entry.options.get("bridge_serial")
