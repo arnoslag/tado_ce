@@ -1243,7 +1243,7 @@
     },
     "deactivate_open_window": {
       "name": "Desativar janela aberta",
-      "description": "Desativa o modo janela aberta numa zona climática, retomando o aquecimento/arrefecimento normal. Funciona tanto para modos detetados pelo Tado como ativados manualmente."
+      "description": "Cancele uma janela aberta que o Tado tenha detetado automaticamente, ou que tenha confirmado com a opção «Ativar modo de janela aberta», e retome o funcionamento normal do aquecimento/arrefecimento. Esta ação não desativa o «Modo de janela aberta». Como esse modo aplica uma sobreposição de congelamento, desative-o através das opções «Retomar programação» ou «Restaurar estado anterior»."
     },
     "set_open_window_mode": {
       "name": "Definir modo janela aberta",

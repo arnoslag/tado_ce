@@ -1243,7 +1243,7 @@
     },
     "deactivate_open_window": {
       "name": "Offenes Fenster deaktivieren",
-      "description": "Deaktiviert den Offenes-Fenster-Modus für eine Klimazone und nimmt die normale Heizung/Kühlung wieder auf. Funktioniert sowohl für Tado-erkannte als auch manuell ausgelöste Modi."
+      "description": "Schließen Sie ein offenes Fenster, das Tado selbst erkannt hat oder das Sie mit „Offenes Fenster aktivieren“ bestätigt haben, und setzen Sie den normalen Heiz- bzw. Kühlbetrieb fort. Dadurch wird der Modus „Offenes Fenster aktivieren“ nicht deaktiviert. Da dieser Modus eine Frostwarnung anzeigt, deaktivieren Sie ihn stattdessen mit „Zeitplan fortsetzen“ oder „Vorherigen Zustand wiederherstellen“."
     },
     "set_open_window_mode": {
       "name": "Offenes-Fenster-Modus setzen",

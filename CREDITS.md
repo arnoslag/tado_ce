@@ -23,6 +23,10 @@ Thank you to everyone who supported the project through [Buy Me a Coffee](https:
 
 Community contributors who helped shape each release through bug reports, feature requests, testing, and feedback.
 
+### v4.0.3
+
+- **[@apilone](https://github.com/apilone)** — Spotted that the open-window automation example in the Features Guide didn't actually close the window ([#295](https://github.com/hiall-fyi/tado_ce/issues/295)), with a precise repro: `set_open_window_mode` put the zone into manual 5°C, then `deactivate_open_window` did nothing. He'd already worked out it might need `restore_previous_state`. He was right on both counts. The three open-window services run on two different mechanisms (`set_open_window_mode` writes a frost overlay; `activate`/`deactivate_open_window` drive Tado's own detection state), and both the example and the `deactivate` service description had blurred them. The example now uses `resume_schedule`, and the service descriptions spell out which one clears which.
+
 ### v4.0.2
 
 - **[@driagi](https://github.com/driagi)** — Reported cloud API calls jumping sharply after updating to 4.0.1, with the bridge still connected and HomeKit working ([#289](https://github.com/hiall-fyi/tado_ce/issues/289)). His instinct that something changed at 4.0.1 was right, and the evidence chain proved it: a full debug log showing a poll firing every 60 seconds, four API-usage charts capturing a stable saw-tooth from mid-May then a step-change after 5 June, and the Diagnostica panel confirming the 1-minute interval was adaptive's own choice, not a setting he'd made. That triangulated the root cause to the 4.0.1 adaptive-floor change (5 min dropped to 1 min for the 20,000-call tier's benefit) collapsing the 1,000-call tier to 1-minute polling whenever quota looked healthy. The adaptive-polling reframe was already scoped for v4.1.0-beta.3; his report was the reason to pull it onto the stable line now (a flat 5-minute floor for every plan instead of letting a big quota poll faster, per-type refresh, HomeKit-defer) so 4.0.x users get the fix without waiting for the v4.1.0 beta cycle to finish.

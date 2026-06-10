@@ -1243,7 +1243,7 @@
     },
     "deactivate_open_window": {
       "name": "Deactivate Open Window",
-      "description": "Deactivate Open Window mode on a climate zone, resuming normal heating/cooling. Works for both Tado-detected and manually triggered open window modes."
+      "description": "Cancel an open window that Tado detected itself, or one you confirmed with 'Activate Open Window', and resume normal heating/cooling. This does not clear 'Set Open Window Mode'. That mode writes a frost overlay, so clear it with 'Resume Schedule' or 'Restore Previous State' instead."
     },
     "set_open_window_mode": {
       "name": "Set Open Window Mode",

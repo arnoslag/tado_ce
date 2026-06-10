@@ -1243,7 +1243,7 @@
     },
     "deactivate_open_window": {
       "name": "Désactiver la fenêtre ouverte",
-      "description": "Désactive le mode fenêtre ouverte sur une zone climatique, rétablissant le chauffage/refroidissement normal. Fonctionne pour les modes détectés par Tado et déclenchés manuellement."
+      "description": "Fermez une fenêtre ouverte détectée automatiquement par Tado ou que vous avez confirmée via « Activer le mode Fenêtre ouverte », puis reprenez le chauffage ou la climatisation en mode normal. Cette action ne désactive pas le « Mode Fenêtre ouverte ». Ce mode génère une superposition de givre ; pour le désactiver, utilisez plutôt « Reprendre le programme » ou « Restaurer l'état précédent »."
     },
     "set_open_window_mode": {
       "name": "Définir le mode fenêtre ouverte",

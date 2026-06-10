@@ -270,6 +270,7 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
     def _build_advanced_schema(
         self,
         zones_with_heating_power: list[dict[str, str]],
+        has_homekit_pairing: bool = False,
     ) -> vol.Schema:
         """Build the Advanced Settings form — conditional tuning per enabled feature; Polling & API always visible."""
         options = self.config_entry.options
@@ -369,7 +370,10 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
         # Connection status is surfaced in the section description via
         # description_placeholders (see async_step_advanced_settings) —
         # NOT via a pseudo-editable TextSelector field.
-        if opt("homekit_enabled", False):
+        # Show the HomeKit section (carrying the unpair toggle) whenever a
+        # pairing exists — not only when enabled — so a disabled-but-paired
+        # zone can still be unpaired.
+        if has_homekit_pairing:
             sections[vol.Required("homekit")] = data_entry_flow.section(
                 vol.Schema({
                     vol.Optional(
@@ -442,7 +446,7 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
             if key not in processed:
                 processed[key] = value
 
-    def _detect_first_enable(self, new_options: dict[str, Any]) -> str | None:
+    async def _detect_first_enable(self, new_options: dict[str, Any]) -> str | None:
         """Detect if a feature was just enabled — return sub-flow step_id, or None if no sub-flow needed."""
         prev = self.config_entry.options
 
@@ -450,18 +454,16 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
         if new_options.get("bridge_enabled") and not prev.get("bridge_serial"):
             return "bridge_setup"
 
-        # HomeKit: first enable AND no pairing stored
+        # HomeKit: first enable AND no pairing stored. Ask HomeKitClient
+        # (the Store owner) so the check can't drift from where the pairing
+        # actually lives.
         if new_options.get("homekit_enabled") and not prev.get("homekit_enabled"):
-            from .const import get_data_file
+            from .homekit_client import HomeKitClient
 
-            pairing_path = get_data_file(
-                "homekit_pairing",
-                self.config_entry.data.get("home_id"),
+            client = HomeKitClient(
+                self.hass, self.config_entry.data.get("home_id") or "default",
             )
-            try:
-                if not pairing_path.exists():
-                    return "homekit_pairing"
-            except OSError:
+            if not await client.async_has_pairing():
                 return "homekit_pairing"
 
         # WC: first enable AND bridge not enabled
@@ -487,7 +489,7 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
 
             if not errors:
                 # Check for first-enable sub-flows
-                redirect = self._detect_first_enable(processed_input)
+                redirect = await self._detect_first_enable(processed_input)
                 if redirect:
                     self._pending_general_options = processed_input
                     return await getattr(self, f"async_step_{redirect}")()  # type: ignore[no-any-return]
@@ -568,7 +570,16 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                 return self.async_create_entry(title="", data=processed_input)
 
         zones_with_heating_power = await self._load_zones_with_heating_power()
-        schema = self._build_advanced_schema(zones_with_heating_power)
+
+        from .homekit_client import HomeKitClient
+
+        hk_client = HomeKitClient(
+            self.hass, self.config_entry.data.get("home_id") or "default",
+        )
+        has_homekit_pairing = await hk_client.async_has_pairing()
+        schema = self._build_advanced_schema(
+            zones_with_heating_power, has_homekit_pairing=has_homekit_pairing,
+        )
 
         # Compute HomeKit connection status for the section description
         # (rendered via strings.json placeholder {homekit_status}).

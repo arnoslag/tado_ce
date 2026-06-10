@@ -33,7 +33,7 @@ async def api_call_with_rollback_wh(
             "_attr_current_operation": entity._attr_current_operation,
             "_attr_target_temperature": entity._attr_target_temperature,
         },
-        expected={"current_operation": operation},
+        expected={"operation": operation, "temperature": target_temp},
         preserved_attrs=None,
         refresh_signal="water_heater_change",
         reason=reason,

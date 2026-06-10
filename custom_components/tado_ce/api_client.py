@@ -747,6 +747,15 @@ class TadoApiClient(TadoAuthMixin):
                     return None
             except TadoAuthError:
                 raise
+            except TadoRateLimitError:
+                # Quota exhaustion must reach the coordinator dispatch
+                # (repair issue + retry-after backoff) and the background
+                # write dispatcher — never collapse to a None return.
+                raise
+            except TadoSyncError:
+                # Transient sync errors are the coordinator's to classify;
+                # swallowing here would mislabel them as a generic failure.
+                raise
             except Exception:
                 _LOGGER.warning(
                     "API: unexpected error on %s %s — call abandoned, "

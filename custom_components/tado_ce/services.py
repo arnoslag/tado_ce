@@ -33,6 +33,7 @@ from .const import (
 )
 from .helpers import async_trigger_immediate_refresh, build_timer_termination, mask_serial
 from .services_helpers import run_service_call
+from .write_optimizer import ResumeGuard
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant, ServiceCall
@@ -800,6 +801,15 @@ async def handle_resume_schedule(hass: HomeAssistant, call: ServiceCall) -> None
         if ent:
             zone_id = ent.zone_id  # type: ignore[attr-defined]
             if zone_id:
+                # A zone with no active overlay is already on its schedule,
+                # so resuming would be a wasted cloud call — skip it.
+                if ResumeGuard.should_skip_resume(_coord, zone_id):
+                    _LOGGER.debug(
+                        "Services: resume_schedule — zone %s already on "
+                        "schedule, skipping redundant cloud call",
+                        zone_id,
+                    )
+                    continue
                 api_success = await run_service_call(
                     hass=hass,
                     coordinator=_coord,

@@ -46,10 +46,6 @@ DEFAULT_MOLD_RISK_WINDOW_TYPE = "double_pane"  # Window type for mold risk surfa
 # Validation constants
 MIN_HOUR = 0
 MAX_HOUR = 23
-MIN_INTERVAL_MINUTES = 1
-MAX_INTERVAL_MINUTES = 1440  # 24 hours
-MIN_RETENTION_DAYS = 0  # 0 = forever
-MAX_RETENTION_DAYS = 365
 MIN_TIMER_DURATION = 1  # minutes
 MAX_TIMER_DURATION = 1440  # 24 hours
 MIN_SMART_COMFORT_HISTORY_DAYS = 1
@@ -112,57 +108,6 @@ class ConfigurationManager:
             key, value, min_val, max_val, default,
         )
         return default
-
-    @staticmethod
-    def validate_hour(hour: int, field_name: str) -> tuple[bool, str | None]:
-        """Validate hour value (0-23)."""
-        if not isinstance(hour, int):
-            return False, f"{field_name} must be an integer"
-
-        if hour < MIN_HOUR or hour > MAX_HOUR:
-            return False, f"{field_name} must be between {MIN_HOUR} and {MAX_HOUR}"
-
-        return True, None
-
-    @staticmethod
-    def validate_interval(interval: int | None, field_name: str) -> tuple[bool, str | None]:
-        """Validate polling interval (1-1440 minutes or None)."""
-        if interval is None:
-            return True, None
-
-        if not isinstance(interval, int):
-            return False, f"{field_name} must be an integer or null"
-
-        if interval < MIN_INTERVAL_MINUTES or interval > MAX_INTERVAL_MINUTES:
-            return False, f"{field_name} must be between {MIN_INTERVAL_MINUTES} and {MAX_INTERVAL_MINUTES} minutes"
-
-        return True, None
-
-    @staticmethod
-    def validate_retention_days(days: int) -> tuple[bool, str | None]:
-        """Validate retention days (0-365)."""
-        if not isinstance(days, int):
-            return False, "api_history_retention_days must be an integer"
-
-        if days < MIN_RETENTION_DAYS or days > MAX_RETENTION_DAYS:
-            return False, f"api_history_retention_days must be between {MIN_RETENTION_DAYS} and {MAX_RETENTION_DAYS}"
-
-        return True, None
-
-    @staticmethod
-    def validate_day_night_hours(day_start: int, night_start: int) -> tuple[bool, str | None]:
-        """Validate day/night hour combination (day_start == night_start is valid uniform mode)."""
-        valid, error = ConfigurationManager.validate_hour(day_start, "day_start_hour")
-        if not valid:
-            return False, error
-
-        valid, error = ConfigurationManager.validate_hour(night_start, "night_start_hour")
-        if not valid:
-            return False, error
-
-        # Both hours are valid (same value = uniform mode, which is allowed)
-        return True, None
-
 
     def get_weather_enabled(self) -> bool:
         """Check if weather sensors are enabled."""

@@ -2,6 +2,28 @@
 
 All notable changes to Tado CE will be documented in this file.
 
+## [4.0.3] - 2026-06-10
+
+A small stable patch, all bug fixes surfaced by internal audits of the code that changed across the v4.0 line, plus two HomeKit pairing fixes. Nothing here changes how you set anything up; if your installation has been fine, these are quiet correctness fixes.
+
+### Bug fixes
+
+- **Fixed the hot-water temperature snapping back after you set it** — changing a hot-water target temperature updated the slider straight away, then the next poll briefly reverted it to Tado's old reported value before correcting itself a poll later. The new value now holds on the dashboard until the cloud confirms it, so the slider stays where you put it.
+- **Fixed Smart Valve and Offset Sync zones going quiet after a token expiry** — if your Tado token expired while a Smart Valve or Offset Sync zone was writing in the background, the write failed silently and the zone stopped responding until the next poll happened to hit the same error. Both now start the reauth prompt straight away, the same as the rest of the integration already did.
+- **Fixed rate-limit recovery not kicking in when a write hit the quota** — if your daily Tado quota ran out while the integration was writing (a Smart Valve or Offset Sync adjustment, or a service call), it kept retrying into the exhausted quota and the "rate-limited" Repairs notice never showed for those writes. The rate-limit signal was being dropped before it reached the recovery path, so only the polling side ever surfaced it. Writes now record the back-off window, raise the same Repairs notice the polling path already did, and hold off until the window clears instead of retrying into a wall.
+- **`tado_ce.resume_schedule` no longer wastes an API call on zones already on schedule** — resuming a zone that had no active overlay still fired a cloud call to clear an overlay that wasn't there. That skip existed once and was dropped in an earlier rewrite without anything noticing; it is now back, so resuming an already-on-schedule zone costs nothing.
+- **Fixed the Offset Sync clamp warning going missing when a write was queued** — when the correction Offset Sync needs is larger than Tado's ±10°C device-offset limit, it flags the value as clamped so you know the displayed temperature still won't match the external sensor. If that write happened to be queued behind a rate-limit or quota back-off, the flag was lost when the queued write finally went out, so the dashboard showed the offset as if it had fully applied. The clamp flag now survives the queue.
+- **Fixed HomeKit local control staying off after pairing** — after pairing the bridge, your zones could stay on cloud control because the link between each radiator and its room was only worked out once, right after pairing, before the bridge connection had settled. If that first attempt came up empty it never tried again until you reloaded the integration. It now retries on each polling cycle until the link is built, so local control comes up on its own.
+- **Fixed being unable to recover after turning HomeKit off** — disabling HomeKit and later turning it back on demanded a fresh pairing PIN even though the pairing was still stored, and the option to unpair had vanished from Advanced Settings, so a disabled bridge was stuck both ways. Re-enabling now reconnects with the existing pairing, and the unpair toggle stays available whenever there's a pairing to remove, regardless of whether HomeKit is currently on.
+
+### Documentation
+
+- **Fixed the open-window automation example that didn't close the window** ([#295](https://github.com/hiall-fyi/tado_ce/issues/295) - @apilone) — the Features Guide paired `set_open_window_mode` (which writes a frost overlay) with `deactivate_open_window` to clear it, but `deactivate_open_window` only cancels an open window Tado detected itself, so it had nothing to act on and the zone stayed in frost protection. The example now uses `resume_schedule`, and the three open-window services' descriptions spell out which clears which.
+
+### Under the hood
+
+- Removed a handful of dead code paths an audit turned up: four config validators that the read-time range clamps had already made redundant, an unused cache-freshness check with no callers, and a stale re-export left over from a rename. No behaviour change.
+
 ## [4.0.2] - 2026-06-07
 
 A stable patch on the v4.0 line, rolling up the v4.1.0-beta.2 work plus two passes that were scoped for v4.1.0-beta.3 and pulled forward so v4.0.x users don't have to wait for the v4.1.0 beta cycle to finish.

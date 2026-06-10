@@ -15,9 +15,6 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
-# Re-exported for tests that imported it before the rename.
-LOCAL_STALENESS_THRESHOLD = HOMEKIT_STALENESS_THRESHOLD
-
 # After a local write, ignore cloud values that conflict for this long
 # so the bridge's stale post-write read can't overwrite the user's
 # fresh setpoint.

@@ -59,17 +59,24 @@ async def async_create_entry_components(
     await hass.async_add_executor_job(load_version)
 
     homekit_client = None
+    homekit_controller = None
     if config_manager.get_homekit_enabled():
-        from .homekit_client import HomeKitClient
+        from .homekit_client import HomeKitClient, async_create_controller
 
-        homekit_client = HomeKitClient(hass, home_id or "default")
+        # Build ONE long-lived controller for the entry and start it now,
+        # so its _hap browser is warming the discovery cache from setup —
+        # the runtime client and the later pair/unpair flows all share it.
+        homekit_controller = await async_create_controller(hass)
+
+        homekit_client = HomeKitClient(
+            hass, home_id or "default", controller=homekit_controller,
+        )
         connected = await homekit_client.async_connect()
         if connected:
             _LOGGER.info("Entry Lifecycle: HomeKit bridge connected")
             from .homekit_mapping import (
-                build_serial_mapping,
+                async_rebuild_and_save_mapping,
                 load_device_mapping,
-                save_device_mapping,
                 validate_mapping,
             )
 
@@ -98,16 +105,15 @@ async def async_create_entry_components(
                     "Entry Lifecycle: HomeKit mapping empty — "
                     "rebuilding from bridge accessories + cloud zones",
                 )
-                accessories = await homekit_client.async_list_accessories()
                 # zones_info: load from disk — coordinator not created yet
                 if data_loader:
                     zones_info = await hass.async_add_executor_job(data_loader.load_zones_info_file)
                 else:
                     zones_info = []
-                if accessories and zones_info:
-                    mapping = build_serial_mapping(accessories, zones_info)
-                    await save_device_mapping(hass, home_id or "default", mapping)
-                    serial_to_zone = mapping.get("serial_to_zone", {})
+                mapping = await async_rebuild_and_save_mapping(
+                    hass, homekit_client, home_id or "default", zones_info or [],
+                )
+                serial_to_zone = mapping.get("serial_to_zone", {})
 
             if serial_to_zone:
                 homekit_client.set_zone_mapping(
@@ -155,7 +161,7 @@ async def async_create_entry_components(
                     _home_id: str | None = home_id,
                 ) -> None:
                     """Retry the HomeKit mapping build after the first poll lands."""
-                    from .homekit_mapping import build_serial_mapping, save_device_mapping
+                    from .homekit_mapping import async_rebuild_and_save_mapping
 
                     zi = coord.data.get("zones_info") or []
                     if not zi:
@@ -165,39 +171,27 @@ async def async_create_entry_components(
                             "no zones_info",
                         )
                         return
-                    accs = await _hk_client.async_list_accessories()
-                    if not accs:
-                        _LOGGER.warning(
-                            "Entry Lifecycle: HomeKit deferred "
-                            "rebuild aborted — bridge returned no "
-                            "accessories",
-                        )
-                        return
-                    new_mapping = build_serial_mapping(accs, zi)
+                    new_mapping = await async_rebuild_and_save_mapping(
+                        _hass, _hk_client, _home_id or "default", zi,
+                    )
                     s2z = new_mapping.get("serial_to_zone", {})
-                    if not s2z:
-                        _LOGGER.warning(
-                            "Entry Lifecycle: HomeKit deferred "
-                            "rebuild produced an empty mapping — "
-                            "bridge accessories did not match any "
-                            "cloud zone, will retry on next poll",
+                    if s2z:
+                        _LOGGER.info(
+                            "Entry Lifecycle: HomeKit deferred rebuild "
+                            "complete — %d zone(s) mapped",
+                            len(s2z),
                         )
-                        return
-                    _hk_client.set_zone_mapping(
-                        new_mapping.get("serial_to_zone", {}),
-                        new_mapping.get("zone_to_aids", {}),
-                    )
-                    await save_device_mapping(_hass, _home_id or "default", new_mapping)
-                    _LOGGER.info(
-                        "Entry Lifecycle: HomeKit deferred rebuild "
-                        "complete — %d zone(s) mapped",
-                        len(s2z),
-                    )
+                    else:
+                        _LOGGER.debug(
+                            "Entry Lifecycle: HomeKit deferred rebuild "
+                            "still empty — coordinator will retry each poll",
+                        )
 
                 return {
                     "api_tracker": api_tracker,
                     "api_client": api_client,
                     "homekit_client": homekit_client,
+                    "homekit_controller": homekit_controller,
                     "_deferred_homekit_rebuild": _deferred_homekit_rebuild,
                 }
         else:
@@ -211,6 +205,7 @@ async def async_create_entry_components(
         "api_tracker": api_tracker,
         "api_client": api_client,
         "homekit_client": homekit_client,
+        "homekit_controller": homekit_controller,
     }
 
 
@@ -276,6 +271,20 @@ async def async_cleanup_entry_components(
 
         if isinstance(hkc, HomeKitClient):
             await hkc.async_disconnect()
+
+        # Stop the entry's shared controller (and its _hap browser) — the
+        # client's async_disconnect leaves it alone because the entry owns it.
+        ctrl = _attr("homekit_controller")
+        if ctrl is not None:
+            try:
+                await ctrl.async_stop()
+            except Exception:
+                _LOGGER.debug(
+                    "Entry Lifecycle: error stopping HomeKit controller — proceeding",
+                    exc_info=True,
+                )
+            coordinator.homekit_controller = None
+
         coordinator.homekit_client = None
         coordinator.homekit_provider = None
         coordinator.state_reconciler = None

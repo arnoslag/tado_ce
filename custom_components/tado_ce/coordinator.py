@@ -39,6 +39,7 @@ from .const import (
 )
 from .exceptions import TadoAuthError, TadoBridgeApiError, TadoRateLimitError, TadoSyncError
 from .helpers import low_quota_threshold, mask_serial
+from .homekit_mapping import async_rebuild_and_save_mapping
 from .insight_history import InsightHistoryTracker
 from .polling import get_polling_interval, should_pause_polling
 from .ratelimit import _sanitize_retry_after
@@ -203,6 +204,11 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         # HomeKit local control (optional — set by entry_lifecycle when homekit_enabled)
         self.homekit_client: HomeKitClient | None = None
+        # HomeKit shared controller (optional — the long-lived aiohomekit
+        # Controller for this entry, built by entry_lifecycle when HomeKit
+        # is enabled; its _hap browser keeps the pairing discovery cache
+        # warm). Stopped on unload.
+        self.homekit_controller: Any | None = None
         self.homekit_provider: HomeKitLocalProvider | None = None
         self.state_reconciler: StateReconciler | None = None
 
@@ -466,6 +472,13 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         for controller in self.valve_controllers.values():
             try:
                 await controller.async_evaluate()
+            except TadoRateLimitError as e:
+                self.record_cloud_backoff(e.retry_after)
+                _LOGGER.warning(
+                    "Smart Valve: zone %s evaluation hit Tado rate limit — "
+                    "backing off, will retry after the quota window",
+                    controller.zone_id,
+                )
             except (TimeoutError, aiohttp.ClientError, ValueError, KeyError):
                 _LOGGER.warning(
                     "Smart Valve: zone %s evaluation raised an exception — "
@@ -476,6 +489,13 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         for controller_os in self.offset_sync_controllers.values():
             try:
                 await controller_os.async_evaluate()
+            except TadoRateLimitError as e:
+                self.record_cloud_backoff(e.retry_after)
+                _LOGGER.warning(
+                    "Offset Sync: zone %s evaluation hit Tado rate limit — "
+                    "backing off, will retry after the quota window",
+                    controller_os.zone_id,
+                )
             except (TimeoutError, aiohttp.ClientError, ValueError, KeyError):
                 _LOGGER.warning(
                     "Offset Sync: zone %s evaluation raised an exception — "
@@ -483,7 +503,57 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     controller_os.zone_id, exc_info=True,
                 )
 
+        await self._async_retry_homekit_mapping()
+
         return result
+
+    async def _async_retry_homekit_mapping(self) -> None:
+        """Rebuild the HomeKit zone mapping if it never built.
+
+        Runs each poll while the bridge is connected but the mapping is still
+        empty (e.g. the connection wasn't settled when we first tried right
+        after pairing). Self-limiting: once a non-empty mapping installs,
+        zone_aid_map is truthy and this becomes a no-op.
+        """
+        client = self.homekit_client
+        if client is None or not client.is_connected or client.zone_aid_map:
+            return
+        zones_info = (self.data or {}).get("zones_info") or []
+        if not zones_info:
+            return
+        try:
+            mapping = await async_rebuild_and_save_mapping(
+                self.hass, client, self.home_id, zones_info,
+            )
+        except (TimeoutError, aiohttp.ClientError, ValueError, KeyError):
+            _LOGGER.warning(
+                "HomeKit: zone mapping rebuild raised an exception — "
+                "will retry on the next poll", exc_info=True,
+            )
+            return
+        if mapping.get("serial_to_zone"):
+            _LOGGER.info(
+                "HomeKit: zone mapping built on retry — %d zone(s) mapped",
+                len(mapping["serial_to_zone"]),
+            )
+
+    def record_cloud_backoff(self, retry_after: int) -> None:
+        """Record a cloud rate-limit window and surface the repair issue.
+
+        Shared by the main poll dispatch and the background-write
+        dispatcher so both honour the same backoff state.
+        """
+        from .repair_helpers import async_create_rate_limit_issue
+
+        self._rate_limited_until = dt_util.utcnow() + timedelta(seconds=retry_after)
+        async_create_rate_limit_issue(self.hass, self.home_id, retry_after=retry_after)
+
+    def is_cloud_backoff_active(self) -> bool:
+        """Return True while the cloud rate-limit backoff window holds."""
+        until = self._rate_limited_until
+        if until is None:
+            return False
+        return dt_util.utcnow() < until
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data from Tado API. Dynamically adjusts update_interval."""
@@ -584,10 +654,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 home_state_sync_enabled=cm.get_home_state_sync_enabled() and not skip_home_state,
             )
         except TadoRateLimitError as e:
-            from .repair_helpers import async_create_rate_limit_issue
-
-            self._rate_limited_until = dt_util.utcnow() + timedelta(seconds=e.retry_after)
-            async_create_rate_limit_issue(self.hass, self.home_id, retry_after=e.retry_after)
+            self.record_cloud_backoff(e.retry_after)
 
             if self.is_homekit_active:
                 self._log_cloud_unavailable(e)
@@ -1033,16 +1100,33 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         from .weather_compensation import async_run_wc_cycle
 
-        return await async_run_wc_cycle(
-            config_manager=cm,
-            bridge_api_client=self.bridge_api_client,
-            wc_state=self._wc_state,
-            hass=self.hass,
-            weather_data=weather_data,
-            zone_data=zone_data,
-            update_interval=self.update_interval,
-            bridge_data=bridge_data,
-        )
+        # WC is a best-effort sub-feature: a failed cycle must not break
+        # the main poll. The cycle itself no longer carries a catch-all
+        # (so bridge failures stay isolated and programmer bugs surface);
+        # isolation lives here, at the caller. Cloud auth / rate-limit
+        # errors are re-raised so the main dispatch handles them — though
+        # the cycle makes no cloud calls today, this guards a future one.
+        try:
+            return await async_run_wc_cycle(
+                config_manager=cm,
+                bridge_api_client=self.bridge_api_client,
+                wc_state=self._wc_state,
+                hass=self.hass,
+                weather_data=weather_data,
+                zone_data=zone_data,
+                update_interval=self.update_interval,
+                bridge_data=bridge_data,
+            )
+        except (TadoAuthError, TadoRateLimitError, TadoSyncError):
+            raise
+        except Exception:
+            _LOGGER.warning(
+                "Weather Compensation: cycle failed — main coordinator "
+                "update unaffected, will retry next cycle",
+                exc_info=True,
+            )
+            self._wc_state.status = "error"
+            return None
 
     def _load_ratelimit_from_cache(self) -> None:
         """Load ratelimit data from DataLoader in-memory cache."""

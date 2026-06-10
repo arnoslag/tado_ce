@@ -1243,7 +1243,7 @@
     },
     "deactivate_open_window": {
       "name": "Desactivar ventana abierta",
-      "description": "Desactiva el modo Ventana Abierta en una zona climática, reanudando la calefacción/refrigeración normal. Funciona tanto para modos detectados por Tado como activados manualmente."
+      "description": "Cierra una ventana abierta que Tado haya detectado automáticamente, o una que hayas confirmado con «Activar modo ventana abierta», y reanuda el funcionamiento normal de la calefacción o la refrigeración. Esto no desactiva el «Modo ventana abierta». Dado que este modo genera una superposición de escarcha, desactívalo mediante «Reanudar programación» o «Restaurar estado anterior»."
     },
     "set_open_window_mode": {
       "name": "Establecer modo ventana abierta",

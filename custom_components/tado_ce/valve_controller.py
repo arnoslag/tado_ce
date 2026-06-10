@@ -26,6 +26,8 @@ if TYPE_CHECKING:
     from .coordinator import TadoDataUpdateCoordinator
 
 from .climate_helpers import SensorProxy, subscribe_external_sensors
+from .error_dispatch import handle_background_write_error
+from .exceptions import TadoAuthError, TadoRateLimitError
 from .helpers import get_zone_overlay_termination, mask_serial
 
 _LOGGER = logging.getLogger(__name__)
@@ -275,6 +277,15 @@ class SmartValveController:
             )
             return False
 
+        if self._coordinator.is_cloud_backoff_active():
+            self._runtime.pending_cloud_target = valve_target
+            _LOGGER.debug(
+                "Smart Valve: zone %s cloud write held — Tado quota "
+                "backoff active, queued target %.1f°C",
+                self._zone_id, valve_target,
+            )
+            return False
+
         try:
             setting = {"type": "HEATING", "power": "ON", "temperature": {"celsius": valve_target}}
             entry_id = self._coordinator.config_entry.entry_id
@@ -301,6 +312,14 @@ class SmartValveController:
                 self._zone_id,
             )
             return False
+        except (TadoAuthError, TadoRateLimitError) as e:
+            self._runtime.pending_cloud_target = valve_target
+            handle_background_write_error(
+                e, self._coordinator.config_entry, self._coordinator, self._hass,
+                f"Smart Valve: zone {self._zone_id} cloud write failed — "
+                "starting recovery; will retry on next sensor change",
+            )
+            return False
         except (TimeoutError, aiohttp.ClientError):
             _LOGGER.warning(
                 "Smart Valve: zone %s cloud write raised an exception — "
@@ -324,6 +343,13 @@ class SmartValveController:
                 "Smart Valve: zone %s could not clear overlay — Tado "
                 "schedule did not resume, will retry next cycle",
                 self._zone_id,
+            )
+            return False
+        except (TadoAuthError, TadoRateLimitError) as e:
+            handle_background_write_error(
+                e, self._coordinator.config_entry, self._coordinator, self._hass,
+                f"Smart Valve: zone {self._zone_id} clearing overlay failed — "
+                "starting recovery; will retry next cycle",
             )
             return False
         except (TimeoutError, aiohttp.ClientError):

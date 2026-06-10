@@ -1243,7 +1243,7 @@
     },
     "deactivate_open_window": {
       "name": "Disattiva finestra aperta",
-      "description": "Disattiva la modalità finestra aperta su una zona climatica, ripristinando il normale riscaldamento/raffreddamento. Funziona sia per i modi rilevati da Tado che attivati manualmente."
+      "description": "Chiudi una finestra aperta rilevata automaticamente da Tado o da te confermata con \"Attiva modalità finestra aperta\" e riprendi il normale funzionamento del riscaldamento/raffreddamento. Questa operazione non disattiva la \"Modalità finestra aperta\". Poiché tale modalità attiva una sovrapposizione antigelo, per disattivarla utilizza invece \"Riprendi programma\" o \"Ripristina stato precedente\"."
     },
     "set_open_window_mode": {
       "name": "Imposta modalità finestra aperta",

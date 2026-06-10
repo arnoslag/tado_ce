@@ -130,11 +130,6 @@ class DataLoader:
             return None
         return result
 
-    def is_cache_fresh(self, name: str) -> bool:
-        """Return True when the cache holds a real value (not missing, not dirty)."""
-        value = self._cache.get(name, _CACHE_MISSING)
-        return value is not _CACHE_MISSING and value is not _CACHE_DIRTY
-
     def mark_cache_dirty(self, base_name: str) -> None:
         """Mark a cache entry as needing refetch on the next read."""
         self._cache[base_name] = _CACHE_DIRTY

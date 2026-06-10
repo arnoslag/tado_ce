@@ -14,6 +14,8 @@ from .homekit_client import CHAR_MODEL, CHAR_SERIAL_NUMBER
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
+    from .homekit_client import HomeKitClient
+
 _LOGGER = logging.getLogger(__name__)
 
 # Bridge model identifier — skip in mapping (not a zone device)
@@ -198,6 +200,35 @@ async def save_device_mapping(
     _LOGGER.debug(
         "HomeKit: saved device mapping for home %s", mask_home_id(home_id),
     )
+
+
+async def async_rebuild_and_save_mapping(
+    hass: HomeAssistant,
+    homekit_client: HomeKitClient,
+    home_id: str,
+    zones_info: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Rebuild the HomeKit serial-to-zone mapping from the live bridge + cloud zones.
+
+    Lists the bridge's accessories, matches their serials against the cloud
+    zones_info, and on a non-empty result saves the mapping to the Store and
+    installs it on the client. Returns the mapping; serial_to_zone is empty when
+    the bridge returned no accessories, zones_info was empty, or nothing matched —
+    the caller decides whether to retry.
+    """
+    empty: dict[str, Any] = {"serial_to_zone": {}, "zone_to_aids": {}}
+    accessories = await homekit_client.async_list_accessories()
+    if not accessories or not zones_info:
+        return empty
+
+    mapping = build_serial_mapping(accessories, zones_info)
+    if mapping.get("serial_to_zone"):
+        await save_device_mapping(hass, home_id, mapping)
+        homekit_client.set_zone_mapping(
+            mapping.get("serial_to_zone", {}),
+            mapping.get("zone_to_aids", {}),
+        )
+    return mapping
 
 
 async def remove_device_mapping(

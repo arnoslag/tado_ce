@@ -897,8 +897,8 @@ Three services for open window management, each serving a different purpose:
 | Service | Purpose | When to Use |
 |---------|---------|-------------|
 | `tado_ce.activate_open_window` | Confirm Tado's own detection | Auto-Assist replacement — Tado has already detected an open window |
-| `tado_ce.deactivate_open_window` | Cancel open window mode | Resume normal heating after window is closed |
-| `tado_ce.set_open_window_mode` | Trigger from external sensors | Zigbee/Z-Wave contact sensors — no Tado detection needed |
+| `tado_ce.deactivate_open_window` | Cancel Tado's *detected* open-window state | After `activate_open_window`, or to clear an open window Tado detected itself. Does **not** clear `set_open_window_mode` (see below) |
+| `tado_ce.set_open_window_mode` | Trigger from external sensors | Zigbee/Z-Wave contact sensors — no Tado detection needed. Clear it with `resume_schedule` or `restore_previous_state`, not `deactivate_open_window` |
 
 **Set Open Window Mode** is the most useful for automations. It sets the zone to frost protection (5°C) with a timer:
 
@@ -947,10 +947,12 @@ automation:
         entity_id: binary_sensor.bedroom_window_contact
         to: "off"
     action:
-      - service: tado_ce.deactivate_open_window
+      - service: tado_ce.resume_schedule
         target:
           entity_id: climate.bedroom
 ```
+
+`set_open_window_mode` works by writing a frost-protection overlay, so you clear it the same way you clear any overlay: `resume_schedule` (back to the schedule) or `restore_previous_state` (back to whatever the zone was doing before). `deactivate_open_window` is the wrong partner here — it only cancels Tado's own detected open-window state (what `activate_open_window` confirms), and it has nothing to act on after `set_open_window_mode`.
 
 #### 8. Restore Previous State (v3.3.0+)
 

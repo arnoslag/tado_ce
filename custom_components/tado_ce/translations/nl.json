@@ -1243,7 +1243,7 @@
     },
     "deactivate_open_window": {
       "name": "Open venster deactiveren",
-      "description": "Deactiveer de modus Open Venster op een klimaatzone en hervat de normale verwarming/koeling. Werkt voor zowel door Tado gedetecteerde als handmatig geactiveerde modi."
+      "description": "Sluit een open raam dat Tado zelf heeft gedetecteerd, of een raam dat u hebt bevestigd met 'Open raam activeren', en hervat de normale verwarming/koeling. Hiermee wordt de modus 'Open raam instellen' niet uitgeschakeld. Deze modus zorgt ervoor dat er een vorstwaarschuwing wordt weergegeven; schakel deze modus daarom uit met 'Schema hervatten' of 'Vorige status herstellen'."
     },
     "set_open_window_mode": {
       "name": "Open venster modus instellen",
