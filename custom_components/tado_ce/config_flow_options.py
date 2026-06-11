@@ -38,12 +38,16 @@ from .const import (
     DEVICE_SYNC_DELAY_DEFAULT,
     DEVICE_SYNC_DELAY_MAX,
     DEVICE_SYNC_DELAY_MIN,
+    DISPLAY_TEMP_SOURCE_MAP,
+    DISPLAY_TEMP_SOURCE_OPTIONS,
+    DISPLAY_TEMP_SOURCE_REVERSE_MAP,
     HEATING_TYPE_OPTIONS,
     HEATING_TYPE_RADIATOR,
     MAX_CUSTOM_INTERVAL,
     MAX_HOMEKIT_CLOUD_SYNC_MINUTES,
     MIN_HOMEKIT_CLOUD_SYNC_MINUTES,
     OVERLAY_MODE_DEFAULT,
+    OVERLAY_MODE_DEFAULT_DISPLAY,
     OVERLAY_MODE_MAP,
     OVERLAY_MODE_OPTIONS,
     OVERLAY_MODE_REVERSE_MAP,
@@ -995,7 +999,7 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
         if "overlay_section" in user_input:
             s = user_input["overlay_section"]
             all_values["overlay_mode"] = OVERLAY_MODE_MAP.get(
-                s.get("overlay_mode", "Tado Default"), OVERLAY_MODE_DEFAULT,
+                s.get("overlay_mode", OVERLAY_MODE_DEFAULT_DISPLAY), OVERLAY_MODE_DEFAULT,
             )
             raw_timer = int(s.get("timer_duration", str(TIMER_DURATION_DEFAULT)))
             all_values["timer_duration"] = max(
@@ -1025,6 +1029,9 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
             all_values["max_temp"] = clamped_max
             all_values["surface_temp_offset"] = max(
                 SURFACE_TEMP_OFFSET_MIN, min(raw_surface, SURFACE_TEMP_OFFSET_MAX),
+            )
+            all_values["display_temp_source"] = DISPLAY_TEMP_SOURCE_MAP.get(
+                s.get("display_temp_source", "Automatic"), "auto",
             )
 
         return all_values
@@ -1108,7 +1115,10 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
         cur_use_ext_temp = bool(cur_temp_sensor)
         cur_use_ext_humidity = bool(cur_humidity_sensor)
         cur_overlay = OVERLAY_MODE_REVERSE_MAP.get(
-            config.get("overlay_mode", OVERLAY_MODE_DEFAULT), "Tado Default",
+            config.get("overlay_mode", OVERLAY_MODE_DEFAULT), OVERLAY_MODE_DEFAULT_DISPLAY,
+        )
+        cur_display_temp_source = DISPLAY_TEMP_SOURCE_REVERSE_MAP.get(
+            config.get("display_temp_source", "auto"), "Automatic",
         )
         cur_timer = str(config.get("timer_duration", TIMER_DURATION_DEFAULT))
         cur_min_temp = config.get("min_temp", 5.0)
@@ -1150,6 +1160,14 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                                         step=SURFACE_TEMP_OFFSET_STEP,
                                         mode=NumberSelectorMode.BOX,
                                         unit_of_measurement="°C",
+                                    ),
+                                ),
+                                vol.Optional(
+                                    "display_temp_source", default=cur_display_temp_source,
+                                ): SelectSelector(
+                                    SelectSelectorConfig(
+                                        options=DISPLAY_TEMP_SOURCE_OPTIONS,
+                                        mode=SelectSelectorMode.DROPDOWN,
                                     ),
                                 ),
                             },

@@ -83,15 +83,6 @@ TADO_TO_HA_HVAC_MODE = {
 
 HA_TO_TADO_HVAC_MODE = {v: k for k, v in TADO_TO_HA_HVAC_MODE.items()}
 
-# HomeKit Target Heating State → HA HVACMode mapping for AC zones
-# 0=Off, 1=Heat, 2=Cool, 3=Auto (maps to HEAT_COOL for AC)
-_HOMEKIT_TARGET_STATE_TO_HVAC_AC: dict[int, HVACMode] = {
-    0: HVACMode.OFF,
-    1: HVACMode.HEAT,
-    2: HVACMode.COOL,
-    3: HVACMode.HEAT_COOL,
-}
-
 # Fan level mapping - Tado uses SILENT, LEVEL1-5, AUTO
 # Map to HA's limited fan modes (auto, low, medium, high)
 TADO_TO_HA_FAN = {
@@ -533,9 +524,14 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
             reconciler.local_provider = provider
 
             # Target temperature
+            zcm = self.coordinator.zone_config_manager
+            display_source = (
+                zcm.get_zone_value(self._zone_id, "display_temp_source", "auto")
+                if zcm else "auto"
+            )
             cloud_target = self._attr_target_temperature
             merged_target, target_src = reconciler.merge_zone_target_temperature(
-                self._zone_id, cloud_target,
+                self._zone_id, cloud_target, display_source=display_source,
             )
             if merged_target is not None and merged_target != self._attr_target_temperature:
                 self._attr_target_temperature = merged_target
@@ -544,24 +540,10 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
                     self._zone_name, cloud_target, merged_target, target_src,
                 )
 
-            # HVAC mode — reconciler's changed-timestamp check handles
-            # stale-vs-fresh. AC zones don't have the frost-protection
-            # semantic that heating zones do, so OFF here just means
-            # "user turned it off"; a legitimate OFF → COOL / OFF → HEAT
-            # via the Tado app must still reflect here.
-            merged_state, state_src = reconciler.merge_zone_target_heating_state(
-                self._zone_id, None,  # No cloud value in real-time path
-            )
-            if merged_state is not None and state_src == "homekit":
-                new_mode = _HOMEKIT_TARGET_STATE_TO_HVAC_AC.get(merged_state)
-                if new_mode is not None and new_mode != self._attr_hvac_mode:
-                    old_mode = self._attr_hvac_mode
-                    self._attr_hvac_mode = new_mode
-                    self._attr_hvac_action = self._calculate_hvac_action(hvac_mode=new_mode)
-                    _LOGGER.debug(
-                        "Climate AC: %s HVAC mode %s → %s (source %s)",
-                        self._zone_name, old_mode, new_mode, state_src,
-                    )
+            # HVAC mode is intentionally NOT derived from HomeKit here (sibling
+            # of the heating fix). HomeKit's target_heating_state flapped
+            # the same way on hybrid AC zones; mode derives from the cloud poll
+            # only (setting.mode), which knows the true schedule/overlay state.
 
         self.async_write_ha_state()
 
@@ -790,8 +772,13 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
         provider = self.coordinator.homekit_provider
         if reconciler and provider and provider.is_connected:
             reconciler.local_provider = provider
+            display_source = (
+                zcm.get_zone_value(self._zone_id, "display_temp_source", "auto")
+                if zcm else "auto"
+            )
             merged_temp, temp_source = reconciler.merge_zone_temperature(
                 self._zone_id, cloud_temp, external_value=ext_temp,
+                display_source=display_source, purpose="display",
             )
             merged_hum, hum_source = reconciler.merge_zone_humidity(
                 self._zone_id, cloud_humidity, external_value=ext_hum,

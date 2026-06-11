@@ -19,10 +19,12 @@ This document focuses on `entity_id`, because that's the one that ends up in you
 Tado CE has had three eras of entity naming, and `entity_id` is sticky:
 
 - **v1.x – v2.x (legacy):** entities used a `Tado CE ` prefix (v1.x) or no device-grouping prefix at all (v2.x). Entity names were set explicitly and slugified directly.
-- **v3.0.0 onward (device-grouped):** entities adopted the modern HA pattern (`_attr_has_entity_name = True`, `device_info`, and translation keys). HA derives `entity_id` from `slugify(device_name + friendly_name)`.
+- **v3.0.0 onward (device-grouped):** entities adopted the modern HA pattern (`_attr_has_entity_name = True`, `device_info`, and translation keys). HA derived `entity_id` from `slugify(device_name + friendly_name)` (see the Home Assistant 2026.6 note below for how this changed).
 - **v4.0.0+ (multi-home):** the underlying `unique_id` gained a `home_id` segment for multi-home support, but `entity_id` shapes stayed the same.
 
 Anyone who installed during an older era kept their old `entity_id` slugs through every upgrade. Settings → Devices in HA is the authoritative source for any individual install.
+
+**A note on Home Assistant 2026.6+.** From HA 2026.6, Home Assistant prefixes the **area name** to a newly-created entity's slug, on top of the device name. When a zone's device sits in an area of the same name (the usual Tado layout, e.g. a "Lounge" device in a "Lounge" area), the room name ends up twice: `sensor.lounge_lounge_temperature` instead of `sensor.lounge_temperature`. This is a Home Assistant change, not a Tado CE one, and it only affects entities created **fresh** on 2026.6 or later. Existing installs are unaffected, since `entity_id` is fixed the day an entity is first created. The friendly name stays correct either way; only the slug reads oddly. You can rename any slug under Settings → Devices. The slugs in the tables below assume the pre-2026.6 behaviour.
 
 The tables below show the slug a **fresh installer** got at each major-version snapshot. Migrated installs keep whichever slug the entity got the day it was first created, even if the friendly name has since changed.
 
@@ -89,10 +91,12 @@ The HomeKit sensor exposes attributes for uptime, reconnect count, and write per
 | Resume all schedules | ✓ | Resume All Schedules | `button.resume_all_schedules` | `button.tado_ce_hub_resume_all` | `button.tado_ce_hub_resume_all_schedules` |
 | Refresh AC capabilities | ✓ | Refresh AC Capabilities | `button.refresh_ac_capabilities` | `button.tado_ce_hub_refresh_ac` | `button.tado_ce_hub_refresh_ac_capabilities` |
 | Presence mode | ✓ | Presence Mode | `select.presence_mode` | `select.tado_ce_hub_presence_mode` | `select.tado_ce_hub_presence_mode` |
-| Overlay mode | ✓ | Overlay Mode | `select.overlay_mode` | `select.tado_ce_hub_overlay_mode` | `select.tado_ce_hub_overlay_mode` |
+| Overlay mode | ✓ | Override duration | `select.overlay_mode` | `select.tado_ce_hub_overlay_mode` | `select.tado_ce_hub_overlay_mode` |
 | Overlay timer duration | ✓ | Overlay Timer | `select.overlay_timer_duration` | `select.tado_ce_hub_overlay_timer` | `select.tado_ce_hub_overlay_timer` |
 
 The two button friendly names were lengthened in v4.0.1 (`Resume All` → `Resume All Schedules`, `Refresh AC` → `Refresh AC Capabilities`). Existing installs kept the old slug; only fresh v4.0.1+ installers picked up the longer name.
+
+The "Overlay Mode" select was renamed to "Override duration" in v4.1.0-beta.3 to match the Tado app. The friendly name changed only; the `entity_id` and `unique_id` are unchanged, so existing installs keep the same slug.
 
 ---
 
@@ -296,8 +300,11 @@ HA's official Tado integration exposes early start as a read-only binary sensor;
 | Refresh schedule | ✓ | Refresh Schedule | `button.lounge_refresh_schedule` | `button.lounge_refresh_schedule` |
 | Boost | ⬆ | Boost | `button.lounge_boost` | `button.lounge_boost` |
 | Smart boost | ✓ | Smart Boost | `button.lounge_smart_boost` | `button.lounge_smart_boost` |
+| Identify (v4.1.0-beta.3+) | ✓ | Identify | — | `button.lounge_identify` |
 
 Boost replicates the Tado app's boost feature (25°C for 30min). HA's official integration doesn't expose this. Smart Boost is CE-exclusive, using thermal analytics to calculate optimal duration.
+
+The Identify button (added v4.1.0-beta.3) lives on the zone device and uses the `button.{zone}_identify` shape (e.g. `button.lounge_identify`). A zone with more than one TRV gets one button per device, disambiguated by a device-type suffix, so the second resolves as `button.{zone}_identify_{device_type}` (e.g. `button.lounge_identify_va02`). Its slug is pinned, so unlike most entities it stays single-prefixed even on a fresh HA 2026.6+ install (see the note above). It flashes the device's LED locally over HomeKit when the bridge is connected, falling back to the cloud `identify_device` service otherwise.
 
 ---
 

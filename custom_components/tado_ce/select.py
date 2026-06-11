@@ -271,11 +271,10 @@ class TadoOverlayModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sele
     def extra_state_attributes(self) -> dict[str, Any] | None:
         """Return extra state attributes."""
         return {
-            "description": "Controls how long manual temperature changes last",
-            "tado_mode_info": "Follows per-device settings in Tado app",
-            "next_time_block_info": "Until next scheduled change",
-            "timer_info": "For specified duration (see Timer Duration)",
-            "manual_info": "Until you manually change back",
+            "description": "Controls how long a temperature change made from Home Assistant lasts",
+            "manual_info": "Until you resume the schedule",
+            "tado_mode_info": "Until the next automatic change in your Tado schedule",
+            "timer_info": "For a set duration (see Timer Duration)",
             "api_calls_per_change": 0,
         }
 

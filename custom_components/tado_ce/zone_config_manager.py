@@ -6,7 +6,7 @@ from contextlib import suppress
 import logging
 from typing import TYPE_CHECKING, Any
 
-from .const import DEFAULT_ZONE_CONFIG, WINDOW_U_VALUES
+from .const import DEFAULT_ZONE_CONFIG, OVERLAY_MODE_DEFAULT, WINDOW_U_VALUES
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -126,6 +126,29 @@ class ZoneConfigManager:
                         zone_id, key,
                         exc_info=True,
                     )
+
+    async def async_get_or_fetch_overlay_default(self, zone_id: str, api_client: Any) -> str:
+        """Return a zone's overlay_mode, fetching the Tado-app default once if unset.
+
+        For a fresh zone with no stored overlay_mode, read the user's own
+        per-zone default from the cloud (`get_zone_default_overlay`) exactly
+        once, cache it into zone_config, and use it thereafter. Falls back to
+        OVERLAY_MODE_DEFAULT (MANUAL) when the fetch is unavailable, and caches
+        that too so the call is never repeated on the hot path. An explicit
+        user override is always honoured without any fetch.
+        """
+        zone_id = str(zone_id)
+        if self.has_zone_override(zone_id, "overlay_mode"):
+            return str(self.get_zone_value(zone_id, "overlay_mode", OVERLAY_MODE_DEFAULT))
+
+        fetched = await api_client.get_zone_default_overlay(zone_id)
+        mode = fetched if fetched in ("MANUAL", "TADO_MODE", "TIMER") else OVERLAY_MODE_DEFAULT
+        await self.async_set_zone_value(zone_id, "overlay_mode", mode)
+        _LOGGER.debug(
+            "Zone Config: zone %s fresh overlay default resolved to %s "
+            "(server default %s)", zone_id, mode, fetched,
+        )
+        return str(mode)
 
     def add_listener(self, callback: Callable[[str, str, Any], None]) -> Callable[[], None]:
         """Subscribe `callback(zone_id, key, value)` to config changes — returns an unsubscribe."""

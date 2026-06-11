@@ -1037,27 +1037,24 @@
         }
       },
       "overlay_mode": {
-        "name": "Modo de sobreposição",
+        "name": "Duração da substituição",
         "state": {
-          "tado_mode": "Tado Default",
-          "next_time_block": "Bloco da próxima vez",
-          "manual": "Manual"
+          "tado_mode": "Até à próxima atualização automática",
+          "manual": "Até ao reinício do horário",
+          "timer": "Temporizador"
         },
         "state_attributes": {
           "description": {
             "name": "Descrição"
           },
           "tado_mode_info": {
-            "name": "Informações sobre o modo Tado"
-          },
-          "next_time_block_info": {
-            "name": "Informações sobre o próximo bloco de tempo"
+            "name": "Até à próxima atualização automática"
           },
           "timer_info": {
             "name": "Informação do temporizador"
           },
           "manual_info": {
-            "name": "Informações do manual"
+            "name": "Até ao reinício do horário"
           },
           "api_calls_per_change": {
             "name": "Chamadas à API por alteração"
@@ -1145,7 +1142,7 @@
         },
         "overlay": {
           "name": "Tipo de sobreposição",
-          "description": "Quando terminar a substituição. Utilizar 'next_time_block' para terminar na próxima alteração de horário, ou 'manual' para indefinido. Quando definido, time_period não é necessário."
+          "description": "Quando terminar a substituição. Utilize «next_time_block» para terminar na próxima alteração automática da sua programação Tado, ou «manual» para mantê-la até retomar a programação. Quando definido, o parâmetro «time_period» não é obrigatório."
         }
       }
     },
@@ -1572,7 +1569,7 @@
             },
             "data_description": {
               "overlay_mode": "Quando altera a temperatura através do HA, da aplicação Tado ou de uma chamada de assistência — quanto tempo dura essa alteração antes de o horário programado do Tado ser retomado.",
-              "timer_duration": "Duração do modo de anulação do temporizador (15–180 min)"
+              "timer_duration": "Duração do modo de anulação do temporizador (15 minutos a 12 horas)"
             }
           },
           "temperature_section": {
@@ -1580,12 +1577,14 @@
             "data": {
               "min_temp": "Temperatura mínima",
               "max_temp": "Temperatura máxima",
-              "surface_temp_offset": "Desvio da temperatura da superfície"
+              "surface_temp_offset": "Desvio da temperatura da superfície",
+              "display_temp_source": "Fonte de temperatura"
             },
             "data_description": {
               "min_temp": "Temperatura alvo mínima permitida (5-25°C)",
               "max_temp": "Temperatura alvo máxima permitida (15-30°C)",
-              "surface_temp_offset": "Ajuste a estimativa da temperatura superficial de risco de bolor. Ajuste se as suas paredes parecerem mais frias do que o Tado prevê. (-5 a +5 °C)"
+              "surface_temp_offset": "Ajuste a estimativa da temperatura superficial de risco de bolor. Ajuste se as suas paredes parecerem mais frias do que o Tado prevê. (-5 a +5 °C)",
+              "display_temp_source": "O que esta leitura da zona demonstra. O modo «Automático» dá preferência ao valor rápido do HomeKit quando este está atualizado, recorrendo depois à nuvem Tado. O HomeKit dá sempre preferência ao valor local; a nuvem mostra sempre o valor do Tado. Se tiver configurado um sensor de temperatura externo para esta zona, este tem prioridade sobre esta opção."
             }
           }
         }

@@ -1037,27 +1037,24 @@
         }
       },
       "overlay_mode": {
-        "name": "Overlay-modus",
+        "name": "Duur van de overschrijving",
         "state": {
-          "tado_mode": "Tado verzuim",
-          "next_time_block": "Volgende tijdsblok",
-          "manual": "Handmatig"
+          "tado_mode": "Tot de volgende automatische wijziging",
+          "manual": "Totdat je weer volgens schema verdergaat",
+          "timer": "Timer"
         },
         "state_attributes": {
           "description": {
             "name": "Beschrijving"
           },
           "tado_mode_info": {
-            "name": "Tado Mode info"
-          },
-          "next_time_block_info": {
-            "name": "Volgende Time Block info"
+            "name": "Tot de volgende automatische wijziging"
           },
           "timer_info": {
             "name": "Timer info"
           },
           "manual_info": {
-            "name": "Handmatige info"
+            "name": "Totdat je weer volgens schema verdergaat"
           },
           "api_calls_per_change": {
             "name": "API-oproepen per wijziging"
@@ -1145,7 +1142,7 @@
         },
         "overlay": {
           "name": "Overlay Type",
-          "description": "Wanneer moet de overschrijding worden beëindigd. Gebruik \"next_time_block\" om te eindigen bij de volgende roosterwijziging, of \"manual\" voor onbepaalde tijd. Indien ingesteld, is time_period niet vereist."
+          "description": "Wanneer de overschrijving moet worden beëindigd. Gebruik 'next_time_block' om de overschrijving te beëindigen bij de volgende automatische wijziging in je Tado-schema, of 'manual' om deze te behouden totdat je het schema weer activeert. Als deze optie is ingesteld, is 'time_period' niet vereist."
         }
       }
     },
@@ -1572,7 +1569,7 @@
             },
             "data_description": {
               "overlay_mode": "Wanneer je de temperatuur aanpast via HA, de Tado-app of via een servicebezoek: hoe lang blijft deze aanpassing van kracht voordat het schema van Tado weer van kracht wordt?",
-              "timer_duration": "Duur voor de modus 'Timer overschrijven' (15–180 min)"
+              "timer_duration": "Duur voor de modus 'Timer overschrijven' (15 minuten tot 12 uur)"
             }
           },
           "temperature_section": {
@@ -1580,12 +1577,14 @@
             "data": {
               "min_temp": "Minimum temperatuur",
               "max_temp": "Maximale temperatuur",
-              "surface_temp_offset": "Oppervlakte temperatuur offset"
+              "surface_temp_offset": "Oppervlakte temperatuur offset",
+              "display_temp_source": "Temperatuurbron"
             },
             "data_description": {
               "min_temp": "Minimaal toegestane doeltemperatuur (5-25°C)",
               "max_temp": "Maximaal toegestane doeltemperatuur (15-30°C)",
-              "surface_temp_offset": "Verfijn de schatting van de oppervlakterisicotemperatuur. Pas deze aan als je muren kouder aanvoelen dan Tado veronderstelt. (-5 tot +5 °C)"
+              "surface_temp_offset": "Verfijn de schatting van de oppervlakterisicotemperatuur. Pas deze aan als je muren kouder aanvoelen dan Tado veronderstelt. (-5 tot +5 °C)",
+              "display_temp_source": "Dit is te zien aan de weergave voor deze zone. De automatische instelling geeft de voorkeur aan de actuele HomeKit-waarde wanneer die beschikbaar is, en schakelt daarna over naar de Tado-cloud. HomeKit geeft altijd de voorkeur aan de lokale waarde; de cloud geeft altijd die van Tado weer. Als je voor deze zone een externe temperatuursensor hebt ingesteld, heeft die voorrang op deze instelling."
             }
           }
         }

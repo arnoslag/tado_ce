@@ -15,7 +15,14 @@ import logging
 import random
 from typing import TYPE_CHECKING, Any
 
-from .const import MAX_RETRY_ATTEMPTS, MAX_RETRY_DELAY, OVERLAY_MODE_DEFAULT, RETRY_BASE_DELAY, TIMER_DURATION_DEFAULT
+from .const import (
+    MAX_RETRY_ATTEMPTS,
+    MAX_RETRY_DELAY,
+    OVERLAY_MODE_DEFAULT,
+    OVERLAY_MODE_MANUAL,
+    RETRY_BASE_DELAY,
+    TIMER_DURATION_DEFAULT,
+)
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -118,7 +125,10 @@ def merge_homekit_into_zone_data(
         sensor_data = (zone_data.get("sensorDataPoints") or {}).copy()
         cloud_temp = (sensor_data.get("insideTemperature") or {}).get("celsius")
         cloud_humidity = (sensor_data.get("humidity") or {}).get("percentage")
-        merged_temp, temp_src = reconciler.merge_zone_temperature(zone_id, cloud_temp)
+        # purpose="control": Smart Valve Control reads this merged
+        # insideTemperature as its calibration reference, so a per-zone
+        # display-source preference must NOT bend it.
+        merged_temp, temp_src = reconciler.merge_zone_temperature(zone_id, cloud_temp, purpose="control")
         merged_hum, hum_src = reconciler.merge_zone_humidity(zone_id, cloud_humidity)
         if merged_temp is not None:
             sensor_data.setdefault("insideTemperature", {})["celsius"] = merged_temp
@@ -147,61 +157,58 @@ def merge_homekit_into_zone_data(
         return result
 
 
-# Tado API only accepts: MANUAL, TADO_MODE, TIMER
+# Backwards-compat alias for the `next_time_block` SERVICE argument only.
+# NEXT_TIME_BLOCK is not a valid overlay mode — the /api/v2 overlay endpoint
+# rejects a literal NEXT_TIME_BLOCK with HTTP 422. A user passing
+# overlay="next_time_block" to a service call still means "end at the next
+# automatic change", which is TADO_MODE, so we keep this one mapping to honour
+# that intent.
 _OVERLAY_API_MAP: dict[str, str] = {
     "NEXT_TIME_BLOCK": "TADO_MODE",
 }
 
 
 def _map_overlay_to_api(mode: str) -> str:
-    """Map internal overlay mode to Tado API-accepted value."""
+    """Map a legacy service-arg overlay value to its Tado API-accepted value."""
     return _OVERLAY_API_MAP.get(mode, mode)
 
 
 def should_use_homekit_for_overlay(hass: HomeAssistant, zone_id: str, entry_id: str | None = None) -> bool:
-    """Check if HomeKit local write is safe for this zone's overlay mode.
+    """Return True when a HomeKit local write is safe for this zone's overlay mode.
 
-    HomeKit writes don't carry overlay termination information — the TRV just
-    turns on/off and Tado's servers decide the termination type. This is only
-    correct when the user's overlay mode is "Tado Default" (TADO_MODE), because
-    that's exactly what Tado's servers would do anyway.
+    HomeKit writes carry no termination — the bridge sets only the TRV's target
+    state and Tado stamps a MANUAL overlay on any local-origin write. So HomeKit
+    is only correct when the chosen overlay mode IS MANUAL. TADO_MODE ("until
+    next automatic change") and TIMER need the explicit termination sent through
+    the cloud API.
 
-    For any other overlay mode (Manual, Next Time Block, Timer), we must use
-    the cloud API so the explicit termination type is sent with the request.
-
-    Returns True if HomeKit is safe to use, False if cloud API is required.
+    Resolves the per-zone overlay mode first, then the global mode. Returns
+    True only when the effective mode is MANUAL; False otherwise. With no
+    entry_id (or on a lookup error) falls back to the integration default.
     """
-    # Check per-zone overlay mode first, then global
-    if entry_id:
-        try:
-            coordinator = _get_coordinator(hass, entry_id)
-            if coordinator and coordinator.zone_config_manager:
-                zone_mode = coordinator.zone_config_manager.get_zone_value(
-                    zone_id, "overlay_mode", None,
-                )
-                # Per-zone override takes priority
-                if zone_mode and zone_mode != OVERLAY_MODE_DEFAULT:
-                    _LOGGER.debug(
-                        "Helpers: zone %s using per-zone overlay "
-                        "mode %s — routing this write through the "
-                        "cloud API so the termination type is "
-                        "respected",
-                        zone_id, zone_mode,
-                    )
-                    return False
+    if not entry_id:
+        return OVERLAY_MODE_DEFAULT == OVERLAY_MODE_MANUAL
 
-            if coordinator:
-                global_mode = coordinator.overlay_mode or OVERLAY_MODE_DEFAULT
-                if global_mode != OVERLAY_MODE_DEFAULT:
-                    _LOGGER.debug(
-                        "Helpers: global overlay mode is %s — "
-                        "routing this write through the cloud API "
-                        "so the termination type is respected",
-                        global_mode,
-                    )
-                    return False
-        except (AttributeError, TypeError):
-            pass
+    try:
+        coordinator = _get_coordinator(hass, entry_id)
+        if coordinator is None:
+            return OVERLAY_MODE_DEFAULT == OVERLAY_MODE_MANUAL
+
+        mode = None
+        if coordinator.zone_config_manager:
+            mode = coordinator.zone_config_manager.get_zone_value(zone_id, "overlay_mode", None)
+        if not mode:
+            mode = coordinator.overlay_mode or OVERLAY_MODE_DEFAULT
+
+        if mode != OVERLAY_MODE_MANUAL:
+            _LOGGER.debug(
+                "Helpers: zone %s overlay mode is %s (not MANUAL) — routing this "
+                "write through the cloud API so the termination is honoured",
+                zone_id, mode,
+            )
+            return False
+    except (AttributeError, TypeError):
+        return OVERLAY_MODE_DEFAULT == OVERLAY_MODE_MANUAL
 
     return True
 
@@ -362,7 +369,7 @@ def get_overlay_termination(hass: HomeAssistant, entry_id: str | None = None) ->
 
     Returns:
         {"type": "TADO_MODE"} or {"type": "MANUAL"} or {"type": "TIMER", "durationInSeconds": ...}
-        Note: Tado API only accepts MANUAL, TADO_MODE, TIMER (not NEXT_TIME_BLOCK)
+        The /api/v2 overlay endpoint accepts MANUAL, TADO_MODE, TIMER.
 
     """
     mode = OVERLAY_MODE_DEFAULT
@@ -445,7 +452,10 @@ def build_timer_termination(
     4. fallback → per-zone overlay termination
     """
     if duration_minutes:
-        return {"type": "TIMER", "durationInSeconds": duration_minutes * 60}
+        from .const import TIMER_DURATION_MAX, TIMER_DURATION_MIN
+
+        clamped = max(TIMER_DURATION_MIN, min(int(duration_minutes), TIMER_DURATION_MAX))
+        return {"type": "TIMER", "durationInSeconds": clamped * 60}
 
     if overlay:
         overlay_upper = overlay.upper()

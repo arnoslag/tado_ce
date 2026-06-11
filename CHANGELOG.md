@@ -2,6 +2,39 @@
 
 All notable changes to Tado CE will be documented in this file.
 
+## [4.1.0-beta.3] - 2026-06-12
+
+One cohesive rework of how each zone reading is sourced. Tado CE's climate entity is a cloud + HomeKit hybrid, and until now both sides fought over the same values. This release gives each reading the one source that's right for it: the HVAC mode follows the cloud (the only side that knows you're following a schedule), the room temperature follows HomeKit (instant, the moment it changes), and a new per-zone setting lets you pick which temperature reading the dashboard shows. The overlay duration options also line up with the Tado app now.
+
+### The hybrid model, explained
+
+Tado CE talks to your Tado in two ways at once: the cloud (slower, but it knows your schedule) and a local HomeKit link to the bridge (fast, but it has no concept of a schedule at all). Each reading should follow whichever side is right for it:
+
+- **HVAC mode follows the cloud.** A mode change you make in the Apple Home or Tado app shows up in Home Assistant on the next cloud poll (up to your polling interval). That's not a shortfall: the official HomeKit Controller integration can't express "following your schedule" at all (its "auto" is just heat/cool switching), and the official Tado integration has no fast local temperature. Tado CE gives you both, and at least reflects an app-side mode change on the next poll.
+- **Room temperature follows HomeKit.** Stays instant throughout, the moment the TRV reports a change.
+
+### Features
+
+- **Choose which temperature reading each zone shows** ([#293](https://github.com/hiall-fyi/tado_ce/discussions/293) - @churchofnoise) — a new per-zone Temperature source setting (Configure → Zone Configuration → Temperature). Automatic prefers the fast HomeKit reading when it's fresh and falls back to the cloud; HomeKit always prefers the local reading; Cloud always shows Tado's. If you've set an external temperature sensor for the zone, it still takes precedence. This only changes what the dashboard displays; it never touches the reading Smart Valve Control uses to calibrate your TRVs.
+- **Identify a specific TRV or thermostat from Home Assistant** ([#291](https://github.com/hiall-fyi/tado_ce/issues/291) - @bobbinz) — each device now gets its own Identify button that flashes its LED so you can tell which physical radiator is which. Multi-TRV zones get one button per device, all on the same zone card. It flashes locally over HomeKit when the bridge is connected (no API call) and falls back to the cloud otherwise. The existing `identify_device` service also works for TRVs and thermostats now, not just bridges.
+
+### Changes you'll notice
+
+- **Override duration is relabelled to match the Tado app, and now offers three options instead of four.** "Until you resume schedule", "Until next automatic change", and "Timer" replace the old "Tado Default" / "Next Time Block" / "Timer" / "Manual" wording. "Next Time Block" was a silent duplicate of "Tado Default" since v2.1.0 (the Tado API we use only accepts three termination types), so removing it loses nothing. The setting is also renamed from "Overlay Mode" to "Override duration".
+- **New installs and new zones now default to "Until you resume schedule".** This is what a temperature change made from Home Assistant means most of the time, and it matches what a local HomeKit write produces. Zones you've already configured keep whatever setting they had.
+- **The Timer cap goes from 3 hours to 12 hours**, matching the Tado app.
+
+### Bug fixes
+
+- **Fixed the heating mode and target flipping back and forth on HomeKit + cloud zones** ([#296](https://github.com/hiall-fyi/tado_ce/issues/296) - @apilone) — on a zone with both HomeKit local control and cloud polling, the mode could oscillate because the integration accepted HomeKit's mode onto the same value the cloud derives your schedule onto. HomeKit can't express "following your schedule", so the two sides disagreed every poll. The mode now comes from the cloud only, which kills the flap. Room temperature still follows HomeKit for speed.
+- **HomeKit local control now activates as soon as the zone mapping is ready** — when the link between each radiator and its room built a moment late (bridge connected, but the first attempt ran before the connection settled), local control could stay off until the next restart even though the bridge was connected and mapped. It now starts listening for HomeKit updates the moment the mapping is built.
+- **Resuming a zone already on schedule no longer wastes an API call** — `tado_ce.restore_previous_state`, the Resume All Schedules button, and setting a hot-water zone back to Auto all used to fire a cloud call to clear an overlay that wasn't there. They now skip zones with no active overlay, the same as `resume_schedule` already does.
+- **Setting a zone to Auto now clears an active timer or "until next automatic change" override** — previously, a zone showing Auto that still carried one of those overrides would ignore an Auto request because the mode already looked like Auto. It now clears the override so the zone genuinely returns to its schedule.
+
+### Under the hood
+
+- The `next_time_block` argument to the override services still works (it maps to "until next automatic change") for anyone using it in automations, so existing scripts don't break.
+
 ## [4.0.3] - 2026-06-10
 
 A small stable patch, all bug fixes surfaced by internal audits of the code that changed across the v4.0 line, plus two HomeKit pairing fixes. Nothing here changes how you set anything up; if your installation has been fine, these are quiet correctness fixes.

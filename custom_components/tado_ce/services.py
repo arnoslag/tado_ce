@@ -277,6 +277,25 @@ def _resolve_coordinator_for_device(hass: HomeAssistant, device_serial: str) -> 
                     translation_placeholders={"device_serial": device_serial},
                 )
 
+    # Only bridges are registered with a device-serial identifier
+    # (register_bridge_devices); TRVs and thermostats attach to a zone-keyed
+    # device, so the registry lookup above never matches them. Fall back
+    # to the zones_info each loaded coordinator caches — the same serial→device
+    # data the offset / child-lock services route through.
+    for config_entry in hass.config_entries.async_entries(DOMAIN):
+        coordinator = getattr(config_entry, "runtime_data", None)
+        if coordinator is None:
+            continue
+        zones_info = coordinator.data_loader.load_zones_info_file() or []
+        for zone in zones_info:
+            for device in zone.get("devices") or []:
+                if device.get("shortSerialNo") == device_serial:
+                    _LOGGER.debug(
+                        "Services: resolved device %s via zones_info (home_id %s)",
+                        mask_serial(device_serial), mask_home_id(coordinator.home_id),
+                    )
+                    return coordinator  # type: ignore[no-any-return]
+
     raise HomeAssistantError(
         translation_domain=DOMAIN,
         translation_key="device_not_found",
@@ -1418,6 +1437,17 @@ async def handle_restore_previous_state(hass: HomeAssistant, call: ServiceCall) 
         # cleared after the cloud write succeeds, so a transient
         # failure leaves the baseline intact for a retry.
         captured = await _coord.async_peek_state(zone_id, entity_type)
+
+        # Both resume branches below call delete_zone_overlay. If the zone is
+        # already on schedule (no active overlay), that cloud call is a no-op,
+        # so skip it to save quota.
+        wants_resume = captured is None or captured.overlay_type is None
+        if wants_resume and ResumeGuard.should_skip_resume(_coord, zone_id):
+            _LOGGER.debug(
+                "Services: restore_previous_state — zone %s already on "
+                "schedule, skipping redundant resume call", zone_id,
+            )
+            continue
 
         if captured is None:
             api_success = await run_service_call(

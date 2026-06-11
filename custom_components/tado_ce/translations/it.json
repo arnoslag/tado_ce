@@ -1037,27 +1037,24 @@
         }
       },
       "overlay_mode": {
-        "name": "Modalità di sovrapposizione",
+        "name": "Durata della deroga",
         "state": {
-          "tado_mode": "Tado Default",
-          "next_time_block": "Il prossimo blocco temporale",
-          "manual": "Manuale"
+          "tado_mode": "Alla prossima modifica automatica",
+          "manual": "Fino alla ripresa delle lezioni",
+          "timer": "Timer"
         },
         "state_attributes": {
           "description": {
             "name": "Descrizione"
           },
           "tado_mode_info": {
-            "name": "Info sulla modalità Tado"
-          },
-          "next_time_block_info": {
-            "name": "Info sul prossimo blocco orario"
+            "name": "Alla prossima modifica automatica"
           },
           "timer_info": {
             "name": "Informazioni sul timer"
           },
           "manual_info": {
-            "name": "Info sul manuale"
+            "name": "Fino alla ripresa delle lezioni"
           },
           "api_calls_per_change": {
             "name": "Chiamate API per modifica"
@@ -1145,7 +1142,7 @@
         },
         "overlay": {
           "name": "Tipo di sovrapposizione",
-          "description": "Quando terminare l'override. Utilizzare \"next_time_block\" per terminare alla prossima modifica del programma, oppure \"manual\" per un tempo indefinito. Se impostato, time_period non è necessario."
+          "description": "Quando terminare la deroga. Utilizza \"next_time_block\" per terminarla al prossimo cambiamento automatico nella tua programmazione Tado, oppure \"manual\" per mantenerla attiva fino a quando non riprenderai la programmazione. Se impostato, il parametro \"time_period\" non è obbligatorio."
         }
       }
     },
@@ -1572,7 +1569,7 @@
             },
             "data_description": {
               "overlay_mode": "Quando si modifica la temperatura tramite HA, l'app Tado o un intervento di assistenza, per quanto tempo rimane in vigore la modifica prima che riprenda il programma impostato su Tado?",
-              "timer_duration": "Durata della modalità di esclusione del timer (15–180 min)"
+              "timer_duration": "Durata della modalità di esclusione del timer (da 15 minuti a 12 ore)"
             }
           },
           "temperature_section": {
@@ -1580,12 +1577,14 @@
             "data": {
               "min_temp": "Temperatura minima",
               "max_temp": "Temperatura massima",
-              "surface_temp_offset": "Offset della temperatura di superficie"
+              "surface_temp_offset": "Offset della temperatura di superficie",
+              "display_temp_source": "Fonte di temperatura"
             },
             "data_description": {
               "min_temp": "Temperatura minima consentita (5-25°C)",
               "max_temp": "Temperatura massima consentita (15-30°C)",
-              "surface_temp_offset": "Regola con precisione la stima della temperatura superficiale in base al rischio di muffa. Modifica il valore se le pareti risultano più fredde rispetto a quanto ipotizzato da Tado. (da -5 a +5 °C)"
+              "surface_temp_offset": "Regola con precisione la stima della temperatura superficiale in base al rischio di muffa. Modifica il valore se le pareti risultano più fredde rispetto a quanto ipotizzato da Tado. (da -5 a +5 °C)",
+              "display_temp_source": "Come mostra questa lettura della zona. La modalità \"Automatica\" privilegia il valore HomeKit più recente quando è disponibile, per poi ricorrere al cloud Tado. HomeKit privilegia sempre il valore locale; il cloud mostra sempre quello di Tado. Se hai configurato un sensore di temperatura esterno per questa zona, la sua lettura ha la precedenza su questa impostazione."
             }
           }
         }

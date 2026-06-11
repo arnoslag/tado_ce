@@ -536,6 +536,23 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "HomeKit: zone mapping built on retry — %d zone(s) mapped",
                 len(mapping["serial_to_zone"]),
             )
+            # The mapping just became non-empty. Setup subscribed to events
+            # while zone_aid_map was still empty (0 chars), and no reconnect
+            # has fired (the bridge stayed connected — it was the mapping that
+            # lagged, not the connection). Subscribe now so HomeKit pushes
+            # actually flow; without this the zone stays cloud-only despite a
+            # connected, mapped bridge until an HA restart or a reconnect.
+            provider = self.homekit_provider
+            if provider is not None and provider.is_connected:
+                try:
+                    await provider.async_refresh_accessories()
+                    await provider.async_subscribe_events()
+                except (TimeoutError, aiohttp.ClientError, ValueError, KeyError):
+                    _LOGGER.warning(
+                        "HomeKit: subscribing to events after the retry "
+                        "mapping build failed — local control will stay off "
+                        "until the next poll retries", exc_info=True,
+                    )
 
     def record_cloud_backoff(self, retry_after: int) -> None:
         """Record a cloud rate-limit window and surface the repair issue.

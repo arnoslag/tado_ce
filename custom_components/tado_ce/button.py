@@ -11,12 +11,13 @@ from homeassistant.util import slugify
 
 from .const import DOMAIN
 from .coordinator import TadoDataUpdateCoordinator
-from .device_manager import get_hub_device_info, get_zone_device_info
+from .device_manager import get_device_name_suffix, get_hub_device_info, get_zone_device_info
 from .entity_registry import ENTITY_REGISTRY, get_entity_category
 from .helpers import (
     async_trigger_immediate_refresh,
     build_timer_termination,
     get_zone_states,
+    mask_serial,
     merge_homekit_into_zone_data,
 )
 from .ratelimit import async_check_bootstrap_reserve_or_raise as _check_bootstrap_reserve_or_raise
@@ -55,6 +56,9 @@ async def async_setup_entry(
     schedule_calendar_enabled = config_manager.get_schedule_calendar_enabled() if config_manager else False
 
     buttons: list[ButtonEntity] = []
+    # A physical device can appear under more than one zone in zones_info; one
+    # identify button per serial, attached to the first zone it's seen in.
+    seen_identify_serials: set[str] = set()
 
     # Add Resume All Schedules button (hub-level)
     buttons.append(TadoResumeAllSchedulesButton(coordinator, home_id))
@@ -93,6 +97,20 @@ async def async_setup_entry(
                 buttons.append(
                     TadoRefreshScheduleButton(coordinator, zone_id, zone_name, home_id),
                 )
+
+            # One identify button per physical device — multi-TRV zones
+            # get one per device so each radiator can be flashed individually.
+            # A device shared across zones gets a single button (its serial is
+            # the unique ID, so a duplicate would collide).
+            for device in zone.get("devices") or []:
+                serial = device.get("shortSerialNo")
+                if serial and serial not in seen_identify_serials:
+                    seen_identify_serials.add(serial)
+                    buttons.append(
+                        TadoIdentifyButton(
+                            coordinator, zone_id, zone_name, zone_type, device, zones_info,
+                        ),
+                    )
 
     if buttons:
         async_add_entities(buttons, True)
@@ -137,12 +155,23 @@ class TadoResumeAllSchedulesButton(CoordinatorEntity[TadoDataUpdateCoordinator],
             )
             return
 
+        from .write_optimizer import ResumeGuard
+
         success_count = 0
         fail_count = 0
 
         for zone in zones_info:
             zone_id = str(zone.get("id"))
             zone_name = zone.get("name", f"Zone {zone_id}")
+
+            # Skip the cloud call for zones already on schedule (no overlay).
+            if ResumeGuard.should_skip_resume(self.coordinator, zone_id):
+                _LOGGER.debug(
+                    "Button: %s (zone %s) already on schedule — skipping",
+                    zone_name, zone_id,
+                )
+                success_count += 1
+                continue
 
             try:
                 if await client.delete_zone_overlay(zone_id):
@@ -661,4 +690,86 @@ class TadoSmartBoostButton(CoordinatorEntity[TadoDataUpdateCoordinator], ButtonE
                 "Button: smart boost for %s could not be activated "
                 "— schedule remains unchanged",
                 self._zone_name,
+            )
+
+
+class TadoIdentifyButton(CoordinatorEntity[TadoDataUpdateCoordinator], ButtonEntity):
+    """Flash a single device's LED so you can tell which physical TRV / thermostat it is.
+
+    One button per physical device. Multi-TRV zones get one button per device,
+    all on the same zone card, so each radiator can be flashed individually. The
+    button holds the device's full serial, so you never copy it by hand.
+    """
+
+    _attr_has_entity_name = True
+
+    def __init__(
+        self,
+        coordinator: TadoDataUpdateCoordinator,
+        zone_id: str,
+        zone_name: str,
+        zone_type: str,
+        device: dict[str, Any],
+        zones_info: list[dict[str, Any]] | None = None,
+    ) -> None:
+        """Initialize the TadoIdentifyButton for one physical device."""
+        super().__init__(coordinator)
+        self._zone_id = zone_id
+        self._zone_name = zone_name
+        self._device_serial = device.get("shortSerialNo", "unknown")
+        self._device_type = device.get("deviceType", "unknown")
+
+        _meta = ENTITY_REGISTRY["button_identify"]
+        self._attr_unique_id = (
+            f"tado_ce_{coordinator.home_id}"
+            f"_{_meta.unique_id_suffix.format(serial=self._device_serial)}"
+        )
+        self._attr_icon = _meta.icon
+        self._attr_entity_category = get_entity_category(_meta)
+        self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type, coordinator.home_id)
+
+        # Pin the entity_id explicitly. Home Assistant 2026.6 prefixes a
+        # freshly-registered entity's slug with BOTH its area name and its
+        # device name, with no de-duplication between the two. Each Tado zone
+        # device sits in an area of the same name (e.g. device "Lounge" in area
+        # "Lounge"), so the auto-derived slug doubles to `{zone}_{zone}_identify`.
+        # Setting entity_id directly takes priority over the derived object id
+        # and is not area/device-prefixed, sidestepping the doubling. The suffix
+        # disambiguates multiple devices in one zone (" VA02").
+        suffix = get_device_name_suffix(zone_id, self._device_serial, self._device_type, zones_info or [])
+        self._attr_name = f"Identify{suffix}"
+        self.entity_id = f"button.{slugify(f'{zone_name} identify{suffix}')}"
+
+    async def async_press(self) -> None:
+        """Flash this device's LED, locally over HomeKit when possible.
+
+        The Tado bridge carries the HomeKit Identify characteristic, so a local
+        write costs no cloud API call. Falls back to the cloud identify service
+        when HomeKit isn't connected or the local write fails.
+        """
+        provider = self.coordinator.homekit_provider
+        if provider is not None and provider.is_connected:
+            if await provider.async_identify(self._device_serial):
+                _LOGGER.debug(
+                    "Button: identify flashed device %s over HomeKit (no cloud call)",
+                    mask_serial(self._device_serial),
+                )
+                return
+            _LOGGER.debug(
+                "Button: local identify for %s didn't land — falling back to the cloud call",
+                mask_serial(self._device_serial),
+            )
+
+        await _check_bootstrap_reserve_or_raise(
+            self.hass, f"Identify {self._zone_name}", coordinator=self.coordinator,
+        )
+
+        success = await self.coordinator.api_client.identify_device(self._device_serial)
+        if success:
+            _LOGGER.debug("Button: identify sent to device %s", mask_serial(self._device_serial))
+        else:
+            _LOGGER.warning(
+                "Button: identify for device %s could not be sent — the cloud did "
+                "not acknowledge the request, please retry",
+                mask_serial(self._device_serial),
             )

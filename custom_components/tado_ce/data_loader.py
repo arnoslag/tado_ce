@@ -292,7 +292,11 @@ class DataLoader:
                 )
                 return OVERLAY_MODE_DEFAULT
             mode = data.get("overlay_mode", OVERLAY_MODE_DEFAULT)
-            if mode not in ("TADO_MODE", "NEXT_TIME_BLOCK", "TIMER", "MANUAL"):
+            if mode == "NEXT_TIME_BLOCK":
+                # Legacy value the v2 endpoint rejects; coerce to its
+                # equivalent, "until next automatic change".
+                mode = "TADO_MODE"
+            if mode not in ("TADO_MODE", "TIMER", "MANUAL"):
                 _LOGGER.warning(
                     "Data Loader: overlay_mode value %r is not recognised — "
                     "falling back to default %s",
@@ -310,7 +314,7 @@ class DataLoader:
 
     def save_overlay_mode(self, mode: str) -> bool:
         """Persist the overlay mode if it is a recognised value."""
-        if mode not in ("TADO_MODE", "NEXT_TIME_BLOCK", "TIMER", "MANUAL"):
+        if mode not in ("TADO_MODE", "TIMER", "MANUAL"):
             _LOGGER.warning(
                 "Data Loader: refusing to save unrecognised overlay mode %r",
                 mode,

@@ -21,6 +21,8 @@ from .homekit_client import (
     CHAR_CURRENT_HEATING_STATE,
     CHAR_CURRENT_HUMIDITY,
     CHAR_CURRENT_TEMPERATURE,
+    CHAR_IDENTIFY,
+    CHAR_SERIAL_NUMBER,
     CHAR_TARGET_HEATING_STATE,
     CHAR_TARGET_TEMPERATURE,
     HomeKitClient,
@@ -271,6 +273,71 @@ class HomeKitLocalProvider:
                 "HomeKit: zone %s HVAC-mode write raised an exception — "
                 "falling back to cloud write",
                 zone_id, exc_info=True,
+            )
+            return False
+
+    def _find_aid_for_serial(self, serial: str) -> int | None:
+        """Return the accessory aid whose serial-number characteristic matches `serial`."""
+        for acc in self._accessories:
+            for svc in acc.get("services", []):
+                for char in svc.get("characteristics", []):
+                    raw_type = char.get("type", "")
+                    ctype = raw_type.split("-")[0].upper() if "-" in raw_type else raw_type.upper()
+                    try:
+                        if int(ctype, 16) == int(CHAR_SERIAL_NUMBER, 16) and char.get("value") == serial:
+                            aid = acc.get("aid")
+                            return int(aid) if aid is not None else None
+                    except (ValueError, TypeError):
+                        continue
+        return None
+
+    async def async_identify(self, serial: str) -> bool:
+        """Flash a device's LED locally via its HomeKit Identify characteristic.
+
+        Returns False (so the caller can fall back to the cloud identify call)
+        when the serial isn't mapped, the accessory has no Identify
+        characteristic, or the write times out / errors.
+        """
+        if not self._client.is_connected or not self._client.pairing:
+            return False
+
+        aid = self._find_aid_for_serial(serial)
+        if aid is None:
+            _LOGGER.debug(
+                "HomeKit: serial %s has no mapped accessory — cannot "
+                "identify via local bridge", serial,
+            )
+            return False
+
+        iid = _find_char_iid(self._accessories, aid, CHAR_IDENTIFY)
+        if iid is None:
+            _LOGGER.debug(
+                "HomeKit: aid %d has no Identify characteristic — "
+                "falling back to cloud identify", aid,
+            )
+            return False
+
+        try:
+            async with asyncio.timeout(HOMEKIT_WRITE_TIMEOUT_SECONDS):
+                result = await self._client.pairing.put_characteristics([(aid, iid, True)])
+            if not result:
+                _LOGGER.debug("HomeKit: identify flashed device %s via local bridge", serial)
+                return True
+            _LOGGER.warning(
+                "HomeKit: identify write for %s rejected by the bridge — %s",
+                serial, result,
+            )
+            return False
+        except TimeoutError:
+            _LOGGER.warning(
+                "HomeKit: identify write for %s timed out after %ds — "
+                "falling back to cloud identify", serial, HOMEKIT_WRITE_TIMEOUT_SECONDS,
+            )
+            return False
+        except Exception:
+            _LOGGER.debug(
+                "HomeKit: identify write for %s raised an exception — "
+                "falling back to cloud identify", serial, exc_info=True,
             )
             return False
 

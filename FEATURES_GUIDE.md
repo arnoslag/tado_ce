@@ -1031,13 +1031,17 @@ automation:
 
 Flash the LED on a TRV, thermostat, or sensor so you can identify which physical device a serial number belongs to. Useful when a zone has multiple TRVs and you need to find the one that's offline or low on battery.
 
+From v4.1.0-beta.3 onwards, each TRV and thermostat has its own **Identify** button on its zone card, so the easiest way is to just press it. The button flashes the LED locally over HomeKit when the bridge is connected (no cloud call) and falls back to the cloud otherwise. Multiple TRVs in a zone each get their own button, so there's no need to copy a serial anywhere.
+
+The `identify_device` service does the same thing if you'd rather script it, and now resolves TRVs and thermostats too, not just the bridge:
+
 ```yaml
 service: tado_ce.identify_device
 data:
   device_serial: VA1234567890
 ```
 
-The serial is the short serial visible on the back of the device (and in `binary_sensor.{zone}_connection`'s `device_serial` attribute). The flash takes a few seconds to start since the request goes through the Tado cloud rather than the local bridge. If nothing happens after about 30 seconds, the device is offline or the serial is wrong — check the log for `identify_device failed`.
+The serial is the short serial visible on the back of the device (and in `binary_sensor.{zone}_connection`'s `device_serial` attribute). The service also flashes locally over HomeKit when the bridge is connected, falling back to the cloud, in which case it takes a few seconds to start. If nothing happens after about 30 seconds, the device is offline or the serial is wrong — check the log for `identify_device failed`.
 
 #### 11. Hub-level buttons
 
@@ -1270,6 +1274,13 @@ Pair your Tado bridge via HomeKit to control heating and AC directly on your loc
 | Automatic fallback | If HomeKit becomes unavailable, the integration switches to cloud seamlessly |
 | Zero-config reconnect | If the bridge connection drops, it reconnects in the background automatically |
 
+### How mode and temperature are sourced
+
+Tado CE talks to your Tado two ways at once, and each reading follows the side that's right for it:
+
+- **Room temperature follows HomeKit** — instant, the moment the TRV reports a change. A new per-zone **Temperature source** setting (Configure → Zone Configuration → Temperature) lets you override this per zone: Automatic prefers the fast HomeKit reading and falls back to the cloud, HomeKit always prefers local, Cloud always shows Tado's. An external temperature sensor, if you've set one, still takes precedence. This only governs what the dashboard shows; Smart Valve Control always calibrates against its own reading regardless.
+- **HVAC mode follows the cloud** — the only side that knows you're following a schedule. A mode change you make in the Apple Home or Tado app shows up in Home Assistant on the next cloud poll (up to your polling interval). That's deliberate, not a shortfall: the official HomeKit Controller integration has no concept of a schedule at all (its "auto" is just heat/cool switching), and the official Tado integration has no fast local temperature. Tado CE gives you the fast temperature and still reflects an app-side mode change on the next poll.
+
 ### Known Limitations
 
 | Limitation | Detail |
@@ -1280,7 +1291,7 @@ Pair your Tado bridge via HomeKit to control heating and AC directly on your loc
 | Wireless Temp Sensors | Standalone temperature sensors (ST01) don't appear as HomeKit accessories — their data always comes from the cloud. |
 | Single pairing | The bridge can only be paired with one HomeKit controller at a time. |
 | External sensors don't control TRV valve | Per-zone external sensors change the displayed room temperature, but the TRV still uses its own sensor to control the valve. Enable **Smart Valve Control** (Offset Sync or Valve Target) in zone settings to automatically compensate — see [Smart Valve Control](#-smart-valve-control). |
-| No TRV LED feedback on local writes | When a temperature change goes through HomeKit, the TRV updates silently. There's no LED flash showing the new target the way there is when you change it in the Tado app, because the HomeKit Accessory Protocol doesn't carry a feedback channel for this. Cloud writes from the Tado app trigger the LED through Tado's own bridge protocol. If you want the LED confirmation, call `tado_ce.identify_device` after the write. See the workaround note below. |
+| No TRV LED feedback on local writes | When a temperature change goes through HomeKit, the TRV updates silently. There's no LED flash showing the new target the way there is when you change it in the Tado app, because the HomeKit Accessory Protocol doesn't carry a feedback channel for this. If you want a flash to confirm you're at the right device, press its Identify button or call `tado_ce.identify_device` after the write. See the workaround note below. |
 
 ### General Limitations
 
@@ -1375,7 +1386,7 @@ The integration handles this automatically; it fetches cloud-only data at the co
 
 ### Workaround: TRV LED feedback after a local write
 
-If you'd like the LED on the TRV to flash and show the new target after a HomeKit-routed write (the way it does when you change the temperature in the Tado app), call the `tado_ce.identify_device` service straight after the write. The service hits Tado's cloud-side identify endpoint, which is the same path the Tado app uses to trigger LED feedback, so the bridge fires the flash:
+If you'd like the LED on the TRV to flash after a HomeKit-routed write (the way it does when you change the temperature in the Tado app), press the device's Identify button or call the `tado_ce.identify_device` service straight after the write:
 
 ```yaml
 service: tado_ce.identify_device
@@ -1383,7 +1394,7 @@ data:
   device_serial: "VA1234567890"  # short serial of the TRV, visible in the device's diagnostic attributes
 ```
 
-Quota cost is one cloud call per flash. On the 100-call free tier that's noticeable if you trigger it from every write, on the 1,000-call transitional tier it's marginal, and on the 20,000-call legacy tier it's negligible. Worth wiring up only if you actually want the visual confirmation; the temperature change itself lands through HomeKit either way.
+When the bridge is connected this flashes locally over HomeKit at no quota cost. If the bridge isn't reachable it falls back to the cloud, which costs one call per flash, marginal on the 1,000-call tier and negligible on the 20,000-call legacy tier, but worth bearing in mind on the 100-call free tier if you trigger it from every write. The temperature change itself lands through HomeKit either way.
 
 ---
 
@@ -1823,22 +1834,22 @@ Syncs home/away presence state. Enable "Home/Away State Sync" in Configure.
 | `select.tado_ce_presence_mode` | Presence Mode | Control: auto / home / away |
 | `binary_sensor.tado_ce_home` | Home | Read-only home/away status |
 
-### Overlay Mode (v2.0.2)
+### Override duration
 
-Controls how long manual temperature changes last.
+Controls how long a temperature change made from Home Assistant lasts before the schedule resumes.
 
 | Entity | Friendly Name |
 |--------|--------------|
-| `select.tado_ce_overlay_mode` | Overlay Mode |
+| `select.tado_ce_overlay_mode` | Override duration |
 | `select.tado_ce_overlay_timer_duration` | Overlay Timer |
 
-**Options:**
+**Options** (verbatim from the Tado app):
 
 | Option | Description |
 |--------|-------------|
-| Tado Mode | Follows per-device "Manual Control" settings in Tado app (default) |
-| Next Time Block | Override lasts until next scheduled change |
-| Manual | Infinite override until manually changed |
+| Until you resume schedule | Stays until you resume the schedule (the default) |
+| Until next automatic change | Reverts at the next automatic change in your Tado schedule |
+| Timer | Reverts after the timer duration (15 minutes to 12 hours) |
 
 ### Understanding Geofencing vs Presence Mode
 
@@ -2011,17 +2022,19 @@ Organised in the order they appear in the Options Flow — fundamental limits fi
 | Window Type | Window insulation type for mold risk calculation | All zones |
 | Window Predicted Sensitivity | Low, Medium, or High | All zones |
 | **Manual Temperature Override** | | |
-| Override Mode | How manual temperature changes behave (Tado Default, Next Time Block, Timer, Manual) | All zones |
-| Override Timer | Timer duration when override mode is Timer | All zones |
+| Override duration | How long a temperature change made from Home Assistant lasts (Until you resume schedule, Until next automatic change, Timer) | All zones |
+| Override Timer | Timer duration when override duration is Timer (up to 12 hours) | All zones |
+| Temperature source | Which reading the dashboard shows for this zone (Automatic, HomeKit, Cloud) | All zones |
 
-### Zone Overlay Mode Options
+### Override duration options
 
-| Option | Behavior |
+| Option | Behaviour |
 |--------|----------|
-| Tado Default | Inherit from global setting (default) |
-| Next Time Block | Revert at next schedule change |
-| Timer | Revert after timer duration |
-| Manual | Stay until manually changed |
+| Until you resume schedule | Stays until you resume the schedule (the default for new zones) |
+| Until next automatic change | Reverts at the next automatic change in your Tado schedule |
+| Timer | Reverts after the timer duration (15 minutes to 12 hours) |
+
+The starting default for a new zone is "Until you resume schedule". Zones you'd already configured before this release keep whatever setting they had. If you want a different default per zone, set it here under Override duration. (The `next_time_block` value still works as a service argument for anyone using it in automations; it maps to "until next automatic change".)
 
 ---
 

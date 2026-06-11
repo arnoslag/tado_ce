@@ -21,6 +21,8 @@ _LOGGER = logging.getLogger(__name__)
 # Migration version constants
 _MIN_SUPPORTED_VERSION = 11  # versions below this are too old to migrate
 _V11_VERSION = 11  # config entry version that needs v11→v12 migration
+_V12_VERSION = 12  # config entry version that needs v12→v13 migration
+_TARGET_VERSION = 13  # current config-entry schema version
 
 # Module-level set to track duplicate cleanup operations (prevents re-running)
 _duplicate_cleanup_done: set[str] = set()
@@ -85,15 +87,48 @@ async def async_migrate_config_json(
     )
 
 
+async def _consolidate_next_time_block(hass: HomeAssistant, config_entry: ConfigEntry) -> None:
+    """Rewrite a stored overlay_mode == NEXT_TIME_BLOCK to TADO_MODE.
+
+    NEXT_TIME_BLOCK is no longer a valid overlay mode (the /api/v2 endpoint
+    rejects it). Rewrites both the global overlay_mode aux store and every
+    per-zone entry in the zone_config store. Idempotent — a second run finds
+    nothing to rewrite.
+    """
+    from .data_loader import DataLoader
+
+    home_id = config_entry.data.get("home_id")
+    if not home_id:
+        _LOGGER.debug("Migration: no home_id on entry — skipping NEXT_TIME_BLOCK consolidation")
+        return
+    loader = DataLoader(str(home_id), hass)
+
+    global_data = await loader.async_load_auxiliary("overlay_mode")
+    if isinstance(global_data, dict) and global_data.get("overlay_mode") == "NEXT_TIME_BLOCK":
+        loader.save_auxiliary("overlay_mode", {"overlay_mode": "TADO_MODE"})
+        _LOGGER.info("Migration: rewrote global overlay_mode NEXT_TIME_BLOCK -> TADO_MODE")
+
+    zone_data = await loader.async_load_auxiliary("zone_config")
+    if isinstance(zone_data, dict) and isinstance(zone_data.get("zones"), dict):
+        changed = 0
+        for zcfg in zone_data["zones"].values():
+            if isinstance(zcfg, dict) and zcfg.get("overlay_mode") == "NEXT_TIME_BLOCK":
+                zcfg["overlay_mode"] = "TADO_MODE"
+                changed += 1
+        if changed:
+            loader.save_auxiliary("zone_config", zone_data)
+            _LOGGER.info("Migration: rewrote NEXT_TIME_BLOCK -> TADO_MODE in %d zone(s)", changed)
+
+
 async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
     """Step a config entry forward to the current schema version.
 
-    v11 → v12 is the only live step (older paths require an
-    intermediate v3.x install). A `None` version is treated as a
-    recovery from a previously-aborted migration — we snap forward
-    and let the entry resume.
+    Live steps: v11 → v12 (config-JSON move) and v12 → v13 (NEXT_TIME_BLOCK
+    consolidation). Older paths require an intermediate v3.x install. A `None`
+    version is treated as recovery from a previously-aborted migration — we
+    snap forward and let the entry resume.
     """
-    target_version = 12
+    target_version = _TARGET_VERSION
     initial_version = config_entry.version
 
     if initial_version is None:
@@ -120,6 +155,16 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) ->
         await async_migrate_config_json(hass, config_entry)
         hass.config_entries.async_update_entry(config_entry, version=12)
         _LOGGER.info("Migration: v11 → v12 complete")
+
+    # v12 → v13 chains off v11 (initial_version <= 12) so an old entry steps
+    # through both in one call. The version bump is the LAST action: the store
+    # rewrites run first, so a mid-migration crash re-runs the whole idempotent
+    # step rather than leaving it version-bumped-but-half-written.
+    if initial_version <= _V12_VERSION:
+        _LOGGER.info("Migration: starting v12 → v13 (NEXT_TIME_BLOCK consolidation)")
+        await _consolidate_next_time_block(hass, config_entry)
+        hass.config_entries.async_update_entry(config_entry, version=_TARGET_VERSION)
+        _LOGGER.info("Migration: v12 → v13 complete")
 
     _LOGGER.debug(
         "Migration: config entry already at version %s — no further "

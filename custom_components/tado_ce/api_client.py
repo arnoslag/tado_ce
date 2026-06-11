@@ -837,6 +837,23 @@ class TadoApiClient(TadoAuthMixin):
         )
         return result is not None
 
+    async def get_zone_default_overlay(self, zone_id: str) -> str | None:
+        """Return the zone's server-side default termination type, or None.
+
+        Reads the per-zone default the user set in the Tado app
+        (GET /zones/{id}/defaultOverlay). Returns MANUAL / TADO_MODE / TIMER,
+        or None when unavailable so callers fall back to the integration default.
+        """
+        result = await self.api_call(f"zones/{zone_id}/defaultOverlay")
+        if not isinstance(result, dict):
+            return None
+        term = result.get("terminationCondition")
+        if isinstance(term, dict):
+            value = term.get("type")
+            if value in ("MANUAL", "TADO_MODE", "TIMER"):
+                return value  # type: ignore[no-any-return]
+        return None
+
     async def get_zone_schedule(self, zone_id: str) -> dict[str, Any] | None:
         """Return the zone's full schedule (timetable type + blocks per day)."""
         active = await self.api_call(

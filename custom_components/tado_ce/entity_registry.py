@@ -439,6 +439,12 @@ ENTITY_REGISTRY: dict[str, EntityMeta] = {
         entity_category="config",
         icon="mdi:air-conditioner",
     ),
+    "button_identify": EntityMeta(
+        translation_key=None,  # uses dynamic _attr_name = f"Identify{suffix}"
+        unique_id_suffix="device_{serial}_identify",
+        entity_category="diagnostic",
+        icon="mdi:map-marker-radius",
+    ),
     "button_timer": EntityMeta(
         translation_key=None,  # uses dynamic _attr_name = f"{duration}min Timer"
         unique_id_suffix="zone_{zone_id}_timer_{duration}min",

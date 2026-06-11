@@ -74,14 +74,6 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
-# HomeKit Target Heating State → HA HVACMode mapping
-# 0=Off, 1=Heat, 2=Cool (not applicable for heating), 3=Auto
-_HOMEKIT_TARGET_STATE_TO_HVAC: dict[int, HVACMode] = {
-    0: HVACMode.OFF,
-    1: HVACMode.HEAT,
-    3: HVACMode.AUTO,
-}
-
 
 class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity, RestoreEntity):
     """Tado CE Heating Climate Entity."""
@@ -323,9 +315,14 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity,
             # the zone is OFF, the reconciler's changed-timestamp check
             # rejects stale bridge echoes; legitimate pushes from the
             # Tado app still pass through.
+            zcm = self.coordinator.zone_config_manager
+            display_source = (
+                zcm.get_zone_value(self._zone_id, "display_temp_source", "auto")
+                if zcm else "auto"
+            )
             cloud_target = self._attr_target_temperature
             merged_target, target_src = reconciler.merge_zone_target_temperature(
-                self._zone_id, cloud_target,
+                self._zone_id, cloud_target, display_source=display_source,
             )
             if merged_target is not None and merged_target != self._attr_target_temperature:
                 self._attr_target_temperature = merged_target
@@ -334,22 +331,11 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity,
                     self._zone_name, cloud_target, merged_target, target_src,
                 )
 
-            # HVAC mode — reconciler's changed-timestamp check handles
-            # stale-vs-fresh the same way.
-            merged_state, state_src = reconciler.merge_zone_target_heating_state(
-                self._zone_id, None,  # No cloud value in real-time path
-            )
-            if merged_state is not None and state_src == "homekit":
-                new_mode = _HOMEKIT_TARGET_STATE_TO_HVAC.get(merged_state)
-                if new_mode is not None and new_mode != self._attr_hvac_mode:
-                    old_mode = self._attr_hvac_mode
-                    self._attr_hvac_mode = new_mode
-                    self._attr_hvac_action = self._calculate_hvac_action()
-                    _LOGGER.debug(
-                        "Climate Heating: %s HVAC mode %s → %s "
-                        "(source %s)",
-                        self._zone_name, old_mode, new_mode, state_src,
-                    )
+            # HVAC mode is intentionally NOT derived from HomeKit here. A
+            # HomeKit target_heating_state can't express "following your
+            # schedule" (AUTO), so accepting it onto _attr_hvac_mode flapped
+            # schedule-following hybrid zones. Mode derives from the
+            # cloud poll only (_determine_api_hvac_mode reads the overlay type).
 
         self.async_write_ha_state()
 
@@ -442,8 +428,13 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity,
         provider = self.coordinator.homekit_provider
         if reconciler and provider and provider.is_connected:
             reconciler.local_provider = provider
+            display_source = (
+                zcm.get_zone_value(self._zone_id, "display_temp_source", "auto")
+                if zcm else "auto"
+            )
             merged_temp, temp_source = reconciler.merge_zone_temperature(
                 self._zone_id, cloud_temp, external_value=ext_temp,
+                display_source=display_source, purpose="display",
             )
             merged_hum, hum_source = reconciler.merge_zone_humidity(
                 self._zone_id, cloud_humidity, external_value=ext_hum,
@@ -964,8 +955,12 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity,
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set new HVAC mode."""
+        # A zone showing AUTO can still carry a TADO_MODE/TIMER overlay (mode is
+        # derived HEAT only for MANUAL), so an AUTO request must clear a present
+        # overlay rather than no-op on mode equality.
+        skip_for_auto = hvac_mode == HVACMode.AUTO and self._overlay_type is not None
         # Action Guard — skip if mode already matches current state
-        if ActionGuard.should_skip_hvac_mode(
+        if not skip_for_auto and ActionGuard.should_skip_hvac_mode(
             hvac_mode, self._attr_hvac_mode,
             optimistic_active=self._optimistic_sequence is not None,
         ):

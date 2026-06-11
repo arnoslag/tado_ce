@@ -167,7 +167,15 @@ class TadoTemperatureSensor(TadoZoneSensor):
             reconciler = self.coordinator.state_reconciler
             if provider and reconciler and provider.is_connected:
                 reconciler.local_provider = provider
-                result = reconciler.merge_zone_temperature(self._zone_id, None)
+                zcm = self.coordinator.zone_config_manager
+                display_source = (
+                    zcm.get_zone_value(self._zone_id, "display_temp_source", "auto")
+                    if zcm else "auto"
+                )
+                result = reconciler.merge_zone_temperature(
+                    self._zone_id, None,
+                    display_source=display_source, purpose="display",
+                )
                 if isinstance(result, tuple) and len(result) == 2 and result[1] == "homekit":
                     self._data_source = "homekit"
                     _, _changed, observed = provider.get_temperature(self._zone_id)

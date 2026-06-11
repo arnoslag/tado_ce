@@ -1037,27 +1037,24 @@
         }
       },
       "overlay_mode": {
-        "name": "Mode superposition",
+        "name": "Durée de la dérogation",
         "state": {
-          "tado_mode": "Tado Défaut",
-          "next_time_block": "Prochain bloc horaire",
-          "manual": "Manuel"
+          "tado_mode": "À la prochaine mise à jour automatique",
+          "manual": "Jusqu'à la reprise des cours",
+          "timer": "Minuterie"
         },
         "state_attributes": {
           "description": {
             "name": "Description"
           },
           "tado_mode_info": {
-            "name": "Tado Mode info"
-          },
-          "next_time_block_info": {
-            "name": "Next Time Block info"
+            "name": "À la prochaine mise à jour automatique"
           },
           "timer_info": {
             "name": "Informations sur la minuterie"
           },
           "manual_info": {
-            "name": "Informations manuelles"
+            "name": "Jusqu'à la reprise des cours"
           },
           "api_calls_per_change": {
             "name": "Appels à l'API par changement"
@@ -1145,7 +1142,7 @@
         },
         "overlay": {
           "name": "Type de recouvrement",
-          "description": "Quand mettre fin à la dérogation. Utilisez 'next_time_block' pour terminer au prochain changement d'horaire, ou 'manual' pour une durée indéterminée. Lorsqu'il est défini, le paramètre time_period n'est pas nécessaire."
+          "description": "Quand mettre fin à la dérogation. Utilisez « next_time_block » pour que la dérogation prenne fin lors du prochain changement automatique de votre programme Tado, ou « manual » pour la maintenir jusqu’à ce que vous réactiviez le programme. Lorsque cette option est sélectionnée, le paramètre « time_period » n’est pas obligatoire."
         }
       }
     },
@@ -1572,7 +1569,7 @@
             },
             "data_description": {
               "overlay_mode": "Lorsque vous modifiez la température via HA, l'application Tado ou un appel de service, combien de temps cette modification reste-t-elle active avant que le programme de Tado ne reprenne ?",
-              "timer_duration": "Durée du mode de dérogation à la minuterie (15 à 180 min)"
+              "timer_duration": "Durée du mode de dérogation à la minuterie (de 15 minutes à 12 heures)"
             }
           },
           "temperature_section": {
@@ -1580,12 +1577,14 @@
             "data": {
               "min_temp": "Température minimale",
               "max_temp": "Température maximale",
-              "surface_temp_offset": "Décalage de la température de surface"
+              "surface_temp_offset": "Décalage de la température de surface",
+              "display_temp_source": "Source de température"
             },
             "data_description": {
               "min_temp": "Température cible minimale autorisée (5-25°C)",
               "max_temp": "Température cible maximale autorisée (15-30°C)",
-              "surface_temp_offset": "Affinez l'estimation de la température de surface liée au risque de moisissure. Modifiez cette valeur si vos murs vous semblent plus froids que ce que Tado prévoit. (-5 à +5 °C)"
+              "surface_temp_offset": "Affinez l'estimation de la température de surface liée au risque de moisissure. Modifiez cette valeur si vos murs vous semblent plus froids que ce que Tado prévoit. (-5 à +5 °C)",
+              "display_temp_source": "C'est ce qu'indique cette zone. Le mode « Automatique » privilégie la valeur HomeKit la plus récente lorsqu'elle est disponible, puis se rabat sur le cloud Tado. Le mode « HomeKit » privilégie toujours la valeur locale ; le mode « Cloud » affiche toujours celle de Tado. Si vous avez configuré un capteur de température externe pour cette zone, celui-ci prévaut sur ce choix."
             }
           }
         }

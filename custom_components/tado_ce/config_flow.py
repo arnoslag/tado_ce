@@ -35,7 +35,7 @@ _LOGGER = logging.getLogger(__name__)
 class TadoCEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Tado CE."""
 
-    VERSION = 12
+    VERSION = 13
 
     def __init__(self) -> None:
         """Initialize the config flow."""

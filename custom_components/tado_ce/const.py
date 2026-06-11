@@ -182,23 +182,34 @@ INTERIOR_SURFACE_HEAT_TRANSFER_COEFFICIENT = 8.0  # W/m²K (standard value for i
 
 # Overlay mode values (UPPERCASE - matches Tado API)
 OVERLAY_MODE_TADO_MODE = "TADO_MODE"
-OVERLAY_MODE_NEXT_TIME_BLOCK = "NEXT_TIME_BLOCK"
 OVERLAY_MODE_TIMER = "TIMER"
 OVERLAY_MODE_MANUAL = "MANUAL"
 
-# Overlay mode default
-OVERLAY_MODE_DEFAULT = OVERLAY_MODE_TADO_MODE
-OVERLAY_MODE_DEFAULT_DISPLAY = "Tado Default"
+# Overlay mode default — MANUAL ("Until you resume schedule"). Matches what a
+# HomeKit local write produces, and what users mean when setting a zone from HA.
+OVERLAY_MODE_DEFAULT = OVERLAY_MODE_MANUAL
+OVERLAY_MODE_DEFAULT_DISPLAY = "Until you resume schedule"
 
-# Overlay mode display names
-OVERLAY_MODE_OPTIONS = ["Tado Default", "Next Time Block", "Timer", "Manual"]
+# Overlay mode display names — verbatim Tado app wording (APK 9.33.1).
+OVERLAY_MODE_OPTIONS = [
+    "Until you resume schedule",
+    "Until next automatic change",
+    "Timer",
+]
 OVERLAY_MODE_MAP = {
-    "Tado Default": OVERLAY_MODE_TADO_MODE,
-    "Next Time Block": OVERLAY_MODE_NEXT_TIME_BLOCK,
+    "Until you resume schedule": OVERLAY_MODE_MANUAL,
+    "Until next automatic change": OVERLAY_MODE_TADO_MODE,
     "Timer": OVERLAY_MODE_TIMER,
-    "Manual": OVERLAY_MODE_MANUAL,
 }
 OVERLAY_MODE_REVERSE_MAP = {v: k for k, v in OVERLAY_MODE_MAP.items()}
+
+# Per-zone display temperature source — which reading the climate
+# entity shows. "auto" = external > HomeKit-fresh > cloud (current behaviour);
+# "homekit" = prefer the fast HomeKit push; "cloud" = the Tado cloud value.
+# This governs DISPLAY only; the SVC valve control reference is decoupled.
+DISPLAY_TEMP_SOURCE_OPTIONS = ["Automatic", "HomeKit", "Cloud"]
+DISPLAY_TEMP_SOURCE_MAP = {"Automatic": "auto", "HomeKit": "homekit", "Cloud": "cloud"}
+DISPLAY_TEMP_SOURCE_REVERSE_MAP = {v: k for k, v in DISPLAY_TEMP_SOURCE_MAP.items()}
 
 # Timer duration default
 TIMER_DURATION_DEFAULT = 60
@@ -215,7 +226,8 @@ DEFAULT_ZONE_CONFIG = {
     "external_temp_sensor": "",  # HA entity_id for external temperature sensor (Heating + AC)
     "external_humidity_sensor": "",  # HA entity_id for external humidity sensor (Heating + AC)
     "overlay_mode": OVERLAY_MODE_DEFAULT,
-    "timer_duration": TIMER_DURATION_DEFAULT,  # 15-180 minutes (Heating + AC, when Timer)
+    "display_temp_source": "auto",  # auto / homekit / cloud (Heating + AC)
+    "timer_duration": TIMER_DURATION_DEFAULT,  # 15-720 minutes (Heating + AC, when Timer)
     "min_temp": 5.0,  # 5-25°C (Heating + AC)
     "max_temp": 25.0,  # 15-30°C (Heating + AC)
     "surface_temp_offset": 0.0,  # -5.0 to +5.0°C offset for mold risk calculation
@@ -245,10 +257,13 @@ OPEN_WINDOW_DEFAULT_TIMEOUT = 900  # 15 minutes in seconds (Tado default)
 
 # Timer duration limits
 TIMER_DURATION_MIN = 15
-TIMER_DURATION_MAX = 180
+TIMER_DURATION_MAX = 720
 
-# Timer duration options (for per-zone select)
-TIMER_DURATION_OPTIONS = ["15", "30", "45", "60", "90", "120", "180"]
+# Timer duration options (per-zone select) — matches Tado app's 12-hour cap
+TIMER_DURATION_OPTIONS = [
+    "15", "30", "45", "60", "90", "120", "180",
+    "240", "360", "480", "600", "720",
+]
 
 # Window type options (for per-zone select)
 WINDOW_TYPE_MAP = {

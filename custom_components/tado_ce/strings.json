@@ -1037,27 +1037,24 @@
         }
       },
       "overlay_mode": {
-        "name": "Overlay Mode",
+        "name": "Override duration",
         "state": {
-          "tado_mode": "Tado Default",
-          "next_time_block": "Next Time Block",
-          "manual": "Manual"
+          "manual": "Until you resume schedule",
+          "tado_mode": "Until next automatic change",
+          "timer": "Timer"
         },
         "state_attributes": {
           "description": {
             "name": "Description"
           },
-          "tado_mode_info": {
-            "name": "Tado Mode info"
+          "manual_info": {
+            "name": "Until you resume schedule"
           },
-          "next_time_block_info": {
-            "name": "Next Time Block info"
+          "tado_mode_info": {
+            "name": "Until next automatic change"
           },
           "timer_info": {
             "name": "Timer info"
-          },
-          "manual_info": {
-            "name": "Manual info"
           },
           "api_calls_per_change": {
             "name": "API calls per change"
@@ -1145,7 +1142,7 @@
         },
         "overlay": {
           "name": "Overlay Type",
-          "description": "When to end the override. Use 'next_time_block' to end at next schedule change, or 'manual' for indefinite. When set, time_period is not required."
+          "description": "When to end the override. Use 'next_time_block' to end at the next automatic change in your Tado schedule, or 'manual' to keep it until you resume the schedule. When set, time_period is not required."
         }
       }
     },
@@ -1787,7 +1784,7 @@
             },
             "data_description": {
               "overlay_mode": "When you change temperature from HA, the Tado app, or a service call — how long the change lasts before Tado’s schedule resumes.",
-              "timer_duration": "Duration for Timer override mode (15–180 min)"
+              "timer_duration": "Duration for Timer override mode (15 min to 12 hours)"
             }
           },
           "temperature_section": {
@@ -1795,12 +1792,14 @@
             "data": {
               "min_temp": "Minimum Temperature",
               "max_temp": "Maximum Temperature",
-              "surface_temp_offset": "Surface Temp Offset"
+              "surface_temp_offset": "Surface Temp Offset",
+              "display_temp_source": "Temperature source"
             },
             "data_description": {
               "min_temp": "Minimum allowed target temperature (5-25°C)",
               "max_temp": "Maximum allowed target temperature (15-30°C)",
-              "surface_temp_offset": "Fine-tune mold risk surface temperature estimate. Adjust if your walls feel colder than Tado assumes. (-5 to +5°C)"
+              "surface_temp_offset": "Fine-tune mold risk surface temperature estimate. Adjust if your walls feel colder than Tado assumes. (-5 to +5°C)",
+              "display_temp_source": "Which reading this zone shows. Automatic prefers the fast HomeKit value when it's fresh, then falls back to the Tado cloud. HomeKit always prefers the local value; Cloud always shows Tado's. If you've set an external temperature sensor for this zone, it takes precedence over this choice."
             }
           }
         }

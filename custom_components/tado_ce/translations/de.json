@@ -1037,27 +1037,24 @@
         }
       },
       "overlay_mode": {
-        "name": "Überlagerungsmodus",
+        "name": "Dauer der Überschreibung",
         "state": {
-          "tado_mode": "Tado Standard",
-          "next_time_block": "Nächster Zeitblock",
-          "manual": "Handbuch"
+          "tado_mode": "Bis zur nächsten automatischen Änderung",
+          "manual": "Bis zur Wiederaufnahme des regulären Betriebs",
+          "timer": "Timer"
         },
         "state_attributes": {
           "description": {
             "name": "Beschreibung"
           },
           "tado_mode_info": {
-            "name": "Tado Modus info"
-          },
-          "next_time_block_info": {
-            "name": "Informationen zum nächsten Zeitblock"
+            "name": "Bis zur nächsten automatischen Änderung"
           },
           "timer_info": {
             "name": "Timer-Infos"
           },
           "manual_info": {
-            "name": "Handbuch Info"
+            "name": "Bis zur Wiederaufnahme des regulären Betriebs"
           },
           "api_calls_per_change": {
             "name": "API-Aufrufe pro Änderung"
@@ -1145,7 +1142,7 @@
         },
         "overlay": {
           "name": "Overlay-Typ",
-          "description": "Wann soll die Überschreibung enden. Verwenden Sie \"next_time_block\", um bei der nächsten Zeitplanänderung zu enden, oder \"manual\" für unbegrenzt. Wenn gesetzt, ist time_period nicht erforderlich."
+          "description": "Wann die Überschreibung beendet werden soll. Verwenden Sie „next_time_block“, um die Überschreibung bei der nächsten automatischen Änderung in Ihrem Tado-Zeitplan zu beenden, oder „manual“, um sie beizubehalten, bis Sie den Zeitplan wieder aufnehmen. Bei dieser Einstellung ist „time_period“ nicht erforderlich."
         }
       }
     },
@@ -1572,7 +1569,7 @@
             },
             "data_description": {
               "overlay_mode": "Wenn Sie die Temperatur über HA, die Tado-App oder durch einen Serviceeinsatz ändern – wie lange gilt diese Änderung, bevor der Zeitplan von Tado wieder in Kraft tritt?",
-              "timer_duration": "Dauer für den Timer-Übersteuerungsmodus (15–180 Min.)"
+              "timer_duration": "Dauer für den Timer-Überschreibungsmodus (15 Minuten bis 12 Stunden)"
             }
           },
           "temperature_section": {
@@ -1580,12 +1577,14 @@
             "data": {
               "min_temp": "Minimale Temperatur",
               "max_temp": "Maximale Temperatur",
-              "surface_temp_offset": "Oberflächentemperatur-Offset"
+              "surface_temp_offset": "Oberflächentemperatur-Offset",
+              "display_temp_source": "Temperaturquelle"
             },
             "data_description": {
               "min_temp": "Minimal zulässige Zieltemperatur (5-25°C)",
               "max_temp": "Maximal zulässige Zieltemperatur (15-30°C)",
-              "surface_temp_offset": "Optimieren Sie die Schätzwerte für die Oberflächentemperatur zur Schimmelgefahr. Passen Sie diese an, wenn sich Ihre Wände kälter anfühlen, als von Tado angenommen. (-5 bis +5 °C)"
+              "surface_temp_offset": "Optimieren Sie die Schätzwerte für die Oberflächentemperatur zur Schimmelgefahr. Passen Sie diese an, wenn sich Ihre Wände kälter anfühlen, als von Tado angenommen. (-5 bis +5 °C)",
+              "display_temp_source": "Dies zeigt die Anzeige für diese Zone. „Automatisch“ bevorzugt den aktuellen HomeKit-Wert, sobald dieser verfügbar ist, und greift andernfalls auf die Tado-Cloud zurück. „HomeKit“ bevorzugt immer den lokalen Wert; „Cloud“ zeigt immer den Wert von Tado an. Wenn Sie für diese Zone einen externen Temperatursensor eingerichtet haben, hat dieser Vorrang vor dieser Einstellung."
             }
           }
         }

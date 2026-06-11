@@ -305,6 +305,16 @@ class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeate
         """Execute a single attempt to set the operation mode via API."""
         client = self.coordinator.api_client
         if operation_mode == STATE_AUTO:
+            # A hot-water zone already on schedule has no overlay to clear, so
+            # the cloud call is a no-op; skip it to save quota.
+            from .write_optimizer import ResumeGuard
+
+            if ResumeGuard.should_skip_resume(self.coordinator, self._zone_id):
+                _LOGGER.debug(
+                    "Water Heater: %s already on schedule — skipping redundant resume",
+                    self._zone_name,
+                )
+                return True
             success = await client.delete_zone_overlay(self._zone_id)
             if success:
                 _LOGGER.debug(
