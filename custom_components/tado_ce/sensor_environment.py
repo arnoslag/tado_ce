@@ -223,7 +223,7 @@ class TadoMoldRiskSensor(TadoZoneSensor):
                 self._dew_point,
             ) = result
 
-            # Calculate margin (difference between effective/surface temperature and dew point)
+            # Calculate margin (difference between effective temperature and dew point)
             margin_exact = self._effective_temp - self._dew_point
             self._margin = round(margin_exact, 1)  # Rounded for display only
 

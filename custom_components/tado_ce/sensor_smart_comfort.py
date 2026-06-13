@@ -697,7 +697,12 @@ class TadoPreheatAdvisorSensor(TadoZoneSensor):
 
 
     def _apply_cooling_preheat(self, crossover_dt: datetime, now: datetime) -> None:
-        """Apply cooling-based preheat timing (heating rate + inertia + UFH buffer before crossover)."""
+        """Apply cooling-based preheat timing (inertia + UFH buffer before crossover).
+
+        A usable heating rate is required as a gate — without one, only the
+        crossover warning is shown — but the preheat buffer itself is
+        inertia_minutes + UFH buffer; the heating rate is not part of the math.
+        """
         from datetime import timedelta
 
         heating_rate = None
@@ -778,7 +783,7 @@ class TadoPreheatAdvisorSensor(TadoZoneSensor):
         if cooling_rate is None or cooling_rate >= _MIN_COOLING_RATE:
             return None
 
-        # Clamp extreme rates
+        # Clamp extreme rates (°C/h floor — matches calculations.COOLING_RATE_MIN)
         cooling_rate = max(cooling_rate, -5.0)
 
         if self._current_temp is None:

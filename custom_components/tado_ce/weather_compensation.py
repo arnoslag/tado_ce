@@ -322,6 +322,7 @@ def evaluate(
             base.status = "paused"
             return base
 
+    # --- Step 2: record the raw reading ---
     state.last_raw_outdoor_temp = outdoor_temp_raw
     state.last_outdoor_reading_time = now_mono
 

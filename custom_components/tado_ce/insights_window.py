@@ -139,8 +139,9 @@ def _apply_window_type_scaling(
 ) -> float:
     """Scale threshold based on window U-value.
 
-    Higher U-value (single_pane=5.0) produces a looser threshold.
-    Lower U-value (passive_house=0.8) produces a tighter threshold.
+    Higher U-value (single_pane=5.0) produces a tighter threshold — a poorly
+    insulating window condenses more easily, so the warning should fire sooner.
+    Lower U-value (passive_house=0.8) produces a looser threshold.
     Baseline: double_pane (U=2.7) gives scale factor 1.0.
     """
     baseline = 2.7

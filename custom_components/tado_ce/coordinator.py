@@ -36,6 +36,7 @@ from .const import (
     ZONES_INFO_FREE_TIER_THRESHOLD,
     ZONES_INFO_REFRESH_SECONDS_FREE,
     ZONES_INFO_REFRESH_SECONDS_PAID,
+    is_climate_zone,
 )
 from .exceptions import TadoAuthError, TadoBridgeApiError, TadoRateLimitError, TadoSyncError
 from .helpers import low_quota_threshold, mask_serial
@@ -138,7 +139,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.overlay_mode: str = OVERLAY_MODE_DEFAULT
         self.timer_duration: int = TIMER_DURATION_DEFAULT
 
-        # Outdoor temp history (owned by coordinator, async I/O only)
+        # Outdoor temp history (owned by coordinator; async load, debounced sync save)
         self._outdoor_temp_history: list[float] = []
         self._outdoor_temp_loaded: bool = False
 
@@ -184,6 +185,12 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # check fires when the stamp ages past
         # OFFSET_DRIFT_REFRESH_SECONDS.
         self._last_offset_resync: datetime | None = None
+
+        # Round-robin drift-refresh cursor: zone_id of the last zone
+        # refreshed. Keyed by zone_id (not list position) so it self-heals on
+        # zone add/remove. In-memory; restarting at the list head on reboot is
+        # harmless (drift refresh is a reconcile, not a write).
+        self._last_refreshed_zone_id: str | None = None
 
         # Beta.3: rate-limit window observability + once-per-transition log gating
         self._rate_limited_until: datetime | None = None
@@ -375,6 +382,11 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # values. See _maybe_resync_offsets for the gating logic.
         ratelimit_for_resync = ratelimit_data if isinstance(ratelimit_data, dict) else None
         await self._maybe_resync_offsets(zones_info_data, ratelimit_for_resync)
+
+        # Detect AC re-pair / hardware swap and refresh capabilities BEFORE
+        # snapshotting `ac_capabilities` below, so the result dict carries the
+        # fresh value. No-op when there are no AC zones or nothing changed.
+        await self._reconcile_ac_capabilities_fingerprint()
 
         offsets_data = self.data_loader.get_cached("offsets")
         schedules_data = self.data_loader.get_cached("schedules")
@@ -571,6 +583,15 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if until is None:
             return False
         return dt_util.utcnow() < until
+
+    def last_zone_fetch_ts(self) -> datetime | None:
+        """Return the UTC time zone-states were last actually fetched.
+
+        Marks when every zone's insideTemperature last refreshed from cloud
+        (one zone-states payload carries all zones). The Offset Sync
+        settling-gate reads this to know its last write has been reflected.
+        """
+        return self._last_cloud_zone_fetch
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data from Tado API. Dynamically adjusts update_interval."""
@@ -837,9 +858,43 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 )
                 return
 
+        # Round-robin: refresh ONE climate zone per cycle, advancing a
+        # zone_id-keyed cursor, so an N-zone home costs 1 cloud call/cycle
+        # instead of an N-call burst. Per-zone refresh interval becomes
+        # cadence x N. The cursor advances only after a successful fetch, so a
+        # quota-skipped cycle (above) retries the same zone next time.
+        climate_ids = sorted(
+            str(z.get("id"))
+            for z in zones_info_data
+            if is_climate_zone(z.get("type") or "")
+        )
+        if not climate_ids:
+            return
+        target = self._next_round_robin_zone(climate_ids)
+
         try:
-            calls_made = await self.api_client.async_resync_offsets(zones_info_data)
-        except Exception:
+            calls_made = await self.api_client.async_resync_offsets(
+                zones_info_data, target_zone_id=target,
+            )
+        except (TadoAuthError, TadoRateLimitError) as e:
+            # Best-effort refresh: it doesn't raise to a caller, but a revoked
+            # token or exhausted quota still needs the same recovery the other
+            # paths get — start reauth / record the back-off — so a token
+            # revoked during the drift refresh surfaces now, not only on the
+            # next poll. The readback gate still protects the cache meanwhile.
+            from .error_dispatch import _apply_cloud_error_recovery
+
+            _apply_cloud_error_recovery(e, self.config_entry, self.hass, self)
+            _LOGGER.debug(
+                "Offset Sync: drift refresh hit %s — recovery started, "
+                "readback gate still protects the cache",
+                type(e).__name__,
+            )
+            return
+        except TadoSyncError:
+            # Transient sync error on a best-effort refresh — swallow and retry
+            # next poll. Programmer bugs (KeyError / AttributeError / …) are
+            # deliberately not caught, so they propagate and HA logs them.
             _LOGGER.debug(
                 "Offset Sync: drift refresh fetch failed — readback gate "
                 "still protects the cache, will retry next poll",
@@ -847,12 +902,65 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
             return
 
+        self._last_refreshed_zone_id = target
         self._last_offset_resync = dt_util.utcnow()
         _LOGGER.debug(
-            "Offset Sync: drift refresh complete — local cache "
-            "reconciled with Tado, %s cloud call(s) used this cycle",
-            calls_made,
+            "Offset Sync: drift refresh complete — zone %s reconciled with "
+            "Tado, %s cloud call(s) used this cycle",
+            target, calls_made,
         )
+
+    def _next_round_robin_zone(self, climate_ids: list[str]) -> str:
+        """Pick the next zone_id after the cursor in sorted order, wrapping.
+
+        Self-heals (returns the list head) when the cursor zone is gone
+        (zone removed / re-paired), so the round-robin never skips or
+        crashes on a topology change.
+        """
+        last = self._last_refreshed_zone_id
+        if last is None or last not in climate_ids:
+            return climate_ids[0]
+        idx = climate_ids.index(last)
+        return climate_ids[(idx + 1) % len(climate_ids)]
+
+    async def _reconcile_ac_capabilities_fingerprint(self) -> None:
+        """Detect AC re-pair / hardware swap and force a capabilities re-fetch.
+
+        Reads the persisted fingerprint sidecar as the baseline (so a re-pair
+        that happened before a reboot is still caught on the first post-reboot
+        poll, when the in-memory tracker has no baseline), diffs it against the
+        fresh `zones_info` device fingerprints, and re-fetches only the changed
+        zones. Writes the fresh fingerprints back to the sidecar. A no-op when
+        there are no AC zones or nothing changed.
+        """
+        from .zone_fingerprint import ac_device_fingerprints_changed
+
+        zones_info = self.data_loader.get_cached("zones_info")
+        if not isinstance(zones_info, list):
+            return
+
+        prev_raw = self.data_loader.get_cached("ac_capabilities_fp")
+        prev_fp = dict(prev_raw) if isinstance(prev_raw, dict) else {}
+
+        changed, fresh = ac_device_fingerprints_changed(zones_info, prev_fp)
+
+        if fresh != prev_fp:
+            await self.data_loader.async_update_store("ac_capabilities_fp", fresh)
+
+        if changed:
+            # Don't mark the whole cache dirty — force_zone_ids re-fetches
+            # exactly the changed zones while _sync_ac_capabilities keeps the
+            # rest from the live cache. Marking dirty would empty that merge
+            # base, refetching every AC zone and risking a transient blip on an
+            # unchanged zone dropping its cached caps.
+            _LOGGER.info(
+                "AC capabilities: device change detected for zone(s) %s — "
+                "refreshing from cloud",
+                sorted(changed),
+            )
+            await self.api_client._sync_ac_capabilities(
+                zones_info, force_zone_ids=changed,
+            )
 
     async def _accumulate_outdoor_temp_history(
         self, weather_data: dict[str, Any] | list[Any] | None,
@@ -1421,7 +1529,10 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         current_zones = self._zone_fingerprint._previous or frozenset()
 
-        for store_name in ("schedules", "zone_config", "smart_comfort_cache"):
+        for store_name in (
+            "schedules", "zone_config", "smart_comfort_cache",
+            "ac_capabilities", "ac_capabilities_fp", "offsets",
+        ):
             try:
                 data = await self.data_loader.async_load_auxiliary(store_name)
                 if not isinstance(data, dict):
@@ -1438,6 +1549,26 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     "Persistence: prune of %s failed; continuing",
                     store_name, exc_info=True,
                 )
+
+        # In-memory insight runtime state (two zone-keyed dicts, not a
+        # DataLoader store) — prune the removed zone and persist.
+        try:
+            insight_removed = 0
+            for d in (self._insight_anomaly_start_times, self._insight_humidity_histories):
+                for zid in [k for k in d if k not in current_zones]:
+                    d.pop(zid, None)
+                    insight_removed += 1
+            if insight_removed:
+                self._save_insight_runtime_state()
+                _LOGGER.info(
+                    "Persistence: pruned %d stale insight entrie(s)",
+                    insight_removed,
+                )
+        except Exception:
+            _LOGGER.warning(
+                "Persistence: prune of insight runtime state failed; continuing",
+                exc_info=True,
+            )
 
         if self._sr_manager is not None:
             try:

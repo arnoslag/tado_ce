@@ -524,9 +524,9 @@ class TadoApiClient(TadoAuthMixin):
             "likely revoked, surfacing to coordinator for reauth",
             MAX_RETRY_ATTEMPTS, method, endpoint,
         )
-        # WHY: persistent 403 after retries means transient-WAF-block hypothesis is
-        # exhausted. Per ha-coordinator-pattern.md §2.2, raise TadoAuthError so
-        # coordinator dispatches reauth instead of falling through to cache fallback.
+        # WHY: persistent 403 after retries means the transient-WAF-block
+        # hypothesis is exhausted. Raise TadoAuthError so the coordinator
+        # dispatches reauth instead of falling through to cache fallback.
         raise TadoAuthError(
             f"Persistent 403 after {MAX_RETRY_ATTEMPTS} retries on {method} {endpoint}",
         )
@@ -1068,18 +1068,29 @@ class TadoApiClient(TadoAuthMixin):
             await self.save_ratelimit("error")
             raise TadoSyncError(f"Network error during sync: {e}") from e
 
-    async def async_resync_offsets(self, zones_info: list[Any]) -> int:
+    async def async_resync_offsets(
+        self, zones_info: list[Any], target_zone_id: str | None = None,
+    ) -> int:
         """Public wrapper around `_sync_offsets` for the coordinator's drift-refresh path.
 
         Called on `OFFSET_DRIFT_REFRESH_SECONDS` cadence so the cached
         offsets stay close to Tado's stored values even when Tado's
-        adaptive calibration walks them behind our back.
+        adaptive calibration walks them behind our back. `target_zone_id`
+        scopes the refresh to one zone (the round-robin path).
         """
-        return await self._sync_offsets(zones_info)
+        return await self._sync_offsets(zones_info, target_zone_id=target_zone_id)
 
-    async def _sync_offsets(self, zones_info: list[Any]) -> int:
-        """Refresh the device-offset cache for every heating / AC zone."""
-        offsets = {}
+    async def _sync_offsets(
+        self, zones_info: list[Any], target_zone_id: str | None = None,
+    ) -> int:
+        """Refresh the device-offset cache for heating / AC zones.
+
+        When `target_zone_id` is given, only that zone is fetched (the
+        round-robin path); otherwise every climate zone is fetched (boot /
+        full-sync). The result is MERGED into the existing offsets store, not
+        overwritten, so a single-zone refresh never wipes the other zones.
+        """
+        offsets: dict[str, float] = {}
         calls_made = 0
 
         for zone in zones_info:
@@ -1087,6 +1098,9 @@ class TadoApiClient(TadoAuthMixin):
             zone_type = zone.get("type")
 
             if not is_climate_zone(zone_type or ""):
+                continue
+
+            if target_zone_id is not None and zone_id != target_zone_id:
                 continue
 
             devices = zone.get("devices") or []
@@ -1122,24 +1136,33 @@ class TadoApiClient(TadoAuthMixin):
 
         if offsets:
             if self._data_loader is not None:
-                await self._data_loader.async_update_store("offsets", offsets)
-            _LOGGER.debug("API: offsets saved for %s zone(s)", len(offsets))
+                existing = self._data_loader.get_cached("offsets")
+                merged: dict[str, float] = (
+                    dict(existing) if isinstance(existing, dict) else {}
+                )
+                merged.update(offsets)
+                await self._data_loader.async_update_store("offsets", merged)
+            _LOGGER.debug("API: offsets merged for %s zone(s)", len(offsets))
 
         return calls_made
 
-    async def _sync_ac_capabilities(self, zones_info: list[Any]) -> None:
-        """Cache the per-zone AC capabilities — skipped when the cache is already populated."""
-        if self._data_loader is not None:
-            cached = self._data_loader.get_cached("ac_capabilities")
-            if cached is not None:
-                _LOGGER.debug(
-                    "API: AC capabilities already cached for %s zone(s) — "
-                    "skipping fetch",
-                    len(cached),
-                )
-                return
+    async def _sync_ac_capabilities(
+        self, zones_info: list[Any], force_zone_ids: set[str] | None = None,
+    ) -> None:
+        """Cache per-zone AC capabilities, fetching only zones not cached or forced.
 
-        ac_capabilities = {}
+        Per-zone (not whole-store) skip: a zone absent from the cache is fetched
+        (new zone), a zone in `force_zone_ids` is re-fetched (re-pair / hardware
+        swap), and an already-cached zone is left alone. The result is merged
+        into the existing store so a single-zone refresh never wipes the others.
+        """
+        cached_raw = (
+            self._data_loader.get_cached("ac_capabilities")
+            if self._data_loader is not None else None
+        )
+        merged: dict[str, Any] = dict(cached_raw) if isinstance(cached_raw, dict) else {}
+        force = force_zone_ids or set()
+        fetched_any = False
 
         for zone in zones_info:
             zone_id = str(zone.get("id"))
@@ -1148,10 +1171,14 @@ class TadoApiClient(TadoAuthMixin):
             if zone_type != "AIR_CONDITIONING":
                 continue
 
+            if zone_id in merged and zone_id not in force:
+                continue
+
             try:
                 caps = await self.api_call(f"zones/{zone_id}/capabilities")
                 if caps:
-                    ac_capabilities[zone_id] = caps
+                    merged[zone_id] = caps
+                    fetched_any = True
                     modes = [m for m in ["COOL", "HEAT", "DRY", "FAN", "AUTO"] if m in caps]
                     _LOGGER.debug(
                         "API: zone %s AC capabilities — modes=%s",
@@ -1160,16 +1187,15 @@ class TadoApiClient(TadoAuthMixin):
             except (KeyError, TypeError, ValueError) as e:
                 _LOGGER.warning(
                     "API: could not fetch AC capabilities for zone %s "
-                    "(%s) — zone will fall back to default supported modes",
+                    "(%s) — zone will keep its previous cached value",
                     zone_id, e,
                 )
 
-        if ac_capabilities:
-            if self._data_loader is not None:
-                await self._data_loader.async_update_store("ac_capabilities", ac_capabilities)
+        if fetched_any and self._data_loader is not None:
+            await self._data_loader.async_update_store("ac_capabilities", merged)
             _LOGGER.debug(
-                "API: AC capabilities saved for %s zone(s)",
-                len(ac_capabilities),
+                "API: AC capabilities cached for %s zone(s)",
+                len(merged),
             )
 
     async def add_meter_reading(self, reading: int, date: str | None = None) -> bool:
@@ -1262,7 +1288,7 @@ class TadoApiClient(TadoAuthMixin):
         return result is not None
 
     async def deactivate_open_window(self, zone_id: str) -> bool:
-        """DELETE `state/openWindow` for one zone (non-idempotent — no retry)."""
+        """DELETE `state/openWindow` for one zone (idempotent — retries transient 403)."""
         result = await self.api_call(
             f"zones/{zone_id}/state/openWindow",
             method="DELETE",

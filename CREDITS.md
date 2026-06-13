@@ -13,8 +13,8 @@ Thank you to everyone who supported the project through [Buy Me a Coffee](https:
 | ☕☕☕☕☕☕☕☕ | [@ChrisMarriott38](https://github.com/ChrisMarriott38) |
 | ☕☕☕☕☕☕ | [@jeverley](https://github.com/jeverley) |
 | ☕☕☕☕☕ | Marcel v.H., [@rodneyha](https://github.com/rodneyha), [@UKICS](https://github.com/UKICS) |
-| ☕☕☕☕ | [@Prodeguerriero](https://github.com/Prodeguerriero) |
-| ☕☕ | Arnaud L., [@hapklaar](https://github.com/hapklaar), [@jeromewir](https://github.com/jeromewir), Luke R., [@marcovn](https://github.com/marcovn) |
+| ☕☕☕☕ | [@hapklaar](https://github.com/hapklaar), [@Prodeguerriero](https://github.com/Prodeguerriero) |
+| ☕☕ | Arnaud L., [@jeromewir](https://github.com/jeromewir), Luke R., [@marcovn](https://github.com/marcovn) |
 | ☕ | Alby T., [@MathiasB112](https://github.com/MathiasB112) |
 
 ---
@@ -22,6 +22,12 @@ Thank you to everyone who supported the project through [Buy Me a Coffee](https:
 ## Per-Version Credits
 
 Community contributors who helped shape each release through bug reports, feature requests, testing, and feedback.
+
+### v4.1.0-beta.4
+
+- **[@simonotter](https://github.com/simonotter)** — Carried the overnight offset-swing investigation in [#262](https://github.com/hiall-fyi/tado_ce/issues/262) all the way to the root cause, through a long Chromebook-and-Samba detour to get the logs out and a custom one-file diagnostic build that ran overnight. His full-night log was the decisive evidence: the offset marched to the ±10°C cap and lurched back while the cache was provably healthy, which ruled out the cache theories two earlier fixes had chased and pinned it as a control-loop timing problem. The redesign now waits for Tado's room reading to reflect the last write before correcting again, so the loop can't chase a stale number.
+- **[@wrowlands3](https://github.com/wrowlands3)** — His [#277](https://github.com/hiall-fyi/tado_ce/issues/277) report of the drift refresh bursting a cloud call for every zone at once is what drove the round-robin rework. The earlier fix surfaced the per-cycle cost in the log; this one removes the burst itself, walking one zone per cycle so an eight-zone home pays one call a cycle instead of eight.
+- **[@Trebor87](https://github.com/Trebor87)** — His re-pair walkthrough in [Discussion #280](https://github.com/hiall-fyi/tado_ce/discussions/280) became the basis for making AC capabilities refresh themselves. Where beta.2 documented the manual button, beta.4 watches each AC zone's device serial and firmware so a re-pair or hardware swap re-fetches the supported modes on its own, and the climate entity rebuilds its mode list at the same time so a newly added heat or fan mode actually appears. The button stays for the rare re-pair that keeps the same serial and firmware.
 
 ### v4.1.0-beta.3
 
@@ -40,7 +46,7 @@ Community contributors who helped shape each release through bug reports, featur
 ### v4.1.0-beta.2
 
 - **[@Newreader](https://github.com/Newreader)** — His original [#278](https://github.com/hiall-fyi/tado_ce/issues/278) report drove the v4.0.1 defensive 2-poll gate that filters transient overlay-cleared events on the consumer side. Beta.2 closes the matching gap on the data side: state snapshots now only persist when the cloud confirms the change applied, so a failed write can never feed a stale snapshot into the restoration event later. Same investigation, two layers of defence.
-- **[@Trebor87](https://github.com/Trebor87)** — Prompted the deeper look into install-lifetime cache traps after re-pairing a Smart AC Control unit ([Discussion #280](https://github.com/hiall-fyi/tado_ce/discussions/280)). His symptom (the cache pointing at the old zone_id while the new pairing got a fresh one) was the concrete instance that justified an event-triggered cache-invalidation mechanism rather than waiting on a periodic refresh. Re-pair, hardware swap, and zone add/remove are now picked up automatically on the next quick poll.
+- **[@Trebor87](https://github.com/Trebor87)** — Prompted the deeper look into install-lifetime cache traps after re-pairing a Smart AC Control unit ([Discussion #280](https://github.com/hiall-fyi/tado_ce/discussions/280)). His symptom (the cache pointing at the old zone_id while the new pairing got a fresh one) was the concrete instance that justified an event-triggered cache-invalidation mechanism rather than waiting on a periodic refresh, and his confirmation that the existing Refresh AC Capabilities button repairs it drove the beta.2 Hub Buttons documentation and the button rename. The automatic version of that mechanism landed later in beta.4.
 - **[@Fred224](https://github.com/Fred224)** — Triangulated a stale Connection sensor against the actual temperature-history feed ([#286](https://github.com/hiall-fyi/tado_ce/issues/286)) and held the line on his report when my first reply suggested an automation that wouldn't have worked. The concrete proof — temp data flowing while the sensor still reported Disconnected, and vice versa — narrowed the search to device-info caching that only refreshed at HA startup. The fix is a periodic full-sync that now also covers `connectionState`, firmware version, and battery, with the cadence tuned per quota tier so the free tier doesn't pay too high a price for it.
 - **[@Newreader](https://github.com/Newreader)** — Pinpointed that `tado_ce_ready` was being fired before boot-time automations could register their triggers ([#287](https://github.com/hiall-fyi/tado_ce/issues/287)), his third round of careful boot-time analysis this cycle. His evidence chain made the startup-phase race obvious: `Setup: ready` log line at 00:19:59, automation `Initialized trigger` at 00:20:05, no `tado_ce_ready` in the event log. Frost-protection automation was relying on this event to write the OFF overlay at boot; without it, all four zones picked up the active schedule eight hours later and started heating. Fix defers firing until HA is fully started; reload behaviour is unchanged.
 

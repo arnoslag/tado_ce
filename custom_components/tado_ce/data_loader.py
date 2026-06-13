@@ -67,6 +67,7 @@ _ALL_STORES: dict[str, int] = {
     "offsets": 0,
     "schedules": 0,
     "ac_capabilities": 0,
+    "ac_capabilities_fp": 0,
     # Auxiliary Data — debounced save
     "window_detection": 10,
     "wc_state": 10,

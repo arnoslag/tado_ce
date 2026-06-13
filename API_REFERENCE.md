@@ -40,7 +40,7 @@ Toggle in Settings → Devices & Services → Tado CE → Configure:
 
 | Code | Type | Behavior |
 |------|------|----------|
-| 8 | capabilities | Fetched once per AC zone, cached locally. Re-fetch via "Refresh AC Capabilities" button (also reloads fan mapping without HA restart) |
+| 8 | capabilities | Fetched per AC zone and cached locally. Refreshed automatically when a zone is added or removed, or when a controller re-pair / hardware swap changes a zone's device serial or firmware. The "Refresh AC Capabilities" button forces a refresh for the rare same-serial same-firmware re-pair. The climate entity rebuilds its mode list and fan mapping on refresh without an HA restart |
 
 ### Action-Triggered Calls
 
@@ -200,7 +200,7 @@ Two categories of Store, both keyed per home (multi-home isolation):
 
 | Category | Save Mode | Examples |
 |----------|-----------|----------|
-| API data | Immediate (write-through on every API response) | `zones`, `config`, `home_state`, `ratelimit`, `zones_info`, `weather`, `mobile_devices`, `offsets`, `schedules`, `ac_capabilities` |
+| API data | Immediate (write-through on every API response) | `zones`, `config`, `home_state`, `ratelimit`, `zones_info`, `weather`, `mobile_devices`, `offsets`, `schedules`, `ac_capabilities`, `ac_capabilities_fp` |
 | Auxiliary | Debounced (coalesced saves, typically 5–30s) | `zone_config`, `wc_state`, `bridge_health`, `outdoor_temp_history`, `window_detection`, `smart_comfort_cache`, `overlay_mode`, `timer_duration`, `homekit_savings`, `insight_runtime_state` |
 
 ### Upgrade Behaviour

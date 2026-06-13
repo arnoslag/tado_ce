@@ -261,7 +261,7 @@ def _create_device_sensors(
     data_loader: Any,
     sensors: list[SensorEntity],
 ) -> None:
-    """Create device-level sensors (battery + connection)."""
+    """Create device-level battery sensors (connection is a binary_sensor, created separately)."""
     zones_info = data_loader.load_zones_info_file()
     if not zones_info:
         return

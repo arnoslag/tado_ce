@@ -189,7 +189,7 @@ def format_battery_state(state: str) -> str:
 
 
 def format_connection_state_attr(connected: bool | None) -> str:
-    """Convert connectionState.value (bool) to lowercase for extra_state_attributes."""
+    """Map connectionState.value (bool) to "online" / "offline" for extra_state_attributes."""
     return CONNECTION_STATE_ATTR_MAP.get(bool(connected) if connected is not None else False, "offline")
 
 

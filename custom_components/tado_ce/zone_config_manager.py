@@ -128,14 +128,17 @@ class ZoneConfigManager:
                     )
 
     async def async_get_or_fetch_overlay_default(self, zone_id: str, api_client: Any) -> str:
-        """Return a zone's overlay_mode, fetching the Tado-app default once if unset.
+        """Return a zone's overlay_mode, fetching the Tado-app default if unset.
 
-        For a fresh zone with no stored overlay_mode, read the user's own
-        per-zone default from the cloud (`get_zone_default_overlay`) exactly
-        once, cache it into zone_config, and use it thereafter. Falls back to
+        If the zone already has a stored overlay_mode (an explicit user
+        override OR a previously-cached fetch), it is returned without any
+        cloud call. Otherwise this reads the user's own per-zone default from
+        the cloud (`get_zone_default_overlay`) and caches it into zone_config,
+        so the next call short-circuits on the stored value. Falls back to
         OVERLAY_MODE_DEFAULT (MANUAL) when the fetch is unavailable, and caches
-        that too so the call is never repeated on the hot path. An explicit
-        user override is always honoured without any fetch.
+        that too. Note: the fetch is gated by the stored-value check, not an
+        in-method guard, so overlapping calls before the first cache-write can
+        each fetch once.
         """
         zone_id = str(zone_id)
         if self.has_zone_override(zone_id, "overlay_mode"):

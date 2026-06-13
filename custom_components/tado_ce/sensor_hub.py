@@ -53,7 +53,7 @@ def _format_recent_calls(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def _parse_call_time_range(
     all_calls: list[dict[str, Any]],
 ) -> tuple[str | None, str | None]:
-    """Parse oldest and newest call timestamps from sorted call list."""
+    """Parse oldest + newest timestamps from a newest-first list (oldest = [-1], newest = [0])."""
     try:
         oldest_ts = parse_iso_datetime(all_calls[-1]["timestamp"])
         oldest = dt_util.as_local(oldest_ts).strftime("%Y-%m-%d %H:%M:%S")

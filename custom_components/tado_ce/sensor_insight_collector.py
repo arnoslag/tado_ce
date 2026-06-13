@@ -299,7 +299,7 @@ def collect_zone_insights(
     anomaly_start_times: dict[str, datetime],
     humidity_histories: dict[str, list[Any]],
 ) -> dict[str, list[Any]]:
-    """Collect insights from all zones by reading zone data files."""
+    """Collect insights from all zones using the coordinator's cached zone data."""
     zone_insights: dict[str, list[Any]] = {}
 
     try:

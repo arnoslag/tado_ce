@@ -64,9 +64,11 @@ COMFORT_COOL: float = 18.0  # °C — below → Cool
 COMFORT_WARM: float = 24.0  # °C — above → Warm
 COMFORT_HOT: float = 26.0  # °C — above → Hot
 
-# ============ Cooling Rate Thresholds (°C/min) ============
-COOLING_RATE_MIN: float = -5.0  # °C/min — floor clamp for outlier rejection
-COOLING_RATE_STABLE: float = -0.1  # °C/min — abs(rate) below this → room is stable
+# ============ Cooling Rate Thresholds (°C/h) ============
+# Cooling rate is measured in °C/h everywhere (smart_comfort._calculate_rate
+# regresses temperature over hours; get_cooling_rate / _MIN_COOLING_RATE agree).
+COOLING_RATE_MIN: float = -5.0  # °C/h — floor clamp for outlier rejection
+COOLING_RATE_STABLE: float = -0.1  # °C/h — abs(rate) below this → room is stable
 
 # ============ Heat Index Constants (NOAA/NWS) ============
 HEAT_INDEX_ACTIVATION_TEMP: float = 26.7  # °C — below this, Heat Index = air temp

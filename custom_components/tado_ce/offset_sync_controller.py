@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
+from datetime import datetime
 import logging
 import time
 from typing import TYPE_CHECKING, Any
@@ -38,9 +39,12 @@ class OffsetSyncRuntime:
 
     last_written_offset: float | None = None
     last_offset_write_ts: float | None = None
-    pending_offset: float | None = None
-    pending_clamp: str = "none"
     paused_until_ts: float | None = None
+    # Zone-fetch epoch (coordinator._last_cloud_zone_fetch) in effect at the
+    # last confirmed write. Settling-gate compares it against the current
+    # epoch: a write is only allowed once a newer zone-state poll has
+    # refreshed inside_temperature to reflect that write.
+    zone_fetch_at_last_write: datetime | None = None
     unsub_external_sensors: list[CALLBACK_TYPE] = field(default_factory=list)
     # Set in async_deactivate before unsub/cancel so in-flight sensor
     # callbacks and scheduled debounce timers short-circuit instead of
@@ -180,6 +184,21 @@ class OffsetSyncController:
             return False
         return time.monotonic() < paused_until
 
+    def is_settling(self) -> bool:
+        """Return True while inside_temperature has not refreshed since the last write.
+
+        Suppresses writes until the cloud zone-state poll reflects the last
+        offset write, so the controller can't march on stale feedback (the
+        dead-time oscillation).
+        """
+        at_write = self._runtime.zone_fetch_at_last_write
+        if at_write is None:
+            return False  # never written, nothing to settle against
+        current = self._coordinator.last_zone_fetch_ts()
+        if current is None:
+            return False  # no fetch recorded yet — don't block
+        return current <= at_write  # not advanced → still settling
+
     def on_external_offset_write(self) -> None:
         """Pause sync for one rate-limit window after an external offset write."""
         self._runtime.paused_until_ts = time.monotonic() + _EXTERNAL_WRITE_PAUSE
@@ -192,6 +211,23 @@ class OffsetSyncController:
     # ------------------------------------------------------------------
     # Evaluation cycle
     # ------------------------------------------------------------------
+
+    def _read_cached_offset(self) -> float:
+        """Read this zone's offset from the drift cache (coordinator.data).
+
+        Used only as the pre-first-write fallback for the physics calc; the
+        steady-state physics source is last_written_offset.
+        Returns 0.0 when the cache is absent or unparseable.
+        """
+        offsets_data = self._coordinator.data.get("offsets", {}) if self._coordinator.data else {}
+        if isinstance(offsets_data, dict):
+            cached_offset = offsets_data.get(self._zone_id)
+            if cached_offset is not None:
+                try:
+                    return float(cached_offset)
+                except (ValueError, TypeError):
+                    pass
+        return 0.0
 
     async def async_evaluate(self) -> None:
         """Run one evaluation: read inputs, calculate, threshold, rate-limit, write."""
@@ -250,42 +286,50 @@ class OffsetSyncController:
             )
             return
 
-        offsets_data = self._coordinator.data.get("offsets", {}) if self._coordinator.data else {}
-        current_device_offset: float = 0.0
-        if isinstance(offsets_data, dict):
-            cached_offset = offsets_data.get(self._zone_id)
-            if cached_offset is not None:
-                try:
-                    current_device_offset = float(cached_offset)
-                except (ValueError, TypeError):
-                    pass
+        # Single-offset consistency: physics and the write decision must
+        # use the SAME offset value. Prefer the runtime
+        # last_written_offset; fall back to the drift cache only before the
+        # first write (None), which also matches settling Scenario C.
+        cached_offset = self._read_cached_offset()
+        physics_offset = (
+            self._runtime.last_written_offset
+            if self._runtime.last_written_offset is not None
+            else cached_offset
+        )
 
         if self.is_paused():
             self._log_decision(
                 trigger, outcome="skip_paused",
                 power=power, target=target, ext=external_temp,
-                trv=inside_temperature, current_offset=current_device_offset,
+                trv=inside_temperature, current_offset=physics_offset,
             )
             return
 
         calc = self.calculate_desired_offset(
-            inside_temperature, current_device_offset, external_temp,
+            inside_temperature, physics_offset, external_temp,
         )
         desired_offset = calc.value
 
         zone_config = self._zcm.get_zone_config(self._zone_id)
         min_change = float(zone_config.get("svc_offset_min_change", SVC_OFFSET_MIN_CHANGE))
-        effective_current = (
-            self._runtime.last_written_offset
-            if self._runtime.last_written_offset is not None
-            else current_device_offset
-        )
+        effective_current = physics_offset
 
         if not self.should_write(desired_offset, effective_current, min_change):
             self._log_decision(
                 trigger, outcome="eval_no_write",
                 power=power, target=target, ext=external_temp,
-                trv=inside_temperature, current_offset=current_device_offset,
+                trv=inside_temperature, current_offset=physics_offset,
+                last_written=self._runtime.last_written_offset,
+                desired=desired_offset, min_change=min_change,
+                clamp=calc.clamp_direction,
+            )
+            return
+
+        if self.is_settling():
+            self._log_decision(
+                trigger, outcome="skip_settling",
+                power=power, target=target, ext=external_temp,
+                trv=inside_temperature, current_offset=physics_offset,
                 last_written=self._runtime.last_written_offset,
                 desired=desired_offset, min_change=min_change,
                 clamp=calc.clamp_direction,
@@ -293,12 +337,10 @@ class OffsetSyncController:
             return
 
         if self.is_rate_limited():
-            self._runtime.pending_offset = desired_offset
-            self._runtime.pending_clamp = calc.clamp_direction
             self._log_decision(
                 trigger, outcome="eval_rate_limited",
                 power=power, target=target, ext=external_temp,
-                trv=inside_temperature, current_offset=current_device_offset,
+                trv=inside_temperature, current_offset=physics_offset,
                 last_written=self._runtime.last_written_offset,
                 desired=desired_offset, min_change=min_change,
                 clamp=calc.clamp_direction,
@@ -306,12 +348,10 @@ class OffsetSyncController:
             return
 
         if self._coordinator.is_cloud_backoff_active():
-            self._runtime.pending_offset = desired_offset
-            self._runtime.pending_clamp = calc.clamp_direction
             self._log_decision(
                 trigger, outcome="eval_backoff_held",
                 power=power, target=target, ext=external_temp,
-                trv=inside_temperature, current_offset=current_device_offset,
+                trv=inside_temperature, current_offset=physics_offset,
                 last_written=self._runtime.last_written_offset,
                 desired=desired_offset, min_change=min_change,
                 clamp=calc.clamp_direction,
@@ -321,7 +361,7 @@ class OffsetSyncController:
         self._log_decision(
             trigger, outcome="eval_write_attempt",
             power=power, target=target, ext=external_temp,
-            trv=inside_temperature, current_offset=current_device_offset,
+            trv=inside_temperature, current_offset=physics_offset,
             last_written=self._runtime.last_written_offset,
             desired=desired_offset, min_change=min_change,
             clamp=calc.clamp_direction,
@@ -329,31 +369,14 @@ class OffsetSyncController:
 
         try:
             await self._async_write_offset(desired_offset, calc.clamp_direction)
-            await self._async_flush_pending()
         except (TadoAuthError, TadoRateLimitError) as e:
             from .error_dispatch import handle_background_write_error
 
-            self._runtime.pending_offset = desired_offset
-            self._runtime.pending_clamp = calc.clamp_direction
             handle_background_write_error(
-                e, self._coordinator.config_entry, self._coordinator, self._hass,
+                e, self._coordinator.config_entry, self._hass, self._coordinator,
                 f"Offset Sync: zone {self._zone_id} write failed — "
                 "starting recovery; will retry on next sensor change",
             )
-
-    async def _async_flush_pending(self) -> None:
-        """Write the queued offset once the rate-limit window has expired."""
-        pending = self._runtime.pending_offset
-        if pending is None:
-            return
-
-        if self.is_rate_limited():
-            return
-
-        clamp = self._runtime.pending_clamp
-        self._runtime.pending_offset = None
-        self._runtime.pending_clamp = "none"
-        await self._async_write_offset(pending, clamp)
 
     # ------------------------------------------------------------------
     # Write operations
@@ -453,8 +476,7 @@ class OffsetSyncController:
 
         self._runtime.last_written_offset = readback
         self._runtime.last_offset_write_ts = time.monotonic()
-        self._runtime.pending_offset = None
-        self._runtime.pending_clamp = "none"
+        self._runtime.zone_fetch_at_last_write = self._coordinator.last_zone_fetch_ts()
 
         raw_offsets = self._coordinator.data_loader.get_cached("offsets")
         cached_offsets: dict[str, float] = (
@@ -631,7 +653,7 @@ class OffsetSyncController:
             from .error_dispatch import handle_background_write_error
 
             handle_background_write_error(
-                e, self._coordinator.config_entry, self._coordinator, self._hass,
+                e, self._coordinator.config_entry, self._hass, self._coordinator,
                 f"Offset Sync: zone {self._zone_id} could not read offset — "
                 "starting recovery; starting with offset 0.0°C",
             )

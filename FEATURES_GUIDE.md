@@ -255,19 +255,21 @@ The floor is a flat 5 minutes whatever your daily call limit. The maths already 
 
 **Offset Sync drift refresh (v4.0.0):**
 
-When Smart Valve Control is on, the integration runs a periodic drift refresh that pulls the stored device offset for every climate zone, so the local cache stays close to the value Tado's adaptive calibration writes back behind your back. The cadence is the larger of 30 minutes or your configured Cloud Sync Interval (the HomeKit-aware floor — see HomeKit Local Control), so on the default Cloud Sync it fires every 30 minutes, and if you've widened Cloud Sync to 60 minutes it fires every 60 minutes. Each refresh costs **N cloud calls per cycle**, where N is the number of zones with a TRV or AC controller.
+When Smart Valve Control is on, the integration runs a periodic drift refresh that pulls the stored device offset back from Tado, so the local cache stays close to the value Tado's adaptive calibration writes behind your back. The cadence is the larger of 30 minutes or your configured Cloud Sync Interval (the HomeKit-aware floor, see HomeKit Local Control), so on the default Cloud Sync it fires every 30 minutes, and if you've widened Cloud Sync to 60 minutes it fires every 60 minutes.
 
-Example daily totals at the default 30 minute cadence:
+From v4.1.0-beta.4 the refresh visits **one zone per cycle** rather than every zone at once. Each zone still gets refreshed, just spread out: with N zones the cycle rotates through them, so any one zone is re-read every N cycles. That turns the old all-at-once burst into a steady **1 cloud call per cycle**, whatever your zone count.
 
-- 4 zones × 48 cycles = 192 calls/day
-- 8 zones × 48 cycles = 384 calls/day
+Example daily totals at the default 30 minute cadence (48 cycles a day):
 
-Widening Cloud Sync to 60 minutes halves the cycle count and the daily total. The drift refresh is paused automatically when remaining quota drops below 100 calls, so even on the 100-call free tier you don't lose your full manual-action budget to it. On the 1,000-call transitional tier with many zones, widen Cloud Sync to 60 or 120 minutes to keep drift cost a fraction of the day's quota. The 20,000-call legacy tier absorbs the cost without trimming.
+- 4 zones: 48 calls/day, each zone refreshed every 2 hours
+- 8 zones: 48 calls/day, each zone refreshed every 4 hours
 
-The refresh log line in `homeassistant.log` shows the per-cycle call count so you can audit it directly:
+Before v4.1.0-beta.4 the same 8-zone home cost 384 calls/day (8 every cycle). The per-zone interval is longer now, but that's fine: Tado's adaptive calibration drifts over hours to days, so a few hours between re-reads still catches it well within the window, and every write is still readback-checked the moment it happens. Widening Cloud Sync to 60 minutes stretches both the cycle cadence and the per-zone interval further. The drift refresh is paused automatically when remaining quota runs low, so even on the 100-call free tier you don't lose your manual-action budget to it.
+
+The refresh log line in `homeassistant.log` names the zone it refreshed and the call count, so you can audit it directly:
 
 ```
-Offset Sync: drift refresh complete — local cache reconciled with Tado, 8 cloud call(s) used this cycle
+Offset Sync: drift refresh complete — zone 5 reconciled with Tado, 1 cloud call(s) used this cycle
 ```
 
 ### Usage Scenarios
@@ -1050,7 +1052,7 @@ Three buttons live on the Tado CE Hub device (Settings → Devices & Services �
 | Button | What it does | When to press |
 |--------|--------------|---------------|
 | **Resume All Schedules** (`button.tado_ce_{home_id}_resume_all`) | Clears the manual overlay on every zone in one press, returning all rooms to their Tado schedule. Equivalent to calling `tado_ce.resume_schedule` per zone. | After a holiday-mode or wide automation override, when you want everything back on schedule at once. |
-| **Refresh AC Capabilities** (`button.tado_ce_{home_id}_refresh_ac`) | Marks the cached AC capabilities as stale and re-fetches from Tado's cloud on the next poll. From v4.1.0-beta.2 onwards, re-pair / hardware swap / zone add / zone remove on the Tado side trigger this automatically, so the button is a manual escape hatch for cases where the integration didn't observe the change (HA was offline during the swap, capabilities cache is genuinely wrong, etc.). Costs one cloud call per AC zone (typically 1–3 calls). Only appears when the home has at least one AC zone. | After replacing an AC unit, after a Tado firmware update that adds new fan / swing options, or whenever AC capabilities look wrong in HA (e.g. HVAC modes showing `[OFF]` only) and you don't want to wait for the next poll. |
+| **Refresh AC Capabilities** (`button.tado_ce_{home_id}_refresh_ac`) | Re-fetches each AC zone's supported modes from Tado's cloud. The integration does this for you automatically: it picks up an added or removed AC zone, and it spots a controller re-pair or hardware swap by watching each zone's device serial and firmware version, refreshing the capabilities when either changes. The button is a manual override for the rare re-pair that keeps the same serial and firmware, so the change isn't visible to the integration. Costs one cloud call per AC zone (typically 1–3 calls). Only appears when the home has at least one AC zone. | After a re-pair that kept the same hardware, or whenever AC capabilities look wrong in HA (e.g. HVAC modes showing `[OFF]` only). |
 | **Refresh Schedule** (`button.tado_ce_{home_id}_zone_{zone_id}_refresh_schedule`, per heating zone) | Re-fetches a single zone's schedule from Tado and writes it through the cache. Only appears when Schedule Calendar is enabled (Settings → Tado CE → Configure → Schedule Calendar). Costs one cloud call per zone. | After editing a schedule in the Tado app and wanting it visible in HA's calendar entity immediately, rather than waiting for the next sync. |
 
 These buttons are visible in the device page's Controls section. Their entity_ids stay stable across reloads, so they can be wired into automations or dashboards if you want quick-access tiles.

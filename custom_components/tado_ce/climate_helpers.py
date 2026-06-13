@@ -246,7 +246,7 @@ async def _attempt_with_rollback(
             setattr(entity, attr, value)
         clear_optimistic_state(entity)
         entity.async_write_ha_state()
-        dispatch_to_service_call(e, entity.coordinator.config_entry, entity.hass)
+        dispatch_to_service_call(e, entity.coordinator.config_entry, entity.hass, entity.coordinator)
     except aiohttp.ClientError as e:
         _LOGGER.warning(
             "%s: %s — %s network error (%s), rolling back optimistic state",

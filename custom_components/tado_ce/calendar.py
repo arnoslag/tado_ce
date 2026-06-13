@@ -201,8 +201,6 @@ class TadoZoneScheduleCalendar(CoordinatorEntity["TadoDataUpdateCoordinator"], C
         self._zone_id = zone_id
         self._zone_name = zone_name
         self._schedule = schedule
-        # Convenience alias — used for home_id lookups
-        self._entry_id = coordinator.config_entry.entry_id
 
         # Short name for calendar sidebar (just zone name)
         _meta = ENTITY_REGISTRY["calendar_schedule"]

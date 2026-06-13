@@ -1,8 +1,8 @@
 """Tado CE configuration manager — typed reads from `config_entry.options` with validation.
 
-Reads live from `config_entry.options` (not a cached snapshot)
-so users get real-time effect when they flip a runtime-only
-toggle.
+Reads live from `config_entry.options` on every access so users get
+real-time effect when they flip a runtime-only toggle, falling back to
+a snapshot taken at construction only when the live options are empty.
 """
 
 from __future__ import annotations
@@ -380,7 +380,7 @@ class ConfigurationManager:
         )
 
     def get_all_config(self) -> dict[str, Any]:
-        """Get all configuration values as a single dict."""
+        """Return the commonly-used config values as a single dict (a subset, not every getter)."""
         return {
             "weather_enabled": self.get_weather_enabled(),
             "mobile_devices_enabled": self.get_mobile_devices_enabled(),

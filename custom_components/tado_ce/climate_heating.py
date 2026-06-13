@@ -106,7 +106,8 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity,
         self._attr_preset_modes = [PRESET_HOME, PRESET_AWAY]
         self._attr_target_temperature_step = 0.5
 
-        # Per-zone min/max temp (will be updated in update() from zone_config_manager)
+        # Per-zone min/max temp (set in _update_temp_limits() from zone_config_manager,
+        # called on add-to-hass and on every zone-config change)
         self._attr_min_temp = 5
         self._attr_max_temp = 25
 
@@ -140,9 +141,6 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity,
         self._expected_hvac_mode: HVACMode | None = None
         self._expected_hvac_action: HVACAction | None = None
         self._expected_target_temperature: float | None = None
-
-        # Unsubscribe callback for zones_updated signal
-        self._unsub_zones_updated = None
 
         # Unsubscribe callback for zone config changes
         self._unsub_zone_config = None
@@ -636,7 +634,7 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity,
 
     @callback
     def update(self) -> None:
-        """Update climate state from JSON file."""
+        """Update climate state from the coordinator's cached zone data."""
         if self.coordinator.is_entity_fresh(self.entity_id):
             # Boot-freshness safety net: never skip if the entity
             # has no cached state yet, otherwise the freshness flag
