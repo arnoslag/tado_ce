@@ -2,6 +2,25 @@
 
 All notable changes to Tado CE will be documented in this file.
 
+## [4.1.0-beta.5] - 2026-06-18
+
+The automation-facing half of the Smart Valve Control work this 4.1.0 cycle has been doing. beta.3 sorted out which source owns each reading, beta.4 fixed the control loop's own writes, and this closes the last gap: a write from your own automation, which until now Smart Valve Control mistook for a manual override. Also fixes a presence mode that reverted to Home after a restart.
+
+### Features
+
+- **Set a zone target from an automation without tripping Smart Valve Control** ([#256](https://github.com/hiall-fyi/tado_ce/issues/256) - @apilone) — Tado has no holiday support, so the common workaround is an automation that raises the target on a bridge day. With Smart Valve Control on, that write looked identical to you grabbing the slider, so the controller backed off and left the room cold on the exact morning it was meant to warm. The new `tado_ce.set_schedule_temperature` service sets the target the same way, but Smart Valve Control recognises it as a programmatic change: it keeps compensating towards the new target and hands back to your normal schedule at the next Tado block. Leave `force_override` off (the default) and a manual override you set by hand is still respected; turn it on when the automation should win even over a manual change, like a holiday schedule that must take priority.
+
+### Improvements
+
+- **Configurable refresh intervals for Home Presence, Weather Data, and Mobile Device Tracking** ([#303](https://github.com/hiall-fyi/tado_ce/issues/303) - @davidjirovec) — the per-type refresh floors (5 min for presence and mobile, 30 min for weather) were previously fixed constants. They're now configurable in Advanced Settings → Polling & API, each behind its own feature toggle. Defaults stay unchanged, so nothing shifts unless you adjust them. On a 20,000-call plan, dialling presence and mobile down to 1 minute costs around 1,440 calls per device per day and gives tighter geofencing latency for Home Assistant automations. Weather bottoms out at 15 minutes since Tado's weather data only updates roughly hourly anyway.
+
+### Bug fixes
+
+- **Presence mode no longer reverts to Home after a restart** ([#302](https://github.com/hiall-fyi/tado_ce/issues/302) - @beltra) — if you set presence to Away (or switched a zone's preset) with Home State Sync turned off, the change was held in memory but never written to disk, so a Home Assistant restart brought back whatever presence was last saved from a poll, often Home. With Sync off there was no later poll to correct it either, so it stuck. Presence changes are now saved straight away, so they survive a restart whether or not Sync is on.
+- **Device Temperature Offsets no longer read every zone on startup when Smart Valve Control is off** ([#304](https://github.com/hiall-fyi/tado_ce/issues/304) - @wrowlands3) — with the display toggle on but SVC off on all zones, the integration was fetching each zone's stored device offset on every restart and roughly every hour — one cloud call per zone each time, for data nothing was using. Offset fetches now only run when at least one zone has Smart Valve Control or Offset Sync active.
+- **`set_schedule_temperature` target preserved when Smart Valve Control is already active** — if SVC was already compensating toward a target when the service was called, the next evaluation compared the new target against the current schedule block and silently reset it back to the schedule value. The target is now preserved until the schedule genuinely advances to a different block.
+- **Advanced Settings no longer errors immediately after saving General Settings** — opening Advanced Settings in the same session as a General Settings save (which reloads the integration) could hit a crash while the integration was still coming back up. It now returns an empty Advanced Settings page instead, and works normally once the reload finishes.
+
 ## [4.1.0-beta.4] - 2026-06-14
 
 Two fixes to the same Offset Sync controller, designed together because they share the write loop. The headline one stops the overnight offset swing that could leave a room cold in the morning; the other smooths out the drift refresh so it stops bursting a cloud call for every zone at once. Plus AC capabilities now refresh themselves after you swap or re-pair a controller, instead of needing a button press.

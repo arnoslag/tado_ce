@@ -6,7 +6,7 @@
 ![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2025.11%2B-blue?style=for-the-badge&logo=home-assistant) ![Python](https://img.shields.io/badge/Python-3.13%2B-blue?style=for-the-badge&logo=python&logoColor=white) ![Tado](https://img.shields.io/badge/Tado-V2%2FV3%2FV3%2B-1E3A8A?style=for-the-badge) ![HACS](https://img.shields.io/badge/HACS-Default-41BDF5?style=for-the-badge)
 
 <!-- Status -->
-![Stable](https://img.shields.io/badge/Stable-4.0.3-brightgreen?style=for-the-badge) ![Beta](https://img.shields.io/badge/Beta-4.1.0--beta.4-purple?style=for-the-badge) ![License](https://img.shields.io/badge/License-AGPL--3.0-lightgrey?style=for-the-badge) ![Coverage](https://img.shields.io/badge/Coverage-93%25-green?style=for-the-badge)
+![Stable](https://img.shields.io/badge/Stable-4.0.3-brightgreen?style=for-the-badge) ![Beta](https://img.shields.io/badge/Beta-4.1.0--beta.5-purple?style=for-the-badge) ![License](https://img.shields.io/badge/License-AGPL--3.0-lightgrey?style=for-the-badge) ![Coverage](https://img.shields.io/badge/Coverage-93%25-green?style=for-the-badge)
 
 <!-- Community -->
 ![GitHub stars](https://img.shields.io/github/stars/hiall-fyi/tado_ce?style=for-the-badge&logo=github) ![GitHub issues](https://img.shields.io/github/issues/hiall-fyi/tado_ce?style=for-the-badge&logo=github) ![GitHub Release Date](https://img.shields.io/github/release-date/hiall-fyi/tado_ce?style=for-the-badge&logo=github)
@@ -161,7 +161,7 @@ The whole point of the polling system is to spend as few of your daily Tado API 
 
 Tado's per-home quota varies (100 / 1,000 / 20,000 calls per day depending on tier). Tado CE detects it, tracks remaining calls, and adapts its cadence automatically: quick polls during the day when activity matters, longer intervals overnight. The fastest it will poll on its own is every 5 minutes, the same on every plan. A bigger quota doesn't make it poll faster, because your room temperature doesn't change any faster just because Tado granted you more calls; polling faster would only spend calls re-reading the same numbers. If you genuinely want faster than 5 minutes, set a custom interval under **Configure → Advanced Settings → Polling & API** and it's honoured as long as your quota can sustain it.
 
-Different kinds of data also refresh at their own pace rather than all riding the same cycle. Your zone temperatures update on the polling interval, but weather only refreshes every 30 minutes and presence / geofencing every 5, because those barely change in between. So a fast polling interval no longer drags slow-moving data along with it and burns calls re-fetching values that haven't moved.
+Different kinds of data also refresh at their own pace rather than all riding the same cycle. Your zone temperatures update on the polling interval, but weather, presence, and mobile device locations refresh on their own slower schedule, because those barely change in between. The default floors are 30 minutes for weather and 5 minutes for presence and mobile, all configurable in **Configure → Advanced Settings → Polling & API**. So a fast polling interval no longer drags slow-moving data along with it and burns calls re-fetching values that haven't moved.
 
 With HomeKit connected, cloud polling drops further since temperatures arrive locally. Token refreshes also happen ~50% less often than in earlier versions, since the integration now reads the actual expiry from Tado's response instead of refreshing on a fixed 5-minute timer.
 

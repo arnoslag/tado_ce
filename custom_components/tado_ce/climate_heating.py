@@ -760,7 +760,7 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity,
             # Inject home_state locally so other climate entities pick
             # up the preset change immediately, even when Home State
             # Sync is disabled.
-            inject_presence_state(self.coordinator, state, locked=True)
+            await inject_presence_state(self.coordinator, state, locked=True)
             await async_trigger_immediate_refresh(self.hass, self.entity_id, "preset_mode_change")
         else:
             _LOGGER.warning(

@@ -173,9 +173,9 @@ Different kinds of data change at different speeds, so Tado CE refreshes them at
 | Data | Refreshes | Why |
 |------|-----------|-----|
 | Zone temperature / mode | Your polling interval (adaptive or custom) | Changes minute-to-minute |
-| Weather | At most every 30 min | Outdoor weather moves slowly |
-| Home presence (Home/Away) | At most every 5 min | Changes only when you cross the geofence |
-| Mobile device locations | At most every 5 min (when Frequent Mobile Sync is on) | Changes only when a phone crosses the geofence |
+| Weather | Default every 30 min (configurable 15–120 min) | Outdoor weather moves slowly |
+| Home presence (Home/Away) | Default every 5 min (configurable 1–60 min) | Changes only when you cross the geofence |
+| Mobile device locations | Default every 5 min (configurable 1–60 min, when Frequent Mobile Sync is on) | Changes only when a phone crosses the geofence |
 | Device firmware / battery / connection | Hourly (paid tier) / every 4 h (free tier) | Rarely changes |
 
 When HomeKit local control is connected, these floors widen to your **Cloud Data Refresh** dial (Settings → Tado CE → Configure → HomeKit) if that's slower.
@@ -223,9 +223,9 @@ That's the change [#289](https://github.com/hiall-fyi/tado_ce/issues/289) was ab
 
 | Option | Default | API Cost |
 |--------|---------|----------|
-| Enable Weather Sensors | Off | ~1 call per refresh, at most every 30 min |
-| Enable Mobile Device Tracking | Off | 1 call at startup; with Frequent Sync on, ~1 call per refresh at most every 5 min |
-| Enable Home State Sync | Off | Required for Away Mode; ~1 call per refresh at most every 5 min |
+| Enable Weather Sensors | Off | ~1 call per refresh (default every 30 min, configurable in Advanced Settings → Polling & API) |
+| Enable Mobile Device Tracking | Off | 1 call at startup; with Frequent Sync on, ~1 call per refresh (default every 5 min, configurable in Advanced Settings → Polling & API) |
+| Enable Home State Sync | Off | Required for Away Mode; ~1 call per refresh (default every 5 min, configurable in Advanced Settings → Polling & API) |
 
 ### How It Works
 
@@ -235,7 +235,7 @@ Interval = (Time Until Reset / Remaining Calls) / 0.90
 Clamped to: 5 min (floor) – 120 min (ceiling)
 ```
 
-The floor is a flat 5 minutes whatever your daily call limit. The maths already widens the interval on its own when quota is tight, so the floor is just the fast end: the point past which a faster cadence buys you nothing because zone temperature doesn't change that quickly. A bigger quota doesn't lower the floor (it would only burn calls re-reading the same temperature), so if you genuinely want faster than 5 minutes, set a custom interval and it's honoured as long as your quota can sustain it.
+The adaptive floor is a flat 5 minutes whatever your daily call limit. The maths already widens the interval on its own when quota is tight, so the floor is just the fast end: the point past which a faster cadence buys you nothing because zone temperature doesn't change that quickly. A bigger quota doesn't lower the floor, so if you genuinely want faster than 5 minutes, set a custom interval and it's honoured as long as your quota can sustain it. Presence, weather, and mobile device refresh intervals are configurable separately in Advanced Settings → Polling & API.
 
 **Day/Night Aware (v2.0.1):**
 - Night period: Fixed 120 min interval to conserve quota
@@ -286,7 +286,7 @@ Expected: Day 32 syncs × 2 = 64, Night 4 × 2 = 8, Full sync 4 × 2 = 8 → ~80
 
 #### Scenario 2: High Quota (1000+) Adaptive
 
-Leave custom intervals empty. Adaptive polling reads your remaining quota from Tado's response headers and picks an interval that fits the budget, down to the flat 5-minute floor when quota is healthy. The floor is the same on every plan: a bigger quota doesn't poll faster on its own, because your room temperature doesn't change any faster. Enable all optional sensors. Adaptive will widen the interval automatically if quota drops critically low, and if you genuinely want faster than 5 minutes, set a custom interval, which is honoured as long as your quota can sustain it.
+Leave custom intervals empty. Adaptive polling reads your remaining quota from Tado's response headers and picks an interval that fits the budget, down to the flat 5-minute floor when quota is healthy. The floor is the same on every plan: a bigger quota doesn't poll faster on its own, because your room temperature doesn't change any faster. Enable all optional sensors. Adaptive will widen the interval automatically if quota drops critically low, and if you genuinely want faster than 5 minutes, set a custom interval, which is honoured as long as your quota can sustain it. On a 20,000-call plan, you may also want to lower the presence and mobile refresh intervals in Advanced Settings → Polling & API for tighter geofencing latency.
 
 #### Scenario 3: Disable Optional Sensors to Save Calls
 
@@ -1137,6 +1137,22 @@ automation:
 
 **Multi-home installs**: call once per home explicitly. Without an `entity_id` to anchor the call to a specific config entry, the service raises a `multiple_entries` error so you can pick which home you mean.
 
+#### 15. Schedule Temperature (automation-friendly overrides, v4.1.0-beta.5+)
+
+Set a zone's target from an automation without Smart Valve Control treating it as a manual override. A normal `climate.set_temperature` looks identical to you grabbing the slider, so on a Smart Valve Control zone it trips the controller into back-off. `set_schedule_temperature` writes the same overlay but marks it as a programmatic change, so Smart Valve Control keeps compensating towards the new target and hands back to your schedule at the next Tado block. On a zone without Smart Valve Control it behaves as a plain overlay write.
+
+```yaml
+service: tado_ce.set_schedule_temperature
+target:
+  entity_id: climate.living_room
+data:
+  temperature: 21
+  overlay: next_time_block   # or "manual" to hold until you resume the schedule
+  force_override: false      # default — see below
+```
+
+`force_override` is off by default, so a manual override you set by hand on the slider is left alone. Turn it on when the automation should take priority even over a manual change, like a holiday schedule that must win. The main use case (a holiday or bridge-day automation) and a full example are in the [Smart Valve Control section](#-smart-valve-control) under "Holiday or Bridge-Day Automations".
+
 ---
 
 ## 🌉 Bridge API Integration
@@ -1769,6 +1785,33 @@ Your schedule drops to 16°C at night. The external sensor reads 18°C (room is 
 
 SVC only activates when the room is **colder** than your desired temperature. It never fights against the schedule to cool a room down.
 
+#### Scenario 6: Holiday or Bridge-Day Automations
+
+Tado's schedule is one weekly programme per zone, with no holiday support. The usual workaround is an automation that raises the target on a one-off day, say following a Sunday profile on a public holiday. The catch: with SVC on, a normal `climate.set_temperature` from that automation looks exactly like you grabbing the slider, so the controller backs off and stops compensating for the rest of the morning. The room stays cold on the one day you wanted it warm.
+
+The `tado_ce.set_schedule_temperature` service fixes this. It sets the target the same way, but SVC recognises it as a scheduled change rather than a manual override, keeps compensating towards it, and resumes your normal schedule at the next block change.
+
+```yaml
+automation:
+  - alias: "Holiday heating"
+    trigger:
+      - platform: time
+        at: "07:00:00"
+    condition:
+      - condition: state
+        entity_id: binary_sensor.workday_sensor
+        state: "off"
+    action:
+      - service: tado_ce.set_schedule_temperature
+        target:
+          entity_id: climate.living_room
+        data:
+          temperature: 21
+          overlay: next_time_block
+```
+
+Leave `force_override` off (the default) and an active manual override you set by hand on the slider is respected, so the automation won't fight a change you made deliberately. Turn it on when the automation should take priority even over a manual change, for example a holiday schedule that must win regardless.
+
 ### Safety Features
 
 | Scenario | Behaviour |
@@ -2071,7 +2114,7 @@ Located at **Settings → Tado CE → Configure → Reset to Defaults**. Lets yo
 | Weather Compensation | Preset, slope, design/max/min/shutoff temps, smoothing method + window, room compensation + factor, step size, hysteresis |
 | Internet Bridge | Bridge serial, bridge auth key (re-entry required to keep Bridge API / Weather Compensation working) |
 | HomeKit | Cloud sync interval (pairing credentials are preserved) |
-| Polling & API | Day/night start hours, custom intervals, refresh delay, API history retention, smart actions debounce, device sync delay, frequent mobile sync, hot water timer default |
+| Polling & API | Day/night start hours, custom intervals, presence/weather/mobile refresh intervals, refresh delay, API history retention, smart actions debounce, device sync delay, frequent mobile sync, hot water timer default |
 
 **Reset Everything** — turns every feature toggle OFF, then applies all default tuning values. **Preserves**:
 

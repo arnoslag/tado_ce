@@ -26,6 +26,7 @@ from .const import (
     SERVICE_SET_AWAY_CONFIG,
     SERVICE_SET_CLIMATE_TIMER,
     SERVICE_SET_OPEN_WINDOW_MODE,
+    SERVICE_SET_SCHEDULE_TEMPERATURE,
     SERVICE_SET_TEMP_OFFSET,
     SERVICE_SET_WATER_HEATER_TIMER,
     SERVICE_TURN_OFF_ALL_ZONES,
@@ -596,6 +597,88 @@ async def handle_set_climate_timer(hass: HomeAssistant, call: ServiceCall) -> No
     elif failures:
         _LOGGER.warning(
             "Services: set_climate_timer succeeded on %d of %d "
+            "zone(s); failed for %s",
+            success_count, total,
+            ", ".join(eid for eid, _ in failures),
+        )
+
+
+def _notify_trusted_target_write(
+    hass: HomeAssistant,
+    coord: TadoDataUpdateCoordinator | None,
+    entity_id: str,
+    temperature: float,
+    force_override: bool,
+) -> None:
+    """Tell a zone's valve controller (if any) to adopt a trusted target.
+
+    No-op when the zone has no valve controller (SVC off / offset_sync mode) —
+    the overlay was still written, it just behaves as a plain timer write.
+    """
+    if coord is None:
+        return
+    ent = _find_entity_by_id(hass, "climate", entity_id)
+    zone_id = getattr(ent, "zone_id", None) if ent else None
+    if zone_id and zone_id in coord.valve_controllers:
+        coord.valve_controllers[zone_id].on_trusted_target_write(
+            temperature, force_override,
+        )
+
+
+async def handle_set_schedule_temperature(hass: HomeAssistant, call: ServiceCall) -> None:
+    """Service handler for `set_schedule_temperature` — set a zone target that SVC treats as a trusted write.
+
+    Group-friendly: every `group.*` entity expands to its members. Writes the
+    overlay through the same path as set_climate_timer (no hand-rolled payload),
+    then tells any valve controller on the zone to adopt the new target so Smart
+    Valve Control keeps compensating toward it instead of backing off.
+    """
+    entity_ids = call.data.get("entity_id", [])
+    if isinstance(entity_ids, str):
+        entity_ids = [entity_ids]
+    entity_ids = _expand_group_entity_ids(hass, entity_ids, allowed_domains=["climate"])
+
+    coord = await _check_bootstrap_reserve(hass, entity_ids)
+    temperature = call.data["temperature"]
+    overlay = call.data.get("overlay", "next_time_block")
+    force_override = call.data.get("force_override", False)
+
+    # Group partial-failure pattern: 0 succeed → raise, partial → warn.
+    failures: list[tuple[str, str]] = []
+    success_count = 0
+    total = 0
+    for entity_id in entity_ids:
+        if not hass.states.get(entity_id):
+            continue
+        total += 1
+        try:
+            if await _execute_timer_on_entity(
+                hass, coord, entity_id, "climate", temperature,
+                duration_minutes=None, overlay=overlay,
+            ):
+                success_count += 1
+                _notify_trusted_target_write(
+                    hass, coord, entity_id, temperature, force_override,
+                )
+            else:
+                failures.append((entity_id, "API call failed"))
+        except (ValueError, TypeError, KeyError, AttributeError) as e:
+            _LOGGER.warning(
+                "Services: set_schedule_temperature failed for %s (%s) — "
+                "the rest of the group will continue",
+                entity_id, e,
+            )
+            failures.append((entity_id, str(e)))
+
+    if total > 0 and success_count == 0:
+        _raise_service_error(
+            "timer_set_failed_all",
+            entity_count=total,
+            reasons=", ".join(f"{eid}: {reason}" for eid, reason in failures[:3]),
+        )
+    elif failures:
+        _LOGGER.warning(
+            "Services: set_schedule_temperature succeeded on %d of %d "
             "zone(s); failed for %s",
             success_count, total,
             ", ".join(eid for eid, _ in failures),
@@ -1545,6 +1628,20 @@ async def _async_register_services(hass: HomeAssistant) -> None:
                 vol.Required("temperature"): vol.All(vol.Coerce(float), vol.Range(min=5, max=30)),
                 vol.Optional("time_period"): cv.time_period,
                 vol.Optional("overlay"): cv.string,
+            },
+        ),
+    )
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_SET_SCHEDULE_TEMPERATURE,
+        functools.partial(handle_set_schedule_temperature, hass),
+        schema=vol.Schema(
+            {
+                vol.Required("entity_id"): cv.entity_ids,
+                vol.Required("temperature"): vol.All(vol.Coerce(float), vol.Range(min=5, max=30)),
+                vol.Optional("overlay"): cv.string,
+                vol.Optional("force_override"): cv.boolean,
             },
         ),
     )

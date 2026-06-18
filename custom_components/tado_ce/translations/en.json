@@ -1146,6 +1146,24 @@
         }
       }
     },
+    "set_schedule_temperature": {
+      "name": "Set Schedule Temperature",
+      "description": "Set a zone's target temperature from an automation, such as a holiday calendar, without Smart Valve Control treating it as a manual override. Smart Valve Control keeps working towards this target and resumes your normal schedule at the next block change.",
+      "fields": {
+        "temperature": {
+          "name": "Temperature",
+          "description": "Target temperature in Celsius."
+        },
+        "overlay": {
+          "name": "Overlay Type",
+          "description": "When to end the override. Use 'next_time_block' to end at the next automatic change in your Tado schedule, or 'manual' to keep it until you resume the schedule."
+        },
+        "force_override": {
+          "name": "Force override",
+          "description": "Off by default, so a manual change you have made on the slider is left alone. Turn it on for an automation that should take priority over a manual change, such as a holiday schedule that must win."
+        }
+      }
+    },
     "set_water_heater_timer": {
       "name": "Set Water Heater Timer",
       "description": "Turn on hot water with a timer and optional temperature setting.",
@@ -1518,9 +1536,9 @@
               "offset_enabled": "Device Temperature Offsets"
             },
             "data_description": {
-              "home_state_sync_enabled": "Sync your home's overall presence (Home/Away). Refreshes at most every 5 minutes, about 1 API call each time",
-              "weather_enabled": "Outside temperature and solar intensity from Tado. Refreshes at most every 30 minutes, about 1 API call each time",
-              "mobile_devices_enabled": "Track each phone's location for per-device presence. Updates on HA restart only. To refresh in the background, turn this on, save, then enable Frequent Mobile Sync in the Advanced Settings 'Polling and API' section.",
+              "home_state_sync_enabled": "Sync your home's overall presence (Home/Away). About 1 API call each refresh. Refresh interval configurable in Advanced Settings → Polling & API.",
+              "weather_enabled": "Outside temperature and solar intensity from Tado. About 1 API call each refresh. Refresh interval configurable in Advanced Settings → Polling & API.",
+              "mobile_devices_enabled": "Track each phone's location for per-device presence. Updates on HA restart only. To refresh in the background, turn this on, save, then enable Frequent Mobile Sync in Advanced Settings → Polling & API.",
               "schedule_calendar_enabled": "See your Tado heating schedules as calendar entries in HA",
               "offset_enabled": "Show the temperature calibration offset that appears in the Tado app on climate entities (+1 API call per device on restart)"
             }
@@ -1668,7 +1686,10 @@
               "smart_actions_debounce_seconds": "Temperature Slider Delay",
               "device_sync_delay_seconds": "Device Sync Delay",
               "mobile_devices_frequent_sync": "Frequent Mobile Sync",
-              "hot_water_timer_duration": "Hot Water Timer Default (minutes)"
+              "hot_water_timer_duration": "Hot Water Timer Default (minutes)",
+              "presence_min_refresh_minutes": "Home Presence Refresh Interval",
+              "weather_min_refresh_minutes": "Weather Data Refresh Interval",
+              "mobile_devices_min_refresh_minutes": "Mobile Device Tracking Refresh Interval"
             },
             "data_description": {
               "day_start_hour": "When daytime polling starts (0–23, default: 7)",
@@ -1679,8 +1700,11 @@
               "api_history_retention_days": "How many days of API call history to keep for the usage chart (0 = forever)",
               "smart_actions_debounce_seconds": "When dragging the temperature slider, wait this long before sending the final value (0 = send immediately)",
               "device_sync_delay_seconds": "How long to wait between back-to-back changes sent to the same device (such as child lock or temperature offset). Raise it if rapid changes don't all take effect (0.5–5s, default 1).",
-              "mobile_devices_frequent_sync": "Keep device locations refreshing in the background (at most every 5 minutes) instead of only on HA restart. About 1 API call each time",
-              "hot_water_timer_duration": "Default duration when you turn on hot water without specifying a timer (1–1440 min)"
+              "mobile_devices_frequent_sync": "Keep device locations refreshing in the background instead of only on HA restart. About 1 API call each time.",
+              "hot_water_timer_duration": "Default duration when you turn on hot water without specifying a timer (1–1440 min)",
+              "presence_min_refresh_minutes": "How often to check home presence (1–60 min, default 5). At 1 min: ~1,440 calls/day; at 5 min: ~288 calls/day.",
+              "weather_min_refresh_minutes": "How often to fetch weather data (15–120 min, default 30). Tado's weather updates roughly hourly, so going below 15 min won't give fresher readings.",
+              "mobile_devices_min_refresh_minutes": "How often to update mobile device locations (1–60 min, default 5). At 1 min: ~1,440 calls/day per device; at 5 min: ~288 calls/day per device."
             }
           }
         }

@@ -1263,6 +1263,24 @@
     "turn_off_all_zones": {
       "name": "Desligar todas as divisões",
       "description": "Coloque todas as zonas climáticas (aquecimento + ar condicionado) num estado de desativação manual. Esta função corresponde ao botão «Desligar todas as divisões» da aplicação Tado — as programações permanecem suspensas até que reative manualmente cada zona."
+    },
+    "set_schedule_temperature": {
+      "name": "Definir a temperatura programada",
+      "description": "Defina a temperatura alvo de uma zona a partir de uma automação, como um calendário de férias, sem que o Smart Valve Control a considere uma intervenção manual. O Smart Valve Control continua a trabalhar para atingir esse objetivo e retoma a programação normal na próxima mudança de bloco.",
+      "fields": {
+        "temperature": {
+          "name": "Temperatura",
+          "description": "Temperatura pretendida em graus Celsius."
+        },
+        "overlay": {
+          "name": "Tipo de sobreposição",
+          "description": "Quando terminar a substituição. Utilize «next_time_block» para terminar na próxima alteração automática da sua programação Tado, ou «manual» para mantê-la até retomar a programação."
+        },
+        "force_override": {
+          "name": "Anulação forçada",
+          "description": "Esta opção está desativada por predefinição, pelo que qualquer alteração manual que tenha feito no controlo deslizante é mantida. Ative-a para uma automação que deva ter prioridade sobre uma alteração manual, como um horário de feriados que deve prevalecer."
+        }
+      }
     }
   },
   "selector": {
@@ -1604,9 +1622,9 @@
               "offset_enabled": "Desvios de temperatura do dispositivo"
             },
             "data_description": {
-              "home_state_sync_enabled": "Sincronize o estado geral da sua casa (Em casa/Ausente). Atualiza, no máximo, a cada 5 minutos, com cerca de 1 chamada à API por vez",
-              "weather_enabled": "Temperatura exterior e intensidade solar fornecidas pela Tado. Atualiza, no máximo, a cada 30 minutos, com cerca de uma chamada à API por vez",
-              "mobile_devices_enabled": "Acompanhe a localização de cada telemóvel para verificar a presença por dispositivo. As atualizações ocorrem apenas após o reinício do HA. Para atualizar em segundo plano, ative esta opção, guarde e, em seguida, ative a «Sincronização móvel frequente» na secção «Polling e API» das «Definições avançadas».",
+              "home_state_sync_enabled": "Sincronize o estado geral da sua casa (Em casa/Fora). Cerca de 1 chamada à API por atualização. O intervalo de atualização é configurável em Definições avançadas → Polling e API.",
+              "weather_enabled": "Temperatura exterior e intensidade solar fornecidas pelo Tado. Cerca de uma chamada à API por atualização. O intervalo de atualização é configurável em «Definições avançadas» → «Polling e API».",
+              "mobile_devices_enabled": "Acompanhe a localização de cada telemóvel para verificar a presença por dispositivo. As atualizações ocorrem apenas após o reinício do HA. Para atualizar em segundo plano, ative esta opção, guarde e, em seguida, ative a «Sincronização móvel frequente» em «Definições avançadas» → «Polling e API».",
               "schedule_calendar_enabled": "Veja os seus horários de aquecimento do Tado como entradas de calendário no HA",
               "offset_enabled": "Mostrar o desvio de calibração da temperatura que aparece na aplicação Tado nas entidades de climatização (+1 chamada à API por dispositivo no reinício)"
             }
@@ -1701,7 +1719,10 @@
               "smart_actions_debounce_seconds": "Atraso do seletor de temperatura",
               "device_sync_delay_seconds": "Atraso de sincronização do dispositivo",
               "mobile_devices_frequent_sync": "Sincronização móvel frequente",
-              "hot_water_timer_duration": "Tempo padrão do temporizador de água quente (minutos)"
+              "hot_water_timer_duration": "Tempo padrão do temporizador de água quente (minutos)",
+              "presence_min_refresh_minutes": "Intervalo de atualização da presença em casa",
+              "weather_min_refresh_minutes": "Intervalo de atualização dos dados meteorológicos",
+              "mobile_devices_min_refresh_minutes": "Intervalo de atualização do rastreio de dispositivos móveis"
             },
             "data_description": {
               "day_start_hour": "Quando se inicia a sondagem diurna (0-23, pré-definição: 7)",
@@ -1712,8 +1733,11 @@
               "api_history_retention_days": "Quantos dias do histórico de chamadas da API devem ser mantidos para o gráfico de utilização (0 = para sempre)",
               "smart_actions_debounce_seconds": "Ao arrastar o seletor de temperatura, aguardar este tempo antes de enviar o valor final (0 = enviar imediatamente)",
               "device_sync_delay_seconds": "Quanto tempo deve decorrer entre alterações consecutivas enviadas para o mesmo dispositivo (como o bloqueio infantil ou o desvio de temperatura). Aumente este valor se as alterações rápidas não surtirem efeito (0,5–5 s, valor predefinido: 1).",
-              "mobile_devices_frequent_sync": "Manter a atualização da localização dos dispositivos em segundo plano (no máximo a cada 5 minutos), em vez de apenas quando o HA for reiniciado. Cerca de 1 chamada à API por vez",
-              "hot_water_timer_duration": "Duração predefinida quando se abre a torneira da água quente sem especificar um temporizador (1–1440 min)"
+              "mobile_devices_frequent_sync": "Manter a atualização das localizações dos dispositivos em segundo plano, em vez de apenas aquando do reinício do HA. Cerca de 1 chamada à API de cada vez.",
+              "hot_water_timer_duration": "Duração predefinida quando se abre a torneira da água quente sem especificar um temporizador (1–1440 min)",
+              "presence_min_refresh_minutes": "Com que frequência verificar a presença em casa (1–60 min, valor predefinido 5). A cada 1 min: ~1 440 chamadas/dia; a cada 5 min: ~288 chamadas/dia.",
+              "weather_min_refresh_minutes": "Com que frequência se devem obter os dados meteorológicos (15–120 min, valor predefinido: 30). O Tado atualiza os dados meteorológicos aproximadamente de hora a hora, pelo que definir um intervalo inferior a 15 min não proporcionará leituras mais recentes.",
+              "mobile_devices_min_refresh_minutes": "Frequência de atualização da localização dos dispositivos móveis (1–60 min, valor predefinido: 5). A cada 1 min: ~1 440 chamadas/dia por dispositivo; a cada 5 min: ~288 chamadas/dia por dispositivo."
             }
           },
           "homekit": {

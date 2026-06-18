@@ -234,6 +234,51 @@ class SmartValveController:
 
         return abs(float(overlay_temp) - saved) >= 0.1
 
+    def _enter_idle(self) -> None:
+        """Enter IDLE and clear the desired target — the universal "stop managing" invariant.
+
+        IDLE means SVC is not actively driving the valve, so it holds no desired
+        target. These two always move together: every terminating transition into
+        IDLE clears desired_target so a later evaluation re-captures a fresh one
+        instead of compensating toward a value the controller no longer owns.
+        The only IDLE entry that does NOT use this helper is the trusted-write
+        re-arm (on_trusted_target_write), which enters IDLE *with* a freshly-set
+        desired_target it must keep — that distinction is deliberate, not an
+        oversight.
+        """
+        self._runtime.state = ControllerState.IDLE
+        self._runtime.desired_target = None
+
+    def on_trusted_target_write(self, target: float, force_override: bool) -> None:
+        """Adopt a service-driven target as SVC's own so it is not treated as a manual override."""
+        state = self._runtime.state
+        if state == ControllerState.BACKED_OFF and not force_override:
+            return
+
+        self._runtime.desired_target = target
+        self._runtime.last_valve_target = target
+        self._runtime.last_schedule_target = target  # anchor schedule detector so
+        # the ACTIVE-path detect_schedule_block_change doesn't confuse the trusted
+        # target with a schedule change — only a genuine schedule advance past this
+        # value will re-arm the detector.
+        self._runtime.last_evaluation_ts = time.monotonic()  # arm grace window
+
+        if state == ControllerState.BACKED_OFF:  # force_override is True here
+            # Re-arming IDLE entry: enter IDLE but KEEP the desired_target just
+            # set above, so deliberately NOT _enter_idle (which would clear it).
+            self._runtime.state = ControllerState.IDLE
+            self._runtime.backed_off_overlay_target = None
+
+        # Re-enter evaluation through the shared debounce key so a poll landing
+        # at the same moment coalesces instead of double-evaluating.
+        self._hass.async_create_task(
+            self._action_debouncer.debounce(
+                f"svc_{self._zone_id}",
+                self.async_evaluate,
+                window=SMART_VALVE_DEBOUNCE_WINDOW,
+            ),
+        )
+
     # ------------------------------------------------------------------
     # Write operations
     # ------------------------------------------------------------------
@@ -425,19 +470,17 @@ class SmartValveController:
                     "re-enabling Smart Valve Control",
                     self._zone_id,
                 )
-                self._runtime.state = ControllerState.IDLE
+                self._enter_idle()
                 self._runtime.last_schedule_target = schedule_target
                 self._runtime.backed_off_overlay_target = None
-                self._runtime.desired_target = None
             elif self.detect_overlay_change_while_backed_off(zone_data):
                 _LOGGER.info(
                     "Smart Valve: zone %s manual override cleared — "
                     "re-enabling Smart Valve Control",
                     self._zone_id,
                 )
-                self._runtime.state = ControllerState.IDLE
+                self._enter_idle()
                 self._runtime.backed_off_overlay_target = None
-                self._runtime.desired_target = None
             return
 
         if current_state == ControllerState.ACTIVE:
@@ -468,18 +511,18 @@ class SmartValveController:
                     self._zone_id,
                 )
                 await self._async_resume_schedule()
-                self._runtime.state = ControllerState.IDLE
-                self._runtime.desired_target = None
+                self._enter_idle()
                 self._runtime.last_schedule_target = schedule_target
                 return
-            if (
-                self._runtime.desired_target is not None
-                and abs(schedule_target - self._runtime.desired_target) >= 0.1
-            ):
+            if self.detect_schedule_block_change(schedule_target):
                 _LOGGER.info(
-                    "Smart Valve: zone %s schedule target changed "
+                    "Smart Valve: zone %s schedule block changed "
                     "(%.1f°C → %.1f°C) — adjusting valve target to match",
-                    self._zone_id, self._runtime.desired_target, schedule_target,
+                    self._zone_id,
+                    self._runtime.last_schedule_target
+                    if self._runtime.last_schedule_target is not None
+                    else 0.0,
+                    schedule_target,
                 )
                 self._runtime.desired_target = schedule_target
                 self._runtime.last_schedule_target = schedule_target
@@ -492,11 +535,11 @@ class SmartValveController:
                     self._zone_id,
                 )
                 await self._async_resume_schedule()
-                self._runtime.state = ControllerState.IDLE
+                self._enter_idle()
             return
 
         desired_target: float | None
-        if current_state == ControllerState.ACTIVE and self._runtime.desired_target is not None:
+        if self._runtime.desired_target is not None:
             desired_target = self._runtime.desired_target
         else:
             desired_target = self._read_desired_target(zone_data)
@@ -505,18 +548,20 @@ class SmartValveController:
             return
 
         new_state = self.should_transition(external_temp, desired_target)
-        if new_state is not None:
-            if new_state == ControllerState.ACTIVE and current_state == ControllerState.IDLE:
-                self._runtime.desired_target = desired_target
-            if new_state == ControllerState.IDLE and current_state == ControllerState.ACTIVE:
-                _LOGGER.info(
-                    "Smart Valve: zone %s reached target (external %.1f°C "
-                    "≥ desired %.1f°C + %.1f°C hysteresis) — handing control "
-                    "back to Tado",
-                    self._zone_id, external_temp, desired_target, self._hysteresis,
-                )
-                await self._async_resume_schedule()
+        # should_transition only ever returns IDLE→ACTIVE or ACTIVE→IDLE; both
+        # are handled explicitly below, so there is no other transition to cover.
+        if new_state == ControllerState.ACTIVE and current_state == ControllerState.IDLE:
+            self._runtime.desired_target = desired_target
             self._runtime.state = new_state
+        elif new_state == ControllerState.IDLE and current_state == ControllerState.ACTIVE:
+            _LOGGER.info(
+                "Smart Valve: zone %s reached target (external %.1f°C "
+                "≥ desired %.1f°C + %.1f°C hysteresis) — handing control "
+                "back to Tado",
+                self._zone_id, external_temp, desired_target, self._hysteresis,
+            )
+            await self._async_resume_schedule()
+            self._enter_idle()
 
         if self._runtime.state == ControllerState.ACTIVE:
             if trv_reading is None:
@@ -639,7 +684,7 @@ class SmartValveController:
                 "resetting to IDLE",
                 self._zone_id,
             )
-            self._runtime.state = ControllerState.IDLE
+            self._enter_idle()
 
         # Clean up an overlay left behind by a previous crash or HA restart.
         if self._runtime.overlay_set_by_controller and self._runtime.state == ControllerState.IDLE:

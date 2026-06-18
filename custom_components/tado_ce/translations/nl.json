@@ -1263,6 +1263,24 @@
     "turn_off_all_zones": {
       "name": "Alle kamers uitschakelen",
       "description": "Zet elke klimaatzone (verwarming + airco) handmatig op UIT. Dit werkt net als de knop 'Alle kamers uitschakelen' in de Tado-app — de schema’s blijven uitgeschakeld totdat je elke zone handmatig weer inschakelt."
+    },
+    "set_schedule_temperature": {
+      "name": "Stel de temperatuur in",
+      "description": "Stel de streeftemperatuur van een zone in via een automatisering, zoals een vakantiekalender, zonder dat Smart Valve Control dit als een handmatige overschrijving beschouwt. Smart Valve Control blijft naar deze streeftemperatuur toewerken en hervat het normale schema bij de volgende blokwisseling.",
+      "fields": {
+        "temperature": {
+          "name": "Temperatuur",
+          "description": "Doeltemperatuur in graden Celsius."
+        },
+        "overlay": {
+          "name": "Type overlay",
+          "description": "Wanneer moet de overschrijving worden beëindigd? Gebruik 'next_time_block' om de overschrijving te beëindigen bij de volgende automatische wijziging in je Tado-schema, of 'manual' om de overschrijving te laten staan totdat je het schema weer activeert."
+        },
+        "force_override": {
+          "name": "Forceer overschrijving",
+          "description": "Standaard uitgeschakeld, zodat een handmatige aanpassing die je via de schuifregelaar hebt aangebracht, ongewijzigd blijft. Schakel deze functie in voor een automatisering die voorrang moet krijgen boven een handmatige aanpassing, zoals een feestdagenschema dat altijd voorrang moet krijgen."
+        }
+      }
     }
   },
   "selector": {
@@ -1604,9 +1622,9 @@
               "offset_enabled": "Temperatuurafwijkingen van apparaten"
             },
             "data_description": {
-              "home_state_sync_enabled": "Stel de algemene aanwezigheidsstatus van je woning in (Thuis/Afwezig). Wordt maximaal elke 5 minuten vernieuwd, met ongeveer 1 API-aanroep per keer",
-              "weather_enabled": "Buitentemperatuur en zonnestraling van Tado. Wordt maximaal elke 30 minuten vernieuwd, met ongeveer 1 API-aanroep per keer",
-              "mobile_devices_enabled": "Volg de locatie van elke telefoon om de aanwezigheid per apparaat bij te houden. Er worden alleen updates doorgevoerd bij het herstarten van HA. Als je de gegevens op de achtergrond wilt vernieuwen, schakel je deze optie in, sla je de instellingen op en schakel je vervolgens 'Frequent Mobile Sync' in onder 'Polling en API' in de geavanceerde instellingen.",
+              "home_state_sync_enabled": "Synchroniseer de algemene status van je woning (Thuis/Afwezig). Ongeveer 1 API-aanroep per verversing. Het verversingsinterval kan worden ingesteld onder Geavanceerde instellingen → Polling & API.",
+              "weather_enabled": "Buitentemperatuur en zonnestralingsintensiteit van Tado. Ongeveer 1 API-aanroep per verversing. Het verversingsinterval kan worden ingesteld onder Geavanceerde instellingen → Polling & API.",
+              "mobile_devices_enabled": "Houd de locatie van elke telefoon bij om de aanwezigheid per apparaat te registreren. Er worden alleen updates uitgevoerd bij het herstarten van HA. Om de gegevens op de achtergrond te vernieuwen, schakel je deze optie in, sla je de instellingen op en schakel je vervolgens ‘Frequent Mobile Sync’ in onder Geavanceerde instellingen → Polling & API.",
               "schedule_calendar_enabled": "Bekijk je Tado-verwarmingsschema’s als agenda-items in HA",
               "offset_enabled": "Geef de temperatuurkalibratie-offset weer die in de Tado-app wordt weergegeven bij klimaatentiteiten (+1 API-aanroep per apparaat bij het opnieuw opstarten)"
             }
@@ -1701,7 +1719,10 @@
               "smart_actions_debounce_seconds": "Temperatuur schuifvertraging",
               "device_sync_delay_seconds": "Apparaat synchronisatievertraging",
               "mobile_devices_frequent_sync": "Frequente mobiele synchronisatie",
-              "hot_water_timer_duration": "Standaardinstelling warmwatertimer (minuten)"
+              "hot_water_timer_duration": "Standaardinstelling warmwatertimer (minuten)",
+              "presence_min_refresh_minutes": "Startpagina - Weergave-interval",
+              "weather_min_refresh_minutes": "Vernieuwingsinterval voor weergegevens",
+              "mobile_devices_min_refresh_minutes": "Vernieuwingsinterval voor het volgen van mobiele apparaten"
             },
             "data_description": {
               "day_start_hour": "Wanneer de polling overdag start (0-23, standaard: 7)",
@@ -1712,8 +1733,11 @@
               "api_history_retention_days": "Hoeveel dagen API oproepgeschiedenis bij te houden voor de gebruiksgrafiek (0 = voor altijd)",
               "smart_actions_debounce_seconds": "Wanneer u de temperatuurschuifregelaar versleept, wacht dan zo lang voordat u de eindwaarde verzendt (0 = onmiddellijk verzenden)",
               "device_sync_delay_seconds": "Hoe lang moet er worden gewacht tussen opeenvolgende wijzigingen die naar hetzelfde apparaat worden verzonden (zoals kinderslot of temperatuurcorrectie)? Verhoog deze waarde als snelle wijzigingen niet allemaal onmiddellijk van kracht worden (0,5–5 s, standaard 1).",
-              "mobile_devices_frequent_sync": "Zorg ervoor dat de locaties van apparaten op de achtergrond worden vernieuwd (maximaal elke 5 minuten) in plaats van alleen bij het herstarten van HA. Ongeveer 1 API-aanroep per keer",
-              "hot_water_timer_duration": "Standaardduur wanneer u warm water aanzet zonder een timer in te stellen (1–1440 min)"
+              "mobile_devices_frequent_sync": "Zorg ervoor dat de locaties van apparaten op de achtergrond worden vernieuwd, in plaats van alleen bij het herstarten van HA. Dit kost ongeveer één API-aanroep per keer.",
+              "hot_water_timer_duration": "Standaardduur wanneer u warm water aanzet zonder een timer in te stellen (1–1440 min)",
+              "presence_min_refresh_minutes": "Hoe vaak moet worden gecontroleerd of er iemand thuis is (1–60 min, standaard 5). Bij 1 min: ~1.440 oproepen/dag; bij 5 min: ~288 oproepen/dag.",
+              "weather_min_refresh_minutes": "Hoe vaak de weergegevens moeten worden opgehaald (15–120 min, standaard 30). Tado werkt de weergegevens ongeveer elk uur bij, dus als je een interval van minder dan 15 minuten instelt, krijg je geen recentere gegevens.",
+              "mobile_devices_min_refresh_minutes": "Hoe vaak de locaties van mobiele apparaten moeten worden bijgewerkt (1–60 min, standaard 5). Bij 1 min: ~1.440 oproepen/dag per apparaat; bij 5 min: ~288 oproepen/dag per apparaat."
             }
           },
           "homekit": {

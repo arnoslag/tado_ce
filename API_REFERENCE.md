@@ -176,17 +176,17 @@ Maximum headroom for manual actions and automations.
 ### For 1000 Calls/Day Limit
 
 Enable features as needed:
-- Weather Sensors and Home State Sync are low-cost, and each refreshes on its own floor (weather every 30 min, presence every 5 min) rather than on the zone-state cadence
+- Weather Sensors and Home State Sync are low-cost, and each refreshes on its own floor (weather every 30 min, presence every 5 min by default — configurable in Advanced Settings → Polling & API) rather than on the zone-state cadence
 - The adaptive polling floor is a flat 5 min, so a healthy-quota moment can't drop you to 1-min polling
 - Typical usage with default settings: ~90–180 calls/day
 
 ### For Auto-Assist Users (20,000 calls/day)
 
-Enable all features without concern. The adaptive floor is a flat 5 min, the same as every other plan: a bigger quota doesn't buy a faster automatic cadence because zone temperature doesn't change any faster. With weather and presence on their own slower floors, you stay well under 20,000. If you want faster than 5 min, set a custom polling interval and it's honoured as-is.
+Enable all features without concern. The adaptive floor is a flat 5 min, the same as every other plan: a bigger quota doesn't buy a faster automatic cadence because zone temperature doesn't change any faster. With weather and presence on their own slower floors, you stay well under 20,000. If you want faster presence or mobile refresh, dial the intervals down in Advanced Settings → Polling & API — on a 20,000-call plan, 1 minute costs around 1,440 calls per device per day and gives tighter geofencing latency for automations. If you want faster zone polling than 5 min, set a custom interval and it's honoured as-is.
 
 ### How often each data type refreshes
 
-The polling interval governs zone temperature and mode only. Slow-changing data refreshes on its own floor so a fast cadence doesn't burn quota re-reading it: weather every 30 min, presence and mobile-device locations every 5 min, device firmware/battery/connection hourly (paid) or every 4 h (free). When HomeKit local control is connected, these widen to your Cloud Data Refresh dial. Full table in [FEATURES_GUIDE → Smart Polling](FEATURES_GUIDE.md#-smart-polling).
+The polling interval governs zone temperature and mode only. Slow-changing data refreshes on its own floor so a fast cadence doesn't burn quota re-reading it: weather every 30 min (configurable 15–120 min), presence and mobile-device locations every 5 min (configurable 1–60 min), device firmware/battery/connection hourly (paid) or every 4 h (free). These floors are set in Advanced Settings → Polling & API. When HomeKit local control is connected, the configured floors widen further to your Cloud Data Refresh dial. Full table in [FEATURES_GUIDE → Smart Polling](FEATURES_GUIDE.md#-smart-polling).
 
 ---
 

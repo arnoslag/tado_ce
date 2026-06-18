@@ -1263,6 +1263,24 @@
     "turn_off_all_zones": {
       "name": "Alle Räume ausschalten",
       "description": "Versetzen Sie jede Klimazone (Heizung + Klimaanlage) in den manuellen AUS-Modus. Dies entspricht der Schaltfläche „Alle Räume ausschalten“ in der Tado-App – Zeitpläne bleiben deaktiviert, bis Sie jede Zone manuell wieder aktivieren."
+    },
+    "set_schedule_temperature": {
+      "name": "Temperatur für den Zeitplan einstellen",
+      "description": "Stellen Sie die Zieltemperatur einer Zone über eine Automatisierung, beispielsweise einen Urlaubskalender, ein, ohne dass die intelligente Ventilsteuerung dies als manuelle Übersteuerung behandelt. Die intelligente Ventilsteuerung arbeitet weiterhin auf dieses Ziel hin und kehrt beim nächsten Zeitblockwechsel zu Ihrem normalen Zeitplan zurück.",
+      "fields": {
+        "temperature": {
+          "name": "Temperatur",
+          "description": "Solltemperatur in Grad Celsius."
+        },
+        "overlay": {
+          "name": "Überlagerungstyp",
+          "description": "Wann die Übersteuerung beendet werden soll. Verwenden Sie „next_time_block“, um die Übersteuerung bei der nächsten automatischen Änderung in Ihrem Tado-Zeitplan zu beenden, oder „manual“, um sie beizubehalten, bis Sie den Zeitplan wieder aufnehmen."
+        },
+        "force_override": {
+          "name": "Kraftüberlagerung",
+          "description": "Standardmäßig deaktiviert, sodass eine manuelle Änderung, die Sie am Schieberegler vorgenommen haben, beibehalten wird. Aktivieren Sie diese Option für eine Automatisierung, die Vorrang vor einer manuellen Änderung haben soll, beispielsweise bei einem Feiertagsplan, der immer Vorrang hat."
+        }
+      }
     }
   },
   "selector": {
@@ -1604,9 +1622,9 @@
               "offset_enabled": "Gerätetemperatur-Offsets"
             },
             "data_description": {
-              "home_state_sync_enabled": "Synchronisieren Sie den Anwesenheitsstatus Ihres Haushalts (Zuhause/Nicht zu Hause). Die Aktualisierung erfolgt höchstens alle 5 Minuten, wobei pro Aktualisierung etwa ein API-Aufruf erfolgt.",
-              "weather_enabled": "Außentemperatur und Sonneneinstrahlung von Tado. Aktualisierung höchstens alle 30 Minuten, jeweils etwa ein API-Aufruf",
-              "mobile_devices_enabled": "Verfolgen Sie den Standort jedes Telefons, um die Anwesenheit pro Gerät zu ermitteln. Aktualisierungen erfolgen nur beim Neustart von HA. Um die Daten im Hintergrund zu aktualisieren, aktivieren Sie diese Option, speichern Sie die Einstellungen und aktivieren Sie anschließend „Häufige mobile Synchronisierung“ im Abschnitt „Abfrage und API“ der erweiterten Einstellungen.",
+              "home_state_sync_enabled": "Synchronisieren Sie den Gesamtstatus Ihres Zuhauses (Zuhause/Nicht zu Hause). Pro Aktualisierung erfolgt etwa ein API-Aufruf. Das Aktualisierungsintervall lässt sich unter „Erweiterte Einstellungen“ → „Abfrage & API“ konfigurieren.",
+              "weather_enabled": "Außentemperatur und Sonneneinstrahlung von Tado. Pro Aktualisierung etwa ein API-Aufruf. Das Aktualisierungsintervall lässt sich unter „Erweiterte Einstellungen“ → „Abfrage & API“ konfigurieren.",
+              "mobile_devices_enabled": "Verfolgen Sie den Standort jedes Telefons, um die Anwesenheit pro Gerät zu ermitteln. Aktualisierungen erfolgen nur beim Neustart von HA. Um die Daten im Hintergrund zu aktualisieren, aktivieren Sie diese Option, speichern Sie die Einstellungen und aktivieren Sie anschließend „Häufige mobile Synchronisierung“ unter „Erweiterte Einstellungen“ → „Abfrage & API“.",
               "schedule_calendar_enabled": "Zeige deine Tado-Heizungszeitpläne als Kalendereinträge in HA an",
               "offset_enabled": "Zeige den Temperaturkalibrierungs-Offset an, der in der Tado-App bei Klimageräten angezeigt wird (+1 API-Aufruf pro Gerät beim Neustart)"
             }
@@ -1701,7 +1719,10 @@
               "smart_actions_debounce_seconds": "Temperatur Schieberegler Verzögerung",
               "device_sync_delay_seconds": "Geräte-Synchronisationsverzögerung",
               "mobile_devices_frequent_sync": "Häufige mobile Synchronisierung",
-              "hot_water_timer_duration": "Standardwert für Warmwasser-Timer (Minuten)"
+              "hot_water_timer_duration": "Standardwert für Warmwasser-Timer (Minuten)",
+              "presence_min_refresh_minutes": "Startseite – Anwesenheits-Aktualisierungsintervall",
+              "weather_min_refresh_minutes": "Aktualisierungsintervall für Wetterdaten",
+              "mobile_devices_min_refresh_minutes": "Aktualisierungsintervall für die Ortung mobiler Geräte"
             },
             "data_description": {
               "day_start_hour": "Wann der Abruf am Tag beginnt (0-23, Standard: 7)",
@@ -1712,8 +1733,11 @@
               "api_history_retention_days": "Wie viele Tage des API-Aufrufverlaufs für das Nutzungsdiagramm aufbewahrt werden sollen (0 = für immer)",
               "smart_actions_debounce_seconds": "Warten Sie beim Ziehen des Temperaturreglers so lange, bevor Sie den endgültigen Wert senden (0 = sofort senden)",
               "device_sync_delay_seconds": "Wie lange soll zwischen aufeinanderfolgenden Änderungen gewartet werden, die an dasselbe Gerät gesendet werden (z. B. Kindersicherung oder Temperaturkorrektur)? Erhöhen Sie diesen Wert, wenn schnelle Änderungen nicht alle wirksam werden (0,5–5 s, Standardwert 1).",
-              "mobile_devices_frequent_sync": "Die Standorte der Geräte sollten im Hintergrund aktualisiert werden (maximal alle 5 Minuten) und nicht nur beim Neustart von HA. Dabei ist jeweils etwa ein API-Aufruf erforderlich.",
-              "hot_water_timer_duration": "Standarddauer beim Einschalten des Warmwassers ohne Angabe einer Zeitschaltuhr (1–1440 Min.)"
+              "mobile_devices_frequent_sync": "Die Standorte der Geräte sollten im Hintergrund aktualisiert werden und nicht erst beim Neustart von HA. Dabei ist jeweils etwa ein API-Aufruf erforderlich.",
+              "hot_water_timer_duration": "Standarddauer beim Einschalten des Warmwassers ohne Angabe einer Zeitschaltuhr (1–1440 Min.)",
+              "presence_min_refresh_minutes": "Wie oft soll die Anwesenheit zu Hause überprüft werden (1–60 Min., Standardwert 5). Bei 1 Min.: ca. 1.440 Anrufe/Tag; bei 5 Min.: ca. 288 Anrufe/Tag.",
+              "weather_min_refresh_minutes": "Wie oft sollen Wetterdaten abgerufen werden (15–120 Min., Standardwert 30). Tado aktualisiert die Wetterdaten etwa stündlich, daher führt eine Einstellung unter 15 Minuten nicht zu aktuelleren Werten.",
+              "mobile_devices_min_refresh_minutes": "Wie oft die Standorte mobiler Geräte aktualisiert werden sollen (1–60 Min., Standardwert 5). Bei 1 Min.: ca. 1.440 Anrufe/Tag pro Gerät; bei 5 Min.: ca. 288 Anrufe/Tag pro Gerät."
             }
           },
           "homekit": {

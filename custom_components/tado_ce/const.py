@@ -78,6 +78,7 @@ ZONES_INFO_FILE = DATA_DIR / "zones_info.json"
 
 # Service names
 SERVICE_SET_CLIMATE_TIMER = "set_climate_timer"
+SERVICE_SET_SCHEDULE_TEMPERATURE = "set_schedule_temperature"
 SERVICE_SET_WATER_HEATER_TIMER = "set_water_heater_timer"
 SERVICE_RESUME_SCHEDULE = "resume_schedule"
 SERVICE_SET_TEMP_OFFSET = "set_climate_temperature_offset"  # Match official Tado integration
@@ -159,10 +160,25 @@ LOW_QUOTA_THRESHOLD = LOW_QUOTA_RESERVE_FLOOR
 
 # Per-data-type minimum refresh intervals (minutes). Slow-changing cloud data
 # gates on its own floor independent of the zone-state cycle, so a fast zone
-# cadence doesn't drag weather/presence along.
-WEATHER_MIN_REFRESH_MINUTES = 30          # weather changes hourly
-PRESENCE_MIN_REFRESH_MINUTES = 5          # home_state — sporadic
-MOBILE_DEVICES_MIN_REFRESH_MINUTES = 5    # geofencing — sporadic
+# cadence doesn't drag weather/presence along. DEFAULT_* values are the
+# fallback when the user has not set a custom interval; MIN_*/MAX_* define
+# the configurable range exposed in Advanced Settings → Polling & API.
+DEFAULT_WEATHER_MIN_REFRESH_MINUTES: Final[int] = 30
+MIN_WEATHER_MIN_REFRESH_MINUTES: Final[int] = 15
+MAX_WEATHER_MIN_REFRESH_MINUTES: Final[int] = 120
+
+DEFAULT_PRESENCE_MIN_REFRESH_MINUTES: Final[int] = 5
+MIN_PRESENCE_MIN_REFRESH_MINUTES: Final[int] = 1
+MAX_PRESENCE_MIN_REFRESH_MINUTES: Final[int] = 60
+
+DEFAULT_MOBILE_DEVICES_MIN_REFRESH_MINUTES: Final[int] = 5
+MIN_MOBILE_DEVICES_MIN_REFRESH_MINUTES: Final[int] = 1
+MAX_MOBILE_DEVICES_MIN_REFRESH_MINUTES: Final[int] = 60
+
+# Backwards-compat aliases used by coordinator imports.
+WEATHER_MIN_REFRESH_MINUTES = DEFAULT_WEATHER_MIN_REFRESH_MINUTES
+PRESENCE_MIN_REFRESH_MINUTES = DEFAULT_PRESENCE_MIN_REFRESH_MINUTES
+MOBILE_DEVICES_MIN_REFRESH_MINUTES = DEFAULT_MOBILE_DEVICES_MIN_REFRESH_MINUTES
 
 # Canonical window type to U-value mapping (W/m²K). Single source of truth for all
 # mold risk calculations.

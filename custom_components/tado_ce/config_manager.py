@@ -121,6 +121,48 @@ class ConfigurationManager:
         """Check if mobile devices should be synced every quick sync."""
         return self._get_option("mobile_devices_frequent_sync", DEFAULT_MOBILE_DEVICES_FREQUENT_SYNC)  # type: ignore[no-any-return]
 
+    def get_presence_min_refresh_minutes(self) -> int:
+        """Get minimum refresh interval for home presence / home state (minutes)."""
+        from .const import (
+            DEFAULT_PRESENCE_MIN_REFRESH_MINUTES,
+            MAX_PRESENCE_MIN_REFRESH_MINUTES,
+            MIN_PRESENCE_MIN_REFRESH_MINUTES,
+        )
+        return self._get_int_option(
+            "presence_min_refresh_minutes",
+            DEFAULT_PRESENCE_MIN_REFRESH_MINUTES,
+            MIN_PRESENCE_MIN_REFRESH_MINUTES,
+            MAX_PRESENCE_MIN_REFRESH_MINUTES,
+        )
+
+    def get_mobile_devices_min_refresh_minutes(self) -> int:
+        """Get minimum refresh interval for mobile device locations (minutes)."""
+        from .const import (
+            DEFAULT_MOBILE_DEVICES_MIN_REFRESH_MINUTES,
+            MAX_MOBILE_DEVICES_MIN_REFRESH_MINUTES,
+            MIN_MOBILE_DEVICES_MIN_REFRESH_MINUTES,
+        )
+        return self._get_int_option(
+            "mobile_devices_min_refresh_minutes",
+            DEFAULT_MOBILE_DEVICES_MIN_REFRESH_MINUTES,
+            MIN_MOBILE_DEVICES_MIN_REFRESH_MINUTES,
+            MAX_MOBILE_DEVICES_MIN_REFRESH_MINUTES,
+        )
+
+    def get_weather_min_refresh_minutes(self) -> int:
+        """Get minimum refresh interval for weather data (minutes)."""
+        from .const import (
+            DEFAULT_WEATHER_MIN_REFRESH_MINUTES,
+            MAX_WEATHER_MIN_REFRESH_MINUTES,
+            MIN_WEATHER_MIN_REFRESH_MINUTES,
+        )
+        return self._get_int_option(
+            "weather_min_refresh_minutes",
+            DEFAULT_WEATHER_MIN_REFRESH_MINUTES,
+            MIN_WEATHER_MIN_REFRESH_MINUTES,
+            MAX_WEATHER_MIN_REFRESH_MINUTES,
+        )
+
     def get_offset_enabled(self) -> bool:
         """Check if temperature offset attribute is enabled on climate entities."""
         return self._get_option("offset_enabled", DEFAULT_OFFSET_ENABLED)  # type: ignore[no-any-return]

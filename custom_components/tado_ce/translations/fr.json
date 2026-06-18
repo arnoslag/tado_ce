@@ -1263,6 +1263,24 @@
     "turn_off_all_zones": {
       "name": "Éteindre toutes les pièces",
       "description": "Configurez chaque zone climatique (chauffage + climatisation) sur un mode « OFF » manuel. Cela correspond au bouton « Éteindre toutes les pièces » de l'application Tado : les programmations restent désactivées jusqu'à ce que vous réactiviez manuellement chaque zone."
+    },
+    "set_schedule_temperature": {
+      "name": "Régler la température programmée",
+      "description": "Définissez la température cible d'une zone à partir d'une automatisation, comme un calendrier de vacances, sans que Smart Valve Control ne la considère comme une intervention manuelle. Smart Valve Control continue de fonctionner pour atteindre cette température cible et reprend votre programme habituel au prochain changement de bloc.",
+      "fields": {
+        "temperature": {
+          "name": "Température",
+          "description": "Température cible en degrés Celsius."
+        },
+        "overlay": {
+          "name": "Type de superposition",
+          "description": "Quand mettre fin à la dérogation. Utilisez « next_time_block » pour que la dérogation prenne fin lors du prochain changement automatique prévu dans votre programme Tado, ou « manual » pour la maintenir jusqu'à ce que vous réactiviez le programme."
+        },
+        "force_override": {
+          "name": "Remplacer la valeur par défaut",
+          "description": "Cette option est désactivée par défaut, ce qui signifie que toute modification manuelle que vous avez apportée au curseur est conservée. Activez-la pour qu'une automatisation prenne le pas sur une modification manuelle, par exemple dans le cas d'un planning de jours fériés qui doit prévaloir."
+        }
+      }
     }
   },
   "selector": {
@@ -1604,9 +1622,9 @@
               "offset_enabled": "Décalages de température de l'appareil"
             },
             "data_description": {
-              "home_state_sync_enabled": "Synchronisez le statut général de votre domicile (Présent/Absent). Actualisation toutes les 5 minutes au maximum, soit environ un appel API à chaque fois",
-              "weather_enabled": "Température extérieure et intensité solaire fournies par Tado. Actualisation toutes les 30 minutes au maximum, soit environ un appel API à chaque fois",
-              "mobile_devices_enabled": "Suivez la localisation de chaque téléphone pour vérifier la présence de chaque appareil. Mises à jour uniquement lors du redémarrage de HA. Pour actualiser les données en arrière-plan, activez cette option, enregistrez, puis activez la « Synchronisation mobile fréquente » dans la section « Interrogation et API » des paramètres avancés.",
+              "home_state_sync_enabled": "Synchronisez le statut général de votre domicile (Présent/Absent). Environ 1 appel API par actualisation. Intervalle d'actualisation configurable dans Paramètres avancés → Interrogation et API.",
+              "weather_enabled": "Température extérieure et intensité solaire fournies par Tado. Environ 1 appel API par actualisation. Intervalle d'actualisation configurable dans « Paramètres avancés » → « Interrogation et API ».",
+              "mobile_devices_enabled": "Suivez la localisation de chaque téléphone pour vérifier la présence de chaque appareil. Mises à jour uniquement lors du redémarrage de HA. Pour actualiser les données en arrière-plan, activez cette option, enregistrez, puis activez « Synchronisation mobile fréquente » dans Paramètres avancés → Interrogation et API.",
               "schedule_calendar_enabled": "Affichez vos programmes de chauffage Tado sous forme d'entrées de calendrier dans HA",
               "offset_enabled": "Afficher le décalage d'étalonnage de la température qui s'affiche dans l'application Tado pour les entités de climatisation (+1 appel API par appareil au redémarrage)"
             }
@@ -1701,7 +1719,10 @@
               "smart_actions_debounce_seconds": "Délai du curseur de température",
               "device_sync_delay_seconds": "Délai de synchronisation des appareils",
               "mobile_devices_frequent_sync": "Synchronisation mobile fréquente",
-              "hot_water_timer_duration": "Durée par défaut du minuteur d'eau chaude (minutes)"
+              "hot_water_timer_duration": "Durée par défaut du minuteur d'eau chaude (minutes)",
+              "presence_min_refresh_minutes": "Accueil - Présence - Intervalle de rafraîchissement",
+              "weather_min_refresh_minutes": "Intervalle de mise à jour des données météorologiques",
+              "mobile_devices_min_refresh_minutes": "Intervalle de rafraîchissement du suivi des appareils mobiles"
             },
             "data_description": {
               "day_start_hour": "Lorsque l'interrogation de jour commence (0-23, par défaut : 7)",
@@ -1712,8 +1733,11 @@
               "api_history_retention_days": "Nombre de jours de l'historique des appels API à conserver pour le graphique d'utilisation (0 = pour toujours)",
               "smart_actions_debounce_seconds": "Lorsque vous déplacez le curseur de température, attendez ce temps avant d'envoyer la valeur finale (0 = envoi immédiat).",
               "device_sync_delay_seconds": "Quel délai faut-il respecter entre deux modifications consécutives envoyées au même appareil (comme le verrouillage enfant ou le décalage de température) ? Augmentez cette valeur si les modifications rapides ne s'appliquent pas toutes (0,5 à 5 s, valeur par défaut : 1).",
-              "mobile_devices_frequent_sync": "Actualiser la localisation des appareils en arrière-plan (tout au plus toutes les 5 minutes) plutôt que uniquement au redémarrage de HA. Environ 1 appel API à chaque fois",
-              "hot_water_timer_duration": "Durée par défaut lorsque vous ouvrez le robinet d'eau chaude sans définir de minuterie (1 à 1 440 min)"
+              "mobile_devices_frequent_sync": "Veiller à ce que la localisation des appareils soit actualisée en arrière-plan, et non pas uniquement lors du redémarrage de HA. Environ un appel API à chaque fois.",
+              "hot_water_timer_duration": "Durée par défaut lorsque vous ouvrez le robinet d'eau chaude sans définir de minuterie (1 à 1 440 min)",
+              "presence_min_refresh_minutes": "Fréquence de vérification de la présence à domicile (1 à 60 min, valeur par défaut : 5). À 1 min : environ 1 440 appels par jour ; à 5 min : environ 288 appels par jour.",
+              "weather_min_refresh_minutes": "Fréquence de récupération des données météo (15 à 120 min, valeur par défaut : 30). Tado actualise les données météo environ toutes les heures ; choisir une fréquence inférieure à 15 minutes ne permettra donc pas d'obtenir des données plus récentes.",
+              "mobile_devices_min_refresh_minutes": "Fréquence de mise à jour de la localisation des appareils mobiles (1 à 60 min, valeur par défaut : 5). À 1 min : environ 1 440 appels par jour et par appareil ; à 5 min : environ 288 appels par jour et par appareil."
             }
           },
           "homekit": {

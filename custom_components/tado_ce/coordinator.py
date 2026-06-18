@@ -26,13 +26,10 @@ from .const import (
     ENTITY_FRESHNESS_EXPIRY_SECONDS,
     HOMEKIT_SAVINGS_RESET_MIN_JUMP,
     HOMEKIT_SAVINGS_RESET_RATIO,
-    MOBILE_DEVICES_MIN_REFRESH_MINUTES,
     OFFSET_DRIFT_REFRESH_SECONDS,
     OUTDOOR_TEMP_HISTORY_MAX,
     OVERLAY_MODE_DEFAULT,
-    PRESENCE_MIN_REFRESH_MINUTES,
     TIMER_DURATION_DEFAULT,
-    WEATHER_MIN_REFRESH_MINUTES,
     ZONES_INFO_FREE_TIER_THRESHOLD,
     ZONES_INFO_REFRESH_SECONDS_FREE,
     ZONES_INFO_REFRESH_SECONDS_PAID,
@@ -666,15 +663,15 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Slow-changing data gates on its own per-type floor, so a fast zone
         # cycle doesn't drag it along (see _should_skip_by_floor).
         skip_weather = self._should_skip_by_floor(
-            self._last_weather_fetch, WEATHER_MIN_REFRESH_MINUTES,
+            self._last_weather_fetch, cm.get_weather_min_refresh_minutes(),
             homekit_connected=homekit_connected,
         )
         skip_home_state = self._should_skip_by_floor(
-            self._last_home_state_fetch, PRESENCE_MIN_REFRESH_MINUTES,
+            self._last_home_state_fetch, cm.get_presence_min_refresh_minutes(),
             homekit_connected=homekit_connected,
         )
         skip_mobile_devices = self._should_skip_by_floor(
-            self._last_mobile_devices_fetch, MOBILE_DEVICES_MIN_REFRESH_MINUTES,
+            self._last_mobile_devices_fetch, cm.get_mobile_devices_min_refresh_minutes(),
             homekit_connected=homekit_connected,
         )
 
@@ -688,7 +685,10 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 mobile_devices_frequent_sync=(
                     cm.get_mobile_devices_frequent_sync() and not skip_mobile_devices
                 ),
-                offset_enabled=cm.get_offset_enabled(),
+                offset_enabled=(
+                    cm.get_offset_enabled()
+                    and self.zone_config_manager.has_any_svc_active()
+                ),
                 home_state_sync_enabled=cm.get_home_state_sync_enabled() and not skip_home_state,
             )
         except TadoRateLimitError as e:
@@ -721,7 +721,10 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # Full sync's _sync_offsets pass already pulled fresh offsets,
             # so the periodic drift refresh in _maybe_resync_offsets can
             # skip the next interval rather than double-fetching.
-            if cm.get_offset_enabled():
+            # Only stamp when SVC is active — if no zone uses SVC, no
+            # offsets were fetched, so the drift refresh should not be
+            # suppressed on the grounds that a full sync "covered" them.
+            if cm.get_offset_enabled() and self.zone_config_manager.has_any_svc_active():
                 self._last_offset_resync = dt_util.utcnow()
 
         # Reset HomeKit savings counters when API quota resets.
@@ -827,6 +830,8 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
            still protects the cache.
         """
         if not self.config_manager.get_offset_enabled():
+            return
+        if not self.zone_config_manager.has_any_svc_active():
             return
 
         if not zones_info_data or not isinstance(zones_info_data, list):

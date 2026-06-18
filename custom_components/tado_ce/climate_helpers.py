@@ -113,7 +113,7 @@ def update_preset_mode(coordinator: TadoDataUpdateCoordinator) -> str | None:
     return None
 
 
-def inject_presence_state(
+async def inject_presence_state(
     coordinator: TadoDataUpdateCoordinator,
     presence: str | None,
     locked: bool,
@@ -124,7 +124,8 @@ def inject_presence_state(
     climate preset. The API call succeeds but the next coordinator
     poll may not fetch home_state (Home State Sync disabled), so
     we inject the known state into both caches so entities pick it
-    up on the next update.
+    up on the next update, and persist it to the Store so it survives
+    a restart even when no poll ever re-saves it.
 
     `presence=None` is the "auto" path — the API call deleted the
     presence lock and geofencing now decides, so we don't yet know
@@ -149,10 +150,12 @@ def inject_presence_state(
         coordinator.data = {}
     coordinator.data["home_state"] = home_state
 
-    # Also update DataLoader cache so the next _async_post_sync_processing
-    # reads the injected value instead of the stale cached one.
+    # Persist to the Store, not just the in-memory cache. When Home State
+    # Sync is off no poll ever re-saves home_state, so a cache-only write
+    # would be lost on the next restart — the user's locked presence would
+    # revert to whatever the last poll persisted hours earlier.
     if coordinator.data_loader is not None:
-        coordinator.data_loader.update_cache("home_state", home_state)
+        await coordinator.data_loader.async_update_store("home_state", home_state)
 
 
 def read_external_sensor(

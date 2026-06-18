@@ -217,9 +217,9 @@ class TadoPresenceModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sel
             # decides on the next poll), so leave cached presence
             # alone rather than guess HOME.
             if option == "auto":
-                inject_presence_state(self.coordinator, None, locked=False)
+                await inject_presence_state(self.coordinator, None, locked=False)
             else:
-                inject_presence_state(self.coordinator, option.upper(), locked=True)
+                await inject_presence_state(self.coordinator, option.upper(), locked=True)
             await async_trigger_immediate_refresh(
                 self.hass, self.entity_id, f"presence_mode_{option}",
             )

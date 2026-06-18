@@ -90,6 +90,13 @@ class ZoneConfigManager:
             merged["adaptive_preheat"] = "active" if ap else "off"
         return merged
 
+    def has_any_svc_active(self) -> bool:
+        """True when at least one zone has Smart Valve Control or Offset Sync enabled."""
+        return any(
+            cfg.get("svc_mode", "off") != "off"
+            for cfg in self._config.values()
+        )
+
     def has_zone_override(self, zone_id: str, key: str) -> bool:
         """True when the user has explicitly set this key (not merely inherited the default)."""
         zone_config = self._config.get(str(zone_id), {})

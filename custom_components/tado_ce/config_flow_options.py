@@ -35,6 +35,9 @@ from .config_manager import (
 )
 from .const import (
     DEFAULT_HOMEKIT_CLOUD_SYNC_MINUTES,
+    DEFAULT_MOBILE_DEVICES_MIN_REFRESH_MINUTES,
+    DEFAULT_PRESENCE_MIN_REFRESH_MINUTES,
+    DEFAULT_WEATHER_MIN_REFRESH_MINUTES,
     DEVICE_SYNC_DELAY_DEFAULT,
     DEVICE_SYNC_DELAY_MAX,
     DEVICE_SYNC_DELAY_MIN,
@@ -45,7 +48,13 @@ from .const import (
     HEATING_TYPE_RADIATOR,
     MAX_CUSTOM_INTERVAL,
     MAX_HOMEKIT_CLOUD_SYNC_MINUTES,
+    MAX_MOBILE_DEVICES_MIN_REFRESH_MINUTES,
+    MAX_PRESENCE_MIN_REFRESH_MINUTES,
+    MAX_WEATHER_MIN_REFRESH_MINUTES,
     MIN_HOMEKIT_CLOUD_SYNC_MINUTES,
+    MIN_MOBILE_DEVICES_MIN_REFRESH_MINUTES,
+    MIN_PRESENCE_MIN_REFRESH_MINUTES,
+    MIN_WEATHER_MIN_REFRESH_MINUTES,
     OVERLAY_MODE_DEFAULT,
     OVERLAY_MODE_DEFAULT_DISPLAY,
     OVERLAY_MODE_MAP,
@@ -144,6 +153,9 @@ RESET_DEFAULTS: dict[str, dict[str, Any]] = {
         "device_sync_delay_seconds": 1.0,
         "mobile_devices_frequent_sync": False,
         "hot_water_timer_duration": 60,
+        "presence_min_refresh_minutes": 5,
+        "weather_min_refresh_minutes": 30,
+        "mobile_devices_min_refresh_minutes": 5,
     },
 }
 
@@ -409,6 +421,40 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
 
         polling_schema_fields[custom_day_schema] = NumberSelector(NumberSelectorConfig(min=0, max=MAX_CUSTOM_INTERVAL, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="min"))
         polling_schema_fields[custom_night_schema] = NumberSelector(NumberSelectorConfig(min=0, max=MAX_CUSTOM_INTERVAL, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="min"))
+        # Per-data-type refresh intervals — conditional on each feature toggle,
+        # grouped here right after the polling schedule fields they relate to.
+        if opt("home_state_sync_enabled", False):
+            polling_schema_fields[vol.Optional(
+                "presence_min_refresh_minutes",
+                default=opt("presence_min_refresh_minutes", DEFAULT_PRESENCE_MIN_REFRESH_MINUTES),
+            )] = NumberSelector(NumberSelectorConfig(
+                min=MIN_PRESENCE_MIN_REFRESH_MINUTES,
+                max=MAX_PRESENCE_MIN_REFRESH_MINUTES,
+                step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="min",
+            ))
+
+        if opt("weather_enabled", False):
+            polling_schema_fields[vol.Optional(
+                "weather_min_refresh_minutes",
+                default=opt("weather_min_refresh_minutes", DEFAULT_WEATHER_MIN_REFRESH_MINUTES),
+            )] = NumberSelector(NumberSelectorConfig(
+                min=MIN_WEATHER_MIN_REFRESH_MINUTES,
+                max=MAX_WEATHER_MIN_REFRESH_MINUTES,
+                step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="min",
+            ))
+
+        if opt("mobile_devices_enabled", False):
+            polling_schema_fields[vol.Optional("mobile_devices_frequent_sync", default=opt("mobile_devices_frequent_sync", False))] = BooleanSelector()
+            polling_schema_fields[vol.Optional(
+                "mobile_devices_min_refresh_minutes",
+                default=opt("mobile_devices_min_refresh_minutes", DEFAULT_MOBILE_DEVICES_MIN_REFRESH_MINUTES),
+            )] = NumberSelector(NumberSelectorConfig(
+                min=MIN_MOBILE_DEVICES_MIN_REFRESH_MINUTES,
+                max=MAX_MOBILE_DEVICES_MIN_REFRESH_MINUTES,
+                step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="min",
+            ))
+
+        # Interaction timing — debounce and write-pacing knobs.
         polling_schema_fields[vol.Optional("refresh_debounce_seconds", default=opt("refresh_debounce_seconds", DEFAULT_REFRESH_DEBOUNCE_SECONDS))] = NumberSelector(NumberSelectorConfig(min=MIN_REFRESH_DEBOUNCE_SECONDS, max=MAX_REFRESH_DEBOUNCE_SECONDS, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="s"))
         polling_schema_fields[vol.Optional("api_history_retention_days", default=opt("api_history_retention_days", 14))] = NumberSelector(NumberSelectorConfig(min=0, max=365, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="d"))
         polling_schema_fields[vol.Optional("smart_actions_debounce_seconds", default=opt("smart_actions_debounce_seconds", SMART_ACTIONS_DEBOUNCE_DEFAULT))] = NumberSelector(NumberSelectorConfig(min=SMART_ACTIONS_DEBOUNCE_MIN, max=SMART_ACTIONS_DEBOUNCE_MAX, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="s"))
@@ -418,10 +464,6 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
         # the water_heater.turn_on and set_water_heater_timer service when
         # no explicit duration is given).
         polling_schema_fields[vol.Optional("hot_water_timer_duration", default=opt("hot_water_timer_duration", DEFAULT_HOT_WATER_TIMER_DURATION))] = NumberSelector(NumberSelectorConfig(min=1, max=MAX_CUSTOM_INTERVAL, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="min"))
-
-        # Mobile frequent sync in Polling & API (conditional on mobile_devices_enabled)
-        if opt("mobile_devices_enabled", False):
-            polling_schema_fields[vol.Optional("mobile_devices_frequent_sync", default=opt("mobile_devices_frequent_sync", False))] = BooleanSelector()
 
         sections[vol.Required("polling_api")] = data_entry_flow.section(
             vol.Schema(polling_schema_fields),
@@ -792,6 +834,9 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                 "smart_actions_debounce_seconds",
                 "device_sync_delay_seconds",
                 "hot_water_timer_duration",
+                "presence_min_refresh_minutes",
+                "weather_min_refresh_minutes",
+                "mobile_devices_min_refresh_minutes",
             ]:
                 if key in section:
                     processed[key] = section[key]
@@ -871,6 +916,8 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
 
     async def _load_zones_with_heating_power(self) -> list[dict[str, str]]:
         """Load zones that have heatingPower for thermal analytics multi-select."""
+        if not hasattr(self.config_entry, "runtime_data") or self.config_entry.runtime_data is None:
+            return []
         coordinator = self.config_entry.runtime_data
         data_loader = coordinator.data_loader
         zones_info = await self.hass.async_add_executor_job(data_loader.load_zones_info_file)
