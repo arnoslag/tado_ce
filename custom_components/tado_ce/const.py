@@ -507,4 +507,7 @@ def is_climate_zone(zone_type: str) -> bool:
 def get_climate_zone_ids(zones_info: list[dict[str, Any]]) -> set[str]:
     """Build a set of zone IDs for climate zones only."""
     return {str(z.get("id")) for z in zones_info if z.get("type") in CLIMATE_ZONE_TYPES}
-
+#------------------------------------
+# window sensor
+#-----------------------------------
+CONF_WINDOW_SENSOR = "window_sensor"
