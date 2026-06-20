@@ -1,5 +1,101 @@
-description_placeholders={"homekit_status": homekit_status},
+"""Options flow for Tado CE."""
+
+from __future__ import annotations
+
+import logging
+from typing import Any
+
+import voluptuous as vol
+
+from homeassistant import config_entries
+from homeassistant.config_entries import ConfigFlowResult
+from homeassistant.helpers.selector import (
+    BooleanSelector,
+    NumberSelector,
+    NumberSelectorConfig,
+    NumberSelectorMode,
+    SelectSelector,
+    SelectSelectorConfig,
+    SelectSelectorMode,
+    TextSelector,
+    TextSelectorConfig,
+    TextSelectorType,
+)
+
+from .const import (
+    DOMAIN,
+    OVERLAY_MODE_DEFAULT,
+    OVERLAY_MODE_OPTIONS,
+    TIMER_DURATION_DEFAULT,
+    TIMER_DURATION_MIN,
+    TIMER_DURATION_MAX,
+    WINDOW_DETECTION_MODE_DEFAULT,
+    WINDOW_DETECTION_MODE_OPTIONS,
+    WINDOW_SENSITIVITY_DEFAULT,
+    WINDOW_SENSITIVITY_OPTIONS,
+    SURFACE_TEMP_OFFSET_MIN,
+    SURFACE_TEMP_OFFSET_MAX,
+    SURFACE_TEMP_OFFSET_STEP,
+    _ALL_TOGGLE_KEYS,
+    RESET_DEFAULTS,
+    _RESET_SCOPE_OPTIONS,
+)
+from .helpers import is_climate_zone
+
+_LOGGER = logging.getLogger(__name__)
+
+
+class TadoCEOptionsFlow(config_entries.OptionsFlow):
+    """Handle Tado CE options."""
+
+    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
+        """Initialize options flow."""
+        self.config_entry = config_entry
+        self._pending_general_options: dict[str, Any] = {}
+        self._selected_zone_id: str | None = None
+
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Manage the options main entry point."""
+        errors: dict[str, str] = {}
+        options = self.config_entry.options
+
+        if user_input is not None:
+            self._pending_general_options = {}
+            self._process_smart_comfort(user_input, self._pending_general_options)
+            self._process_polling_api(user_input, self._pending_general_options, errors)
+            self._process_internet_bridge(user_input, self._pending_general_options)
+            self._process_weather_compensation(user_input, self._pending_general_options, errors)
+
+            self._pending_general_options = {**options, **self._pending_general_options}
+
+            if not errors:
+                redirect = await self._detect_first_enable(self._pending_general_options)
+                if redirect:
+                    return await getattr(self, f"async_step_{redirect}")()
+
+                return self.async_create_entry(title="", data=self._pending_general_options)
+
+        homekit_status = "Unknown"  # Dynamisch op te halen indien gewenst
+
+        # Hoofdschema placeholder voor de initiele form weergave
+        schema = vol.Schema({})
+
+        return self.async_show_form(
+            step_id="init",
+            data_schema=schema,
+            errors=errors,
+            description_placeholders={"homekit_status": homekit_status},
         )
+
+    async def _detect_first_enable(self, options: dict[str, Any]) -> str | None:
+        """Detect if a feature requires a setup wizard redirect."""
+        if options.get("enable_bridge") and not options.get("bridge_serial"):
+            return "bridge_setup"
+        if options.get("enable_homekit") and not options.get("homekit_paired"):
+            return "homekit_pairing"
+        return None
 
     def _process_smart_comfort(
         self, user_input: dict[str, Any], processed_input: dict[str, Any]
@@ -96,11 +192,11 @@ description_placeholders={"homekit_status": homekit_status},
         if user_input is not None:
             self._pending_general_options["bridge_serial"] = user_input["bridge_serial"]
             self._pending_general_options["bridge_auth_key"] = user_input["bridge_auth_key"]
-            
+
             redirect = await self._detect_first_enable(self._pending_general_options)
             if redirect:
                 return await getattr(self, f"async_step_{redirect}")()
-            
+
             return self.async_create_entry(title="", data=self._pending_general_options)
 
         schema = vol.Schema(
@@ -127,11 +223,11 @@ description_placeholders={"homekit_status": homekit_status},
             )
             try:
                 await client.async_pair(user_input["pairing_pin"])
-                
+
                 redirect = await self._detect_first_enable(self._pending_general_options)
                 if redirect:
                     return await getattr(self, f"async_step_{redirect}")()
-                
+
                 return self.async_create_entry(title="", data=self._pending_general_options)
             except Exception:  # pylint: disable=broad-except
                 _LOGGER.exception("HomeKit pairing failed")
@@ -154,7 +250,7 @@ description_placeholders={"homekit_status": homekit_status},
         """Prompt user that weather compensation requires bridge setup."""
         if user_input is not None:
             return await self.async_step_bridge_setup()
-            
+
         return self.async_show_form(
             step_id="wc_bridge_prompt",
             data_schema=vol.Schema({}),
@@ -298,7 +394,7 @@ description_placeholders={"homekit_status": homekit_status},
         if user_input is not None:
             scope = user_input["reset_scope"]
             new_options = dict(self.config_entry.options)
-            
+
             if scope == "everything":
                 for key in _ALL_TOGGLE_KEYS:
                     new_options[key] = False
@@ -308,7 +404,7 @@ description_placeholders={"homekit_status": homekit_status},
             elif scope in RESET_DEFAULTS:
                 for k, v in RESET_DEFAULTS[scope].items():
                     new_options[k] = v
-                    
+
             return self.async_create_entry(title="", data=new_options)
 
         schema = vol.Schema(
