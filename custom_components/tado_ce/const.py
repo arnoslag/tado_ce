@@ -507,7 +507,67 @@ def is_climate_zone(zone_type: str) -> bool:
 def get_climate_zone_ids(zones_info: list[dict[str, Any]]) -> set[str]:
     """Build a set of zone IDs for climate zones only."""
     return {str(z.get("id")) for z in zones_info if z.get("type") in CLIMATE_ZONE_TYPES}
-#------------------------------------
-# window sensor
-#-----------------------------------
+
+# =============================================================================
+# Reset to Defaults Constants
+# =============================================================================
+
+# All boolean toggle keys — reset to False when scope is "everything"
+_ALL_TOGGLE_KEYS: Final[list[str]] = [
+    "enable_bridge",
+    "enable_homekit",
+    "use_outdoor_temp_entity",
+    "use_feels_like",
+    "mobile_devices_frequent_sync",
+    "wc_room_compensation_enabled",
+]
+
+RESET_DEFAULTS: Final[dict[str, dict[str, Any]]] = {
+    "polling_api": {
+        "day_start_hour": 7,
+        "night_start_hour": 23,
+        "custom_day_interval": DEFAULT_DAY_INTERVAL,
+        "custom_night_interval": DEFAULT_NIGHT_INTERVAL,
+        "presence_min_refresh_minutes": DEFAULT_PRESENCE_MIN_REFRESH_MINUTES,
+        "weather_min_refresh_minutes": DEFAULT_WEATHER_MIN_REFRESH_MINUTES,
+        "mobile_devices_frequent_sync": False,
+        "mobile_devices_min_refresh_minutes": DEFAULT_MOBILE_DEVICES_MIN_REFRESH_MINUTES,
+        "refresh_debounce_seconds": 15,
+        "api_history_retention_days": 30,
+        "smart_actions_debounce_seconds": SMART_ACTIONS_DEBOUNCE_DEFAULT,
+        "device_sync_delay_seconds": DEVICE_SYNC_DELAY_DEFAULT,
+        "hot_water_timer_duration": TIMER_DURATION_DEFAULT,
+    },
+    "weather_compensation": {
+        "wc_heating_system_preset": "none",
+        "wc_slope": 1.5,
+        "wc_design_outdoor_temp": -10.0,
+        "wc_max_flow_temp": 70.0,
+        "wc_min_flow_temp": 20.0,
+        "wc_shutoff_temp": 18.0,
+        "wc_smoothing_method": "none",
+        "wc_smoothing_window": 3,
+        "wc_room_compensation_enabled": False,
+        "wc_room_compensation_factor": 1.0,
+        "wc_step_size": 0.5,
+        "wc_hysteresis": 0.5,
+    },
+    "smart_comfort": {
+        "use_outdoor_temp_entity": False,
+        "outdoor_temp_entity": "",
+        "smart_comfort_mode": "none",
+        "use_feels_like": False,
+        "mold_risk_window_type": DEFAULT_WINDOW_TYPE,
+        "smart_comfort_history_days": 7,
+    },
+}
+
+_RESET_SCOPE_OPTIONS: Final[list[str]] = [
+    "everything",
+    *RESET_DEFAULTS.keys(),
+]
+
+# =============================================================================
+# Window sensor
+# =============================================================================
 CONF_WINDOW_SENSOR = "window_sensor"
