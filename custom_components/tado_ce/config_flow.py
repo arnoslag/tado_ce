@@ -596,4 +596,3 @@ class TadoCEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 },
             ),
         )
-
