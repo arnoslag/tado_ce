@@ -7,10 +7,29 @@ import logging
 import random
 from typing import TYPE_CHECKING, Any, Final
 
+from aiohomekit.exceptions import (
+    AccessoryDisconnectedError,
+    AccessoryNotFoundError,
+    AlreadyPairedError,
+    AuthenticationError,
+    BackoffError,
+    BusyError,
+    HomeKitException,
+    MaxPeersError,
+    MaxTriesError,
+    UnavailableError,
+)
+from aiohomekit.exceptions import (
+    TimeoutError as HKTimeoutError,
+)
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
 from .helpers import mask_home_id
+from .repair_helpers import (
+    async_create_homekit_pairing_invalid_issue,
+    async_dismiss_homekit_pairing_invalid_issue,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -195,6 +214,10 @@ class HomeKitClient:
                 mask_home_id(self._home_id),
             )
             return True
+        except AuthenticationError as err:
+            self._handle_homekit_pairing_invalid(err)
+            self._pairing = None
+            return False
         except Exception:
             _LOGGER.warning(
                 "HomeKit: could not connect to bridge for home %s — "
@@ -231,7 +254,7 @@ class HomeKitClient:
         if self._pairing:
             try:
                 await self._pairing.close()
-            except Exception:
+            except (AccessoryDisconnectedError, HKTimeoutError, HomeKitException):
                 _LOGGER.debug(
                     "HomeKit: error while closing the pairing — proceeding "
                     "with disconnect anyway",
@@ -255,7 +278,7 @@ class HomeKitClient:
         if self._controller is not None and self._owns_controller:
             try:
                 await self._controller.async_stop()
-            except Exception:
+            except HomeKitException:
                 _LOGGER.debug(
                     "HomeKit: error stopping controller — proceeding",
                     exc_info=True,
@@ -264,6 +287,8 @@ class HomeKitClient:
 
     async def async_reconnect(self) -> None:
         """Schedule a background reconnect with exponential backoff (idempotent)."""
+        if self._closing:
+            return
         if self._reconnect_task and not self._reconnect_task.done():
             return
         self._reconnect_task = asyncio.create_task(self._reconnect_loop())
@@ -309,6 +334,9 @@ class HomeKitClient:
                                 exc_info=True,
                             )
                     return
+            except AuthenticationError as err:
+                self._handle_homekit_pairing_invalid(err)
+                return  # stop the loop — retrying is pointless
             except Exception:
                 _LOGGER.debug(
                     "HomeKit: reconnect attempt %d failed for home %s",
@@ -393,7 +421,7 @@ class HomeKitClient:
                         "unpairing — the bridge may keep a stale "
                         "pairing entry until you reset the bridge",
                     )
-            except Exception:
+            except HomeKitException:
                 _LOGGER.warning(
                     "HomeKit: bridge refused the unpair request — local "
                     "credentials cleared, but the bridge may still list "
@@ -403,6 +431,7 @@ class HomeKitClient:
             finally:
                 await self.async_disconnect()
 
+        async_dismiss_homekit_pairing_invalid_issue(self._hass, self._home_id)
         await self._store.async_remove()
         _LOGGER.info(
             "HomeKit: deleted local pairing credentials for home %s",
@@ -425,13 +454,37 @@ class HomeKitClient:
                 )
                 return result
             return []
-        except Exception:
+        except (AccessoryDisconnectedError, HKTimeoutError, HomeKitException):
             _LOGGER.debug(
                 "HomeKit: could not list accessories — connection may "
                 "be unhealthy, returning empty list",
                 exc_info=True,
             )
             return []
+
+    def _handle_homekit_pairing_invalid(self, err: Exception) -> None:
+        """Stop reconnect loop and surface a Repair issue when pairing is permanently invalid."""
+        from homeassistant.helpers import issue_registry as ir
+
+        from .const import DOMAIN
+        issue_id = f"homekit_pairing_invalid_{self._home_id}" if self._home_id else "homekit_pairing_invalid"
+        already_raised = ir.async_get(self._hass).async_get_issue(DOMAIN, issue_id) is not None
+        if already_raised:
+            _LOGGER.debug(
+                "HomeKit: pairing still invalid for home %s — Repair issue already active",
+                mask_home_id(self._home_id),
+            )
+        else:
+            _LOGGER.warning(
+                "HomeKit: pairing is no longer valid for home %s — "
+                "bridge may have been factory-reset. Re-pair in "
+                "Settings → Tado CE → Configure → General Settings.",
+                mask_home_id(self._home_id),
+            )
+        _LOGGER.debug("HomeKit: pairing invalid error details", exc_info=True)
+        self._closing = True
+        self._is_connected = False
+        async_create_homekit_pairing_invalid_issue(self._hass, self._home_id)
 
 
 # ---------------------------------------------------------------------------
@@ -479,6 +532,10 @@ async def async_step_homekit_pairing(
                     await async_rebuild_and_save_mapping(
                         flow.hass, client, home_id, zones_info,
                     )
+                    async_dismiss_homekit_pairing_invalid_issue(
+                        flow.hass,
+                        home_id=flow.config_entry.data.get("home_id") or "default",
+                    )
                 finally:
                     await client.async_disconnect()
 
@@ -490,18 +547,20 @@ async def async_step_homekit_pairing(
                     return flow.async_create_entry(title="", data=flow._pending_general_options)
                 return await flow.async_step_init()
 
+            except AuthenticationError:
+                errors["homekit_pin"] = "homekit_wrong_pin"
+            except (MaxPeersError, UnavailableError, AlreadyPairedError):
+                errors["homekit_pin"] = "homekit_already_paired"
+            except AccessoryNotFoundError:
+                errors["homekit_pin"] = "homekit_network_error"
+            except HKTimeoutError:
+                errors["homekit_pin"] = "homekit_timeout"
+            except MaxTriesError:
+                errors["homekit_pin"] = "homekit_max_tries"
+            except (BackoffError, BusyError):
+                errors["homekit_pin"] = "homekit_busy"
             except Exception as err:
-                err_str = str(err).lower()
-                if "authentication" in err_str or "pin" in err_str:
-                    errors["homekit_pin"] = "homekit_wrong_pin"
-                elif "already paired" in err_str or "max peers" in err_str or "unavailable" in err_str:
-                    errors["homekit_pin"] = "homekit_already_paired"
-                elif "not found" in err_str:
-                    errors["homekit_pin"] = "homekit_network_error"
-                elif "timeout" in err_str:
-                    errors["homekit_pin"] = "homekit_timeout"
-                else:
-                    errors["homekit_pin"] = "homekit_pairing_failed"
+                errors["homekit_pin"] = "homekit_pairing_failed"
                 _LOGGER.warning("HomeKit: pairing failed — %s", err)
         else:
             # Empty PIN — cancel pairing and revert the homekit_enabled
@@ -550,7 +609,7 @@ async def async_step_homekit_unpair(
             await client.async_unpair()
 
             _LOGGER.info("HomeKit: unpair successful")
-        except Exception:
+        except HomeKitException:
             _LOGGER.warning(
                 "HomeKit: unpair encountered errors — local credentials "
                 "have been cleared, but the bridge may still list the "

@@ -1425,6 +1425,10 @@
     "rate_limited": {
       "title": "Tado CE: Velocità limitata sul cloud",
       "description": "L'API cloud di Tado è soggetta a limiti di frequenza per l'accesso da casa **{home_id}**. Il polling riprenderà tra {retry_after_minutes} minuti."
+    },
+    "homekit_pairing_invalid": {
+      "title": "Perdita dell'accoppiamento HomeKit",
+      "description": "L'accoppiamento HomeKit del tuo bridge Tado non è più valido: è possibile che sia stato ripristinato alle impostazioni di fabbrica. Tado CE funzionerà in modalità solo cloud fino a quando non effettuerai un nuovo accoppiamento.\n\nPer effettuare un nuovo accoppiamento: Impostazioni → Tado CE → Configura → Impostazioni generali → attiva HomeKit."
     }
   },
   "config": {
@@ -1857,7 +1861,9 @@
       "homekit_network_error": "Impossibile raggiungere il bridge sulla rete. Verificare che sia acceso e collegato",
       "homekit_timeout": "L'accoppiamento è scaduto: il ponte non ha risposto in tempo.",
       "homekit_pairing_failed": "Accoppiamento non riuscito - riprovare",
-      "svc_active_sensor_clear": "Il controllo intelligente delle valvole è abilitato per questa zona. La disattivazione del sensore di temperatura esterno disattiverà il controllo intelligente delle valvole. Se desideri mettere in pausa il sensore senza interrompere il controllo intelligente delle valvole, imposta prima la modalità di controllo intelligente delle valvole su \"Off\"."
+      "svc_active_sensor_clear": "Il controllo intelligente delle valvole è abilitato per questa zona. La disattivazione del sensore di temperatura esterno disattiverà il controllo intelligente delle valvole. Se desideri mettere in pausa il sensore senza interrompere il controllo intelligente delle valvole, imposta prima la modalità di controllo intelligente delle valvole su \"Off\".",
+      "homekit_max_tries": "Troppi tentativi falliti: il bridge è temporaneamente bloccato. Attendere qualche minuto oppure resettare il bridge e riprovare.",
+      "homekit_busy": "Il ponte è occupato: forse è in corso un altro accoppiamento. Riprova tra un attimo."
     }
   }
 }

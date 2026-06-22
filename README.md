@@ -6,7 +6,7 @@
 ![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2025.11%2B-blue?style=for-the-badge&logo=home-assistant) ![Python](https://img.shields.io/badge/Python-3.13%2B-blue?style=for-the-badge&logo=python&logoColor=white) ![Tado](https://img.shields.io/badge/Tado-V2%2FV3%2FV3%2B-1E3A8A?style=for-the-badge) ![HACS](https://img.shields.io/badge/HACS-Default-41BDF5?style=for-the-badge)
 
 <!-- Status -->
-![Stable](https://img.shields.io/badge/Stable-4.0.3-brightgreen?style=for-the-badge) ![Beta](https://img.shields.io/badge/Beta-4.1.0--beta.5-purple?style=for-the-badge) ![License](https://img.shields.io/badge/License-AGPL--3.0-lightgrey?style=for-the-badge) ![Coverage](https://img.shields.io/badge/Coverage-93%25-green?style=for-the-badge)
+![Stable](https://img.shields.io/badge/Stable-4.1.0-brightgreen?style=for-the-badge) ![License](https://img.shields.io/badge/License-AGPL--3.0-lightgrey?style=for-the-badge) ![Coverage](https://img.shields.io/badge/Coverage-93%25-green?style=for-the-badge)
 
 <!-- Community -->
 ![GitHub stars](https://img.shields.io/github/stars/hiall-fyi/tado_ce?style=for-the-badge&logo=github) ![GitHub issues](https://img.shields.io/github/issues/hiall-fyi/tado_ce?style=for-the-badge&logo=github) ![GitHub Release Date](https://img.shields.io/github/release-date/hiall-fyi/tado_ce?style=for-the-badge&logo=github)
@@ -140,7 +140,7 @@ Full Home Assistant `climate.*`, `water_heater.*`, `sensor.*`, and `binary_senso
 
 With an Internet Bridge V3+ paired, Tado CE uses HomeKit for temperature reads, humidity reads, target-temperature writes, and HVAC-mode writes on heating zones. Updates arrive in around 2 seconds over your LAN; cloud-only mode is bound by your polling interval, typically 5–30 minutes. The cloud API is used for features HomeKit doesn't expose (schedules, geofencing, the Tado app's calibration engine) and for everything Smart AC Control V3+ does — those units are standalone WiFi accessories with their own HomeKit pairing, separate from the bridge, and Tado CE doesn't currently handle that pairing flow.
 
-When the bridge is unreachable, everything falls back to cloud automatically. A `data_source` attribute on each temperature sensor reports whether the current value came from HomeKit or cloud, and the HomeKit Connected sensor tracks how many API calls local control has saved you.
+When the bridge is unreachable — including at HA startup — everything falls back to cloud automatically and local control resumes as soon as the bridge is reachable again, with no reload needed. If the bridge is factory-reset (which issues a new HomeKit identity), Tado CE raises a Home Assistant Repairs notification and stops retrying until you re-pair from Settings → Tado CE → Configure. A `data_source` attribute on each temperature sensor reports whether the current value came from HomeKit or cloud, and the HomeKit Connected sensor tracks how many API calls local control has saved you.
 
 ### Smart Valve Control
 
@@ -332,7 +332,6 @@ For issues not covered here, check **Settings → System → Logs** (filter by `
 | --- | --- |
 | [FEATURES_GUIDE.md](FEATURES_GUIDE.md) | Full feature reference, configuration scenarios, service examples |
 | [ENTITIES.md](ENTITIES.md) | Complete entity type list with attributes |
-| [API_REFERENCE.md](API_REFERENCE.md) | API call types, optimisation notes, troubleshooting |
 | [ROADMAP.md](ROADMAP.md) | Planned features and known limitations |
 | [CREDITS.md](CREDITS.md) | Contributor credits per release |
 | [CHANGELOG.md](CHANGELOG.md) | Version history |

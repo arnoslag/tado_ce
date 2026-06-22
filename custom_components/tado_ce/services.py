@@ -355,7 +355,10 @@ def _build_setting_from_captured(
         if captured.temperature is not None:
             setting["temperature"] = {"celsius": captured.temperature}
         if captured.fan_mode is not None:  # AC only
-            setting["fanLevel"] = captured.fan_mode
+            # Legacy units use the singular fanSpeed payload field; the key
+            # was recorded at capture time. Older snapshots without it
+            # default to the modern fanLevel.
+            setting[captured.fan_key or "fanLevel"] = captured.fan_mode
         if captured.swing_mode is not None:  # AC only
             setting["verticalSwing"] = captured.swing_mode
         if captured.horizontal_swing_mode is not None:  # AC only

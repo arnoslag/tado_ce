@@ -1425,6 +1425,10 @@
     "svc_sensor_missing": {
       "title": "Smart Valve Control disabled for {zone_name}",
       "description": "Smart Valve Control ({mode}) for **{zone_name}** requires an external temperature sensor, but none is configured.\n\nThe feature has been automatically disabled for this zone until you pick a sensor.\n\n**To restore it:**\n\nGo to **Settings → Tado CE → Configure → Zone Configuration → {zone_name} → External Sensors** and select a temperature sensor.\n\nAlternatively, dismiss this notification to leave the feature disabled for this zone."
+    },
+    "homekit_pairing_invalid": {
+      "title": "HomeKit pairing lost",
+      "description": "Your Tado bridge's HomeKit pairing is no longer valid — it may have been factory-reset. Tado CE is running in cloud-only mode until you re-pair.\n\nTo re-pair: Settings → Tado CE → Configure → General Settings → enable HomeKit."
     }
   },
   "config": {
@@ -1857,6 +1861,8 @@
       "homekit_network_error": "Could not reach the bridge on your network. Check it is powered on and connected",
       "homekit_timeout": "Pairing timed out — the bridge did not respond in time",
       "homekit_pairing_failed": "Pairing failed — please try again",
+      "homekit_max_tries": "Too many failed attempts — the bridge is temporarily locked. Wait a few minutes or reset the bridge and try again.",
+      "homekit_busy": "The bridge is busy — another pairing may be in progress. Try again in a moment.",
       "svc_active_sensor_clear": "Smart Valve Control is enabled for this zone. Disabling the external temperature sensor will deactivate Smart Valve Control. Set Smart Valve Control Mode to Off first if you want to pause the sensor without stopping SVC."
     }
   }

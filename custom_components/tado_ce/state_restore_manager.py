@@ -70,6 +70,7 @@ class CapturedState:
     overlay_type: str | None = None
     termination: dict[str, Any] | None = None
     fan_mode: str | None = None
+    fan_key: str | None = None
     swing_mode: str | None = None
     horizontal_swing_mode: str | None = None
     captured_at: str = ""
@@ -87,6 +88,7 @@ def _state_to_dict(state: CapturedState) -> dict[str, Any]:
         "overlay_type": state.overlay_type,
         "termination": state.termination,
         "fan_mode": state.fan_mode,
+        "fan_key": state.fan_key,
         "swing_mode": state.swing_mode,
         "horizontal_swing_mode": state.horizontal_swing_mode,
         "captured_at": state.captured_at,
@@ -105,6 +107,7 @@ def _state_from_dict(data: dict[str, Any]) -> CapturedState:
         overlay_type=data.get("overlay_type"),
         termination=data.get("termination"),
         fan_mode=data.get("fan_mode"),
+        fan_key=data.get("fan_key"),
         swing_mode=data.get("swing_mode"),
         horizontal_swing_mode=data.get("horizontal_swing_mode"),
         captured_at=data.get("captured_at", ""),
@@ -488,10 +491,17 @@ class StateRestoreManager:
                 hvac_mode = "auto"
 
         fan_mode: str | None = None
+        fan_key: str | None = None
         swing_mode: str | None = None
         horizontal_swing_mode: str | None = None
         if entity_type == "climate_ac":
-            fan_mode = setting.get("fanLevel") or setting.get("fanSpeed")
+            # The payload field is fanLevel (modern) or fanSpeed (legacy);
+            # remember which one this unit uses so the restore writes the
+            # same key rather than guessing from the value.
+            if setting.get("fanLevel") is not None:
+                fan_mode, fan_key = setting["fanLevel"], "fanLevel"
+            elif setting.get("fanSpeed") is not None:
+                fan_mode, fan_key = setting["fanSpeed"], "fanSpeed"
             swing_mode = setting.get("verticalSwing")
             horizontal_swing_mode = setting.get("horizontalSwing")
 
@@ -504,6 +514,7 @@ class StateRestoreManager:
             overlay_type=overlay_type,
             termination=termination,
             fan_mode=fan_mode,
+            fan_key=fan_key,
             swing_mode=swing_mode,
             horizontal_swing_mode=horizontal_swing_mode,
             captured_at=dt_util.utcnow().isoformat(),

@@ -1425,6 +1425,10 @@
     "rate_limited": {
       "title": "Tado CE: Ancho de banda limitado en la nube",
       "description": "La API en la nube de Tado tiene un límite de solicitudes para **{home_id}**. La consulta se reanudará en {retry_after_minutes} minutos."
+    },
+    "homekit_pairing_invalid": {
+      "title": "Se ha perdido el emparejamiento con HomeKit",
+      "description": "El emparejamiento de tu puente Tado con HomeKit ya no es válido; es posible que se haya restablecido a los valores de fábrica. Tado CE funciona en modo «solo en la nube» hasta que vuelvas a emparejarlo.\n\nPara volver a emparejarlo: Ajustes → Tado CE → Configurar → Ajustes generales → activa HomeKit."
     }
   },
   "config": {
@@ -1857,7 +1861,9 @@
       "homekit_network_error": "No se ha podido acceder al puente de su red. Compruebe que está encendido y conectado",
       "homekit_timeout": "El puente no ha respondido a tiempo.",
       "homekit_pairing_failed": "Error de emparejamiento - inténtelo de nuevo",
-      "svc_active_sensor_clear": "El control inteligente de válvulas está activado para esta zona. Si desactivas el sensor de temperatura externo, se desactivará el control inteligente de válvulas. Si deseas pausar el sensor sin detener el control inteligente de válvulas, configura primero el modo de control inteligente de válvulas en «Desactivado»."
+      "svc_active_sensor_clear": "El control inteligente de válvulas está activado para esta zona. Si desactivas el sensor de temperatura externo, se desactivará el control inteligente de válvulas. Si deseas pausar el sensor sin detener el control inteligente de válvulas, configura primero el modo de control inteligente de válvulas en «Desactivado».",
+      "homekit_max_tries": "Demasiados intentos fallidos: el puente está bloqueado temporalmente. Espera unos minutos o reinicia el puente y vuelve a intentarlo.",
+      "homekit_busy": "El puente está ocupado; es posible que se esté realizando otra conexión. Inténtalo de nuevo dentro de un momento."
     }
   }
 }

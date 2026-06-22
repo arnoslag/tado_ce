@@ -362,6 +362,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if homekit_client.is_connected:
             await provider.async_refresh_accessories()
             await provider.async_subscribe_events()
+        else:
+            # Initial connect failed (bridge unreachable at startup) —
+            # start the background retry loop so it recovers without a
+            # manual reload when the bridge comes back up.
+            await homekit_client.async_reconnect()
 
         # On bridge reconnect we re-subscribe events and reset the
         # write-health circuit breaker so the integration recovers
@@ -582,6 +587,20 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "Unload: entry %s unloaded successfully", entry.entry_id,
     )
     return unload_ok
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Clean up Repair issues when the config entry is removed."""
+    from .repair_helpers import (
+        async_dismiss_auth_issue,
+        async_dismiss_homekit_pairing_invalid_issue,
+        async_dismiss_rate_limit_issue,
+    )
+
+    home_id = entry.data.get("home_id")
+    async_dismiss_homekit_pairing_invalid_issue(hass, home_id)
+    async_dismiss_rate_limit_issue(hass, home_id)
+    async_dismiss_auth_issue(hass, home_id)
 
 
 async def async_remove_config_entry_device(

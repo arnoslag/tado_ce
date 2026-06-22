@@ -48,6 +48,16 @@ RATE_LIMIT_ISSUE = RepairIssueSpec(
     is_persistent=False,
 )
 
+# WHY: WARNING + persistent — pairing credentials are invalid and the bridge
+# cannot be reached until the user re-pairs; the issue survives a restart so
+# the user sees it even after HA reboots before they take action.
+HOMEKIT_PAIRING_INVALID_ISSUE = RepairIssueSpec(
+    id_prefix="homekit_pairing_invalid",
+    translation_key="homekit_pairing_invalid",
+    severity=ir.IssueSeverity.WARNING,
+    is_persistent=True,
+)
+
 # Backwards-compat constant, scheduled for removal in v5.0.0.
 ISSUE_AUTH_EXPIRED = AUTH_ISSUE.effective_id_prefix
 
@@ -122,3 +132,17 @@ def async_dismiss_rate_limit_issue(
 ) -> None:
     """Clear the rate-limited repair after a successful sync."""
     async_dismiss_issue(hass, RATE_LIMIT_ISSUE, home_id=home_id)
+
+
+def async_create_homekit_pairing_invalid_issue(
+    hass: HomeAssistant, home_id: str | None = None,
+) -> None:
+    """Surface a 'HomeKit pairing invalid' repair so the user re-pairs."""
+    async_create_issue(hass, HOMEKIT_PAIRING_INVALID_ISSUE, home_id=home_id)
+
+
+def async_dismiss_homekit_pairing_invalid_issue(
+    hass: HomeAssistant, home_id: str | None = None,
+) -> None:
+    """Clear the HomeKit pairing invalid repair after a successful re-pair."""
+    async_dismiss_issue(hass, HOMEKIT_PAIRING_INVALID_ISSUE, home_id=home_id)

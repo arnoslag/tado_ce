@@ -275,18 +275,10 @@ def _get_coordinator(hass: HomeAssistant, entry_id: str) -> TadoDataUpdateCoordi
 def parse_iso_datetime(iso_str: str) -> datetime:
     """Parse an ISO 8601 datetime string to a timezone-aware UTC datetime.
 
-    Python 3.11+ ``fromisoformat`` handles 'Z' suffix natively.
     Naive datetimes (no tzinfo) are assumed UTC.
-
-    Args:
-        iso_str: ISO 8601 datetime string.
-
-    Returns:
-        Timezone-aware datetime in UTC.
 
     Raises:
         ValueError: If the string cannot be parsed as ISO 8601.
-
     """
     dt = datetime.fromisoformat(iso_str)
     if dt.tzinfo is None:

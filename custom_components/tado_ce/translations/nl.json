@@ -1425,6 +1425,10 @@
     "rate_limited": {
       "title": "Tado CE: Beperkte bandbreedte in de cloud",
       "description": "De Tado-cloud-API heeft een limiet op het aantal verzoeken voor de **{home_id}**. Het opvragen van gegevens wordt over {retry_after_minutes} minuten hervat."
+    },
+    "homekit_pairing_invalid": {
+      "title": "HomeKit-koppeling verbroken",
+      "description": "De HomeKit-koppeling van je Tado-bridge is niet langer geldig — mogelijk is het apparaat teruggezet naar de fabrieksinstellingen. Tado CE werkt nu in de ‘alleen cloud’-modus totdat je het opnieuw koppelt.\n\nOm opnieuw te koppelen: Instellingen → Tado CE → Configureren → Algemene instellingen → schakel HomeKit in."
     }
   },
   "config": {
@@ -1857,7 +1861,9 @@
       "homekit_network_error": "Kan de bridge in je netwerk niet bereiken. Controleer of deze is ingeschakeld en verbonden",
       "homekit_timeout": "Het koppelen is uitgelopen - de bridge heeft niet op tijd gereageerd",
       "homekit_pairing_failed": "Koppelen mislukt - probeer het opnieuw",
-      "svc_active_sensor_clear": "Slimme klepregeling is ingeschakeld voor deze zone. Als je de externe temperatuursensor uitschakelt, wordt de slimme klepregeling gedeactiveerd. Stel de modus voor slimme klepregeling eerst in op Uit als je de sensor wilt pauzeren zonder de slimme klepregeling te stoppen."
+      "svc_active_sensor_clear": "Slimme klepregeling is ingeschakeld voor deze zone. Als je de externe temperatuursensor uitschakelt, wordt de slimme klepregeling gedeactiveerd. Stel de modus voor slimme klepregeling eerst in op Uit als je de sensor wilt pauzeren zonder de slimme klepregeling te stoppen.",
+      "homekit_max_tries": "Te veel mislukte pogingen — de bridge is tijdelijk geblokkeerd. Wacht een paar minuten of reset de bridge en probeer het opnieuw.",
+      "homekit_busy": "Het is druk op de brug — er is mogelijk weer een koppeling bezig. Probeer het straks nog eens."
     }
   }
 }

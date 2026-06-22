@@ -1425,6 +1425,10 @@
     "rate_limited": {
       "title": "Tado CE : débit limité sur le cloud",
       "description": "L'API cloud de Tado est soumise à une limitation de débit pour les **{home_id}** domestiques. La requête sera renouvelée dans {retry_after_minutes} minutes."
+    },
+    "homekit_pairing_invalid": {
+      "title": "Perte de l'appairage HomeKit",
+      "description": "L'appairage HomeKit de votre pont Tado n'est plus valide — il a peut-être été réinitialisé aux paramètres d'usine. Tado CE fonctionne en mode « cloud uniquement » jusqu'à ce que vous le réappairiez.\n\nPour le réappairer : Paramètres → Tado CE → Configurer → Paramètres généraux → activez HomeKit."
     }
   },
   "config": {
@@ -1857,7 +1861,9 @@
       "homekit_network_error": "Impossible d'atteindre le pont sur votre réseau. Vérifiez qu'il est sous tension et connecté",
       "homekit_timeout": "L'appairage a expiré - la passerelle n'a pas répondu à temps",
       "homekit_pairing_failed": "L'appairage a échoué - veuillez réessayer",
-      "svc_active_sensor_clear": "La fonction « Smart Valve Control » est activée pour cette zone. La désactivation du capteur de température externe désactivera la fonction « Smart Valve Control ». Réglez d'abord le mode « Smart Valve Control » sur « Off » si vous souhaitez mettre le capteur en pause sans désactiver la fonction SVC."
+      "svc_active_sensor_clear": "La fonction « Smart Valve Control » est activée pour cette zone. La désactivation du capteur de température externe désactivera la fonction « Smart Valve Control ». Réglez d'abord le mode « Smart Valve Control » sur « Off » si vous souhaitez mettre le capteur en pause sans désactiver la fonction SVC.",
+      "homekit_max_tries": "Trop de tentatives infructueuses : le pont est temporairement verrouillé. Veuillez patienter quelques minutes ou réinitialiser le pont, puis réessayer.",
+      "homekit_busy": "Le pont est très fréquenté — un autre appariement est peut-être en cours. Veuillez réessayer dans quelques instants."
     }
   }
 }

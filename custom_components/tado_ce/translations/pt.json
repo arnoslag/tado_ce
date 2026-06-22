@@ -1425,6 +1425,10 @@
     "rate_limited": {
       "title": "Tado CE: Limitação de tráfego na nuvem",
       "description": "A API na nuvem do Tado está sujeita a limites de frequência para o endereço **{home_id}**. A consulta será retomada dentro de {retry_after_minutes} minutos."
+    },
+    "homekit_pairing_invalid": {
+      "title": "Perda do emparelhamento do HomeKit",
+      "description": "O emparelhamento do seu Tado Bridge com o HomeKit já não é válido — é possível que tenha sido reposto às predefinições de fábrica. O Tado CE está a funcionar no modo «apenas na nuvem» até que volte a emparelhá-lo.\n\nPara voltar a emparelhar: Definições → Tado CE → Configurar → Definições gerais → ativar o HomeKit."
     }
   },
   "config": {
@@ -1857,7 +1861,9 @@
       "homekit_network_error": "Não foi possível contactar a ponte na sua rede. Verifique se está ligada e conectada",
       "homekit_timeout": "O tempo de emparelhamento expirou - a ponte não respondeu a tempo",
       "homekit_pairing_failed": "O emparelhamento falhou - tente novamente",
-      "svc_active_sensor_clear": "O Controlo Inteligente da Válvula está ativado para esta zona. Desativar o sensor de temperatura externo desativará o Controlo Inteligente da Válvula. Defina primeiro o Modo de Controlo Inteligente da Válvula para Desligado se pretender colocar o sensor em pausa sem interromper o SVC."
+      "svc_active_sensor_clear": "O Controlo Inteligente da Válvula está ativado para esta zona. Desativar o sensor de temperatura externo desativará o Controlo Inteligente da Válvula. Defina primeiro o Modo de Controlo Inteligente da Válvula para Desligado se pretender colocar o sensor em pausa sem interromper o SVC.",
+      "homekit_max_tries": "Demasiadas tentativas falhadas — a ponte está temporariamente bloqueada. Aguarde alguns minutos ou reinicie a ponte e tente novamente.",
+      "homekit_busy": "A ponte está ocupada — pode estar a decorrer outro emparelhamento. Tente novamente daqui a pouco."
     }
   }
 }

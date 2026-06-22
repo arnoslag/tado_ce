@@ -1492,15 +1492,25 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
 
         Returns `(None, None)` when the AC's current mode doesn't
         support a fan field at all.
+
+        Legacy units list their options under the plural `fanSpeeds`
+        capability, but the overlay payload field is the singular
+        `fanSpeed`; modern units use `fanLevel` for both. Writing the
+        plural key is silently dropped by the cloud, so the lookup key
+        (read capabilities) and the write key (payload field) are
+        resolved separately.
         """
-        fan_key = "fanLevel" if "fanLevel" in mode_caps else ("fanSpeeds" if "fanSpeeds" in mode_caps else None)
-        if not fan_key:
+        if "fanLevel" in mode_caps:
+            lookup_key, write_key = "fanLevel", "fanLevel"
+        elif "fanSpeeds" in mode_caps:
+            lookup_key, write_key = "fanSpeeds", "fanSpeed"
+        else:
             return None, None
 
-        supported = mode_caps.get(fan_key) or []
+        supported = mode_caps.get(lookup_key) or []
         if fan_level:
             if fan_level in supported:
-                return fan_key, fan_level
+                return write_key, fan_level
             if supported:
                 fallback = "AUTO" if "AUTO" in supported else supported[0]
                 _LOGGER.warning(
@@ -1508,24 +1518,24 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
                     "mode — using %s instead",
                     self._zone_name, fan_level, fallback,
                 )
-                return fan_key, fallback
+                return write_key, fallback
         elif self._attr_fan_mode:
             tado_fan = self._ha_to_tado_fan.get(self._attr_fan_mode) or HA_TO_TADO_FAN.get(
                 self._attr_fan_mode, "AUTO",
             )
             if tado_fan in supported:
-                return fan_key, tado_fan
+                return write_key, tado_fan
             if supported:
                 fallback = "AUTO" if "AUTO" in supported else supported[-1]
                 _LOGGER.debug(
                     "Climate AC: %s mapped fan %s→%s not in %s — using %s",
                     self._zone_name, self._attr_fan_mode, tado_fan, supported, fallback,
                 )
-                return fan_key, fallback
+                return write_key, fallback
         elif "AUTO" in supported:
-            return fan_key, "AUTO"
+            return write_key, "AUTO"
         elif supported:
-            return fan_key, supported[0]
+            return write_key, supported[0]
         return None, None
 
     def _resolve_ac_mode(self, mode: str | None) -> str:

@@ -1425,6 +1425,10 @@
     "rate_limited": {
       "title": "Tado CE: Cloud-Bandbreitenbegrenzung",
       "description": "Die Tado-Cloud-API unterliegt einer Ratenbegrenzung für die **{home_id}**. Die Abfrage wird in {retry_after_minutes} Minuten fortgesetzt."
+    },
+    "homekit_pairing_invalid": {
+      "title": "HomeKit-Kopplung unterbrochen",
+      "description": "Die HomeKit-Kopplung Ihrer Tado-Bridge ist nicht mehr gültig – möglicherweise wurde das Gerät auf die Werkseinstellungen zurückgesetzt. Tado CE läuft bis zur erneuten Kopplung im reinen Cloud-Modus.\n\nSo führen Sie die erneute Kopplung durch: Einstellungen → Tado CE → Konfigurieren → Allgemeine Einstellungen → HomeKit aktivieren."
     }
   },
   "config": {
@@ -1857,7 +1861,9 @@
       "homekit_network_error": "Die Bridge in Ihrem Netzwerk konnte nicht erreicht werden. Prüfen Sie, ob sie eingeschaltet und verbunden ist",
       "homekit_timeout": "Zeitüberschreitung beim Pairing - die Brücke hat nicht rechtzeitig geantwortet",
       "homekit_pairing_failed": "Pairing fehlgeschlagen - bitte versuchen Sie es erneut",
-      "svc_active_sensor_clear": "Die intelligente Ventilsteuerung ist für diese Zone aktiviert. Durch Deaktivieren des externen Temperatursensors wird die intelligente Ventilsteuerung deaktiviert. Stellen Sie den Modus der intelligenten Ventilsteuerung zunächst auf „Aus“, wenn Sie den Sensor pausieren möchten, ohne die SVC zu stoppen."
+      "svc_active_sensor_clear": "Die intelligente Ventilsteuerung ist für diese Zone aktiviert. Durch Deaktivieren des externen Temperatursensors wird die intelligente Ventilsteuerung deaktiviert. Stellen Sie den Modus der intelligenten Ventilsteuerung zunächst auf „Aus“, wenn Sie den Sensor pausieren möchten, ohne die SVC zu stoppen.",
+      "homekit_max_tries": "Zu viele fehlgeschlagene Versuche – die Brücke ist vorübergehend gesperrt. Warten Sie einige Minuten oder setzen Sie die Brücke zurück und versuchen Sie es erneut.",
+      "homekit_busy": "Die Verbindung ist gerade ausgelastet – möglicherweise findet gerade eine weitere Paarung statt. Versuchen Sie es in einem Moment erneut."
     }
   }
 }
