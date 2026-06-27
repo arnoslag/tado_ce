@@ -1,4 +1,4 @@
-"""Window detection insights — active and passive open-window detection."""
+"""Window detection insights: active and passive open-window detection."""
 
 from __future__ import annotations
 
@@ -139,7 +139,7 @@ def _apply_window_type_scaling(
 ) -> float:
     """Scale threshold based on window U-value.
 
-    Higher U-value (single_pane=5.0) produces a tighter threshold — a poorly
+    Higher U-value (single_pane=5.0) produces a tighter threshold: a poorly
     insulating window condenses more easily, so the warning should fire sooner.
     Lower U-value (passive_house=0.8) produces a looser threshold.
     Baseline: double_pane (U=2.7) gives scale factor 1.0.
@@ -193,7 +193,7 @@ def _calc_temp_rate_score(
     time_span = (
         readings[-1].timestamp - readings[start_idx].timestamp
     ).total_seconds() / 60.0
-    if time_span <= 0.5:  # Less than 30 seconds — too short for reliable rate
+    if time_span <= 0.5:  # Less than 30 seconds: too short for reliable rate
         return 0.0, anomaly_count
 
     temp_rate = total_change / time_span

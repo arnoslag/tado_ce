@@ -1,8 +1,8 @@
-"""Tado CE number platform — boiler max output temperature.
+"""Tado CE number platform: boiler max output temperature.
 
 Single optional entity, only created when bridge credentials are
 configured AND the bridge response actually carries the
-`boilerMaxOutputTemperatureInCelsius` field. OpenTherm-only —
+`boilerMaxOutputTemperatureInCelsius` field. OpenTherm-only:
 on/off boilers don't expose a max-output setting.
 """
 
@@ -42,7 +42,7 @@ async def async_setup_entry(
     coordinator: TadoDataUpdateCoordinator = entry.runtime_data
     entities = []
 
-    # Bridge number entity (optional — only when bridge credentials configured
+    # Bridge number entity (optional: only when bridge credentials configured
     # AND the bridge response actually contains the temperature field)
     bridge_serial = entry.options.get("bridge_serial")
     bridge_auth_key = entry.options.get("bridge_auth_key")
@@ -52,12 +52,12 @@ async def async_setup_entry(
             entities.append(TadoBoilerMaxOutputTemperatureNumber(coordinator))
             _LOGGER.debug(
                 "Number: bridge exposes boiler max output temperature "
-                "— creating boiler max temp number entity",
+                ", creating boiler max temp number entity",
             )
         else:
             _LOGGER.debug(
                 "Number: bridge configured but boiler max output "
-                "temperature not in the response — boiler max temp "
+                "temperature not in the response, boiler max temp "
                 "number entity not created (requires an OpenTherm "
                 "boiler)",
             )
@@ -71,7 +71,7 @@ class TadoBoilerMaxOutputTemperatureNumber(
 ):
     """Set the boiler's maximum output temperature on OpenTherm bridges.
 
-    Optimistic on success — the entity reflects the requested
+    Optimistic on success: the entity reflects the requested
     value immediately and the next coordinator poll either
     confirms it or corrects it from the bridge.
     """
@@ -108,13 +108,13 @@ class TadoBoilerMaxOutputTemperatureNumber(
         except TadoBridgeApiError as err:
             _LOGGER.warning(
                 "Number: boiler max output temperature write failed "
-                "(%s) — keeping the previous value",
+                "(%s), keeping the previous value",
                 err,
             )
             msg = "Failed to set boiler max output temperature"
             raise HomeAssistantError(msg) from err
-        # Quantise to the bridge's 0.5°C step before reflecting back
-        # — the bridge would round anyway, so showing the user's raw
+        # Quantise to the bridge's 0.5°C step before reflecting back.
+        # The bridge would round anyway, so showing the user's raw
         # request would briefly disagree with the next poll.
         self._attr_native_value = round(value * 2) / 2
         self.async_write_ha_state()

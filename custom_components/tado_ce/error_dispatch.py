@@ -1,4 +1,4 @@
-"""Pattern B service-call dispatch — used by service-call wrappers."""
+"""Pattern B service-call dispatch: used by service-call wrappers."""
 
 from __future__ import annotations
 
@@ -33,7 +33,7 @@ def _apply_cloud_error_recovery(
     coordinator back-off window (+ repair issue) so every path that hits the
     quota gets the same recovery the read path does. Both are idempotent.
 
-    `coordinator` is typed `Any` to avoid a circular import — annotating it
+    `coordinator` is typed `Any` to avoid a circular import: annotating it
     as TadoDataUpdateCoordinator would import coordinator.py, which imports
     this module.
     """
@@ -55,13 +55,13 @@ def handle_background_write_error(
     The non-raising sibling of `dispatch_to_service_call`. Both the Smart
     Valve and Offset Sync controllers run fire-and-forget off the
     coordinator's post-sync loop, so they cannot raise a HomeAssistantError
-    to a caller — they log and recover. `log_message` is the caller's
+    to a caller, so they log and recover. `log_message` is the caller's
     already-formatted warning.
     """
     _LOGGER.warning("%s", log_message)
     _apply_cloud_error_recovery(exc, config_entry, hass, coordinator)
     # NB: param order (exc, config_entry, hass, coordinator) matches the two
-    # sibling dispatchers above — keep all three aligned.
+    # sibling dispatchers above: keep all three aligned.
 
 
 def dispatch_to_service_call(
@@ -70,7 +70,7 @@ def dispatch_to_service_call(
     hass: HomeAssistant,
     coordinator: Any,
 ) -> NoReturn:
-    """Pattern B canonical dispatch — runs cloud-error recovery, then raises.
+    """Pattern B canonical dispatch: runs cloud-error recovery, then raises.
 
     The raising sibling of `handle_background_write_error`: same recovery side
     effect (reauth / back-off via `_apply_cloud_error_recovery`), but surfaces

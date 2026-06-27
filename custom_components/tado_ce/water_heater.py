@@ -1,8 +1,8 @@
-"""Tado CE water-heater platform — hot-water entity with timer + manual overlays.
+"""Tado CE water-heater platform: hot-water entity with timer + manual overlays.
 
 One entity per HOT_WATER zone. Operation modes: AUTO (follow Tado
 schedule), HEAT (timer / manual on), OFF (manual off). Temperature
-control is exposed conditionally — only on systems where Tado
+control is exposed conditionally: only on systems where Tado
 returns a `temperature.celsius` setting (most combi boilers
 don't, solar / store systems do).
 """
@@ -133,7 +133,7 @@ class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeate
         self._expected_temperature: float | None = None
 
     # ------------------------------------------------------------------
-    # Public API (TadoZoneEntity Protocol — see entity_types.py)
+    # Public API (TadoZoneEntity Protocol, see entity_types.py)
     # ------------------------------------------------------------------
 
     @property
@@ -143,7 +143,7 @@ class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeate
 
     @property
     def zone_type(self) -> str:
-        """Return the zone type — always HOT_WATER for this entity."""
+        """Return the zone type, always HOT_WATER for this entity."""
         return "HOT_WATER"
 
     @property
@@ -171,7 +171,7 @@ class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeate
         zone_data: dict[str, Any] | None = get_zone_state(coord_data, self._zone_id)
         if not zone_data:
             _LOGGER.debug(
-                "Water Heater: %s has no cached zone data — entity will be unavailable",
+                "Water Heater: %s has no cached zone data, entity will be unavailable",
                 self._zone_name,
             )
             return None
@@ -179,7 +179,7 @@ class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeate
         link = zone_data.get("link") or {}
         if link.get("state") != "ONLINE":
             _LOGGER.debug(
-                "Water Heater: %s link state %s — entity unavailable until "
+                "Water Heater: %s link state %s, entity unavailable until "
                 "the zone reconnects",
                 self._zone_name, link.get("state"),
             )
@@ -213,13 +213,13 @@ class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeate
             # data, so never skip when there's nothing cached yet.
             if self._attr_current_operation is not None:
                 _LOGGER.debug(
-                    "Water Heater: %s skipping update — entity already fresh",
+                    "Water Heater: %s skipping update, entity already fresh",
                     self._zone_name,
                 )
                 return
             _LOGGER.debug(
                 "Water Heater: %s marked fresh but has no cached state yet "
-                "— updating anyway",
+                ", updating anyway",
                 self._zone_name,
             )
 
@@ -230,7 +230,7 @@ class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeate
                 return
 
             _LOGGER.debug(
-                "Water Heater: %s zone is ONLINE — entity available",
+                "Water Heater: %s zone is ONLINE, entity available",
                 self._zone_name,
             )
             setting = zone_data.get("setting") or {}
@@ -266,7 +266,7 @@ class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeate
                 if self._expected_temperature is not None:
                     self._attr_target_temperature = self._expected_temperature
                 _LOGGER.debug(
-                    "Water Heater: %s holding optimistic state — "
+                    "Water Heater: %s holding optimistic state, "
                     "operation=%s temp=%s",
                     self._zone_name,
                     self._attr_current_operation,
@@ -281,21 +281,21 @@ class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeate
 
         except FileNotFoundError as e:
             _LOGGER.warning(
-                "Water Heater: %s data file missing (%s) — entity "
+                "Water Heater: %s data file missing (%s), entity "
                 "unavailable until cache rebuilds",
                 self.name, e,
             )
             self._attr_available = False
         except json.JSONDecodeError as e:
             _LOGGER.warning(
-                "Water Heater: %s data file is corrupt JSON (%s) — entity "
+                "Water Heater: %s data file is corrupt JSON (%s), entity "
                 "unavailable until next successful poll",
                 self.name, e,
             )
             self._attr_available = False
         except Exception:
             _LOGGER.warning(
-                "Water Heater: %s update failed unexpectedly — entity "
+                "Water Heater: %s update failed unexpectedly, entity "
                 "marked unavailable, will retry on next poll",
                 self.name, exc_info=True,
             )
@@ -311,7 +311,7 @@ class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeate
 
             if ResumeGuard.should_skip_resume(self.coordinator, self._zone_id):
                 _LOGGER.debug(
-                    "Water Heater: %s already on schedule — skipping redundant resume",
+                    "Water Heater: %s already on schedule, skipping redundant resume",
                     self._zone_name,
                 )
                 return True
@@ -342,7 +342,7 @@ class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeate
         """Set new operation mode with retry logic (async)."""
         await _check_bootstrap_reserve_or_raise(self.hass, f"hot water {self._zone_name}", coordinator=self.coordinator)
 
-        # Capture state before overlay (non-AUTO only — AUTO is a restoration point)
+        # Capture state before overlay (non-AUTO only; AUTO is a restoration point)
         if operation_mode != STATE_AUTO:
             await self.coordinator.async_capture_state(
                 self._zone_id, self._entity_type, "manual_override",
@@ -367,7 +367,7 @@ class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeate
         )
 
         _LOGGER.debug(
-            "Water Heater: %s optimistic state set — operation=%s, seq=%s",
+            "Water Heater: %s optimistic state set, operation=%s, seq=%s",
             self._zone_name,
             operation_mode,
             self._optimistic_sequence,
@@ -394,7 +394,7 @@ class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeate
         if not success:
             _LOGGER.warning(
                 "Water Heater: %s could not switch to %s after %d "
-                "attempts — reverting to previous state",
+                "attempts, reverting to previous state",
                 self._zone_name, operation_mode, MAX_RETRY_ATTEMPTS,
             )
             self._attr_current_operation = previous_mode
@@ -419,7 +419,7 @@ class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeate
         except (AttributeError, TypeError) as e:
             _LOGGER.debug(
                 "Water Heater: could not read timer duration from config "
-                "(%s) — using 60-minute default",
+                "(%s), using 60-minute default",
                 e,
             )
 
@@ -431,7 +431,7 @@ class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeate
         """Set the zone overlay to power=OFF, returning success."""
         if not self._home_id:
             _LOGGER.warning(
-                "Water Heater: %s has no home_id configured — cannot "
+                "Water Heater: %s has no home_id configured, cannot "
                 "turn off, re-authenticate the integration to fix",
                 self._zone_name,
             )
@@ -458,7 +458,7 @@ class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeate
         """Set a timer overlay turning the zone on for `duration_minutes`."""
         if not self._home_id:
             _LOGGER.warning(
-                "Water Heater: %s has no home_id configured — cannot "
+                "Water Heater: %s has no home_id configured, cannot "
                 "set timer, re-authenticate the integration to fix",
                 self._zone_name,
             )
@@ -504,7 +504,7 @@ class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeate
         if temperature is None:
             _LOGGER.warning(
                 "Water Heater: %s set-temperature called without a "
-                "temperature value — service call ignored",
+                "temperature value, service call ignored",
                 self._zone_name,
             )
             return
@@ -512,14 +512,14 @@ class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeate
         if not self._supports_temperature:
             _LOGGER.warning(
                 "Water Heater: %s does not support temperature control "
-                "(combi system) — set-temperature ignored",
+                "(combi system), set-temperature ignored",
                 self._zone_name,
             )
             return
 
         if not self._home_id:
             _LOGGER.warning(
-                "Water Heater: %s has no home_id configured — cannot "
+                "Water Heater: %s has no home_id configured, cannot "
                 "set temperature, re-authenticate the integration to fix",
                 self._zone_name,
             )

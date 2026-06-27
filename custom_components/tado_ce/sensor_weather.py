@@ -67,7 +67,7 @@ class TadoOutsideTemperatureSensor(CoordinatorEntity["TadoDataUpdateCoordinator"
                 self._attr_available = False
         except Exception:
             _LOGGER.debug(
-                "Weather Sensor: outside temperature update failed — "
+                "Weather Sensor: outside temperature update failed, "
                 "marking unavailable until the next poll",
                 exc_info=True,
             )
@@ -117,7 +117,7 @@ class TadoSolarIntensitySensor(CoordinatorEntity["TadoDataUpdateCoordinator"], S
                 self._attr_available = False
         except Exception:
             _LOGGER.debug(
-                "Weather Sensor: solar intensity update failed — "
+                "Weather Sensor: solar intensity update failed, "
                 "marking unavailable until the next poll",
                 exc_info=True,
             )
@@ -190,7 +190,7 @@ class TadoWeatherStateSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], Sen
                 self._attr_available = False
         except Exception:
             _LOGGER.debug(
-                "Weather Sensor: weather state update failed — marking "
+                "Weather Sensor: weather state update failed, marking "
                 "unavailable until the next poll",
                 exc_info=True,
             )

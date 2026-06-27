@@ -1,4 +1,4 @@
-"""Tado CE coordinator — adaptive polling, sub-system orchestration, entity propagation."""
+"""Tado CE coordinator: adaptive polling, sub-system orchestration, entity propagation."""
 
 from __future__ import annotations
 
@@ -74,7 +74,7 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 
-# HA official pattern — provides type safety for entry.runtime_data
+# HA official pattern: provides type safety for entry.runtime_data
 type TadoConfigEntry = ConfigEntry[TadoDataUpdateCoordinator]
 
 
@@ -140,11 +140,11 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._outdoor_temp_history: list[float] = []
         self._outdoor_temp_loaded: bool = False
 
-        # Shared entity data store — entities publish computed values here
+        # Shared entity data store, entities publish computed values here
         # so other components (insight collector, adaptive preheat) can read
         # without cross-entity hass.states.get() coupling.
         #
-        # LIFECYCLE: In-memory only — not persisted across restarts.
+        # LIFECYCLE: In-memory only, not persisted across restarts.
         # Populated progressively as entities process their first poll data.
         # Consumers MUST handle None returns from get_entity_data() during
         # the startup gap (typically 0-2 poll cycles after restart).
@@ -152,13 +152,13 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Structure: {zone_id: {"condensation_risk": {...}, "window_predicted": {...}, ...}}
         self.entity_data: dict[str, dict[str, dict[str, Any]]] = {}
 
-        # Pending cleanup flags — set by options flow, consumed by migration
+        # Pending cleanup flags, set by options flow, consumed by migration
         # after reload. Avoids transient hass.data[DOMAIN_*] keys.
         self._pending_cleanup: dict[str, dict[str, bool]] = {}
 
         self.insight_history = InsightHistoryTracker(hass, self.home_id)
 
-        # Insight collector mutable state — owned by coordinator so duration
+        # Insight collector mutable state, owned by coordinator so duration
         # tracking survives individual sensor entities being disabled by the user.
         # anomaly_start_times drives "heating anomaly for N minutes"; humidity
         # histories drive humidity-trend insights.
@@ -171,7 +171,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._zone_fingerprint = ZoneFingerprintTracker()
         self._request_full_sync_next_cycle: bool = False
 
-        # Polling pause state — set when should_pause_polling returns
+        # Polling pause state, set when should_pause_polling returns
         # True, cleared on the first cycle that returns False after a
         # pause. Used by should_pause_polling to suppress the
         # "resuming polling" INFO line when the user was never paused.
@@ -206,9 +206,9 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Platforms loaded during setup (used by unload to match exactly)
         self.loaded_platforms: frozenset[Platform] = frozenset()
 
-        # HomeKit local control (optional — set by entry_lifecycle when homekit_enabled)
+        # HomeKit local control (optional, set by entry_lifecycle when homekit_enabled)
         self.homekit_client: HomeKitClient | None = None
-        # HomeKit shared controller (optional — the long-lived aiohomekit
+        # HomeKit shared controller (optional, the long-lived aiohomekit
         # Controller for this entry, built by entry_lifecycle when HomeKit
         # is enabled; its _hap browser keeps the pairing discovery cache
         # warm). Stopped on unload.
@@ -225,7 +225,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._homekit_writes_saved: int = 0
         self._prev_savings_remaining: int | None = None  # for reset detection
 
-        # HomeKit write metrics (ephemeral — reset on quota reset and reconnect)
+        # HomeKit write metrics (ephemeral, reset on quota reset and reconnect)
         self._homekit_write_attempts: int = 0
         self._homekit_write_successes: int = 0
         self._homekit_write_fallbacks: int = 0
@@ -234,10 +234,10 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         self.write_health_tracker: WriteHealthTracker | None = None
 
-        # Smart Valve Control — per-zone proportional offset controllers
+        # Smart Valve Control: per-zone proportional offset controllers
         self.valve_controllers: dict[str, SmartValveController] = {}
 
-        # Offset Sync — per-zone device offset controllers
+        # Offset Sync: per-zone device offset controllers
         self.offset_sync_controllers: dict[str, OffsetSyncController] = {}
 
         # Per-zone locks serialise controller lifecycle changes.
@@ -279,7 +279,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Log INFO on the first cloud→unreachable transition (idempotent)."""
         if not self._cloud_unavailable_logged:
             _LOGGER.info(
-                "Coordinator: Tado cloud unreachable (%s) — keeping "
+                "Coordinator: Tado cloud unreachable (%s), keeping "
                 "entities live on HomeKit local data",
                 exc,
             )
@@ -374,7 +374,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         zones_info_data = self.data_loader.get_cached("zones_info")
         mobile_devices_data = self.data_loader.get_cached("mobile_devices")
 
-        # Periodic offset drift refresh — fire BEFORE snapshotting
+        # Periodic offset drift refresh: fire BEFORE snapshotting
         # `offsets` so the result dict carries the freshly re-fetched
         # values. See _maybe_resync_offsets for the gating logic.
         ratelimit_for_resync = ratelimit_data if isinstance(ratelimit_data, dict) else None
@@ -401,7 +401,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if self.api_tracker.needs_save:
             await self.api_tracker.async_save_if_dirty()
 
-        # Bridge API data — seed on first poll so sensor platform has data at setup
+        # Bridge API data: seed on first poll so sensor platform has data at setup
         if self._cached_bridge_data is None:
             first_bridge = await self._async_fetch_bridge_data()
             if first_bridge is not None:
@@ -418,7 +418,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 )
             self._wc_state_loaded = True
 
-        # Weather compensation (after bridge data — needs bridge client)
+        # Weather compensation (after bridge data, needs bridge client)
         _zone_dict = zone_data if isinstance(zone_data, dict) else None
         _weather_dict = weather_data if isinstance(weather_data, dict) else None
         wc_data = await self._async_run_weather_compensation(
@@ -484,13 +484,13 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             except TadoRateLimitError as e:
                 self.record_cloud_backoff(e.retry_after)
                 _LOGGER.warning(
-                    "Smart Valve: zone %s evaluation hit Tado rate limit — "
+                    "Smart Valve: zone %s evaluation hit Tado rate limit, "
                     "backing off, will retry after the quota window",
                     controller.zone_id,
                 )
             except (TimeoutError, aiohttp.ClientError, ValueError, KeyError):
                 _LOGGER.warning(
-                    "Smart Valve: zone %s evaluation raised an exception — "
+                    "Smart Valve: zone %s evaluation raised an exception, "
                     "controller will retry on next poll",
                     controller.zone_id, exc_info=True,
                 )
@@ -501,13 +501,13 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             except TadoRateLimitError as e:
                 self.record_cloud_backoff(e.retry_after)
                 _LOGGER.warning(
-                    "Offset Sync: zone %s evaluation hit Tado rate limit — "
+                    "Offset Sync: zone %s evaluation hit Tado rate limit, "
                     "backing off, will retry after the quota window",
                     controller_os.zone_id,
                 )
             except (TimeoutError, aiohttp.ClientError, ValueError, KeyError):
                 _LOGGER.warning(
-                    "Offset Sync: zone %s evaluation raised an exception — "
+                    "Offset Sync: zone %s evaluation raised an exception, "
                     "controller will retry on next poll",
                     controller_os.zone_id, exc_info=True,
                 )
@@ -536,32 +536,29 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
         except (TimeoutError, aiohttp.ClientError, ValueError, KeyError):
             _LOGGER.warning(
-                "HomeKit: zone mapping rebuild raised an exception — "
+                "HomeKit: zone mapping rebuild raised an exception, "
                 "will retry on the next poll", exc_info=True,
             )
             return
         if mapping.get("serial_to_zone"):
             _LOGGER.info(
-                "HomeKit: zone mapping built on retry — %d zone(s) mapped",
+                "HomeKit: zone mapping built on retry: %d zone(s) mapped",
                 len(mapping["serial_to_zone"]),
             )
             # The mapping just became non-empty. Setup subscribed to events
             # while zone_aid_map was still empty (0 chars), and no reconnect
-            # has fired (the bridge stayed connected — it was the mapping that
+            # has fired (the bridge stayed connected, it was the mapping that
             # lagged, not the connection). Subscribe now so HomeKit pushes
             # actually flow; without this the zone stays cloud-only despite a
             # connected, mapped bridge until an HA restart or a reconnect.
             provider = self.homekit_provider
             if provider is not None and provider.is_connected:
-                try:
-                    await provider.async_refresh_accessories()
-                    await provider.async_subscribe_events()
-                except (TimeoutError, aiohttp.ClientError, ValueError, KeyError):
-                    _LOGGER.warning(
-                        "HomeKit: subscribing to events after the retry "
-                        "mapping build failed — local control will stay off "
-                        "until the next poll retries", exc_info=True,
-                    )
+                # Both primitives self-protect (refresh → [], subscribe →
+                # reconnect on a bridge drop), so no caller-side guard: the
+                # cloud-domain (TimeoutError, ClientError, ValueError, KeyError)
+                # tuple this used to carry never matched a bridge error anyway.
+                await provider.async_refresh_accessories()
+                await provider.async_subscribe_events()
 
     def record_cloud_backoff(self, retry_after: int) -> None:
         """Record a cloud rate-limit window and surface the repair issue.
@@ -609,7 +606,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 reset_seconds = self._cached_ratelimit.get("reset_seconds")
                 retry_after = _sanitize_retry_after(reset_seconds)
                 _LOGGER.debug(
-                    "Coordinator: rate-limited — deferring next refresh by %ds",
+                    "Coordinator: rate-limited, deferring next refresh by %ds",
                     retry_after,
                 )
                 raise UpdateFailed(reason, retry_after=retry_after)
@@ -627,12 +624,12 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if homekit_connected != self._prev_homekit_connected:
             if homekit_connected:
                 _LOGGER.info(
-                    "Coordinator: HomeKit connected — reducing cloud "
+                    "Coordinator: HomeKit connected, reducing cloud "
                     "polling frequency in favour of local reads",
                 )
             else:
                 _LOGGER.info(
-                    "Coordinator: HomeKit disconnected — resuming full "
+                    "Coordinator: HomeKit disconnected, resuming full "
                     "cloud polling",
                 )
             self._prev_homekit_connected = homekit_connected
@@ -643,7 +640,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         cm = self.config_manager
 
-        # If user explicitly set a custom polling interval, respect it —
+        # If user explicitly set a custom polling interval, respect it:
         # fetch all data every cycle so humidity/heating power/weather stay
         # fresh at the user's chosen rate. Only use HomeKit skip logic when
         # polling is automatic (no custom interval).
@@ -721,7 +718,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # Full sync's _sync_offsets pass already pulled fresh offsets,
             # so the periodic drift refresh in _maybe_resync_offsets can
             # skip the next interval rather than double-fetching.
-            # Only stamp when SVC is active — if no zone uses SVC, no
+            # Only stamp when SVC is active. If no zone uses SVC, no
             # offsets were fetched, so the drift refresh should not be
             # suppressed on the grounds that a full sync "covered" them.
             if cm.get_offset_enabled() and self.zone_config_manager.has_any_svc_active():
@@ -743,7 +740,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             ):
                 _LOGGER.info(
                     "Coordinator: Tado API quota reset detected "
-                    "(remaining %s → %s) — zeroing HomeKit savings "
+                    "(remaining %s → %s), zeroing HomeKit savings "
                     "counters (was reads=%s, writes=%s)",
                     self._prev_savings_remaining, current_remaining,
                     self._homekit_reads_saved, self._homekit_writes_saved,
@@ -773,14 +770,14 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         if was_failing:
             _LOGGER.info(
-                "Coordinator: connection restored — first poll after "
+                "Coordinator: connection restored, first poll after "
                 "previous failure succeeded",
             )
 
         # One-line poll summary so users grepping the debug log can
         # see at a glance what each cycle fetched / skipped.
         _LOGGER.debug(
-            "Coordinator: poll cycle — zones=%s weather=%s homekit=%s "
+            "Coordinator: poll cycle, zones=%s weather=%s homekit=%s "
             "interval=%dm full=%s",
             "skip" if skip_zone_states else "fetch",
             "skip" if skip_weather or zone_only else ("fetch" if cm.get_weather_enabled() else "off"),
@@ -825,7 +822,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         2. Drift-refresh floor elapsed. With HomeKit connected the floor
            is `max(OFFSET_DRIFT_REFRESH_SECONDS, homekit_cloud_sync_minutes)`;
            otherwise `OFFSET_DRIFT_REFRESH_SECONDS` alone.
-        3. Quota not below the tier-aware low-quota threshold — safe to
+        3. Quota not below the tier-aware low-quota threshold: safe to
            skip under quota pressure because the per-write readback gate
            still protects the cache.
         """
@@ -857,7 +854,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             limit = ratelimit_data.get("limit")
             if isinstance(remaining, int) and remaining < low_quota_threshold(limit):
                 _LOGGER.debug(
-                    "Offset Sync: skipping drift refresh — Tado API quota "
+                    "Offset Sync: skipping drift refresh. Tado API quota "
                     "low (%s call(s) remaining)",
                     remaining,
                 )
@@ -884,24 +881,24 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except (TadoAuthError, TadoRateLimitError) as e:
             # Best-effort refresh: it doesn't raise to a caller, but a revoked
             # token or exhausted quota still needs the same recovery the other
-            # paths get — start reauth / record the back-off — so a token
+            # paths get (start reauth / record the back-off) so a token
             # revoked during the drift refresh surfaces now, not only on the
             # next poll. The readback gate still protects the cache meanwhile.
             from .error_dispatch import _apply_cloud_error_recovery
 
             _apply_cloud_error_recovery(e, self.config_entry, self.hass, self)
             _LOGGER.debug(
-                "Offset Sync: drift refresh hit %s — recovery started, "
+                "Offset Sync: drift refresh hit %s, recovery started, "
                 "readback gate still protects the cache",
                 type(e).__name__,
             )
             return
         except TadoSyncError:
-            # Transient sync error on a best-effort refresh — swallow and retry
+            # Transient sync error on a best-effort refresh: swallow and retry
             # next poll. Programmer bugs (KeyError / AttributeError / …) are
             # deliberately not caught, so they propagate and HA logs them.
             _LOGGER.debug(
-                "Offset Sync: drift refresh fetch failed — readback gate "
+                "Offset Sync: drift refresh fetch failed, readback gate "
                 "still protects the cache, will retry next poll",
                 exc_info=True,
             )
@@ -910,7 +907,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._last_refreshed_zone_id = target
         self._last_offset_resync = dt_util.utcnow()
         _LOGGER.debug(
-            "Offset Sync: drift refresh complete — zone %s reconciled with "
+            "Offset Sync: drift refresh complete, zone %s reconciled with "
             "Tado, %s cloud call(s) used this cycle",
             target, calls_made,
         )
@@ -953,13 +950,13 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             await self.data_loader.async_update_store("ac_capabilities_fp", fresh)
 
         if changed:
-            # Don't mark the whole cache dirty — force_zone_ids re-fetches
+            # Don't mark the whole cache dirty; force_zone_ids re-fetches
             # exactly the changed zones while _sync_ac_capabilities keeps the
             # rest from the live cache. Marking dirty would empty that merge
             # base, refetching every AC zone and risking a transient blip on an
             # unchanged zone dropping its cached caps.
             _LOGGER.info(
-                "AC capabilities: device change detected for zone(s) %s — "
+                "AC capabilities: device change detected for zone(s) %s, "
                 "refreshing from cloud",
                 sorted(changed),
             )
@@ -977,13 +974,13 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if outdoor_temp is None:
             return
 
-        # Defensive guard — should already be loaded during setup, but
+        # Defensive guard: should already be loaded during setup, but
         # if a future refactor drops the eager load this branch keeps
         # outdoor temp history working.
         if not self._outdoor_temp_loaded:
             _LOGGER.warning(
                 "Coordinator: outdoor temperature history not eagerly "
-                "loaded during setup — loading now",
+                "loaded during setup, loading now",
             )
             self._outdoor_temp_history = await self.data_loader.async_load_outdoor_temp_history()
             self._outdoor_temp_loaded = True
@@ -1021,7 +1018,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             except (KeyError, TypeError, ValueError):
                 _LOGGER.debug(
                     "Heating Cycle: zone %s temperature update could not "
-                    "be parsed — skipping this tick",
+                    "be parsed, skipping this tick",
                     zone_id,
                 )
 
@@ -1040,7 +1037,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if old_presence == "AWAY" and new_presence == "HOME":
             await self._sr_manager.clear_all()
             _LOGGER.info(
-                "State Restore: home returned from Away — cleared all "
+                "State Restore: home returned from Away, cleared all "
                 "captured states so the Home schedule resumes cleanly",
             )
 
@@ -1146,7 +1143,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.bridge_health_tracker.record_failure(str(e))
             self.data_loader.save_bridge_health(self.bridge_health_tracker.to_dict())
             _LOGGER.debug(
-                "Bridge: fetch failed (%s) — cloud data unaffected",
+                "Bridge: fetch failed (%s), cloud data unaffected",
                 e,
             )
             return None
@@ -1177,7 +1174,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             raise
         except Exception:
             _LOGGER.debug(
-                "Bridge: initial fetch failed — will retry on the next "
+                "Bridge: initial fetch failed, will retry on the next "
                 "bridge poll cycle",
             )
 
@@ -1192,7 +1189,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 raise
             except Exception:
                 _LOGGER.debug(
-                    "Bridge: fetch failed — will retry on the next "
+                    "Bridge: fetch failed, will retry on the next "
                     "bridge poll cycle",
                 )
 
@@ -1234,7 +1231,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # the main poll. The cycle itself no longer carries a catch-all
         # (so bridge failures stay isolated and programmer bugs surface);
         # isolation lives here, at the caller. Cloud auth / rate-limit
-        # errors are re-raised so the main dispatch handles them — though
+        # errors are re-raised so the main dispatch handles them, though
         # the cycle makes no cloud calls today, this guards a future one.
         try:
             return await async_run_wc_cycle(
@@ -1251,7 +1248,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             raise
         except Exception:
             _LOGGER.warning(
-                "Weather Compensation: cycle failed — main coordinator "
+                "Weather Compensation: cycle failed, main coordinator "
                 "update unaffected, will retry next cycle",
                 exc_info=True,
             )
@@ -1290,7 +1287,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if self._global_sequence >= sys.maxsize:
             _LOGGER.debug(
                 "Coordinator: optimistic-update sequence reached "
-                "sys.maxsize — wrapping back to 0",
+                "sys.maxsize, wrapping back to 0",
             )
             self._global_sequence = 0
         return self._global_sequence
@@ -1401,7 +1398,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 zone_id: ts.isoformat() if ts is not None else None
                 for zone_id, ts in self._insight_anomaly_start_times.items()
             },
-            # Humidity samples are plain floats — JSON round-trips cleanly.
+            # Humidity samples are plain floats, JSON round-trips cleanly.
             "humidity_histories": {
                 zone_id: list(samples)
                 for zone_id, samples in self._insight_humidity_histories.items()
@@ -1420,7 +1417,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except (OSError, ValueError, TypeError) as e:
             _LOGGER.warning(
                 "Coordinator: could not schedule insight runtime save "
-                "(%s) — anomaly timers and humidity history will be "
+                "(%s), anomaly timers and humidity history will be "
                 "kept in memory only this cycle",
                 e,
             )
@@ -1438,7 +1435,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             data = await self.data_loader.async_load_auxiliary(INSIGHT_RUNTIME_STATE_KEY)
         except (OSError, ValueError) as e:
             _LOGGER.debug(
-                "Coordinator: no insight runtime state to restore (%s) — "
+                "Coordinator: no insight runtime state to restore (%s), "
                 "starting fresh",
                 e,
             )
@@ -1446,7 +1443,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         if not isinstance(data, dict):
             _LOGGER.debug(
-                "Coordinator: insight runtime state is not a dict — "
+                "Coordinator: insight runtime state is not a dict, "
                 "starting fresh",
             )
             return
@@ -1454,7 +1451,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if data.get("version") != 1:
             _LOGGER.debug(
                 "Coordinator: insight runtime state version %s does not "
-                "match expected 1 — starting fresh",
+                "match expected 1, starting fresh",
                 data.get("version"),
             )
             return
@@ -1484,7 +1481,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     ]
 
         _LOGGER.debug(
-            "Coordinator: restored insight runtime state — %d anomaly "
+            "Coordinator: restored insight runtime state: %d anomaly "
             "timer(s), %d humidity history(ies)",
             len(self._insight_anomaly_start_times),
             len(self._insight_humidity_histories),
@@ -1506,7 +1503,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except (OSError, ValueError, TypeError) as e:
             _LOGGER.warning(
                 "Coordinator: could not flush insight runtime state on "
-                "shutdown (%s) — anomaly timers and humidity history may "
+                "shutdown (%s), anomaly timers and humidity history may "
                 "be lost across this restart",
                 e,
             )
@@ -1556,7 +1553,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 )
 
         # In-memory insight runtime state (two zone-keyed dicts, not a
-        # DataLoader store) — prune the removed zone and persist.
+        # DataLoader store), prune the removed zone and persist.
         try:
             insight_removed = 0
             for d in (self._insight_anomaly_start_times, self._insight_humidity_histories):
@@ -1600,7 +1597,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         zones_info = self.data_loader.get_cached("zones_info")
         if not zones_info or not isinstance(zones_info, list):
             _LOGGER.warning(
-                "Smart Valve: Tado zone data not loaded yet — controllers "
+                "Smart Valve: Tado zone data not loaded yet, controllers "
                 "will be set up on the next successful poll",
             )
             return
@@ -1628,7 +1625,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if not ext_sensor:
                 _LOGGER.info(
                     "Smart Valve: zone %s is set to %s mode but has no "
-                    "external sensor selected — pick a sensor in Zone "
+                    "external sensor selected, pick a sensor in Zone "
                     "Configuration to enable Smart Valve Control",
                     zone_id, svc_mode,
                 )
@@ -1663,7 +1660,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Deactivate and clean up all valve and offset sync controllers.
 
         Sets `_shutting_down` so any queued/in-flight `_transition` tasks
-        bail out before touching controller dicts — preventing zombie
+        bail out before touching controller dicts, preventing zombie
         controllers that would outlive the shutdown sequence.
         """
         self._shutting_down = True
@@ -1703,7 +1700,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         # Snapshot the user's intent synchronously so each scheduled
         # `_transition` carries the config state from its triggering
-        # callback — not whatever's in config when the task eventually
+        # callback, not whatever's in config when the task eventually
         # runs (which could be a later, conflicting change).
         config = self.zone_config_manager.get_zone_config(zone_id)
         current_mode: str = (
@@ -1721,7 +1718,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
             if zone_type != "HEATING":
                 _LOGGER.warning(
-                    "Smart Valve: zone %s is a %s zone — Smart Valve "
+                    "Smart Valve: zone %s is a %s zone. Smart Valve "
                     "Control only works with heating zones (with TRVs), "
                     "skipping config change",
                     zone_id, zone_type,
@@ -1757,7 +1754,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     except Exception:
                         _LOGGER.warning(
                             "Smart Valve: zone %s deactivation raised an "
-                            "exception — controller may not have shut "
+                            "exception, controller may not have shut "
                             "down cleanly",
                             zone_id, exc_info=True,
                         )
@@ -1766,7 +1763,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     if current_mode == SVC_MODE_VALVE_TARGET:
                         _LOGGER.warning(
                             "Smart Valve: zone %s switching from "
-                            "offset_sync to valve_target — any non-zero "
+                            "offset_sync to valve_target, any non-zero "
                             "device offset still on the TRV may cause "
                             "double compensation. Reset the offset to 0 "
                             "via the set_temperature_offset service if "
@@ -1783,7 +1780,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     except Exception:
                         _LOGGER.warning(
                             "Offset Sync: zone %s deactivation raised an "
-                            "exception — controller may not have shut "
+                            "exception, controller may not have shut "
                             "down cleanly",
                             zone_id, exc_info=True,
                         )
@@ -1793,7 +1790,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     if not ext_sensor:
                         _LOGGER.info(
                             "Smart Valve: zone %s set to valve_target "
-                            "mode but no external sensor — skipping "
+                            "mode but no external sensor, skipping "
                             "activation",
                             zone_id,
                         )
@@ -1809,7 +1806,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     if not ext_sensor:
                         _LOGGER.info(
                             "Offset Sync: zone %s set to offset_sync mode "
-                            "but no external sensor — skipping activation",
+                            "but no external sensor, skipping activation",
                             zone_id,
                         )
                         self._raise_sensor_missing_repair(zone_id, current_mode)
@@ -1821,7 +1818,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         self.offset_sync_controllers[zone_id] = new_controller
 
                 else:
-                    # svc_mode is "off" or unknown — no new controller,
+                    # svc_mode is "off" or unknown: no new controller,
                     # but clear any stale repair issue for this zone.
                     self._clear_sensor_missing_repair(zone_id)
 
@@ -1837,7 +1834,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def _raise_sensor_missing_repair(self, zone_id: str, mode: str) -> None:
         """Surface an HA repair notification when the user's zone has no external sensor.
 
-        The repair is idempotent — HA's issue registry updates an
+        The repair is idempotent: HA's issue registry updates an
         existing issue with the same id rather than duplicating it.
         """
         try:
@@ -1866,7 +1863,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except (KeyError, ValueError, AttributeError):
             _LOGGER.debug(
                 "Coordinator: could not raise sensor-missing repair for "
-                "zone %s — HA issue registry call failed",
+                "zone %s. HA issue registry call failed",
                 zone_id, exc_info=True,
             )
 
@@ -1883,7 +1880,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except (KeyError, ValueError, AttributeError):
             _LOGGER.debug(
                 "Coordinator: could not clear sensor-missing repair for "
-                "zone %s — HA issue registry call failed",
+                "zone %s. HA issue registry call failed",
                 zone_id, exc_info=True,
             )
 

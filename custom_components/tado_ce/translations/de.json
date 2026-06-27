@@ -1863,7 +1863,8 @@
       "homekit_pairing_failed": "Pairing fehlgeschlagen - bitte versuchen Sie es erneut",
       "svc_active_sensor_clear": "Die intelligente Ventilsteuerung ist für diese Zone aktiviert. Durch Deaktivieren des externen Temperatursensors wird die intelligente Ventilsteuerung deaktiviert. Stellen Sie den Modus der intelligenten Ventilsteuerung zunächst auf „Aus“, wenn Sie den Sensor pausieren möchten, ohne die SVC zu stoppen.",
       "homekit_max_tries": "Zu viele fehlgeschlagene Versuche – die Brücke ist vorübergehend gesperrt. Warten Sie einige Minuten oder setzen Sie die Brücke zurück und versuchen Sie es erneut.",
-      "homekit_busy": "Die Verbindung ist gerade ausgelastet – möglicherweise findet gerade eine weitere Paarung statt. Versuchen Sie es in einem Moment erneut."
+      "homekit_busy": "Die Verbindung ist gerade ausgelastet – möglicherweise findet gerade eine weitere Paarung statt. Versuchen Sie es in einem Moment erneut.",
+      "homekit_no_zeroconf": "Für die HomeKit-Kopplung wird der Zeroconf-Dienst von Home Assistant benötigt, der auf diesem Host jedoch nicht läuft. Fügen Sie `default_config:` (oder `zeroconf:`) zu Ihrer configuration.yaml hinzu, starten Sie das System neu und versuchen Sie es dann erneut."
     }
   }
 }

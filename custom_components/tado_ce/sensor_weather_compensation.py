@@ -1,4 +1,4 @@
-"""Tado CE Weather Compensation Sensors — target flow temp and engine status."""
+"""Tado CE Weather Compensation Sensors: target flow temp and engine status."""
 
 from __future__ import annotations
 

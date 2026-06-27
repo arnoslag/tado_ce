@@ -1,4 +1,4 @@
-"""Tado CE device trackers — Tado mobile-app presence per registered phone.
+"""Tado CE device trackers: Tado mobile-app presence per registered phone.
 
 One tracker per mobile device that has Tado's geo-tracking
 enabled in the app. Source-of-truth is the cloud `mobile_devices`
@@ -58,7 +58,7 @@ async def async_setup_entry(
                 trackers.append(TadoDeviceTracker(coordinator, device_id, device_name, device, home_id))
             else:
                 _LOGGER.debug(
-                    "Device Tracker: %s skipped — geo-tracking disabled "
+                    "Device Tracker: %s skipped, geo-tracking disabled "
                     "in the Tado app for this device",
                     device_name,
                 )
@@ -72,7 +72,7 @@ async def async_setup_entry(
     else:
         _LOGGER.debug(
             "Device Tracker: no mobile devices have geo-tracking "
-            "enabled — no tracker entities created",
+            "enabled, no tracker entities created",
         )
 
 
@@ -109,7 +109,7 @@ class TadoDeviceTracker(CoordinatorEntity["TadoDataUpdateCoordinator"], TrackerE
         self._location = None
         self._bearing: float | None = None
         self._relative_distance: float | None = None
-        # WHY: when _is_home is None (Unknown state), surface why — Tado app's
+        # WHY: when _is_home is None (Unknown state), surface why. Tado app's
         # geo-tracking is on but the device hasn't reported a location block.
         # On Android this is usually the Tado app being denied background
         # location permission by the OS (battery optimisation, Doze mode).
@@ -173,7 +173,7 @@ class TadoDeviceTracker(CoordinatorEntity["TadoDataUpdateCoordinator"], TrackerE
                             self._location_status = "reporting"
                         else:
                             # No location block usually means the device's
-                            # background location is currently denied —
+                            # background location is currently denied,
                             # most commonly Android battery optimisation
                             # killing the Tado app's location service, or
                             # the user denying "always" permission.
@@ -186,7 +186,7 @@ class TadoDeviceTracker(CoordinatorEntity["TadoDataUpdateCoordinator"], TrackerE
             self._attr_available = False
         except (KeyError, TypeError, AttributeError) as err:
             _LOGGER.debug(
-                "Device Tracker: %s update failed (%s) — marking "
+                "Device Tracker: %s update failed (%s), marking "
                 "unavailable until the next poll",
                 self._device_name, err,
             )

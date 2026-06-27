@@ -1,4 +1,4 @@
-"""Heating insights — anomaly, preheat, boiler flow, efficiency."""
+"""Heating insights: anomaly, preheat, boiler flow, efficiency."""
 
 from __future__ import annotations
 

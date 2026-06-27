@@ -1,4 +1,4 @@
-"""Tado CE HomeKit client — pairing, connection lifecycle, exponential-backoff reconnect."""
+"""Tado CE HomeKit client: pairing, connection lifecycle, exponential-backoff reconnect."""
 
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ from aiohomekit.exceptions import (
     HomeKitException,
     MaxPeersError,
     MaxTriesError,
+    TransportNotSupportedError,
     UnavailableError,
 )
 from aiohomekit.exceptions import (
@@ -62,7 +63,7 @@ async def async_create_controller(hass: HomeAssistant) -> Any:
 
     The aiohomekit import triggers lark grammar loading (blocking file I/O),
     so the import runs off the event loop. The returned controller is already
-    started — its _hap browser begins warming the discovery cache immediately.
+    started, its _hap browser begins warming the discovery cache immediately.
     """
     from homeassistant.components.zeroconf import async_get_async_instance
 
@@ -95,7 +96,7 @@ class HomeKitClient:
 
         `controller` is an optional shared, already-started aiohomekit
         Controller. When supplied, this client uses it and never builds or
-        stops its own — the owner (the entry) manages its lifecycle.
+        stops its own, the owner (the entry) manages its lifecycle.
         """
         self._hass = hass
         self._home_id = home_id
@@ -185,7 +186,7 @@ class HomeKitClient:
             )
         if not pairing_data or not isinstance(pairing_data, dict):
             _LOGGER.debug(
-                "HomeKit: no pairing credentials stored — staying "
+                "HomeKit: no pairing credentials stored, staying "
                 "disconnected, pair the bridge from Options to enable "
                 "local control",
             )
@@ -197,7 +198,7 @@ class HomeKitClient:
             self._pairing = controller.load_pairing(alias, pairing_data)
             if self._pairing is None:
                 _LOGGER.warning(
-                    "HomeKit: aiohomekit returned no pairing for home %s — "
+                    "HomeKit: aiohomekit returned no pairing for home %s, "
                     "stored credentials may be corrupt, re-pair to recover",
                     mask_home_id(self._home_id),
                 )
@@ -219,8 +220,12 @@ class HomeKitClient:
             self._pairing = None
             return False
         except Exception:
+            # Optional local-control path: any connect failure (network,
+            # aiohomekit internals, missing zeroconf) degrades to cloud-only
+            # and lets the reconnect loop retry. Broad catch is deliberate;
+            # exc_info keeps the cause without crashing the read.
             _LOGGER.warning(
-                "HomeKit: could not connect to bridge for home %s — "
+                "HomeKit: could not connect to bridge for home %s, "
                 "check the bridge is reachable, will keep retrying in "
                 "the background",
                 mask_home_id(self._home_id),
@@ -233,7 +238,7 @@ class HomeKitClient:
     async def async_has_pairing(self) -> bool:
         """Return True when a HomeKit pairing is stored for this home.
 
-        Single source of truth for "is HomeKit paired?" — reads the same
+        Single source of truth for "is HomeKit paired?", reads the same
         Store the pairing is written to, so callers never drift from the
         real location (the bug this method exists to kill).
         """
@@ -256,7 +261,7 @@ class HomeKitClient:
                 await self._pairing.close()
             except (AccessoryDisconnectedError, HKTimeoutError, HomeKitException):
                 _LOGGER.debug(
-                    "HomeKit: error while closing the pairing — proceeding "
+                    "HomeKit: error while closing the pairing, proceeding "
                     "with disconnect anyway",
                     exc_info=True,
                 )
@@ -272,7 +277,7 @@ class HomeKitClient:
     async def async_stop_controller(self) -> None:
         """Stop the aiohomekit controller, but only if this client owns it.
 
-        An injected shared controller is left running — its owner (the
+        An injected shared controller is left running, its owner (the
         entry) stops it. A self-built controller is stopped and cleared.
         """
         if self._controller is not None and self._owns_controller:
@@ -280,7 +285,7 @@ class HomeKitClient:
                 await self._controller.async_stop()
             except HomeKitException:
                 _LOGGER.debug(
-                    "HomeKit: error stopping controller — proceeding",
+                    "HomeKit: error stopping controller, proceeding",
                     exc_info=True,
                 )
             self._controller = None
@@ -324,9 +329,12 @@ class HomeKitClient:
                         try:
                             await cb()
                         except Exception:
+                            # Callbacks are injected by other subsystems, so
+                            # isolate each: one failing must not abort the
+                            # rest or the reconnect. Broad catch is deliberate.
                             _LOGGER.warning(
                                 "HomeKit: post-reconnect setup callback "
-                                "failed — local control may degrade until "
+                                "failed, local control may degrade until "
                                 "the next reconnect cycle",
                             )
                             _LOGGER.debug(
@@ -336,11 +344,19 @@ class HomeKitClient:
                     return
             except AuthenticationError as err:
                 self._handle_homekit_pairing_invalid(err)
-                return  # stop the loop — retrying is pointless
+                return  # stop the loop: retrying is pointless
             except Exception:
+                # Detached background task: an uncaught exception would kill
+                # it and stop reconnecting forever, so catch to keep it
+                # backing off. Broad catch is deliberate; warning (not debug)
+                # so a programmer bug still leaves a trace, not a dead task.
+                _LOGGER.warning(
+                    "HomeKit: reconnect attempt %d failed for home %s, "
+                    "will back off and retry",
+                    backoff_idx + 1, mask_home_id(self._home_id),
+                )
                 _LOGGER.debug(
-                    "HomeKit: reconnect attempt %d failed for home %s",
-                    backoff_idx + 1, mask_home_id(self._home_id), exc_info=True,
+                    "HomeKit: reconnect attempt error details", exc_info=True,
                 )
 
             backoff_idx += 1
@@ -395,7 +411,7 @@ class HomeKitClient:
         self._is_connected = True
         self._last_connected = dt_util.utcnow().isoformat()
         _LOGGER.info(
-            "HomeKit: pairing successful for home %s — local control enabled",
+            "HomeKit: pairing successful for home %s, local control enabled",
             mask_home_id(self._home_id),
         )
 
@@ -418,12 +434,12 @@ class HomeKitClient:
                 elif pairing_data is None:
                     _LOGGER.warning(
                         "HomeKit: could not read pairing data while "
-                        "unpairing — the bridge may keep a stale "
+                        "unpairing, the bridge may keep a stale "
                         "pairing entry until you reset the bridge",
                     )
             except HomeKitException:
                 _LOGGER.warning(
-                    "HomeKit: bridge refused the unpair request — local "
+                    "HomeKit: bridge refused the unpair request, local "
                     "credentials cleared, but the bridge may still list "
                     "this pairing. Reset the bridge to clear it.",
                 )
@@ -456,7 +472,7 @@ class HomeKitClient:
             return []
         except (AccessoryDisconnectedError, HKTimeoutError, HomeKitException):
             _LOGGER.debug(
-                "HomeKit: could not list accessories — connection may "
+                "HomeKit: could not list accessories, connection may "
                 "be unhealthy, returning empty list",
                 exc_info=True,
             )
@@ -471,12 +487,12 @@ class HomeKitClient:
         already_raised = ir.async_get(self._hass).async_get_issue(DOMAIN, issue_id) is not None
         if already_raised:
             _LOGGER.debug(
-                "HomeKit: pairing still invalid for home %s — Repair issue already active",
+                "HomeKit: pairing still invalid for home %s. Repair issue already active",
                 mask_home_id(self._home_id),
             )
         else:
             _LOGGER.warning(
-                "HomeKit: pairing is no longer valid for home %s — "
+                "HomeKit: pairing is no longer valid for home %s, "
                 "bridge may have been factory-reset. Re-pair in "
                 "Settings → Tado CE → Configure → General Settings.",
                 mask_home_id(self._home_id),
@@ -498,7 +514,7 @@ def _shared_controller(flow: TadoCEOptionsFlow) -> Any | None:
     When HomeKit is already enabled, the entry holds a warm long-lived
     controller on its coordinator (entry.runtime_data); reusing it means the
     pairing discovery cache is already populated. None when enabling from
-    scratch — the client then self-builds and the warm-up loop covers it.
+    scratch, the client then self-builds and the warm-up loop covers it.
     """
     coordinator = getattr(flow.config_entry, "runtime_data", None)
     return getattr(coordinator, "homekit_controller", None)
@@ -559,11 +575,25 @@ async def async_step_homekit_pairing(
                 errors["homekit_pin"] = "homekit_max_tries"
             except (BackoffError, BusyError):
                 errors["homekit_pin"] = "homekit_busy"
+            except TransportNotSupportedError:
+                # No _hap zeroconf browser on this host, so pairing can't
+                # start. Name the real cause (missing zeroconf) instead of a
+                # generic "pairing failed".
+                errors["homekit_pin"] = "homekit_no_zeroconf"
+                _LOGGER.warning(
+                    "HomeKit: pairing unavailable, no zeroconf _hap browser "
+                    "on this host. Add `default_config:` (or `zeroconf:`) to "
+                    "configuration.yaml and restart.",
+                )
             except Exception as err:
+                # Final backstop after the typed catches above: a config flow
+                # must never crash, it has to show the user a form with an
+                # error, so any unmapped exception falls through to the
+                # generic key. Broad catch is deliberate.
                 errors["homekit_pin"] = "homekit_pairing_failed"
-                _LOGGER.warning("HomeKit: pairing failed — %s", err)
+                _LOGGER.warning("HomeKit: pairing failed: %s", err)
         else:
-            # Empty PIN — cancel pairing and revert the homekit_enabled
+            # Empty PIN: cancel pairing and revert the homekit_enabled
             # flag so the options form reflects the actual state.
             if flow._pending_general_options:
                 flow._pending_general_options["homekit_enabled"] = False
@@ -603,7 +633,7 @@ async def async_step_homekit_unpair(
             )
 
             # Connect first so the unpair can also clear the bridge's
-            # side of the pairing — best-effort, falls through on
+            # side of the pairing, best-effort, falls through on
             # failure.
             await client.async_connect()
             await client.async_unpair()
@@ -611,7 +641,7 @@ async def async_step_homekit_unpair(
             _LOGGER.info("HomeKit: unpair successful")
         except HomeKitException:
             _LOGGER.warning(
-                "HomeKit: unpair encountered errors — local credentials "
+                "HomeKit: unpair encountered errors, local credentials "
                 "have been cleared, but the bridge may still list the "
                 "pairing. Reset the bridge if you want to clear it.",
             )

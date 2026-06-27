@@ -1,4 +1,4 @@
-"""Tado CE button platform — resume schedules, refresh caches, timer, boost."""
+"""Tado CE button platform: resume schedules, refresh caches, timer, boost."""
 
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
-_MIN_BOOST_HEATING_RATE = 0.1  # °C/h — minimum meaningful rate for smart boost calculation
+_MIN_BOOST_HEATING_RATE = 0.1  # °C/h: minimum meaningful rate for smart boost calculation
 
 PARALLEL_UPDATES = 1
 
@@ -98,7 +98,7 @@ async def async_setup_entry(
                     TadoRefreshScheduleButton(coordinator, zone_id, zone_name, home_id),
                 )
 
-            # One identify button per physical device — multi-TRV zones
+            # One identify button per physical device. Multi-TRV zones
             # get one per device so each radiator can be flashed individually.
             # A device shared across zones gets a single button (its serial is
             # the unique ID, so a duplicate would collide).
@@ -117,7 +117,7 @@ async def async_setup_entry(
         _LOGGER.info("Button: created %d button entity(ies)", len(buttons))
     else:
         _LOGGER.debug(
-            "Button: no buttons to create — calendar / boost / "
+            "Button: no buttons to create, calendar / boost / "
             "AC features all disabled in config",
         )
 
@@ -150,7 +150,7 @@ class TadoResumeAllSchedulesButton(CoordinatorEntity[TadoDataUpdateCoordinator],
 
         if not zones_info:
             _LOGGER.warning(
-                "Button: Resume All Schedules — no zones available "
+                "Button: Resume All Schedules, no zones available "
                 "yet, will retry on the next poll",
             )
             return
@@ -167,7 +167,7 @@ class TadoResumeAllSchedulesButton(CoordinatorEntity[TadoDataUpdateCoordinator],
             # Skip the cloud call for zones already on schedule (no overlay).
             if ResumeGuard.should_skip_resume(self.coordinator, zone_id):
                 _LOGGER.debug(
-                    "Button: %s (zone %s) already on schedule — skipping",
+                    "Button: %s (zone %s) already on schedule, skipping",
                     zone_name, zone_id,
                 )
                 success_count += 1
@@ -182,16 +182,16 @@ class TadoResumeAllSchedulesButton(CoordinatorEntity[TadoDataUpdateCoordinator],
                     success_count += 1
                 else:
                     # API returns False when no overlay exists, which
-                    # is the desired end state — count as success.
+                    # is the desired end state, count as success.
                     _LOGGER.debug(
-                        "Button: %s (zone %s) had no overlay — "
+                        "Button: %s (zone %s) had no overlay, "
                         "schedule already active",
                         zone_name, zone_id,
                     )
                     success_count += 1
             except Exception:
                 _LOGGER.warning(
-                    "Button: Resume All Schedules failed for %s — "
+                    "Button: Resume All Schedules failed for %s, "
                     "the zone will need to be resumed manually",
                     zone_name,
                     exc_info=True,
@@ -200,13 +200,13 @@ class TadoResumeAllSchedulesButton(CoordinatorEntity[TadoDataUpdateCoordinator],
 
         if fail_count == 0:
             _LOGGER.info(
-                "Button: Resume All Schedules complete — %d zone(s) "
+                "Button: Resume All Schedules complete: %d zone(s) "
                 "processed",
                 success_count,
             )
         else:
             _LOGGER.warning(
-                "Button: Resume All Schedules — %d succeeded, %d "
+                "Button: Resume All Schedules: %d succeeded, %d "
                 "failed",
                 success_count, fail_count,
             )
@@ -224,7 +224,7 @@ class TadoRefreshACCapabilitiesButton(CoordinatorEntity[TadoDataUpdateCoordinato
     """Drop the cached AC capabilities and re-fetch from the cloud.
 
     Useful when a unit's reported fan / swing options change
-    (firmware bump, replaced AC) — the cache normally only
+    (firmware bump, replaced AC), the cache normally only
     refreshes on integration setup.
     """
 
@@ -253,7 +253,7 @@ class TadoRefreshACCapabilitiesButton(CoordinatorEntity[TadoDataUpdateCoordinato
 
         if not zones_info or not isinstance(zones_info, list):
             _LOGGER.warning(
-                "Button: Refresh AC Capabilities — no zones available "
+                "Button: Refresh AC Capabilities, no zones available "
                 "yet, will retry after the next zone fetch",
             )
             return
@@ -261,7 +261,7 @@ class TadoRefreshACCapabilitiesButton(CoordinatorEntity[TadoDataUpdateCoordinato
         try:
             await client._sync_ac_capabilities(zones_info)
             _LOGGER.info(
-                "Button: AC capabilities refreshed — entities will "
+                "Button: AC capabilities refreshed, entities will "
                 "pick up the new shape on the next coordinator update",
             )
 
@@ -272,7 +272,7 @@ class TadoRefreshACCapabilitiesButton(CoordinatorEntity[TadoDataUpdateCoordinato
             )
         except Exception:
             _LOGGER.warning(
-                "Button: AC capabilities refresh failed — keeping "
+                "Button: AC capabilities refresh failed, keeping "
                 "the previous capability cache, will retry on the "
                 "next press",
                 exc_info=True,
@@ -307,7 +307,7 @@ class TadoWaterHeaterTimerButton(CoordinatorEntity[TadoDataUpdateCoordinator], B
         from homeassistant.helpers import entity_registry as er
 
         _LOGGER.debug(
-            "Button: timer pressed — %s for %s minutes",
+            "Button: timer pressed: %s for %s minutes",
             self._zone_name, self._duration,
         )
 
@@ -316,7 +316,7 @@ class TadoWaterHeaterTimerButton(CoordinatorEntity[TadoDataUpdateCoordinator], B
         )
 
         # Look the entity up by unique_id rather than constructing
-        # `water_heater.<slug>` — HA adds `_2` / `_3` suffixes when
+        # `water_heater.<slug>`, HA adds `_2` / `_3` suffixes when
         # entity-id collisions occur, and the unique_id is stable.
         registry = er.async_get(self.hass)
         unique_id = f"tado_ce_{self.coordinator.home_id}_zone_{self._zone_id}_water_heater"
@@ -330,7 +330,7 @@ class TadoWaterHeaterTimerButton(CoordinatorEntity[TadoDataUpdateCoordinator], B
 
         if not self.hass.states.get(water_heater_entity_id):
             _LOGGER.warning(
-                "Button: timer failed — water heater %s not found in "
+                "Button: timer failed, water heater %s not found in "
                 "the entity registry (was the integration reloaded?)",
                 water_heater_entity_id,
             )
@@ -362,7 +362,7 @@ class TadoWaterHeaterTimerButton(CoordinatorEntity[TadoDataUpdateCoordinator], B
             )
 
             _LOGGER.debug(
-                "Button: timer set — %s for %s minutes",
+                "Button: timer set: %s for %s minutes",
                 self._zone_name, self._duration,
             )
 
@@ -371,7 +371,7 @@ class TadoWaterHeaterTimerButton(CoordinatorEntity[TadoDataUpdateCoordinator], B
         except Exception as e:
             _LOGGER.warning(
                 "Button: %d-minute timer for %s failed unexpectedly "
-                "(%s) — wrapping as HomeAssistantError so the UI "
+                "(%s), wrapping as HomeAssistantError so the UI "
                 "surfaces the failure",
                 self._duration, self._zone_name, e,
                 exc_info=True,
@@ -421,7 +421,7 @@ class TadoRefreshScheduleButton(CoordinatorEntity[TadoDataUpdateCoordinator], Bu
 
             if not schedule_data:
                 _LOGGER.warning(
-                    "Button: schedule fetch for %s returned no data — "
+                    "Button: schedule fetch for %s returned no data, "
                     "calendar will keep the previous schedule",
                     self._zone_name,
                 )
@@ -439,7 +439,7 @@ class TadoRefreshScheduleButton(CoordinatorEntity[TadoDataUpdateCoordinator], Bu
             await self.coordinator.data_loader.async_update_store("schedules", schedules)
 
             _LOGGER.debug(
-                "Button: schedule refreshed for %s — cache updated",
+                "Button: schedule refreshed for %s, cache updated",
                 self._zone_name,
             )
 
@@ -450,7 +450,7 @@ class TadoRefreshScheduleButton(CoordinatorEntity[TadoDataUpdateCoordinator], Bu
 
         except Exception:
             _LOGGER.warning(
-                "Button: schedule refresh for %s failed — calendar "
+                "Button: schedule refresh for %s failed, calendar "
                 "will keep the previous schedule until the next press",
                 self._zone_name,
                 exc_info=True,
@@ -468,7 +468,7 @@ SMART_BOOST_DEFAULT_RATE = 1.0  # Default heating rate if unknown (°C/h)
 
 
 class TadoBoostButton(CoordinatorEntity[TadoDataUpdateCoordinator], ButtonEntity):
-    """Mirror the Tado app boost — 25°C for 30 minutes, then back to schedule."""
+    """Mirror the Tado app boost: 25°C for 30 minutes, then back to schedule."""
 
     _attr_has_entity_name = True
 
@@ -520,7 +520,7 @@ class TadoBoostButton(CoordinatorEntity[TadoDataUpdateCoordinator], ButtonEntity
             )
         else:
             _LOGGER.warning(
-                "Button: boost for %s could not be activated — "
+                "Button: boost for %s could not be activated, "
                 "schedule remains unchanged",
                 self._zone_name,
             )
@@ -530,8 +530,8 @@ class TadoSmartBoostButton(CoordinatorEntity[TadoDataUpdateCoordinator], ButtonE
     """Boost a zone for a duration calculated from current vs. target temperature.
 
     Uses the zone's measured heating rate to size the timer so
-    the boost lands exactly when the schedule target is reached
-    — capped between 15 minutes and 3 hours.
+    the boost lands exactly when the schedule target is reached,
+    capped between 15 minutes and 3 hours.
     """
 
     _attr_has_entity_name = True
@@ -582,7 +582,7 @@ class TadoSmartBoostButton(CoordinatorEntity[TadoDataUpdateCoordinator], ButtonE
 
         _LOGGER.debug(
             "Button: smart boost using default rate %s°C/h "
-            "— measured rate not available yet",
+            ", measured rate not available yet",
             SMART_BOOST_DEFAULT_RATE,
         )
         return SMART_BOOST_DEFAULT_RATE
@@ -599,7 +599,7 @@ class TadoSmartBoostButton(CoordinatorEntity[TadoDataUpdateCoordinator], ButtonE
 
         if not zone_data:
             _LOGGER.warning(
-                "Button: smart boost for %s skipped — no zone data "
+                "Button: smart boost for %s skipped, no zone data "
                 "yet, will work after the next coordinator poll",
                 self._zone_name,
             )
@@ -610,7 +610,7 @@ class TadoSmartBoostButton(CoordinatorEntity[TadoDataUpdateCoordinator], ButtonE
         current_temp = (sensor_data.get("insideTemperature") or {}).get("celsius")
         if current_temp is None:
             _LOGGER.warning(
-                "Button: smart boost for %s skipped — current "
+                "Button: smart boost for %s skipped, current "
                 "temperature not available, will work after the next "
                 "sensor reading",
                 self._zone_name,
@@ -621,12 +621,12 @@ class TadoSmartBoostButton(CoordinatorEntity[TadoDataUpdateCoordinator], ButtonE
         setting_temp = (setting.get("temperature") or {}).get("celsius")
         target_temp = setting_temp
         if target_temp is None or target_temp <= current_temp:
-            # No usable schedule target — pick a sensible default
+            # No usable schedule target: pick a sensible default
             # so the button still does something useful.
             target_temp = min(current_temp + 3.0, 25.0)
             _LOGGER.debug(
                 "Button: smart boost defaulting target to %s°C "
-                "(current + 3°C) — schedule target unavailable or "
+                "(current + 3°C), schedule target unavailable or "
                 "already reached",
                 target_temp,
             )
@@ -636,7 +636,7 @@ class TadoSmartBoostButton(CoordinatorEntity[TadoDataUpdateCoordinator], ButtonE
         temp_diff = target_temp - current_temp
         if temp_diff <= 0:
             _LOGGER.info(
-                "Button: smart boost not needed — %s already at "
+                "Button: smart boost not needed: %s already at "
                 "%s°C (target %s°C)",
                 self._zone_name, current_temp, target_temp,
             )
@@ -648,7 +648,7 @@ class TadoSmartBoostButton(CoordinatorEntity[TadoDataUpdateCoordinator], ButtonE
         duration_minutes = max(SMART_BOOST_MIN_DURATION, min(duration_minutes, SMART_BOOST_MAX_DURATION))
 
         _LOGGER.debug(
-            "Button: smart boost calculation — %s°C → %s°C at "
+            "Button: smart boost calculation: %s°C → %s°C at "
             "%s°C/h ⇒ %s minutes",
             current_temp,
             target_temp,
@@ -688,7 +688,7 @@ class TadoSmartBoostButton(CoordinatorEntity[TadoDataUpdateCoordinator], ButtonE
         else:
             _LOGGER.warning(
                 "Button: smart boost for %s could not be activated "
-                "— schedule remains unchanged",
+                ", schedule remains unchanged",
                 self._zone_name,
             )
 
@@ -756,7 +756,7 @@ class TadoIdentifyButton(CoordinatorEntity[TadoDataUpdateCoordinator], ButtonEnt
                 )
                 return
             _LOGGER.debug(
-                "Button: local identify for %s didn't land — falling back to the cloud call",
+                "Button: local identify for %s didn't land, falling back to the cloud call",
                 mask_serial(self._device_serial),
             )
 
@@ -769,7 +769,7 @@ class TadoIdentifyButton(CoordinatorEntity[TadoDataUpdateCoordinator], ButtonEnt
             _LOGGER.debug("Button: identify sent to device %s", mask_serial(self._device_serial))
         else:
             _LOGGER.warning(
-                "Button: identify for device %s could not be sent — the cloud did "
+                "Button: identify for device %s could not be sent, the cloud did "
                 "not acknowledge the request, please retry",
                 mask_serial(self._device_serial),
             )

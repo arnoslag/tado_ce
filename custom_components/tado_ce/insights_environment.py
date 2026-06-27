@@ -1,4 +1,4 @@
-"""Environment insights — mold risk, comfort, condensation, humidity trend."""
+"""Environment insights: mold risk, comfort, condensation, humidity trend."""
 
 from __future__ import annotations
 
@@ -172,7 +172,7 @@ def _comfort_hot_recommendation(
     """Build comfort recommendation for hot states."""
     hi_suffix = ""
     if heat_index is not None and heat_risk_level is not None and heat_risk_level != "None":
-        hi_suffix = f" (feels like {heat_index:.1f}°C — {heat_risk_level})"
+        hi_suffix = f" (feels like {heat_index:.1f}°C, {heat_risk_level})"
 
     if current_temp is not None:
         if target_temp is not None and current_temp > target_temp:
@@ -191,7 +191,7 @@ def _comfort_hot_recommendation(
         rec = f"{zone_name}: Room too hot \u2014 reduce heating setpoint by 2°C or open window{hi_suffix}"
 
     if heat_risk_level in ("Danger", "Extreme Danger"):
-        rec = f"⚠️ {zone_name}: Heat risk {heat_risk_level} — {rec[len(zone_name) + 2:]}"
+        rec = f"⚠️ {zone_name}: Heat risk {heat_risk_level}, {rec[len(zone_name) + 2:]}"
     return rec
 
 
@@ -279,7 +279,7 @@ def calculate_heating_condensation_recommendation(
         return ""
 
     if risk_level == "Critical":
-        parts = [f"{zone_name}: URGENT — condensation forming on windows"]
+        parts = [f"{zone_name}: URGENT, condensation forming on windows"]
         if surface_temp is not None and dew_point is not None and margin is not None:
             parts.append(
                 f"Surface temp {surface_temp:.1f}°C is {abs(margin):.1f}°C below dew point {dew_point:.1f}°C",
@@ -297,7 +297,7 @@ def calculate_heating_condensation_recommendation(
         return ". ".join(parts)
 
     if risk_level == "Medium":
-        parts = [f"{zone_name}: Monitor — condensation possible"]
+        parts = [f"{zone_name}: Monitor, condensation possible"]
         if margin is not None and dew_point is not None:
             parts.append(
                 f"Surface temp {margin:.1f}°C above dew point {dew_point:.1f}°C",

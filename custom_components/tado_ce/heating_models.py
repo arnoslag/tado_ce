@@ -1,4 +1,4 @@
-"""Tado CE heating cycle data models — HeatingCycle, HeatingCycleConfig."""
+"""Tado CE heating cycle data models: HeatingCycle, HeatingCycleConfig."""
 
 from __future__ import annotations
 

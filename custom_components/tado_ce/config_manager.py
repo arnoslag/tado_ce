@@ -1,4 +1,4 @@
-"""Tado CE configuration manager — typed reads from `config_entry.options` with validation.
+"""Tado CE configuration manager: typed reads from `config_entry.options` with validation.
 
 Reads live from `config_entry.options` on every access so users get
 real-time effect when they flip a runtime-only toggle, falling back to
@@ -84,13 +84,13 @@ class ConfigurationManager:
             except (ValueError, TypeError, OverflowError):
                 _LOGGER.warning(
                     "Config: %s value %r could not be parsed as int "
-                    "— falling back to default %s",
+                    ", falling back to default %s",
                     key, value, default,
                 )
                 return default
         if not isinstance(value, int) or value < min_val or value > max_val:
             _LOGGER.warning(
-                "Config: %s value %r outside range %d–%d — falling "
+                "Config: %s value %r outside range %d–%d, falling "
                 "back to default %s",
                 key, value, min_val, max_val, default,
             )
@@ -103,7 +103,7 @@ class ConfigurationManager:
         if isinstance(value, (int, float)) and min_val <= value <= max_val:
             return float(value)
         _LOGGER.warning(
-            "Config: %s value %r outside range %s–%s — falling back "
+            "Config: %s value %r outside range %s–%s, falling back "
             "to default %s",
             key, value, min_val, max_val, default,
         )
@@ -184,7 +184,7 @@ class ConfigurationManager:
         return self._get_int_option("night_start_hour", DEFAULT_NIGHT_START_HOUR, MIN_HOUR, MAX_HOUR)
 
     def _get_optional_interval(self, key: str) -> int | None:
-        """Read an optional polling interval — `None` when missing, blank, or invalid."""
+        """Read an optional polling interval; `None` when missing, blank, or invalid."""
         interval = self._get_option(key, None)
         if interval is None:
             return None
@@ -199,7 +199,7 @@ class ConfigurationManager:
             except (ValueError, TypeError, OverflowError):
                 _LOGGER.warning(
                     "Config: %s value %r could not be parsed as int "
-                    "— ignoring this interval, polling will use the "
+                    ", ignoring this interval, polling will use the "
                     "automatic schedule",
                     key, interval,
                 )
@@ -207,7 +207,7 @@ class ConfigurationManager:
 
         if not isinstance(interval, int) or interval < 1 or interval > MAX_CUSTOM_INTERVAL:
             _LOGGER.warning(
-                "Config: %s value %r outside range 1–%d — ignoring "
+                "Config: %s value %r outside range 1–%d, ignoring "
                 "this interval, polling will use the automatic "
                 "schedule",
                 key, interval, MAX_CUSTOM_INTERVAL,
@@ -273,7 +273,7 @@ class ConfigurationManager:
         if window_type not in WINDOW_U_VALUES:
             _LOGGER.warning(
                 "Config: mold_risk_window_type value %r is not in "
-                "WINDOW_U_VALUES — falling back to default %s",
+                "WINDOW_U_VALUES, falling back to default %s",
                 window_type,
                 DEFAULT_MOLD_RISK_WINDOW_TYPE,
             )

@@ -1,4 +1,4 @@
-"""Tado CE Smart Comfort sensors — schedule deviation, next-schedule preview, preheat advisor, target."""
+"""Tado CE Smart Comfort sensors: schedule deviation, next-schedule preview, preheat advisor, target."""
 
 from __future__ import annotations
 
@@ -37,11 +37,11 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 # Smart comfort sensor thresholds
-_DEVIATION_ICON_THRESHOLD = 0.5  # °C — deviation above/below this changes icon
-_MIN_HEATING_RATE = 0.1  # °C/h — minimum meaningful heating rate for preheat calculation
-_MIN_COOLING_RATE = -0.1  # °C/h — minimum meaningful cooling rate
-_DEVIATION_ICON_COLD = -2  # °C — deviation below this shows "cold" icon
-_DEVIATION_ICON_HOT = 2  # °C — deviation above this shows "hot" icon
+_DEVIATION_ICON_THRESHOLD = 0.5  # °C: deviation above/below this changes icon
+_MIN_HEATING_RATE = 0.1  # °C/h: minimum meaningful heating rate for preheat calculation
+_MIN_COOLING_RATE = -0.1  # °C/h: minimum meaningful cooling rate
+_DEVIATION_ICON_COLD = -2  # °C: deviation below this shows "cold" icon
+_DEVIATION_ICON_HOT = 2  # °C: deviation above this shows "hot" icon
 
 
 class TadoScheduleDeviationSensor(TadoZoneSensor):
@@ -152,7 +152,7 @@ class TadoScheduleDeviationSensor(TadoZoneSensor):
         except Exception as e:
             _LOGGER.debug(
                 "Smart Comfort Sensor: zone %s historical comparison "
-                "update failed (%s) — marking unavailable until the "
+                "update failed (%s), marking unavailable until the "
                 "next poll",
                 self._zone_id, e,
             )
@@ -237,7 +237,7 @@ class TadoNextScheduleTimeSensor(TadoZoneSensor):
         except Exception as e:
             _LOGGER.debug(
                 "Smart Comfort Sensor: zone %s next schedule time "
-                "update failed (%s) — marking unavailable until the "
+                "update failed (%s), marking unavailable until the "
                 "next poll",
                 self._zone_id, e,
             )
@@ -346,7 +346,7 @@ class TadoNextScheduleTempSensor(TadoZoneSensor):
         except Exception as e:
             _LOGGER.debug(
                 "Smart Comfort Sensor: zone %s next schedule "
-                "temperature update failed (%s) — marking unavailable "
+                "temperature update failed (%s), marking unavailable "
                 "until the next poll",
                 self._zone_id, e,
             )
@@ -561,7 +561,7 @@ class TadoPreheatAdvisorSensor(TadoZoneSensor):
             )
             return
 
-        # Valid preheat recommendation — apply UFH buffer
+        # Valid preheat recommendation, apply UFH buffer
         adjusted_duration = min(advice.estimated_duration_minutes + ufh_buffer, 240)
         adjusted_start = next_block.start_time - timedelta(minutes=adjusted_duration)
 
@@ -581,7 +581,7 @@ class TadoPreheatAdvisorSensor(TadoZoneSensor):
         self._attr_available = True
 
     def _handle_schedule_block(self, next_block: NextScheduleBlock, manager: SmartComfortManager) -> None:
-        """Handle a schedule block — heating OFF, already at target, or preheat needed."""
+        """Handle a schedule block: heating OFF, already at target, or preheat needed."""
         # Next block is heating OFF
         if not next_block.is_heating_on or next_block.target_temp is None:
             now = dt_util.now()
@@ -671,7 +671,7 @@ class TadoPreheatAdvisorSensor(TadoZoneSensor):
         except Exception as e:
             _LOGGER.debug(
                 "Smart Comfort Sensor: zone %s preheat advisor update "
-                "failed (%s) — marking unavailable until the next poll",
+                "failed (%s), marking unavailable until the next poll",
                 self._zone_id, e,
             )
             self._attr_available = False
@@ -699,8 +699,8 @@ class TadoPreheatAdvisorSensor(TadoZoneSensor):
     def _apply_cooling_preheat(self, crossover_dt: datetime, now: datetime) -> None:
         """Apply cooling-based preheat timing (inertia + UFH buffer before crossover).
 
-        A usable heating rate is required as a gate — without one, only the
-        crossover warning is shown — but the preheat buffer itself is
+        A usable heating rate is required as a gate (without one, only the
+        crossover warning is shown), but the preheat buffer itself is
         inertia_minutes + UFH buffer; the heating rate is not part of the math.
         """
         from datetime import timedelta
@@ -723,7 +723,7 @@ class TadoPreheatAdvisorSensor(TadoZoneSensor):
                 heating_rate = manager.get_heating_rate(self._zone_id)
 
         if heating_rate is None or heating_rate <= _MIN_HEATING_RATE:
-            # No heating rate — show crossover warning only
+            # No heating rate: show crossover warning only
             self._attr_native_value = crossover_dt.strftime("%H:%M")
             self._attr_available = True
             self._duration_minutes = None
@@ -783,7 +783,7 @@ class TadoPreheatAdvisorSensor(TadoZoneSensor):
         if cooling_rate is None or cooling_rate >= _MIN_COOLING_RATE:
             return None
 
-        # Clamp extreme rates (°C/h floor — matches calculations.COOLING_RATE_MIN)
+        # Clamp extreme rates (°C/h floor, matches calculations.COOLING_RATE_MIN)
         cooling_rate = max(cooling_rate, -5.0)
 
         if self._current_temp is None:
@@ -814,7 +814,7 @@ class TadoPreheatAdvisorSensor(TadoZoneSensor):
         }
 
 class TadoSmartComfortTargetSensor(TadoZoneSensor):
-    """Smart Comfort Target Temperature sensor (ASHRAE 55 — 0.31×outdoor + 17.8°C, seasonal fallback)."""
+    """Smart Comfort Target Temperature sensor (ASHRAE 55: 0.31×outdoor + 17.8°C, seasonal fallback)."""
 
     _attr_has_entity_name = True
 
@@ -921,7 +921,7 @@ class TadoSmartComfortTargetSensor(TadoZoneSensor):
         except Exception as e:
             _LOGGER.debug(
                 "Smart Comfort Sensor: zone %s comfort target update "
-                "failed (%s) — marking unavailable until the next poll",
+                "failed (%s), marking unavailable until the next poll",
                 self._zone_id, e,
             )
             self._attr_available = False

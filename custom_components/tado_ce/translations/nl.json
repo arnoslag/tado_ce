@@ -1863,7 +1863,8 @@
       "homekit_pairing_failed": "Koppelen mislukt - probeer het opnieuw",
       "svc_active_sensor_clear": "Slimme klepregeling is ingeschakeld voor deze zone. Als je de externe temperatuursensor uitschakelt, wordt de slimme klepregeling gedeactiveerd. Stel de modus voor slimme klepregeling eerst in op Uit als je de sensor wilt pauzeren zonder de slimme klepregeling te stoppen.",
       "homekit_max_tries": "Te veel mislukte pogingen — de bridge is tijdelijk geblokkeerd. Wacht een paar minuten of reset de bridge en probeer het opnieuw.",
-      "homekit_busy": "Het is druk op de brug — er is mogelijk weer een koppeling bezig. Probeer het straks nog eens."
+      "homekit_busy": "Het is druk op de brug — er is mogelijk weer een koppeling bezig. Probeer het straks nog eens.",
+      "homekit_no_zeroconf": "Voor het koppelen van HomeKit is de zeroconf-service van Home Assistant nodig, die op deze host niet actief is. Voeg `default_config:` (of `zeroconf:`) toe aan je configuration.yaml, start het programma opnieuw op en probeer het dan nog eens."
     }
   }
 }

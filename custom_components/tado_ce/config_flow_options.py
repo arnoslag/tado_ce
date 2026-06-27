@@ -1,4 +1,4 @@
-"""Tado CE options flow — menu-based configuration UI."""
+"""Tado CE options flow: menu-based configuration UI."""
 
 from __future__ import annotations
 
@@ -195,7 +195,7 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
         )
 
     def _build_general_schema(self) -> vol.Schema:
-        """Build the General Settings form schema — toggles grouped by mental model (Tado / hardware / automation / advanced)."""
+        """Build the General Settings form schema: toggles grouped by mental model (Tado / hardware / automation / advanced)."""
         opt = self.config_entry.options.get
         return vol.Schema(
             {
@@ -288,7 +288,7 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
         zones_with_heating_power: list[dict[str, str]],
         has_homekit_pairing: bool = False,
     ) -> vol.Schema:
-        """Build the Advanced Settings form — conditional tuning per enabled feature; Polling & API always visible."""
+        """Build the Advanced Settings form: conditional tuning per enabled feature; Polling & API always visible."""
         options = self.config_entry.options
         opt = options.get
         sections: dict[vol.Required, Any] = {}
@@ -384,10 +384,10 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
 
         # --- HomeKit (if enabled) ---
         # Connection status is surfaced in the section description via
-        # description_placeholders (see async_step_advanced_settings) —
+        # description_placeholders (see async_step_advanced_settings),
         # NOT via a pseudo-editable TextSelector field.
         # Show the HomeKit section (carrying the unpair toggle) whenever a
-        # pairing exists — not only when enabled — so a disabled-but-paired
+        # pairing exists, not only when enabled, so a disabled-but-paired
         # zone can still be unpaired.
         if has_homekit_pairing:
             sections[vol.Required("homekit")] = data_entry_flow.section(
@@ -415,13 +415,13 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
         custom_night_interval = options.get("custom_night_interval")
         # Use default= (not suggested_value) so collapsed sections preserve
         # existing values. When no custom interval is set (None), omit default
-        # so the field submits None — correctly meaning "use adaptive".
+        # so the field submits None, correctly meaning "use adaptive".
         custom_day_schema = vol.Optional("custom_day_interval", default=custom_day_interval) if custom_day_interval is not None else vol.Optional("custom_day_interval")
         custom_night_schema = vol.Optional("custom_night_interval", default=custom_night_interval) if custom_night_interval is not None else vol.Optional("custom_night_interval")
 
         polling_schema_fields[custom_day_schema] = NumberSelector(NumberSelectorConfig(min=0, max=MAX_CUSTOM_INTERVAL, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="min"))
         polling_schema_fields[custom_night_schema] = NumberSelector(NumberSelectorConfig(min=0, max=MAX_CUSTOM_INTERVAL, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="min"))
-        # Per-data-type refresh intervals — conditional on each feature toggle,
+        # Per-data-type refresh intervals, conditional on each feature toggle,
         # grouped here right after the polling schedule fields they relate to.
         if opt("home_state_sync_enabled", False):
             polling_schema_fields[vol.Optional(
@@ -454,13 +454,13 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                 step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="min",
             ))
 
-        # Interaction timing — debounce and write-pacing knobs.
+        # Interaction timing: debounce and write-pacing knobs.
         polling_schema_fields[vol.Optional("refresh_debounce_seconds", default=opt("refresh_debounce_seconds", DEFAULT_REFRESH_DEBOUNCE_SECONDS))] = NumberSelector(NumberSelectorConfig(min=MIN_REFRESH_DEBOUNCE_SECONDS, max=MAX_REFRESH_DEBOUNCE_SECONDS, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="s"))
         polling_schema_fields[vol.Optional("api_history_retention_days", default=opt("api_history_retention_days", 14))] = NumberSelector(NumberSelectorConfig(min=0, max=365, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="d"))
         polling_schema_fields[vol.Optional("smart_actions_debounce_seconds", default=opt("smart_actions_debounce_seconds", SMART_ACTIONS_DEBOUNCE_DEFAULT))] = NumberSelector(NumberSelectorConfig(min=SMART_ACTIONS_DEBOUNCE_MIN, max=SMART_ACTIONS_DEBOUNCE_MAX, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="s"))
         polling_schema_fields[vol.Optional("device_sync_delay_seconds", default=opt("device_sync_delay_seconds", DEVICE_SYNC_DELAY_DEFAULT))] = NumberSelector(NumberSelectorConfig(min=DEVICE_SYNC_DELAY_MIN, max=DEVICE_SYNC_DELAY_MAX, step=0.5, mode=NumberSelectorMode.BOX, unit_of_measurement="s"))
 
-        # Hot water timer default duration (service-layer default — affects
+        # Hot water timer default duration (service-layer default, affects
         # the water_heater.turn_on and set_water_heater_timer service when
         # no explicit duration is given).
         polling_schema_fields[vol.Optional("hot_water_timer_duration", default=opt("hot_water_timer_duration", DEFAULT_HOT_WATER_TIMER_DURATION))] = NumberSelector(NumberSelectorConfig(min=1, max=MAX_CUSTOM_INTERVAL, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="min"))
@@ -493,7 +493,7 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                 processed[key] = value
 
     async def _detect_first_enable(self, new_options: dict[str, Any]) -> str | None:
-        """Detect if a feature was just enabled — return sub-flow step_id, or None if no sub-flow needed."""
+        """Detect if a feature was just enabled, returning the sub-flow step_id, or None if no sub-flow needed."""
         prev = self.config_entry.options
 
         # Bridge: first enable AND no credentials stored
@@ -526,7 +526,7 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
     async def async_step_general_settings(
         self, user_input: dict[str, Any] | None = None,
     ) -> ConfigFlowResult:
-        """Handle General Settings — feature toggles only."""
+        """Handle General Settings: feature toggles only."""
         errors: dict[str, str] = {}
 
         if user_input is not None:
@@ -594,7 +594,7 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
     async def async_step_advanced_settings(
         self, user_input: dict[str, Any] | None = None,
     ) -> ConfigFlowResult:
-        """Handle Advanced Settings — tuning parameters for enabled features."""
+        """Handle Advanced Settings: tuning parameters for enabled features."""
         errors: dict[str, str] = {}
 
         if user_input is not None:
@@ -746,7 +746,7 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
     async def async_step_reset_to_defaults(
         self, user_input: dict[str, Any] | None = None,
     ) -> ConfigFlowResult:
-        """Handle Reset to Defaults — scope selection."""
+        """Handle Reset to Defaults: scope selection."""
         if user_input is not None:
             self._reset_scope = user_input.get("reset_scope", "everything")
             return await self.async_step_reset_confirm()
@@ -841,7 +841,7 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                 if key in section:
                     processed[key] = section[key]
 
-            # Fix persistence bug — explicitly handle custom intervals
+            # Fix persistence bug: explicitly handle custom intervals
             processed["custom_day_interval"] = section.get("custom_day_interval")
             processed["custom_night_interval"] = section.get("custom_night_interval")
 
@@ -870,7 +870,7 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
         user_input: dict[str, Any],
         processed: dict[str, Any],
     ) -> None:
-        """Flatten internet_bridge section — bridge credentials with collapsed-section preservation."""
+        """Flatten internet_bridge section: bridge credentials with collapsed-section preservation."""
         if "internet_bridge" not in user_input:
             return
         section = user_input["internet_bridge"]
@@ -887,7 +887,7 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
         processed: dict[str, Any],
         errors: dict[str, str],
     ) -> None:
-        """Flatten weather_compensation section — 12 WC tuning fields with min/max validation."""
+        """Flatten weather_compensation section: 12 WC tuning fields with min/max validation."""
         if "weather_compensation" not in user_input:
             return
         section = user_input["weather_compensation"]
@@ -948,7 +948,7 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
         if not zones_info:
             return self.async_abort(reason="no_zones")
 
-        # Build zone options (exclude HOT_WATER — external sensors are heating/AC only)
+        # Build zone options (exclude HOT_WATER, external sensors are heating/AC only)
         zone_options = [
             {"value": str(z.get("id")), "label": z.get("name", f"Zone {z.get('id')}")}
             for z in zones_info
@@ -1008,13 +1008,13 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
             # When toggle is ON but entity field is missing (collapsed section),
             # preserve existing value instead of clearing it.
             # Auto-enable toggle when user selects a sensor entity but forgets
-            # the toggle — only when toggle key is absent (collapsed section).
+            # the toggle, only when toggle key is absent (collapsed section).
             # When toggle is explicitly False, respect the user's intent.
             submitted_temp = (s.get("external_temp_sensor") or "").strip()
             if "use_external_temp" in s:
                 use_ext_temp = s["use_external_temp"]
             else:
-                # Toggle not in form (collapsed) — auto-enable if entity present
+                # Toggle not in form (collapsed), auto-enable if entity present
                 use_ext_temp = bool(submitted_temp) or bool(existing.get("external_temp_sensor", ""))
             if use_ext_temp:
                 all_values["external_temp_sensor"] = (
@@ -1102,8 +1102,8 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
 
             # SVC-active + sensor clear inline validation.
             # Clearing the external sensor on a zone with an active SVC
-            # mode would silently deactivate the controller at runtime —
-            # surface this as an inline schema error so the user knows
+            # mode would silently deactivate the controller at runtime.
+            # Surface this as an inline schema error so the user knows
             # the right mitigation (set SVC Mode to Off first).
             existing = zone_config_manager.get_zone_config(zone_id)
             prev_sensor = existing.get("external_temp_sensor", "")
@@ -1118,7 +1118,7 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                 for key, value in all_values.items():
                     await zone_config_manager.async_set_zone_value(zone_id, key, value)
 
-                # Return to menu (no config entry change — zone_config.json is separate)
+                # Return to menu (no config entry change, zone_config.json is separate)
                 return self.async_create_entry(title="", data=self.config_entry.options)
 
         # Load current values

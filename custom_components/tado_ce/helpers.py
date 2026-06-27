@@ -1,8 +1,8 @@
-"""Tado CE shared helpers — masking, retry delay, datetime parsing, overlay termination, refresh trigger.
+"""Tado CE shared helpers: masking, retry delay, datetime parsing, overlay termination, refresh trigger.
 
 Pure functions used across the integration. The masking
 helpers (`mask_serial`, `mask_serial_dict`, `mask_home_id`)
-exist to keep PII out of shipped logs — every emit referring
+exist to keep PII out of shipped logs, every emit referring
 to a device serial / home_id should route through them.
 """
 
@@ -31,7 +31,7 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
-# Serial number masking — keep prefix + first few chars for debugging, mask the rest.
+# Serial number masking: keep prefix + first few chars for debugging, mask the rest.
 # Bridge serials (IB...) are especially sensitive: combined with the 4-digit auth
 # code printed on the bridge, a full serial in shared logs enables brute-force.
 _SERIAL_VISIBLE_CHARS: int = 6
@@ -53,7 +53,7 @@ def mask_serial_dict(d: dict[str, str]) -> dict[str, str]:
     return {mask_serial(k): v for k, v in d.items()}
 
 
-# Tado home_id is a numeric per-account identifier — not strictly secret
+# Tado home_id is a numeric per-account identifier, not strictly secret
 # (Tado's own logs already contain it) but identifies one user's home,
 # so we mask it in shipped log output. Multi-home users still get a
 # stable, distinguishable shape in their logs.
@@ -134,12 +134,12 @@ def merge_homekit_into_zone_data(
             sensor_data.setdefault("insideTemperature", {})["celsius"] = merged_temp
         if merged_hum is not None:
             sensor_data.setdefault("humidity", {})["percentage"] = merged_hum
-        # Only log when the merge actually changed something —
+        # Only log when the merge actually changed something,
         # otherwise multi-zone homes would emit a debug line per
         # zone per poll for no signal.
         if cloud_temp != merged_temp or cloud_humidity != merged_hum:
             _LOGGER.debug(
-                "Helpers: zone %s merge — temp %s → %s (%s), "
+                "Helpers: zone %s merge, temp %s → %s (%s), "
                 "humidity %s → %s (%s)",
                 zone_id, cloud_temp, merged_temp, temp_src,
                 cloud_humidity, merged_hum, hum_src,
@@ -148,7 +148,7 @@ def merge_homekit_into_zone_data(
         result["sensorDataPoints"] = sensor_data
     except (TypeError, ValueError, AttributeError):
         _LOGGER.debug(
-            "Helpers: HomeKit merge failed for zone %s — falling "
+            "Helpers: HomeKit merge failed for zone %s, falling "
             "back to cloud-only zone data for this poll",
             zone_id, exc_info=True,
         )
@@ -158,7 +158,7 @@ def merge_homekit_into_zone_data(
 
 
 # Backwards-compat alias for the `next_time_block` SERVICE argument only.
-# NEXT_TIME_BLOCK is not a valid overlay mode — the /api/v2 overlay endpoint
+# NEXT_TIME_BLOCK is not a valid overlay mode, the /api/v2 overlay endpoint
 # rejects a literal NEXT_TIME_BLOCK with HTTP 422. A user passing
 # overlay="next_time_block" to a service call still means "end at the next
 # automatic change", which is TADO_MODE, so we keep this one mapping to honour
@@ -176,7 +176,7 @@ def _map_overlay_to_api(mode: str) -> str:
 def should_use_homekit_for_overlay(hass: HomeAssistant, zone_id: str, entry_id: str | None = None) -> bool:
     """Return True when a HomeKit local write is safe for this zone's overlay mode.
 
-    HomeKit writes carry no termination — the bridge sets only the TRV's target
+    HomeKit writes carry no termination, the bridge sets only the TRV's target
     state and Tado stamps a MANUAL overlay on any local-origin write. So HomeKit
     is only correct when the chosen overlay mode IS MANUAL. TADO_MODE ("until
     next automatic change") and TIMER need the explicit termination sent through
@@ -202,7 +202,7 @@ def should_use_homekit_for_overlay(hass: HomeAssistant, zone_id: str, entry_id: 
 
         if mode != OVERLAY_MODE_MANUAL:
             _LOGGER.debug(
-                "Helpers: zone %s overlay mode is %s (not MANUAL) — routing this "
+                "Helpers: zone %s overlay mode is %s (not MANUAL), routing this "
                 "write through the cloud API so the termination is honoured",
                 zone_id, mode,
             )
@@ -315,14 +315,14 @@ async def async_trigger_immediate_refresh(
                 )
                 return
         _LOGGER.warning(
-            "Helpers: no refresh handler found for %s — refresh "
+            "Helpers: no refresh handler found for %s, refresh "
             "request silently dropped, will retry on the next "
             "coordinator poll",
             entity_id,
         )
     except (KeyError, TypeError, ValueError) as e:
         _LOGGER.warning(
-            "Helpers: immediate refresh trigger failed (%s) — "
+            "Helpers: immediate refresh trigger failed (%s), "
             "refresh request silently dropped, will retry on the "
             "next coordinator poll",
             e,
@@ -346,7 +346,7 @@ def get_optimistic_window(hass: HomeAssistant, entry_id: str | None = None) -> f
     except (AttributeError, TypeError, ValueError) as err:
         _LOGGER.debug(
             "Helpers: optimistic window read from config failed "
-            "(%s) — falling back to default %.1fs",
+            "(%s), falling back to default %.1fs",
             err, DEFAULT_OPTIMISTIC_WINDOW_SECONDS,
         )
     return DEFAULT_OPTIMISTIC_WINDOW_SECONDS
@@ -472,8 +472,8 @@ def prune_zone_keyed_dict(
     """Drop entries whose zone_id is no longer in current_zones; return removed count.
 
     Recognised key shapes:
-    - "zone_id"           — DataLoader dict stores
-    - "zone_id:entity"    — state_restore key shape (split on first colon)
+    - "zone_id":           DataLoader dict stores
+    - "zone_id:entity":    state_restore key shape (split on first colon)
     """
     to_drop = {k for k in d if k.split(":", 1)[0] not in current_zones}
     for k in to_drop:
@@ -483,7 +483,7 @@ def prune_zone_keyed_dict(
 
 def retry_after_to_minutes(seconds: int) -> str:
     """Format retry-after seconds as minute count for user-facing messages."""
-    # WHY: floor at 1 — a 30-second cooldown still reads "Try again in 1 min."
+    # WHY: floor at 1, a 30-second cooldown still reads "Try again in 1 min."
     return str(max(1, seconds // 60))
 
 

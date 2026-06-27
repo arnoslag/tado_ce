@@ -1,4 +1,4 @@
-"""Offset Sync Controller — per-zone device offset synchronisation so Tado sees the external sensor's reading."""
+"""Offset Sync Controller: per-zone device offset synchronisation so Tado sees the external sensor's reading."""
 
 from __future__ import annotations
 
@@ -54,7 +54,7 @@ class OffsetSyncRuntime:
 
 @dataclass(frozen=True)
 class OffsetCalc:
-    """Result of calculate_desired_offset — clamped value plus clamp tag.
+    """Result of calculate_desired_offset: clamped value plus clamp tag.
 
     clamp_direction is "none" (in range), "hit_max" (raw > +10), or
     "hit_min" (raw < -10). A raw value exactly on the limit is "none";
@@ -66,7 +66,7 @@ class OffsetCalc:
 
 
 class OffsetSyncController:
-    """Per-zone offset sync controller — writes device offsets to match external sensor."""
+    """Per-zone offset sync controller that writes device offsets to match the external sensor."""
 
     def __init__(
         self,
@@ -151,7 +151,7 @@ class OffsetSyncController:
 
         Pairs `trigger` ("poll" / "sensor") with `outcome` so a user
         enabling debug logging can replay the controller's decisions
-        across an oscillation window — what it saw, why it skipped,
+        across an oscillation window: what it saw, why it skipped,
         when it wrote. Lazy: skipped entirely when DEBUG is off.
         """
         if not _LOGGER.isEnabledFor(logging.DEBUG):
@@ -196,14 +196,14 @@ class OffsetSyncController:
             return False  # never written, nothing to settle against
         current = self._coordinator.last_zone_fetch_ts()
         if current is None:
-            return False  # no fetch recorded yet — don't block
+            return False  # no fetch recorded yet, don't block
         return current <= at_write  # not advanced → still settling
 
     def on_external_offset_write(self) -> None:
         """Pause sync for one rate-limit window after an external offset write."""
         self._runtime.paused_until_ts = time.monotonic() + _EXTERNAL_WRITE_PAUSE
         _LOGGER.info(
-            "Offset Sync: zone %s paused for %ss after manual offset write — "
+            "Offset Sync: zone %s paused for %ss after manual offset write, "
             "will resume sync once the pause window expires",
             self._zone_id, int(_EXTERNAL_WRITE_PAUSE),
         )
@@ -254,7 +254,7 @@ class OffsetSyncController:
             )
         except (KeyError, TypeError, ValueError):
             _LOGGER.warning(
-                "Offset Sync: zone %s could not read TRV temperature from Tado — "
+                "Offset Sync: zone %s could not read TRV temperature from Tado, "
                 "skipping this cycle, will retry on next poll",
                 self._zone_id,
             )
@@ -402,7 +402,7 @@ class OffsetSyncController:
         serials = self._get_zone_device_serials()
         if not serials:
             _LOGGER.warning(
-                "Offset Sync: zone %s has no devices to write to — "
+                "Offset Sync: zone %s has no devices to write to, "
                 "skipping offset update",
                 self._zone_id,
             )
@@ -430,7 +430,7 @@ class OffsetSyncController:
                 from .helpers import mask_serial
 
                 _LOGGER.warning(
-                    "Offset Sync: zone %s device %s write queue full — "
+                    "Offset Sync: zone %s device %s write queue full, "
                     "dropping this update, will retry on next sensor change",
                     self._zone_id, mask_serial(serial),
                 )
@@ -438,19 +438,19 @@ class OffsetSyncController:
         if not any_accepted:
             _LOGGER.warning(
                 "Offset Sync: zone %s could not queue offset write for any "
-                "device — leaving offset unchanged, will retry on next "
+                "device, leaving offset unchanged, will retry on next "
                 "sensor change",
                 self._zone_id,
             )
             return
 
         # Failure on any device means we cannot claim the offset landed
-        # on every TRV in the zone — safer to retry than to poison the
+        # on every TRV in the zone, safer to retry than to poison the
         # cache with a value only some devices accepted.
         results = await asyncio.gather(*dones, return_exceptions=False)
         if not all(results):
             _LOGGER.warning(
-                "Offset Sync: zone %s one or more device writes failed — "
+                "Offset Sync: zone %s one or more device writes failed, "
                 "leaving offset unchanged, will retry on next sensor change",
                 self._zone_id,
             )
@@ -460,14 +460,14 @@ class OffsetSyncController:
         if readback is None:
             _LOGGER.warning(
                 "Offset Sync: zone %s could not read offset back from Tado "
-                "after writing %.1f°C — leaving cache unchanged",
+                "after writing %.1f°C, leaving cache unchanged",
                 self._zone_id, offset,
             )
             return
 
         if abs(readback - offset) > 0.05:
             _LOGGER.warning(
-                "Offset Sync: zone %s wrote %.1f°C but Tado reports %.1f°C — "
+                "Offset Sync: zone %s wrote %.1f°C but Tado reports %.1f°C. "
                 "Tado may have clamped or rejected the value. Leaving "
                 "cache unchanged.",
                 self._zone_id, offset, readback,
@@ -505,7 +505,7 @@ class OffsetSyncController:
             )
             _LOGGER.warning(
                 "Offset Sync: zone %s wrote offset %.1f°C, but the required "
-                "correction was %s — the TRV's displayed temperature will "
+                "correction was %s, the TRV's displayed temperature will "
                 "still differ from the external sensor. Check for draughts, "
                 "a cold external wall, or sensor placement.",
                 self._zone_id, readback, direction_desc,
@@ -585,7 +585,7 @@ class OffsetSyncController:
     async def async_persist_state(self) -> None:
         """Persist last_written_offset to zone config.
 
-        last_offset_write_ts is deliberately not persisted — it's a
+        last_offset_write_ts is deliberately not persisted: it's a
         monotonic-clock value, meaningless across process restarts.
         async_set_zone_value replaces the whole offset_sync_state dict,
         so stale fields left over from older versions are cleared on
@@ -604,7 +604,7 @@ class OffsetSyncController:
         raw = config.get("offset_sync_state")
         if not isinstance(raw, dict):
             _LOGGER.debug(
-                "Offset Sync: zone %s has no persisted state — reading "
+                "Offset Sync: zone %s has no persisted state, reading "
                 "current offset from Tado",
                 self._zone_id,
             )
@@ -619,7 +619,7 @@ class OffsetSyncController:
             self._runtime.last_written_offset = (
                 float(offset_raw) if offset_raw is not None else None
             )
-            # Don't restore last_offset_write_ts — monotonic resets on
+            # Don't restore last_offset_write_ts: monotonic resets on
             # boot, so a persisted value would block writes for as long
             # as the previous HA uptime.
             self._runtime.last_offset_write_ts = None
@@ -629,7 +629,7 @@ class OffsetSyncController:
             )
         except (ValueError, TypeError, KeyError):
             _LOGGER.warning(
-                "Offset Sync: zone %s persisted state was unreadable — "
+                "Offset Sync: zone %s persisted state was unreadable, "
                 "starting fresh",
                 self._zone_id,
             )
@@ -659,7 +659,7 @@ class OffsetSyncController:
             )
         except (TimeoutError, aiohttp.ClientError):
             _LOGGER.warning(
-                "Offset Sync: zone %s could not read offset from Tado — "
+                "Offset Sync: zone %s could not read offset from Tado, "
                 "starting with offset 0.0°C",
                 self._zone_id, exc_info=True,
             )

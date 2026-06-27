@@ -1,4 +1,4 @@
-"""Tado CE state reconciler — merges local HomeKit reads with cloud API data."""
+"""Tado CE state reconciler: merges local HomeKit reads with cloud API data."""
 
 from __future__ import annotations
 
@@ -58,7 +58,7 @@ class StateReconciler:
         `freshness_mode="observed"` keeps stable readings valid even
         when the value hasn't changed (useful for room temperature).
         `freshness_mode="changed"` rejects cache entries that haven't
-        seen a real value change within the threshold — needed for
+        seen a real value change within the threshold, needed for
         event-driven signals like target temperature and mode where
         a stale "no change" cache would mask a fresh user-set value.
         """
@@ -117,7 +117,7 @@ class StateReconciler:
           - "cloud"   → cloud (skip HomeKit even if fresh)
           - "homekit" → HomeKit-fresh, else cloud
           - "auto"    → external > HomeKit-fresh > cloud (default)
-        external_value, when set, wins on the display path too — it is an
+        external_value, when set, wins on the display path too: it is an
         explicit user override.
         """
         if external_value is not None:

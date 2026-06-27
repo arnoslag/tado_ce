@@ -1863,7 +1863,8 @@
       "homekit_pairing_failed": "Pairing failed — please try again",
       "svc_active_sensor_clear": "Smart Valve Control is enabled for this zone. Disabling the external temperature sensor will deactivate Smart Valve Control. Set Smart Valve Control Mode to Off first if you want to pause the sensor without stopping SVC.",
       "homekit_max_tries": "Too many failed attempts — the bridge is temporarily locked. Wait a few minutes or reset the bridge and try again.",
-      "homekit_busy": "The bridge is busy — another pairing may be in progress. Try again in a moment."
+      "homekit_busy": "The bridge is busy — another pairing may be in progress. Try again in a moment.",
+      "homekit_no_zeroconf": "HomeKit pairing needs Home Assistant's zeroconf service, which isn't running on this host. Add `default_config:` (or `zeroconf:`) to your configuration.yaml and restart, then try again."
     }
   }
 }

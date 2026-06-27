@@ -1,4 +1,4 @@
-"""Tado CE hub-level sensors — home info, API status, monitoring, history."""
+"""Tado CE hub-level sensors: home info, API status, monitoring, history."""
 
 from __future__ import annotations
 
@@ -44,7 +44,7 @@ def _format_recent_calls(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
         except (ValueError, TypeError):
             _LOGGER.debug(
                 "Hub Sensor: dropped non-parseable timestamp on a "
-                "history call entry — keeping the rest of the entry",
+                "history call entry, keeping the rest of the entry",
             )
         result.append(call_copy)
     return result
@@ -63,7 +63,7 @@ def _parse_call_time_range(
     except (KeyError, TypeError, ValueError) as e:
         _LOGGER.debug(
             "Hub Sensor: could not parse oldest / newest call "
-            "timestamps (%s) — call time range left blank",
+            "timestamps (%s), call time range left blank",
             e,
         )
         return None, None
@@ -79,7 +79,7 @@ def _calculate_calls_per_hour(all_calls: list[dict[str, Any]]) -> float | None:
     except (KeyError, TypeError, ValueError) as e:
         _LOGGER.debug(
             "Hub Sensor: could not compute calls/hour from history "
-            "(%s) — value left blank",
+            "(%s), value left blank",
             e,
         )
         return None
@@ -93,7 +93,7 @@ def _calculate_calls_today(history_data: dict[str, Any]) -> int | None:
     except (KeyError, TypeError, ValueError) as e:
         _LOGGER.debug(
             "Hub Sensor: could not compute today's call count from "
-            "history (%s) — value left blank",
+            "history (%s), value left blank",
             e,
         )
         return None
@@ -113,7 +113,7 @@ def _find_most_called_endpoint(all_calls: list[dict[str, Any]]) -> str | None:
     except (KeyError, TypeError, ValueError) as e:
         _LOGGER.debug(
             "Hub Sensor: could not pick most-called endpoint from "
-            "history (%s) — value left blank",
+            "history (%s), value left blank",
             e,
         )
         return None
@@ -134,7 +134,7 @@ class TadoHubSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], SensorEntity
         self._attr_device_info = get_hub_device_info(coordinator.home_id)
         self._attr_available = False
         self._attr_native_value = None
-        # Only set static icon — subclasses with dynamic icons define @property
+        # Only set static icon; subclasses with dynamic icons define @property
         if _meta.icon is not None:
             self._attr_icon = _meta.icon
         # Only override when registry says disabled (HA default is True)
@@ -162,7 +162,7 @@ class TadoHomeIdSensor(TadoHubSensor):
     def update(self) -> None:
         """Update sensor state from coordinator data."""
         try:
-            # Use coordinator.home_id directly — always available, doesn't depend on config file
+            # Use coordinator.home_id directly: always available, doesn't depend on config file
             home_id = self.coordinator.home_id
             if home_id:
                 self._attr_native_value = home_id
@@ -171,7 +171,7 @@ class TadoHomeIdSensor(TadoHubSensor):
                 self._attr_available = False
         except Exception:
             _LOGGER.debug(
-                "Hub Sensor: home ID update failed — marking "
+                "Hub Sensor: home ID update failed, marking "
                 "unavailable until the next poll",
                 exc_info=True,
             )
@@ -255,7 +255,7 @@ class TadoApiUsageSensor(TadoHubSensor):
             except (ValueError, TypeError):
                 _LOGGER.debug(
                     "Hub Sensor: dropped non-parseable timestamp on a "
-                    "call history entry — keeping the rest of the entry",
+                    "call history entry, keeping the rest of the entry",
                 )
             result.append(call_copy)
         return result
@@ -281,14 +281,14 @@ class TadoApiUsageSensor(TadoHubSensor):
             except (KeyError, TypeError, ValueError) as e:
                 _LOGGER.debug(
                     "Hub Sensor: could not load API call history "
-                    "(%s) — call history attribute left empty",
+                    "(%s), call history attribute left empty",
                     e,
                 )
                 self._call_history = []
 
         except Exception:
             _LOGGER.warning(
-                "Hub Sensor: API usage update failed unexpectedly — "
+                "Hub Sensor: API usage update failed unexpectedly, "
                 "marking unavailable until the next poll",
                 exc_info=True,
             )
@@ -334,7 +334,7 @@ class TadoApiResetSensor(TadoHubSensor):
             return dt_util.as_local(dt_val).strftime("%Y-%m-%d %H:%M:%S")
         except (ValueError, TypeError) as e:
             _LOGGER.debug(
-                "Hub Sensor: could not parse %s timestamp (%s) — value "
+                "Hub Sensor: could not parse %s timestamp (%s), value "
                 "left blank",
                 label, e,
             )
@@ -368,7 +368,7 @@ class TadoApiResetSensor(TadoHubSensor):
                 self._current_interval = None
         except (KeyError, TypeError, ValueError) as e:
             _LOGGER.debug(
-                "Hub Sensor: could not compute next poll time (%s) — "
+                "Hub Sensor: could not compute next poll time (%s), "
                 "next_poll attribute left blank",
                 e,
             )
@@ -397,7 +397,7 @@ class TadoApiResetSensor(TadoHubSensor):
                 except (ValueError, TypeError) as e:
                     _LOGGER.debug(
                         "Hub Sensor: could not parse reset_at "
-                        "timestamp (%s) — reset_at attribute left "
+                        "timestamp (%s), reset_at attribute left "
                         "blank",
                         e,
                     )
@@ -410,7 +410,7 @@ class TadoApiResetSensor(TadoHubSensor):
 
         except Exception as e:
             _LOGGER.debug(
-                "Hub Sensor: API reset update failed (%s) — last "
+                "Hub Sensor: API reset update failed (%s), last "
                 "values retained, will retry on the next poll",
                 e,
             )
@@ -457,7 +457,7 @@ class TadoApiLimitSensor(TadoHubSensor):
                         except (ValueError, TypeError):
                             _LOGGER.debug(
                                 "Hub Sensor: dropped non-parseable "
-                                "timestamp on a recent call entry — "
+                                "timestamp on a recent call entry, "
                                 "keeping the rest of the entry",
                             )
                         recent_calls.append(call_copy)
@@ -481,7 +481,7 @@ class TadoApiLimitSensor(TadoHubSensor):
             except (KeyError, TypeError, ValueError) as e:
                 _LOGGER.debug(
                     "Hub Sensor: could not load API call history "
-                    "(%s) — recent_calls / last_24h_count attributes "
+                    "(%s), recent_calls / last_24h_count attributes "
                     "left empty",
                     e,
                 )
@@ -497,7 +497,7 @@ class TadoApiLimitSensor(TadoHubSensor):
             self._attr_extra_state_attributes = extra_attrs
         except Exception:
             _LOGGER.debug(
-                "Hub Sensor: API limit update failed — marking "
+                "Hub Sensor: API limit update failed, marking "
                 "unavailable until the next poll",
                 exc_info=True,
             )
@@ -557,7 +557,7 @@ class TadoApiStatusSensor(TadoHubSensor):
                 self._attr_available = True
         except Exception:
             _LOGGER.debug(
-                "Hub Sensor: API status update failed — falling back "
+                "Hub Sensor: API status update failed, falling back "
                 "to 'error' state, will retry on the next poll",
                 exc_info=True,
             )
@@ -591,7 +591,7 @@ class TadoTokenStatusSensor(TadoHubSensor):
             self._attr_available = True
         except Exception:
             _LOGGER.debug(
-                "Hub Sensor: token status update failed — falling "
+                "Hub Sensor: token status update failed, falling "
                 "back to 'error' state, will retry on the next poll",
                 exc_info=True,
             )
@@ -634,7 +634,7 @@ class TadoZoneCountSensor(TadoHubSensor):
                 self._attr_available = False
         except Exception:
             _LOGGER.debug(
-                "Hub Sensor: zone count update failed — marking "
+                "Hub Sensor: zone count update failed, marking "
                 "unavailable until the next poll",
                 exc_info=True,
             )
@@ -665,7 +665,7 @@ class TadoLastSyncSensor(TadoHubSensor):
                 self._attr_available = False
         except Exception:
             _LOGGER.debug(
-                "Hub Sensor: last sync update failed — marking "
+                "Hub Sensor: last sync update failed, marking "
                 "unavailable until the next poll",
                 exc_info=True,
             )
@@ -770,7 +770,7 @@ class TadoNextSyncSensor(TadoHubSensor):
 
         except Exception as e:
             _LOGGER.debug(
-                "Hub Sensor: next sync update failed (%s) — last "
+                "Hub Sensor: next sync update failed (%s), last "
                 "value retained, will retry on the next poll",
                 e,
             )
@@ -876,7 +876,7 @@ class TadoPollingIntervalSensor(TadoHubSensor):
 
         except Exception as e:
             _LOGGER.debug(
-                "Hub Sensor: polling interval update failed (%s) — "
+                "Hub Sensor: polling interval update failed (%s), "
                 "last value retained, will retry on the next poll",
                 e,
             )
@@ -921,7 +921,7 @@ class TadoApiHistorySensor(TadoHubSensor):
             except (AttributeError, TypeError, KeyError):
                 _LOGGER.debug(
                     "Hub Sensor: could not read API history retention "
-                    "from config — using 14-day default",
+                    "from config, using 14-day default",
                     exc_info=True,
                 )
                 self._history_period_days = 14
@@ -956,7 +956,7 @@ class TadoApiHistorySensor(TadoHubSensor):
         except Exception:
             _LOGGER.warning(
                 "Hub Sensor: call history update failed unexpectedly "
-                "— last values retained, will retry on the next poll",
+                ", last values retained, will retry on the next poll",
                 exc_info=True,
             )
 
@@ -1053,14 +1053,14 @@ class TadoApiBreakdownSensor(TadoHubSensor):
         except Exception:
             _LOGGER.warning(
                 "Hub Sensor: API call breakdown update failed "
-                "unexpectedly — last values retained, will retry on "
+                "unexpectedly, last values retained, will retry on "
                 "the next poll",
                 exc_info=True,
             )
 
 
 # ===================================================================
-# HomeKit Savings Sensors — track API calls saved by local control
+# HomeKit Savings Sensors: track API calls saved by local control
 # ===================================================================
 
 

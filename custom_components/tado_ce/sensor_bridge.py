@@ -1,4 +1,4 @@
-"""Tado CE bridge sensors — dynamic field discovery + capabilities + schema tracking."""
+"""Tado CE bridge sensors: dynamic field discovery + capabilities + schema tracking."""
 
 from __future__ import annotations
 
@@ -37,7 +37,7 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Named formatter registry — maps value_formatter strings to callables.
+# Named formatter registry: maps value_formatter strings to callables.
 # Populated lazily on first use to avoid circular imports.
 # ---------------------------------------------------------------------------
 
@@ -96,7 +96,7 @@ def _format_value(
     formatter_name: str | None,
 ) -> str | float:
     """Format a raw value using a named formatter or type inference fallback."""
-    # Named formatter takes priority — defined fields use it; inferred
+    # Named formatter takes priority: defined fields use it; inferred
     # fields fall through to format_display_value.
     if formatter_name:
         registry = _get_formatter_registry()
@@ -104,7 +104,7 @@ def _format_value(
         if fn is not None:
             return fn(value)  # type: ignore[no-any-return]
         _LOGGER.debug(
-            "Bridge Sensors: formatter %r not in registry — falling back "
+            "Bridge Sensors: formatter %r not in registry, falling back "
             "to type inference",
             formatter_name,
         )
@@ -190,14 +190,14 @@ class TadoDynamicBridgeSensor(
             self._attr_available = False
         else:
             # SensorDeviceClass.TIMESTAMP requires a datetime, not a
-            # raw ISO string — parse here so HA's value coercion path
+            # raw ISO string, parse here so HA's value coercion path
             # doesn't reject the sensor.
             if getattr(self, "_attr_device_class", None) == SensorDeviceClass.TIMESTAMP and isinstance(value, str):
                 try:
                     self._attr_native_value = parse_iso_datetime(value)
                 except (ValueError, TypeError):
                     _LOGGER.debug(
-                        "Bridge Sensors: could not parse timestamp %r — "
+                        "Bridge Sensors: could not parse timestamp %r, "
                         "marking sensor unavailable for this cycle",
                         value,
                     )
@@ -225,7 +225,7 @@ class TadoDynamicBridgeSensor(
 
 
 # ---------------------------------------------------------------------------
-# Bridge meta sensors — capabilities summary and schema version tracking
+# Bridge meta sensors: capabilities summary and schema version tracking
 # ---------------------------------------------------------------------------
 
 
@@ -324,7 +324,7 @@ class TadoBridgeSchemaVersionSensor(
                 self._last_schema_change = dt_util.utcnow()
                 self._recent_changes = diff.to_change_list()
                 _LOGGER.info(
-                    "Bridge Sensors: API schema changed — %s",
+                    "Bridge Sensors: API schema changed: %s",
                     diff.summary,
                 )
 

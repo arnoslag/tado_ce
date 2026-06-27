@@ -1,4 +1,4 @@
-"""Tado CE repair-issue helpers — surface auth / quota problems via HA's UI."""
+"""Tado CE repair-issue helpers: surface auth / quota problems via HA's UI."""
 
 from __future__ import annotations
 
@@ -32,15 +32,15 @@ class RepairIssueSpec:
         return self.id_prefix or self.translation_key
 
 
-# WHY: ERROR + persistent — auth dead can only be detected when it occurs and the
-# user must act, so the issue must survive a restart.
+# ERROR + persistent: auth dead is only detectable when it occurs and the user
+# must act, so the issue must survive a restart.
 AUTH_ISSUE = RepairIssueSpec(
     translation_key="auth_token_expired",
     severity=ir.IssueSeverity.ERROR,
     is_persistent=True,
 )
 
-# WHY: WARNING + non-persistent — quota auto-recovers; the issue is re-created
+# WARNING + non-persistent: quota auto-recovers, so the issue is re-created
 # only if the next sync still rate-limits.
 RATE_LIMIT_ISSUE = RepairIssueSpec(
     translation_key="rate_limited",
@@ -48,9 +48,9 @@ RATE_LIMIT_ISSUE = RepairIssueSpec(
     is_persistent=False,
 )
 
-# WHY: WARNING + persistent — pairing credentials are invalid and the bridge
-# cannot be reached until the user re-pairs; the issue survives a restart so
-# the user sees it even after HA reboots before they take action.
+# WARNING + persistent: pairing credentials are invalid and the bridge can't be
+# reached until the user re-pairs, so the issue survives a restart and the user
+# still sees it after an HA reboot before they act.
 HOMEKIT_PAIRING_INVALID_ISSUE = RepairIssueSpec(
     id_prefix="homekit_pairing_invalid",
     translation_key="homekit_pairing_invalid",

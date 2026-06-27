@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 
+## [4.1.1] - 2026-06-27
+
+### Bug fixes
+
+- **Integration no longer fails to load when HomeKit can't start** ([#308](https://github.com/hiall-fyi/tado_ce/issues/308) - @wisskid) — if you had HomeKit local control switched on but your Home Assistant host has no zeroconf service running, the whole integration crashed at startup and even the cloud side stopped working. HomeKit local control is optional, so it now quietly falls back to cloud-only and the integration loads normally. The same protection now covers a bridge that drops out while HomeKit is connecting, during startup or on a later refresh, so a dropped bridge falls back to cloud instead of taking the integration down with it. If you want local control, the fix is to add `default_config:` (or `zeroconf:`) to your `configuration.yaml` and restart.
+- **Clearer pairing error when zeroconf is missing** ([#308](https://github.com/hiall-fyi/tado_ce/issues/308) - @wisskid) — trying to pair the HomeKit bridge on a host with no zeroconf service used to show a generic "pairing failed". It now names the actual cause and tells you to add `default_config:` (or `zeroconf:`) and restart.
+
+
 ## [4.1.0] - 2026-06-23
 
 **AC swing axes, automation-friendly Smart Valve writes, temperature source control, HomeKit reliability**

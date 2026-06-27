@@ -1,4 +1,4 @@
-"""Tado CE Insights Presenter — correlation, aggregation, and formatting."""
+"""Tado CE Insights Presenter: correlation, aggregation, and formatting."""
 
 from __future__ import annotations
 
@@ -223,7 +223,7 @@ def escalate_priorities(
 ) -> list[Insight]:
     """Return new list with escalated priorities based on persistence duration.
 
-    Pure function — does not mutate input insights or history.
+    Pure function: does not mutate input insights or history.
     Insights not in ESCALATION_RULES keep their original priority.
     Escalated priority is always >= base priority (monotonic).
     Escalated priority is capped at CRITICAL (4).
@@ -828,7 +828,7 @@ def _describe_resolved_keys(keys: set[str]) -> str:
         readable = itype.replace("_", " ")
         return f"1 {readable} issue was resolved."
 
-    # Multiple resolved — group by type
+    # Multiple resolved: group by type
     parts: list[str] = []
     for itype, count in sorted(type_counts.items()):
         readable = itype.replace("_", " ")

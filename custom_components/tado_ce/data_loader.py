@@ -1,12 +1,12 @@
-"""Tado CE data loader — per-home HA Store persistence with in-memory cache.
+"""Tado CE data loader: per-home HA Store persistence with in-memory cache.
 
 Manages two categories of persistent data via HA Store:
 
 - **API data** (immediate save): ten stores written on every API
-  response — `zones`, `config`, `home_state`, `ratelimit`, `zones_info`,
+  response: `zones`, `config`, `home_state`, `ratelimit`, `zones_info`,
   `weather`, `mobile_devices`, `offsets`, `schedules`,
   `ac_capabilities`. Uses `Store.async_save()`.
-- **Auxiliary data** (debounced save): per-feature state — window
+- **Auxiliary data** (debounced save): per-feature state, including window
   detection, WC state, bridge health, outdoor temp history, zone
   config, smart-comfort cache, overlay mode, timer duration, HomeKit
   savings, insight runtime state. Uses `Store.async_delay_save()`;
@@ -14,7 +14,7 @@ Manages two categories of persistent data via HA Store:
 
 `HeatingCycleStorage`, `InsightHistoryTracker`,
 `StateRestoreManager`, and `APICallTracker` keep their own Store
-instances — they need data-format migration, dirty-flag tracking, or
+instances: they need data-format migration, dirty-flag tracking, or
 domain-specific load/save logic that doesn't fit this loader.
 
 A few legacy JSON files stay outside the loader: config-flow
@@ -56,7 +56,7 @@ _CACHE_DIRTY = object()
 # delay=0 means immediate save (async_save), used for API data.
 # delay>0 means debounced save (async_delay_save), used for auxiliary data.
 _ALL_STORES: dict[str, int] = {
-    # API Data — immediate save (written on every API response)
+    # API Data: immediate save (written on every API response)
     "zones": 0,
     "config": 0,
     "home_state": 0,
@@ -68,7 +68,7 @@ _ALL_STORES: dict[str, int] = {
     "schedules": 0,
     "ac_capabilities": 0,
     "ac_capabilities_fp": 0,
-    # Auxiliary Data — debounced save
+    # Auxiliary Data: debounced save
     "window_detection": 10,
     "wc_state": 10,
     "bridge_health": 10,
@@ -142,7 +142,7 @@ class DataLoader:
         store = self._stores.get(name)
         if store is None:
             _LOGGER.warning(
-                "Data Loader: cannot save unknown store %r — "
+                "Data Loader: cannot save unknown store %r, "
                 "this is a programming error, the data will not persist",
                 name,
             )
@@ -168,7 +168,7 @@ class DataLoader:
                 data = await store.async_load()
             except HomeAssistantError:
                 _LOGGER.warning(
-                    "Data Loader: could not load store %r — caching as "
+                    "Data Loader: could not load store %r, caching as "
                     "missing, integration will rebuild from the next "
                     "API response",
                     name, exc_info=True,
@@ -228,7 +228,7 @@ class DataLoader:
             return schedules.get(zone_id)
         return None
 
-    # === Auxiliary Data — Store-backed with debounced writes ===
+    # === Auxiliary Data: Store-backed with debounced writes ===
 
     def _old_auxiliary_path(self, name: str) -> Path:
         """Return the legacy JSON path for one-time migration, accounting for shared keys.
@@ -247,7 +247,7 @@ class DataLoader:
         store = self._stores.get(name)
         if not store:
             _LOGGER.warning(
-                "Data Loader: cannot load unknown auxiliary store %r — "
+                "Data Loader: cannot load unknown auxiliary store %r, "
                 "this is a programming error",
                 name,
             )
@@ -272,7 +272,7 @@ class DataLoader:
             store.async_delay_save(lambda: data, delay)
         else:
             _LOGGER.warning(
-                "Data Loader: cannot save unknown auxiliary store %r — "
+                "Data Loader: cannot save unknown auxiliary store %r, "
                 "this is a programming error, the data will not persist",
                 name,
             )
@@ -287,7 +287,7 @@ class DataLoader:
                 return OVERLAY_MODE_DEFAULT
             if not isinstance(data, dict):
                 _LOGGER.warning(
-                    "Data Loader: overlay_mode store had unexpected format — "
+                    "Data Loader: overlay_mode store had unexpected format, "
                     "falling back to default %s",
                     OVERLAY_MODE_DEFAULT,
                 )
@@ -299,7 +299,7 @@ class DataLoader:
                 mode = "TADO_MODE"
             if mode not in ("TADO_MODE", "TIMER", "MANUAL"):
                 _LOGGER.warning(
-                    "Data Loader: overlay_mode value %r is not recognised — "
+                    "Data Loader: overlay_mode value %r is not recognised, "
                     "falling back to default %s",
                     mode, OVERLAY_MODE_DEFAULT,
                 )
@@ -307,7 +307,7 @@ class DataLoader:
             return mode  # type: ignore[no-any-return]
         except (HomeAssistantError, OSError) as e:
             _LOGGER.warning(
-                "Data Loader: could not load overlay mode (%s) — "
+                "Data Loader: could not load overlay mode (%s), "
                 "using default %s",
                 e, OVERLAY_MODE_DEFAULT,
             )
@@ -337,7 +337,7 @@ class DataLoader:
                 return data.get("timer_duration", TIMER_DURATION_DEFAULT)  # type: ignore[no-any-return]
         except (HomeAssistantError, OSError) as e:
             _LOGGER.debug(
-                "Data Loader: could not load timer duration (%s) — "
+                "Data Loader: could not load timer duration (%s), "
                 "using default %d minutes",
                 e, TIMER_DURATION_DEFAULT,
             )
@@ -347,7 +347,7 @@ class DataLoader:
         """Persist the timer duration if it is inside the allowed range."""
         if not isinstance(duration, int) or duration < TIMER_DURATION_MIN or duration > TIMER_DURATION_MAX:
             _LOGGER.warning(
-                "Data Loader: refusing to save timer duration %r — "
+                "Data Loader: refusing to save timer duration %r, "
                 "must be an int in %d..%d minutes",
                 duration, TIMER_DURATION_MIN, TIMER_DURATION_MAX,
             )
@@ -364,7 +364,7 @@ class DataLoader:
             data = await self.async_load_auxiliary("outdoor_temp_history")
             if data is None:
                 _LOGGER.debug(
-                    "Data Loader: outdoor_temp_history not yet saved — "
+                    "Data Loader: outdoor_temp_history not yet saved, "
                     "starting fresh",
                 )
                 return []
@@ -376,7 +376,7 @@ class DataLoader:
         except (HomeAssistantError, OSError) as e:
             _LOGGER.warning(
                 "Data Loader: could not load outdoor temperature history "
-                "(%s) — starting fresh",
+                "(%s), starting fresh",
                 e,
             )
             return []
@@ -397,7 +397,7 @@ class DataLoader:
         except (HomeAssistantError, OSError) as e:
             _LOGGER.warning(
                 "Data Loader: could not load weather-compensation state "
-                "(%s) — starting fresh, smoothing buffer will rebuild",
+                "(%s), starting fresh, smoothing buffer will rebuild",
                 e,
             )
             return None
@@ -418,7 +418,7 @@ class DataLoader:
             data = await self.async_load_auxiliary("bridge_health")
         except (HomeAssistantError, OSError) as e:
             _LOGGER.warning(
-                "Data Loader: could not load bridge-health state (%s) — "
+                "Data Loader: could not load bridge-health state (%s), "
                 "starting fresh, health metrics will rebuild",
                 e,
             )
@@ -441,7 +441,7 @@ class DataLoader:
         except (HomeAssistantError, OSError) as e:
             _LOGGER.warning(
                 "Data Loader: could not load HomeKit savings counters "
-                "(%s) — counters will reset",
+                "(%s), counters will reset",
                 e,
             )
             return None
@@ -463,7 +463,7 @@ class DataLoader:
         except (HomeAssistantError, OSError) as e:
             _LOGGER.warning(
                 "Data Loader: could not load window-detection state "
-                "(%s) — starting fresh, per-zone detection state will rebuild",
+                "(%s), starting fresh, per-zone detection state will rebuild",
                 e,
             )
             return None

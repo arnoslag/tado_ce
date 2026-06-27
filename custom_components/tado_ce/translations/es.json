@@ -1863,7 +1863,8 @@
       "homekit_pairing_failed": "Error de emparejamiento - inténtelo de nuevo",
       "svc_active_sensor_clear": "El control inteligente de válvulas está activado para esta zona. Si desactivas el sensor de temperatura externo, se desactivará el control inteligente de válvulas. Si deseas pausar el sensor sin detener el control inteligente de válvulas, configura primero el modo de control inteligente de válvulas en «Desactivado».",
       "homekit_max_tries": "Demasiados intentos fallidos: el puente está bloqueado temporalmente. Espera unos minutos o reinicia el puente y vuelve a intentarlo.",
-      "homekit_busy": "El puente está ocupado; es posible que se esté realizando otra conexión. Inténtalo de nuevo dentro de un momento."
+      "homekit_busy": "El puente está ocupado; es posible que se esté realizando otra conexión. Inténtalo de nuevo dentro de un momento.",
+      "homekit_no_zeroconf": "El emparejamiento con HomeKit requiere el servicio zeroconf de Home Assistant, que no se está ejecutando en este servidor. Añade `default_config:` (o `zeroconf:`) a tu archivo configuration.yaml y reinicia el sistema; a continuación, vuelve a intentarlo."
     }
   }
 }

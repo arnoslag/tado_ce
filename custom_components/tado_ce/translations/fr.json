@@ -1863,7 +1863,8 @@
       "homekit_pairing_failed": "L'appairage a échoué - veuillez réessayer",
       "svc_active_sensor_clear": "La fonction « Smart Valve Control » est activée pour cette zone. La désactivation du capteur de température externe désactivera la fonction « Smart Valve Control ». Réglez d'abord le mode « Smart Valve Control » sur « Off » si vous souhaitez mettre le capteur en pause sans désactiver la fonction SVC.",
       "homekit_max_tries": "Trop de tentatives infructueuses : le pont est temporairement verrouillé. Veuillez patienter quelques minutes ou réinitialiser le pont, puis réessayer.",
-      "homekit_busy": "Le pont est très fréquenté — un autre appariement est peut-être en cours. Veuillez réessayer dans quelques instants."
+      "homekit_busy": "Le pont est très fréquenté — un autre appariement est peut-être en cours. Veuillez réessayer dans quelques instants.",
+      "homekit_no_zeroconf": "L'appairage HomeKit nécessite le service zeroconf de Home Assistant, qui n'est pas en cours d'exécution sur cet hôte. Ajoutez `default_config:` (ou `zeroconf:`) à votre fichier configuration.yaml, redémarrez, puis réessayez."
     }
   }
 }

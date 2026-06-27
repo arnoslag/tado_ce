@@ -1863,7 +1863,8 @@
       "homekit_pairing_failed": "Accoppiamento non riuscito - riprovare",
       "svc_active_sensor_clear": "Il controllo intelligente delle valvole è abilitato per questa zona. La disattivazione del sensore di temperatura esterno disattiverà il controllo intelligente delle valvole. Se desideri mettere in pausa il sensore senza interrompere il controllo intelligente delle valvole, imposta prima la modalità di controllo intelligente delle valvole su \"Off\".",
       "homekit_max_tries": "Troppi tentativi falliti: il bridge è temporaneamente bloccato. Attendere qualche minuto oppure resettare il bridge e riprovare.",
-      "homekit_busy": "Il ponte è occupato: forse è in corso un altro accoppiamento. Riprova tra un attimo."
+      "homekit_busy": "Il ponte è occupato: forse è in corso un altro accoppiamento. Riprova tra un attimo.",
+      "homekit_no_zeroconf": "L'accoppiamento HomeKit richiede il servizio zeroconf di Home Assistant, che non è in esecuzione su questo host. Aggiungi `default_config:` (o `zeroconf:`) al tuo file configuration.yaml e riavvia, quindi riprova."
     }
   }
 }

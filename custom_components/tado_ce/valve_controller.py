@@ -1,4 +1,4 @@
-"""Smart Valve Controller — per-zone proportional-offset TRV control via external sensor; writes via HomeKit (preferred) or cloud."""
+"""Smart Valve Controller: per-zone proportional-offset TRV control via external sensor; writes via HomeKit (preferred) or cloud."""
 
 from __future__ import annotations
 
@@ -235,7 +235,7 @@ class SmartValveController:
         return abs(float(overlay_temp) - saved) >= 0.1
 
     def _enter_idle(self) -> None:
-        """Enter IDLE and clear the desired target — the universal "stop managing" invariant.
+        """Enter IDLE and clear the desired target: the universal "stop managing" invariant.
 
         IDLE means SVC is not actively driving the valve, so it holds no desired
         target. These two always move together: every terminating transition into
@@ -243,7 +243,7 @@ class SmartValveController:
         instead of compensating toward a value the controller no longer owns.
         The only IDLE entry that does NOT use this helper is the trusted-write
         re-arm (on_trusted_target_write), which enters IDLE *with* a freshly-set
-        desired_target it must keep — that distinction is deliberate, not an
+        desired_target it must keep. That distinction is deliberate, not an
         oversight.
         """
         self._runtime.state = ControllerState.IDLE
@@ -259,7 +259,7 @@ class SmartValveController:
         self._runtime.last_valve_target = target
         self._runtime.last_schedule_target = target  # anchor schedule detector so
         # the ACTIVE-path detect_schedule_block_change doesn't confuse the trusted
-        # target with a schedule change — only a genuine schedule advance past this
+        # target with a schedule change: only a genuine schedule advance past this
         # value will re-arm the detector.
         self._runtime.last_evaluation_ts = time.monotonic()  # arm grace window
 
@@ -301,7 +301,7 @@ class SmartValveController:
                     return True
             except (TimeoutError, aiohttp.ClientError, OSError):
                 _LOGGER.warning(
-                    "Smart Valve: zone %s HomeKit write failed — falling "
+                    "Smart Valve: zone %s HomeKit write failed, falling "
                     "back to cloud",
                     self._zone_id, exc_info=True,
                 )
@@ -316,7 +316,7 @@ class SmartValveController:
         if last_cloud is not None and (now - last_cloud) < self._cloud_rate_limit_seconds:
             self._runtime.pending_cloud_target = valve_target
             _LOGGER.debug(
-                "Smart Valve: zone %s cloud write rate-limited — queued "
+                "Smart Valve: zone %s cloud write rate-limited, queued "
                 "target %.1f°C for next window",
                 self._zone_id, valve_target,
             )
@@ -325,7 +325,7 @@ class SmartValveController:
         if self._coordinator.is_cloud_backoff_active():
             self._runtime.pending_cloud_target = valve_target
             _LOGGER.debug(
-                "Smart Valve: zone %s cloud write held — Tado quota "
+                "Smart Valve: zone %s cloud write held. Tado quota "
                 "backoff active, queued target %.1f°C",
                 self._zone_id, valve_target,
             )
@@ -352,7 +352,7 @@ class SmartValveController:
                 self._runtime.last_evaluation_ts = time.monotonic()
                 return True
             _LOGGER.warning(
-                "Smart Valve: zone %s cloud write rejected by Tado — "
+                "Smart Valve: zone %s cloud write rejected by Tado, "
                 "will retry on next sensor change",
                 self._zone_id,
             )
@@ -367,7 +367,7 @@ class SmartValveController:
             return False
         except (TimeoutError, aiohttp.ClientError):
             _LOGGER.warning(
-                "Smart Valve: zone %s cloud write raised an exception — "
+                "Smart Valve: zone %s cloud write raised an exception, "
                 "will retry on next sensor change",
                 self._zone_id, exc_info=True,
             )
@@ -379,13 +379,13 @@ class SmartValveController:
             success = await self._api_client.delete_zone_overlay(self._zone_id)
             if success:
                 _LOGGER.debug(
-                    "Smart Valve: zone %s overlay cleared — Tado schedule resumed",
+                    "Smart Valve: zone %s overlay cleared. Tado schedule resumed",
                     self._zone_id,
                 )
                 self._runtime.overlay_set_by_controller = False
                 return True
             _LOGGER.warning(
-                "Smart Valve: zone %s could not clear overlay — Tado "
+                "Smart Valve: zone %s could not clear overlay. Tado "
                 "schedule did not resume, will retry next cycle",
                 self._zone_id,
             )
@@ -399,7 +399,7 @@ class SmartValveController:
             return False
         except (TimeoutError, aiohttp.ClientError):
             _LOGGER.warning(
-                "Smart Valve: zone %s clearing overlay raised an exception — "
+                "Smart Valve: zone %s clearing overlay raised an exception, "
                 "will retry next cycle",
                 self._zone_id, exc_info=True,
             )
@@ -420,7 +420,7 @@ class SmartValveController:
         zone_data = self._get_zone_data()
         if zone_data is None:
             _LOGGER.warning(
-                "Smart Valve: zone %s has no zone data — skipping evaluation, "
+                "Smart Valve: zone %s has no zone data, skipping evaluation, "
                 "will retry on next poll",
                 self._zone_id,
             )
@@ -433,7 +433,7 @@ class SmartValveController:
         if min_temp > max_temp:
             _LOGGER.warning(
                 "Smart Valve: zone %s has invalid temperature limits "
-                "(min %.1f°C > max %.1f°C) — falling back to defaults "
+                "(min %.1f°C > max %.1f°C), falling back to defaults "
                 "(5.0–25.0°C). Fix this in Zone Configuration → "
                 "Temperature Limits.",
                 self._zone_id, min_temp, max_temp,
@@ -453,7 +453,7 @@ class SmartValveController:
         current_state = self._runtime.state
 
         _LOGGER.debug(
-            "Smart Valve: zone %s eval — state=%s, ext=%s, trv=%s, "
+            "Smart Valve: zone %s eval, state=%s, ext=%s, trv=%s, "
             "schedule=%s, desired=%s",
             self._zone_id,
             self._runtime.state.value,
@@ -466,7 +466,7 @@ class SmartValveController:
         if current_state == ControllerState.BACKED_OFF:
             if self.detect_schedule_block_change(schedule_target):
                 _LOGGER.info(
-                    "Smart Valve: zone %s schedule block changed — "
+                    "Smart Valve: zone %s schedule block changed, "
                     "re-enabling Smart Valve Control",
                     self._zone_id,
                 )
@@ -475,7 +475,7 @@ class SmartValveController:
                 self._runtime.backed_off_overlay_target = None
             elif self.detect_overlay_change_while_backed_off(zone_data):
                 _LOGGER.info(
-                    "Smart Valve: zone %s manual override cleared — "
+                    "Smart Valve: zone %s manual override cleared, "
                     "re-enabling Smart Valve Control",
                     self._zone_id,
                 )
@@ -495,7 +495,7 @@ class SmartValveController:
                     self._runtime.backed_off_overlay_target = None
                 _LOGGER.info(
                     "Smart Valve: zone %s manual change detected from the "
-                    "Tado app or device — pausing Smart Valve Control until "
+                    "Tado app or device, pausing Smart Valve Control until "
                     "the schedule changes or the override is cleared",
                     self._zone_id,
                 )
@@ -506,7 +506,7 @@ class SmartValveController:
         if current_state == ControllerState.ACTIVE:
             if schedule_target is None:
                 _LOGGER.info(
-                    "Smart Valve: zone %s schedule has no heating target — "
+                    "Smart Valve: zone %s schedule has no heating target, "
                     "handing control back to Tado",
                     self._zone_id,
                 )
@@ -517,7 +517,7 @@ class SmartValveController:
             if self.detect_schedule_block_change(schedule_target):
                 _LOGGER.info(
                     "Smart Valve: zone %s schedule block changed "
-                    "(%.1f°C → %.1f°C) — adjusting valve target to match",
+                    "(%.1f°C → %.1f°C), adjusting valve target to match",
                     self._zone_id,
                     self._runtime.last_schedule_target
                     if self._runtime.last_schedule_target is not None
@@ -530,7 +530,7 @@ class SmartValveController:
         if external_temp is None:
             if current_state == ControllerState.ACTIVE:
                 _LOGGER.warning(
-                    "Smart Valve: zone %s external sensor unavailable — "
+                    "Smart Valve: zone %s external sensor unavailable, "
                     "handing control back to Tado",
                     self._zone_id,
                 )
@@ -556,7 +556,7 @@ class SmartValveController:
         elif new_state == ControllerState.IDLE and current_state == ControllerState.ACTIVE:
             _LOGGER.info(
                 "Smart Valve: zone %s reached target (external %.1f°C "
-                "≥ desired %.1f°C + %.1f°C hysteresis) — handing control "
+                "≥ desired %.1f°C + %.1f°C hysteresis), handing control "
                 "back to Tado",
                 self._zone_id, external_temp, desired_target, self._hysteresis,
             )
@@ -569,7 +569,7 @@ class SmartValveController:
                 # offset, so we open the valve fully as a safe fallback
                 # until the next poll brings a reading back.
                 _LOGGER.warning(
-                    "Smart Valve: zone %s TRV temperature unreadable — "
+                    "Smart Valve: zone %s TRV temperature unreadable, "
                     "opening valve fully (target %.1f°C) until the sensor returns",
                     self._zone_id, max_temp,
                 )
@@ -647,7 +647,7 @@ class SmartValveController:
             return None
 
     def _read_desired_target(self, zone_data: dict[str, Any]) -> float | None:
-        """Return the desired target — active overlay first, then schedule."""
+        """Return the desired target: active overlay first, then schedule."""
         from .schedule_helpers import get_current_schedule_target
 
         overlay = zone_data.get("overlay")
@@ -680,7 +680,7 @@ class SmartValveController:
         # reading our own inflated overlay back as the user's intent.
         if self._runtime.state == ControllerState.ACTIVE and self._runtime.desired_target is None:
             _LOGGER.debug(
-                "Smart Valve: zone %s restored ACTIVE without desired_target — "
+                "Smart Valve: zone %s restored ACTIVE without desired_target, "
                 "resetting to IDLE",
                 self._zone_id,
             )
@@ -760,7 +760,7 @@ class SmartValveController:
                 if offset is not None and abs(float(offset)) >= 0.1:
                     _LOGGER.warning(
                         "Smart Valve: zone %s device %s has a temperature "
-                        "offset of %.1f°C set in Tado — this will cause "
+                        "offset of %.1f°C set in Tado, this will cause "
                         "double compensation with Smart Valve Control. "
                         "Reset the device offset to 0 in the Tado app for "
                         "accurate results.",
@@ -768,7 +768,7 @@ class SmartValveController:
                     )
         except (KeyError, TypeError, AttributeError):
             _LOGGER.debug(
-                "Smart Valve: zone %s could not check device offset — "
+                "Smart Valve: zone %s could not check device offset, "
                 "continuing without the warning",
                 self._zone_id, exc_info=True,
             )
@@ -807,7 +807,7 @@ class SmartValveController:
     async def async_persist_state(self) -> None:
         """Persist controller state via ZoneConfigManager.
 
-        last_evaluation_ts is deliberately omitted — it's a monotonic
+        last_evaluation_ts is deliberately omitted: it's a monotonic
         clock value, meaningless across process restarts.
         """
         state_dict = {
@@ -828,7 +828,7 @@ class SmartValveController:
         raw = config.get("svc_state")
         if not isinstance(raw, dict):
             _LOGGER.debug(
-                "Smart Valve: zone %s has no persisted state — starting fresh",
+                "Smart Valve: zone %s has no persisted state, starting fresh",
                 self._zone_id,
             )
             return
@@ -843,7 +843,7 @@ class SmartValveController:
             state_str = raw.get("state", "idle")
             self._runtime.state = ControllerState(state_str)
             self._runtime.last_valve_target = _optional_float("last_valve_target")
-            # Don't restore last_evaluation_ts — monotonic resets on
+            # Don't restore last_evaluation_ts: monotonic resets on
             # boot, so a persisted value would suppress a legitimate
             # post-restart manual-override detection.
             self._runtime.last_evaluation_ts = None
@@ -859,7 +859,7 @@ class SmartValveController:
             )
         except (ValueError, TypeError, KeyError):
             _LOGGER.warning(
-                "Smart Valve: zone %s persisted state was unreadable — "
+                "Smart Valve: zone %s persisted state was unreadable, "
                 "starting fresh",
                 self._zone_id,
             )

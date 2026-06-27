@@ -1,8 +1,8 @@
-"""Tado CE select platform — Presence Mode, Overlay Mode, Timer Duration.
+"""Tado CE select platform: Presence Mode, Overlay Mode, Timer Duration.
 
 Three home-level select entities. Presence Mode talks to the
 cloud (1 API call per change, with optimistic update + rollback);
-Overlay Mode and Timer Duration are local-only — they shape how
+Overlay Mode and Timer Duration are local-only: they shape how
 *future* manual writes are sent but don't themselves hit the
 cloud.
 """
@@ -159,7 +159,7 @@ class TadoPresenceModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sel
 
             if result == OptimisticUpdateResult.PRESERVE_OPTIMISTIC:
                 _LOGGER.debug(
-                    "Select: presence mode holding optimistic %s — "
+                    "Select: presence mode holding optimistic %s, "
                     "cloud still reports %s",
                     self._expected_mode,
                     api_mode,
@@ -172,7 +172,7 @@ class TadoPresenceModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sel
 
         except (AttributeError, TypeError, KeyError) as e:
             _LOGGER.warning(
-                "Select: presence mode update failed (%s) — keeping "
+                "Select: presence mode update failed (%s), keeping "
                 "last known mode until the next poll",
                 e,
             )
@@ -225,7 +225,7 @@ class TadoPresenceModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sel
             )
         else:
             _LOGGER.warning(
-                "Select: presence mode %s write failed — reverted to "
+                "Select: presence mode %s write failed, reverted to "
                 "previous mode",
                 option,
             )
@@ -244,7 +244,7 @@ class TadoOverlayModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sele
     """Choose how long manual temperature changes stay in effect.
 
     Local-only setting (no API call) that shapes future climate
-    writes — Tado Mode mirrors the per-device app preference,
+    writes: Tado Mode mirrors the per-device app preference,
     Next Time Block / Timer / Manual override the cloud
     termination explicitly.
     """
@@ -292,7 +292,7 @@ class TadoOverlayModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sele
             self._attr_current_option = OVERLAY_MODE_REVERSE_MAP.get(overlay_mode, OVERLAY_MODE_DEFAULT_DISPLAY)
         except (AttributeError, TypeError) as e:
             _LOGGER.warning(
-                "Select: overlay mode update failed (%s) — keeping "
+                "Select: overlay mode update failed (%s), keeping "
                 "last known option until the next poll",
                 e,
             )
@@ -312,7 +312,7 @@ class TadoOverlayModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sele
             )
         else:
             _LOGGER.warning(
-                "Select: overlay mode persistence failed for %s — "
+                "Select: overlay mode persistence failed for %s, "
                 "value applied in memory but won't survive a HA "
                 "restart",
                 option,
@@ -322,7 +322,7 @@ class TadoOverlayModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sele
 class TadoTimerDurationSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], SelectEntity):
     """Set the Timer-overlay duration in minutes.
 
-    Only takes effect when Overlay Mode is `Timer`. Local-only —
+    Only takes effect when Overlay Mode is `Timer`. Local-only:
     persisted alongside Overlay Mode so the next manual write
     picks up the new duration.
     """
@@ -369,7 +369,7 @@ class TadoTimerDurationSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Se
             self._attr_current_option = str(duration)
         except (AttributeError, TypeError) as e:
             _LOGGER.warning(
-                "Select: timer duration update failed (%s) — keeping "
+                "Select: timer duration update failed (%s), keeping "
                 "last known value until the next poll",
                 e,
             )
@@ -389,7 +389,7 @@ class TadoTimerDurationSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Se
             )
         else:
             _LOGGER.warning(
-                "Select: timer duration persistence failed for %s — "
+                "Select: timer duration persistence failed for %s, "
                 "value applied in memory but won't survive a HA "
                 "restart",
                 option,

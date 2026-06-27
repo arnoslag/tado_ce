@@ -109,7 +109,7 @@ class TadoBatterySensor(CoordinatorEntity["TadoDataUpdateCoordinator"], SensorEn
             zones_info = (self.coordinator.data or {}).get("zones_info")
             if zones_info:
                 for zone in zones_info:
-                    # `devices` can come back as null on a fresh zone —
+                    # `devices` can come back as null on a fresh zone, so
                     # `or []` covers both null and missing-key cases.
                     for device in zone.get("devices") or []:
                         if device.get("shortSerialNo") == self._device_serial:
@@ -131,7 +131,7 @@ class TadoBatterySensor(CoordinatorEntity["TadoDataUpdateCoordinator"], SensorEn
             self._attr_available = False
         except (KeyError, TypeError, AttributeError) as err:
             _LOGGER.debug(
-                "Battery Sensor: %s update failed (%s) — entity marked "
+                "Battery Sensor: %s update failed (%s), entity marked "
                 "unavailable until the next poll",
                 mask_serial(self._device_serial), err,
             )

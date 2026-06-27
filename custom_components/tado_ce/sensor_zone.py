@@ -1,4 +1,4 @@
-"""Tado CE per-zone sensors — temperature, humidity, target, overlay, heating / AC power."""
+"""Tado CE per-zone sensors: temperature, humidity, target, overlay, heating / AC power."""
 
 from __future__ import annotations
 
@@ -76,7 +76,7 @@ class TadoZoneSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], SensorEntit
             zone_data = get_zone_state(self.coordinator.data, self._zone_id)
         except Exception:
             _LOGGER.debug(
-                "Zone Sensor: could not read zone %s data — returning "
+                "Zone Sensor: could not read zone %s data, returning "
                 "None so the entity falls back to unavailable",
                 self._zone_id,
             )
@@ -183,7 +183,7 @@ class TadoTemperatureSensor(TadoZoneSensor):
                     return
         except AttributeError:
             # Coordinator / provider not fully initialised on first
-            # poll — fall through to the cloud default.
+            # poll; fall through to the cloud default.
             pass
         self._data_source = "cloud"
         self._last_homekit_update = None
@@ -358,7 +358,7 @@ class TadoBoilerFlowTemperatureSensor(CoordinatorEntity["TadoDataUpdateCoordinat
             self._attr_available = False
         except Exception:
             _LOGGER.debug(
-                "Zone Sensor: boiler flow temperature update failed — "
+                "Zone Sensor: boiler flow temperature update failed, "
                 "marking unavailable until the next poll",
                 exc_info=True,
             )
@@ -390,7 +390,7 @@ class TadoTargetTempSensor(TadoZoneSensor):
         if setting.get("power") == "ON":
             self._attr_native_value = (setting.get("temperature") or {}).get("celsius")
         else:
-            # Power-off zones have no meaningful target — exposing
+            # Power-off zones have no meaningful target; exposing
             # the last value would mislead users into thinking the
             # zone is still aiming for it.
             self._attr_native_value = None
@@ -454,7 +454,7 @@ class TadoOverlaySensor(TadoZoneSensor):
         if self._overlay_expiry:
             # Timer overlays revert to the schedule, but the schedule
             # target at that moment isn't deterministic from the zone
-            # snapshot alone — leave next_temp blank.
+            # snapshot alone, so leave next_temp blank.
             self._next_change = self._overlay_expiry
             self._next_temp = None
         else:

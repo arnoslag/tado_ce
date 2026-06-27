@@ -1,4 +1,4 @@
-"""Tado CE insight collector — gathers per-zone, cross-zone, and hub insights."""
+"""Tado CE insight collector: gathers per-zone, cross-zone, and hub insights."""
 
 from __future__ import annotations
 
@@ -61,8 +61,8 @@ _LOGGER = logging.getLogger(__name__)
 
 # Insight collection thresholds
 _HUMIDITY_HISTORY_MAX_SAMPLES = 48  # max humidity readings to keep per zone
-_HEATING_ANOMALY_POWER_PCT = 80  # % — high power threshold for anomaly detection
-_HEATING_ANOMALY_TEMP_DELTA = 0.5  # °C — near-target threshold for anomaly detection
+_HEATING_ANOMALY_POWER_PCT = 80  # %: high power threshold for anomaly detection
+_HEATING_ANOMALY_TEMP_DELTA = 0.5  # °C: near-target threshold for anomaly detection
 _OUTDOOR_TEMP_MIN_SAMPLES = 48  # minimum outdoor temp readings for 7-day average
 
 
@@ -270,7 +270,7 @@ def collect_single_zone_insights(
         ctx,
     )
 
-    # --- Heating off + cold room (always relevant — basic safety) ---
+    # --- Heating off + cold room (always relevant: basic safety) ---
     insight = calculate_heating_off_cold_room_insight(
         power_state=setting.get("power"),
         current_temp=inside_temp,
@@ -286,7 +286,7 @@ def collect_single_zone_insights(
         schedules, humidity, humidity_histories, insights,
     )
 
-    # --- Battery and connection (always relevant — device health) ---
+    # --- Battery and connection (always relevant: device health) ---
     if zones_info:
         _collect_single_zone_device_insights(zone_id, zone_name, zones_info, insights)
 
@@ -338,7 +338,7 @@ def collect_zone_insights(
 
     except Exception as e:
         _LOGGER.debug(
-            "Insight Collector: zone insight collection failed (%s) — "
+            "Insight Collector: zone insight collection failed (%s), "
             "returning whatever insights were gathered so far",
             e,
         )
@@ -765,7 +765,7 @@ def get_cross_zone_insights(
     except Exception as e:
         _LOGGER.debug(
             "Insight Collector: cross-zone insight collection failed "
-            "(%s) — returning whatever was gathered so far",
+            "(%s), returning whatever was gathered so far",
             e,
         )
 
@@ -876,7 +876,7 @@ def get_hub_insights(
 
     except Exception as e:
         _LOGGER.debug(
-            "Insight Collector: hub insight collection failed (%s) — "
+            "Insight Collector: hub insight collection failed (%s), "
             "returning whatever was gathered so far",
             e,
         )

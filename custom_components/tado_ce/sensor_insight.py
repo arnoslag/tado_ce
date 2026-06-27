@@ -1,4 +1,4 @@
-"""Tado CE Insight sensors — actionable home + per-zone recommendations."""
+"""Tado CE Insight sensors: actionable home + per-zone recommendations."""
 
 from __future__ import annotations
 
@@ -140,7 +140,7 @@ class TadoHomeInsightsSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], Sen
         self._attr_native_value = 0
         self._aggregated: dict[str, Any] = {}
         self._health_score: int = 100
-        # Weekly digest cache — recompute only when date changes
+        # Weekly digest cache: recompute only when date changes
         self._weekly_digest: str = ""
         self._weekly_digest_date: str = ""
         # Escalated priority map for persistent_insights rendering
@@ -279,7 +279,7 @@ class TadoHomeInsightsSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], Sen
             self._attr_available = True
         except Exception as e:
             _LOGGER.debug(
-                "Insight Sensor: home insights update failed (%s) — "
+                "Insight Sensor: home insights update failed (%s), "
                 "marking unavailable until the next poll",
                 e,
             )
@@ -370,7 +370,7 @@ class TadoZoneInsightsSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], Sen
         except Exception as e:
             _LOGGER.debug(
                 "Insight Sensor: zone %s insights update failed (%s) "
-                "— marking unavailable until the next poll",
+                ", marking unavailable until the next poll",
                 self._zone_name, e,
             )
             self._attr_available = False

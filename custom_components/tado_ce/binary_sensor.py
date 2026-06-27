@@ -1,4 +1,4 @@
-"""Tado CE binary sensors — home / away, open window, preheat now, connectivity."""
+"""Tado CE binary sensors: home / away, open window, preheat now, connectivity."""
 
 from __future__ import annotations
 
@@ -136,7 +136,7 @@ async def async_setup_entry(
         sensors.append(TadoHomeKitConnectedSensor(coordinator))
         _LOGGER.debug("Binary Sensor: HomeKit connected sensor created")
 
-    # `update_before_add=False` — `self.hass` isn't wired up yet, so
+    # `update_before_add=False`, `self.hass` isn't wired up yet, so
     # the entity's `update()` would fail on a coordinator-data read.
     async_add_entities(sensors, False)
     _LOGGER.info("Binary Sensor: created %d entity(ies)", len(sensors))
@@ -237,7 +237,7 @@ class TadoHomeSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], BinarySenso
             self._attr_available = False
         except Exception as e:
             _LOGGER.warning(
-                "Binary Sensor: home / away update failed (%s) — "
+                "Binary Sensor: home / away update failed (%s), "
                 "marking unavailable until the next poll",
                 e,
             )
@@ -318,7 +318,7 @@ class TadoOpenWindowSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], Binar
             self._attr_available = True
         except Exception:
             _LOGGER.debug(
-                "Binary Sensor: zone %s open-window update failed — "
+                "Binary Sensor: zone %s open-window update failed, "
                 "marking unavailable until the next poll",
                 self._zone_id,
                 exc_info=True,
@@ -457,7 +457,7 @@ class TadoPreheatNowSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], Binar
             except ValueError:
                 _LOGGER.debug(
                     "Binary Sensor: preheat schedule had a "
-                    "non-parseable time string — preheat-now defaults "
+                    "non-parseable time string, preheat-now defaults "
                     "to off until the next coordinator poll provides a "
                     "valid value",
                     exc_info=True,
@@ -469,7 +469,7 @@ class TadoPreheatNowSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], Binar
         except Exception as e:
             _LOGGER.debug(
                 "Binary Sensor: zone %s preheat-now update failed "
-                "(%s) — marking unavailable until the next poll",
+                "(%s), marking unavailable until the next poll",
                 self._zone_id, e,
             )
             self._attr_available = False
@@ -555,13 +555,13 @@ def _restore_window_detection_state(
         try:
             sensor._last_count_reset_date = date.fromisoformat(date_str)
         except ValueError:
-            pass  # Corrupt date — keep default
+            pass  # Corrupt date: keep default
     detected_str = data.get("last_detected_at")
     if isinstance(detected_str, str):
         try:
             sensor._last_detected_at = parse_iso_datetime(detected_str)
         except (ValueError, TypeError):
-            pass  # Corrupt timestamp — keep default
+            pass  # Corrupt timestamp: keep default
     if isinstance(data.get("anomaly_readings"), int):
         sensor._anomaly_readings = data["anomaly_readings"]
     # Restore temp_history with staleness pruning (>1 hour = stale)
@@ -572,7 +572,7 @@ def _restore_window_detection_state(
 
 
 class TadoWindowPredictedSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], BinarySensorEntity):
-    """Binary sensor for early open window detection (predictive — does not replace Tado's openWindow)."""
+    """Binary sensor for early open window detection (predictive, does not replace Tado's openWindow)."""
 
     _attr_has_entity_name = True
 
@@ -645,7 +645,7 @@ class TadoWindowPredictedSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], 
                 _restore_window_detection_state(self, zone_data)
                 _LOGGER.debug(
                     "Binary Sensor: zone %s window detection state "
-                    "restored — today's count %d, history %d readings",
+                    "restored, today's count %d, history %d readings",
                     self._zone_id,
                     self._detection_count_today,
                     len(self._temp_history),
@@ -678,7 +678,7 @@ class TadoWindowPredictedSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], 
         except (OSError, AttributeError):
             _LOGGER.debug(
                 "Binary Sensor: zone %s window detection state could "
-                "not be persisted — counters will reset on the next "
+                "not be persisted, counters will reset on the next "
                 "HA restart",
                 self._zone_id,
                 exc_info=True,
@@ -691,7 +691,7 @@ class TadoWindowPredictedSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], 
 
         @callback
         def _on_external_sensor_change(event: Event[EventStateChangedData]) -> None:
-            """Handle external temp sensor state change — re-run window detection."""
+            """Handle external temp sensor state change: re-run window detection."""
             self.update()
             self.async_write_ha_state()
 
@@ -707,7 +707,7 @@ class TadoWindowPredictedSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], 
 
     @callback
     def _handle_homekit_update(self, zone_id: str) -> None:
-        """Handle HomeKit real-time event — re-run window detection for this zone."""
+        """Handle HomeKit real-time event: re-run window detection for this zone."""
         if zone_id != self._zone_id:
             return
         self._handle_coordinator_update()
@@ -915,7 +915,7 @@ class TadoWindowPredictedSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], 
                     seasonal_baseline=seasonal_baseline,
                 )
             else:
-                # Active path — unchanged
+                # Active path: unchanged
                 result = detect_window_predicted(
                     readings=list(self._temp_history),
                     hvac_active=hvac_active,
@@ -954,7 +954,7 @@ class TadoWindowPredictedSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], 
         except Exception as e:
             _LOGGER.debug(
                 "Binary Sensor: zone %s window predicted update "
-                "failed (%s) — marking unavailable until the next "
+                "failed (%s), marking unavailable until the next "
                 "poll",
                 self._zone_id, e,
             )
@@ -1056,7 +1056,7 @@ class TadoDeviceConnectionBinarySensor(CoordinatorEntity["TadoDataUpdateCoordina
                                     _LOGGER.debug(
                                         "Binary Sensor: device %s "
                                         "connection timestamp not "
-                                        "parseable (%s) — offline "
+                                        "parseable (%s), offline "
                                         "duration left blank",
                                         mask_serial(self._device_serial),
                                         err,
@@ -1076,7 +1076,7 @@ class TadoDeviceConnectionBinarySensor(CoordinatorEntity["TadoDataUpdateCoordina
         except (KeyError, TypeError, AttributeError) as err:
             _LOGGER.debug(
                 "Binary Sensor: device %s connection update failed "
-                "(%s) — marking unavailable until the next poll",
+                "(%s), marking unavailable until the next poll",
                 mask_serial(self._device_serial), err,
             )
             self._attr_available = False
@@ -1132,7 +1132,7 @@ class TadoHotWaterPowerBinarySensor(CoordinatorEntity["TadoDataUpdateCoordinator
         except Exception:
             _LOGGER.debug(
                 "Binary Sensor: zone %s hot water power update "
-                "failed — marking unavailable until the next poll",
+                "failed, marking unavailable until the next poll",
                 self._zone_id,
                 exc_info=True,
             )

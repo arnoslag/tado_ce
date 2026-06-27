@@ -1,4 +1,4 @@
-"""Tado CE Thermal Analysis Sensors — inertia, heating rate, preheat time, etc."""
+"""Tado CE Thermal Analysis Sensors: inertia, heating rate, preheat time, etc."""
 
 from __future__ import annotations
 
@@ -267,7 +267,7 @@ class TadoConfidenceSensor(CoordinatorEntity["HeatingCycleCoordinator"], SensorE
 
 
 class TadoHeatingAccelerationSensor(CoordinatorEntity["HeatingCycleCoordinator"], SensorEntity):
-    """Sensor for heating acceleration (°C/h² — higher = faster-response system)."""
+    """Sensor for heating acceleration (°C/h²: higher = faster-response system)."""
 
     _attr_has_entity_name = True
     _attr_entity_registry_enabled_default = False

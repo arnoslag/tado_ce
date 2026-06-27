@@ -23,6 +23,10 @@ Thank you to everyone who supported the project through [Buy Me a Coffee](https:
 
 Community contributors who helped shape each release through bug reports, feature requests, testing, and feedback.
 
+### v4.1.1
+
+- **[@wisskid](https://github.com/wisskid)** — Reported that the integration crashed outright on 4.1.0 ([#308](https://github.com/hiall-fyi/tado_ce/issues/308)) and posted the full traceback that made it an exact fix: with HomeKit local control on but no zeroconf service on the host, `aiohomekit` raised `TransportNotSupportedError` from an unguarded startup call and took the whole entry down, cloud side included. He'd already found his own side of it (no `default_config:` / `zeroconf:` in `configuration.yaml`), then spotted that the issue had auto-closed and reopened it so the crash itself would still get fixed rather than written off as a config quirk. That nudge is why the fix shipped: an optional local feature failing now falls back to cloud-only quietly, and pairing on a host without zeroconf names the real cause instead of a vague "pairing failed".
+
 ### v4.1.0
 
 The 4.1 cycle ran across five public betas between May and June 2026, an internal HomeKit reliability pass (startup reconnect, factory-reset Repair notices, clearer pairing errors), and a couple of fixes folded straight into the GA cut. The contributors below shaped the release through bug reports, feature requests, and field testing across the full cycle.

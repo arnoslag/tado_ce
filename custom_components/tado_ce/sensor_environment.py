@@ -1,4 +1,4 @@
-"""Tado CE environment sensors — mold risk, condensation, comfort, dew point, surface temp."""
+"""Tado CE environment sensors: mold risk, condensation, comfort, dew point, surface temp."""
 
 from __future__ import annotations
 
@@ -68,8 +68,8 @@ _COMFORT_HOT_THRESHOLD = 4
 _COMFORT_SWELTERING_THRESHOLD = 6
 
 # Humidity thresholds for comfort suffix
-_HUMIDITY_DRY_THRESHOLD = 35  # % — below this is "Dry"
-_HUMIDITY_HUMID_THRESHOLD = 70  # % — above this is "Humid"
+_HUMIDITY_DRY_THRESHOLD = 35  # %: below this is "Dry"
+_HUMIDITY_HUMID_THRESHOLD = 70  # %: above this is "Humid"
 
 
 def _classify_comfort_deviation(deviation: float) -> str:
@@ -251,14 +251,14 @@ class TadoMoldRiskSensor(TadoZoneSensor):
         except Exception as e:
             _LOGGER.debug(
                 "Environment Sensor: zone %s mold risk update failed "
-                "(%s) — marking unavailable until the next poll",
+                "(%s), marking unavailable until the next poll",
                 self._zone_id, e,
             )
             self._attr_available = False
 
 
 class TadoMoldRiskPercentageSensor(TadoZoneSensor):
-    """Mold risk percentage sensor — surface relative humidity (mold grows above ~70-80%)."""
+    """Mold risk percentage sensor: surface relative humidity (mold grows above ~70-80%)."""
 
     _attr_has_entity_name = True
 
@@ -344,7 +344,7 @@ class TadoMoldRiskPercentageSensor(TadoZoneSensor):
         except Exception as e:
             _LOGGER.debug(
                 "Environment Sensor: zone %s mold risk percentage "
-                "update failed (%s) — marking unavailable until the "
+                "update failed (%s), marking unavailable until the "
                 "next poll",
                 self._zone_id, e,
             )
@@ -354,13 +354,13 @@ class TadoMoldRiskPercentageSensor(TadoZoneSensor):
 class TadoCondensationRiskSensor(TadoZoneSensor):
     """Condensation risk sensor for all climate zones.
 
-    AC zones — condensation on window exterior when AC cools room.
-    HEATING zones — condensation on window interior when indoor
+    AC zones: condensation on window exterior when AC cools room.
+    HEATING zones: condensation on window interior when indoor
             humidity is high and window inner surface drops below indoor dew point.
 
     Uses per-zone window_type configuration for U-value.
 
-    Heating Risk Levels (aligned with Mold Risk — accounts for cold spots):
+    Heating Risk Levels (aligned with Mold Risk, accounts for cold spots):
     - None: >7°C margin (safe)
     - Low: 5-7°C margin (monitor)
     - Medium: 3-5°C margin (condensation likely on coldest spots)
@@ -509,7 +509,7 @@ class TadoCondensationRiskSensor(TadoZoneSensor):
         except Exception as e:
             _LOGGER.debug(
                 "Environment Sensor: zone %s condensation risk update "
-                "failed (%s) — marking unavailable until the next poll",
+                "failed (%s), marking unavailable until the next poll",
                 self._zone_id, e,
             )
             self._attr_available = False
@@ -659,7 +659,7 @@ class TadoCondensationRiskSensor(TadoZoneSensor):
         except Exception as e:
             _LOGGER.debug(
                 "Environment Sensor: could not read outdoor humidity "
-                "from %s (%s) — condensation risk falls back to "
+                "from %s (%s), condensation risk falls back to "
                 "indoor-only data",
                 entity_id, e,
             )
@@ -667,7 +667,7 @@ class TadoCondensationRiskSensor(TadoZoneSensor):
 
         _LOGGER.debug(
             "Environment Sensor: no outdoor humidity available for "
-            "%s — set a weather.* entity or pair the outdoor "
+            "%s, set a weather.* entity or pair the outdoor "
             "temperature sensor with a sensor.*_humidity sibling",
             entity_id,
         )
@@ -814,7 +814,7 @@ class TadoSurfaceTemperatureSensor(TadoZoneSensor):
         except Exception as e:
             _LOGGER.debug(
                 "Environment Sensor: zone %s surface temperature "
-                "update failed (%s) — marking unavailable until the "
+                "update failed (%s), marking unavailable until the "
                 "next poll",
                 self._zone_id, e,
             )
@@ -822,7 +822,7 @@ class TadoSurfaceTemperatureSensor(TadoZoneSensor):
 
 
 class TadoDewPointSensor(TadoZoneSensor):
-    """Dew point temperature sensor (Magnus-Tetens, °C — for automation workflows)."""
+    """Dew point temperature sensor (Magnus-Tetens, °C, for automation workflows)."""
 
     _attr_has_entity_name = True
 
@@ -886,7 +886,7 @@ class TadoDewPointSensor(TadoZoneSensor):
         except Exception as e:
             _LOGGER.debug(
                 "Environment Sensor: zone %s dew point update failed "
-                "(%s) — marking unavailable until the next poll",
+                "(%s), marking unavailable until the next poll",
                 self._zone_id, e,
             )
             self._attr_available = False
@@ -1046,7 +1046,7 @@ class TadoComfortLevelSensor(TadoZoneSensor):
         except Exception as e:
             _LOGGER.debug(
                 "Environment Sensor: zone %s comfort level update "
-                "failed (%s) — marking unavailable until the next poll",
+                "failed (%s), marking unavailable until the next poll",
                 self._zone_id, e,
             )
             self._attr_available = False

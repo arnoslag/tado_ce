@@ -33,7 +33,7 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
-# Stale state threshold — purge captured states older than this on load
+# Stale state threshold: purge captured states older than this on load
 _STALE_THRESHOLD = timedelta(hours=24)
 
 # Storage base name (for old file migration)
@@ -175,7 +175,7 @@ class StateRestoreManager:
             # A corrupt storage file must not block integration setup.
             # Same pattern as DataLoader.async_load_* auxiliary methods.
             _LOGGER.warning(
-                "State Restore: could not load persisted state (%s) — "
+                "State Restore: could not load persisted state (%s), "
                 "starting fresh, in-progress overlay restorations will be lost",
                 e,
             )
@@ -190,13 +190,13 @@ class StateRestoreManager:
             except (HomeAssistantError, OSError, json.JSONDecodeError) as e:
                 _LOGGER.warning(
                     "State Restore: could not migrate legacy JSON storage "
-                    "(%s) — starting fresh",
+                    "(%s), starting fresh",
                     e,
                 )
                 return
 
         if not raw or not isinstance(raw, dict):
-            _LOGGER.debug("State Restore: no persisted state — starting fresh")
+            _LOGGER.debug("State Restore: no persisted state, starting fresh")
             return
 
         now = dt_util.utcnow()
@@ -213,7 +213,7 @@ class StateRestoreManager:
                         purged += 1
                         continue
                 except (ValueError, TypeError):
-                    # Keep entries whose timestamps can't be parsed —
+                    # Keep entries whose timestamps can't be parsed:
                     # unexpected, but losing them is worse than keeping them.
                     pass
             self._captured[key] = state
@@ -257,7 +257,7 @@ class StateRestoreManager:
         async with self._lock:
             if key in self._captured:
                 _LOGGER.debug(
-                    "State Restore: %s already captured by %s — "
+                    "State Restore: %s already captured by %s, "
                     "keeping the original pre-overlay state",
                     key, self._captured[key].source,
                 )
@@ -265,7 +265,7 @@ class StateRestoreManager:
 
             if not self._coordinator:
                 _LOGGER.warning(
-                    "State Restore: cannot capture %s — coordinator not "
+                    "State Restore: cannot capture %s, coordinator not "
                     "wired up yet, restoration will be unavailable for "
                     "this overlay",
                     key,
@@ -278,7 +278,7 @@ class StateRestoreManager:
 
             if not zone_data:
                 _LOGGER.debug(
-                    "State Restore: no zone data for zone %s yet — "
+                    "State Restore: no zone data for zone %s yet, "
                     "skipping capture, restoration will be unavailable",
                     zone_id,
                 )
@@ -347,7 +347,7 @@ class StateRestoreManager:
                 self._captured.clear()
                 self._schedule_persist()
                 _LOGGER.info(
-                    "State Restore: cleared all %d captured state(s) — "
+                    "State Restore: cleared all %d captured state(s), "
                     "no overlay restorations are pending",
                     count,
                 )
@@ -373,7 +373,7 @@ class StateRestoreManager:
 
         Called from `coordinator._async_update_data` after each poll.
         An overlay vanishing means the timer expired or someone
-        cleared the overlay outside HA — either way the user is back
+        cleared the overlay outside HA. Either way the user is back
         on the schedule, so the captured pre-overlay state is no
         longer needed and we surface a restoration event.
 
@@ -393,14 +393,14 @@ class StateRestoreManager:
             had_overlay = self._previous_overlay_states.get(zone_id, False)
 
             if has_overlay:
-                # Overlay re-appeared — reset the consecutive-cleared
+                # Overlay re-appeared, reset the consecutive-cleared
                 # counter so transient blips don't accumulate across
                 # unrelated polls.
                 self._consecutive_cleared.pop(zone_id, None)
                 continue
 
             if not had_overlay:
-                # Steady-state "no overlay" — not a transition we care
+                # Steady-state "no overlay": not a transition we care
                 # about. Counter stays at 0.
                 continue
 
@@ -409,7 +409,7 @@ class StateRestoreManager:
 
             if count < CONSECUTIVE_CLEARED_THRESHOLD:
                 _LOGGER.debug(
-                    "State Restore: zone %s overlay missing on poll %d/%d — "
+                    "State Restore: zone %s overlay missing on poll %d/%d, "
                     "waiting for confirmation before firing restoration event",
                     zone_id, count, CONSECUTIVE_CLEARED_THRESHOLD,
                 )
@@ -418,7 +418,7 @@ class StateRestoreManager:
             if key in self._captured:
                 _LOGGER.info(
                     "State Restore: zone %s overlay cleared (confirmed across "
-                    "%d consecutive polls) — restoration now available for "
+                    "%d consecutive polls), restoration now available for "
                     "the captured pre-overlay state",
                     zone_id, count,
                 )
@@ -476,7 +476,7 @@ class StateRestoreManager:
         if overlay and isinstance(overlay, dict):
             termination = overlay.get("termination")
 
-        # Heating zones don't carry an explicit hvac_mode field — we
+        # Heating zones don't carry an explicit hvac_mode field, so we
         # derive it from power + overlay so restore() can write back
         # the same shape the climate entity expects.
         hvac_mode: str | None = None
