@@ -264,7 +264,7 @@ Tado's `X-RateLimit-Reset` header often points at midnight UTC, which isn't when
 
 **Offset Sync drift refresh (v4.0.0):**
 
-When Smart Valve Control is on, the integration runs a periodic drift refresh that pulls the stored device offset back from Tado, so the local cache stays close to the value Tado's adaptive calibration writes behind your back. The cadence is the larger of 30 minutes or your configured Cloud Sync Interval (the HomeKit-aware floor, see HomeKit Local Control), so on the default Cloud Sync it fires every 30 minutes, and if you've widened Cloud Sync to 60 minutes it fires every 60 minutes.
+When Device Temperature Offsets is on, the integration runs a periodic drift refresh that pulls the stored device offset back from Tado, so the displayed `offset_celsius` stays close to the value Tado's adaptive calibration writes behind your back rather than freezing at the boot reading. The cadence is the larger of 30 minutes or your configured Cloud Sync Interval (the HomeKit-aware floor, see HomeKit Local Control), so on the default Cloud Sync it fires every 30 minutes, and if you've widened Cloud Sync to 60 minutes it fires every 60 minutes.
 
 From v4.1.0-beta.4 the refresh visits **one zone per cycle** rather than every zone at once. Each zone still gets refreshed, just spread out: with N zones the cycle rotates through them, so any one zone is re-read every N cycles. That turns the old all-at-once burst into a steady **1 cloud call per cycle**, whatever your zone count.
 

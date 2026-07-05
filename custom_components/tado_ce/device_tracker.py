@@ -13,8 +13,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.device_tracker import (  # type: ignore[attr-defined]
-    SourceType,
-    TrackerEntity,
+    ScannerEntity,
 )
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -76,8 +75,15 @@ async def async_setup_entry(
         )
 
 
-class TadoDeviceTracker(CoordinatorEntity["TadoDataUpdateCoordinator"], TrackerEntity):
-    """Represent a Tado mobile device tracker entity."""
+class TadoDeviceTracker(CoordinatorEntity["TadoDataUpdateCoordinator"], ScannerEntity):
+    """Represent a Tado mobile device tracker entity.
+
+    Tado's cloud reports only a binary `atHome` for each phone (plus a
+    bearing and relative distance from home), never absolute coordinates,
+    so this is a connection-type tracker: `is_connected` drives the
+    home / not_home state, and `source_type` is the base class default
+    (router) rather than GPS.
+    """
 
     _attr_has_entity_name = True
 
@@ -106,7 +112,6 @@ class TadoDeviceTracker(CoordinatorEntity["TadoDataUpdateCoordinator"], TrackerE
         self._attr_device_info = get_hub_device_info(home_id)  # type: ignore[assignment]
 
         self._is_home: bool | None = None
-        self._location = None
         self._bearing: float | None = None
         self._relative_distance: float | None = None
         # WHY: when _is_home is None (Unknown state), surface why. Tado app's
@@ -122,23 +127,9 @@ class TadoDeviceTracker(CoordinatorEntity["TadoDataUpdateCoordinator"], TrackerE
         self.async_write_ha_state()
 
     @property
-    def source_type(self) -> SourceType:
-        """Return the source type of the tracker."""
-        return SourceType.GPS
-
-    @property
-    def is_connected(self) -> bool:
-        """Return whether the device is connected."""
-        return self._is_home is not None
-
-    @property
-    def location_name(self) -> str | None:
-        """Return the location name."""
-        if self._is_home is True:
-            return "home"
-        if self._is_home is False:
-            return "not_home"
-        return None
+    def is_connected(self) -> bool | None:
+        """Return whether the device is home (None when it hasn't reported)."""
+        return self._is_home
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:

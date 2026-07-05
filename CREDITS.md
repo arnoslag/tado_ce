@@ -14,7 +14,7 @@ Thank you to everyone who supported the project through [Buy Me a Coffee](https:
 | ☕☕☕☕☕☕ | [@jeverley](https://github.com/jeverley) |
 | ☕☕☕☕☕ | Marcel v.H., [@rodneyha](https://github.com/rodneyha), [@UKICS](https://github.com/UKICS), [@wisskid](https://github.com/wisskid) |
 | ☕☕☕☕ | [@hapklaar](https://github.com/hapklaar), [@Prodeguerriero](https://github.com/Prodeguerriero) |
-| ☕☕ | Arnaud L., [@jeromewir](https://github.com/jeromewir), Luke R., [@marcovn](https://github.com/marcovn) |
+| ☕☕ | Arnaud L., [@janchrillesen](https://github.com/janchrillesen), [@jeromewir](https://github.com/jeromewir), Luke R., [@marcovn](https://github.com/marcovn) |
 | ☕ | Alby T., [@MathiasB112](https://github.com/MathiasB112) |
 
 ---
@@ -22,6 +22,11 @@ Thank you to everyone who supported the project through [Buy Me a Coffee](https:
 ## Per-Version Credits
 
 Community contributors who helped shape each release through bug reports, feature requests, testing, and feedback.
+
+### v4.1.2
+
+- **[@janchrillesen](https://github.com/janchrillesen)** — Asked on the discussions how to see the device temperature offset. His setup turned out fine once Offset Sync was on, but the question surfaced a real bug: with Device Temperature Offsets enabled and no zone running Smart Valve Control or Offset Sync, the offset was never fetched, so anyone who only wanted to watch `offset_celsius` saw nothing. Fixed so the toggle works on its own ([#311](https://github.com/hiall-fyi/tado_ce/discussions/311)).
+- **[@50494554524F](https://github.com/50494554524F)** — Reopened the connection-sensor report ([#275](https://github.com/hiall-fyi/tado_ce/issues/275)), which led to the bridge connected sensor now updating on the bridge's own poll cycle when the bridge API becomes unreachable, instead of waiting for the next cloud poll.
 
 ### v4.1.1
 

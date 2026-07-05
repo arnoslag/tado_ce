@@ -682,10 +682,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 mobile_devices_frequent_sync=(
                     cm.get_mobile_devices_frequent_sync() and not skip_mobile_devices
                 ),
-                offset_enabled=(
-                    cm.get_offset_enabled()
-                    and self.zone_config_manager.has_any_svc_active()
-                ),
+                offset_enabled=cm.get_offset_enabled(),
                 home_state_sync_enabled=cm.get_home_state_sync_enabled() and not skip_home_state,
             )
         except TadoRateLimitError as e:
@@ -715,13 +712,11 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if do_full_sync:
             self._last_full_sync = dt_util.utcnow()
             self._request_full_sync_next_cycle = False
-            # Full sync's _sync_offsets pass already pulled fresh offsets,
-            # so the periodic drift refresh in _maybe_resync_offsets can
-            # skip the next interval rather than double-fetching.
-            # Only stamp when SVC is active. If no zone uses SVC, no
-            # offsets were fetched, so the drift refresh should not be
-            # suppressed on the grounds that a full sync "covered" them.
-            if cm.get_offset_enabled() and self.zone_config_manager.has_any_svc_active():
+            # Stamp only when the full sync actually fetched offsets (same
+            # gate as the fetch), so the drift refresh skips one interval
+            # rather than double-fetching. If offsets weren't fetched, leave
+            # the stamp so the drift refresh isn't wrongly suppressed.
+            if cm.get_offset_enabled():
                 self._last_offset_resync = dt_util.utcnow()
 
         # Reset HomeKit savings counters when API quota resets.
@@ -827,8 +822,6 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
            still protects the cache.
         """
         if not self.config_manager.get_offset_enabled():
-            return
-        if not self.zone_config_manager.has_any_svc_active():
             return
 
         if not zones_info_data or not isinstance(zones_info_data, list):
@@ -1162,36 +1155,36 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return  # no credentials
         self._bridge_poll_task = asyncio.create_task(self._async_bridge_poll_loop())
 
-    async def _async_bridge_poll_loop(self) -> None:
-        """Poll bridge API on a fixed interval, independent of the cloud polling cycle."""
-        # Initial fetch immediately (don't wait for first interval)
-        try:
-            bridge_data = await self._async_fetch_bridge_data()
-            if bridge_data is not None:
-                self._cached_bridge_data = bridge_data
-                self._update_bridge_in_coordinator_data()
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            _LOGGER.debug(
-                "Bridge: initial fetch failed, will retry on the next "
-                "bridge poll cycle",
-            )
+    async def _run_one_bridge_poll(self) -> None:
+        """Run a single bridge fetch and push the result to listeners.
 
+        On success, cache the data and write it into `coordinator.data`. On
+        failure, leave the cached data untouched (don't re-push a stale wiring
+        snapshot) but STILL notify listeners: the fetch already recorded the
+        failure on the health tracker, so the Bridge connected sensor needs a
+        refresh to reflect a bridge that has just dropped offline. Without this,
+        an offline bridge would only surface on the next cloud poll cycle.
+        """
+        bridge_data = await self._async_fetch_bridge_data()
+        if bridge_data is not None:
+            self._cached_bridge_data = bridge_data
+            self._update_bridge_in_coordinator_data()
+        else:
+            self.async_update_listeners()
+
+    async def _async_bridge_poll_loop(self) -> None:
+        """Poll bridge API on a fixed interval, independent of the cloud polling cycle.
+
+        Polls once immediately, then every BRIDGE_POLL_INTERVAL_SECONDS.
+        """
         while True:
-            await asyncio.sleep(BRIDGE_POLL_INTERVAL_SECONDS)
             try:
-                bridge_data = await self._async_fetch_bridge_data()
-                if bridge_data is not None:
-                    self._cached_bridge_data = bridge_data
-                    self._update_bridge_in_coordinator_data()
-            except asyncio.CancelledError:
-                raise
+                await self._run_one_bridge_poll()
             except Exception:
                 _LOGGER.debug(
-                    "Bridge: fetch failed, will retry on the next "
-                    "bridge poll cycle",
+                    "Bridge: poll failed, will retry on the next cycle",
                 )
+            await asyncio.sleep(BRIDGE_POLL_INTERVAL_SECONDS)
 
     def _update_bridge_in_coordinator_data(self) -> None:
         """Write cached bridge data into coordinator.data and notify listeners."""

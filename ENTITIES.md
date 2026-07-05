@@ -271,7 +271,7 @@ Smart Valve Control and Offset Sync (both v4.0.0+) don't create dedicated entiti
 | `valve_control_mode` | Offset Sync configured | `"offset_sync"` |
 | `valve_target` | Valve Target mode + currently writing | Current TRV target temperature (°C, rounded to 0.1) |
 | `desired_target` | Valve Target mode + ACTIVE state | User's intended target captured at the IDLE → ACTIVE transition (°C) |
-| `offset_celsius` | Device offset feature enabled | Current device offset in °C, populated after Offset Sync confirms a write |
+| `offset_celsius` | Device offset feature enabled | Current device offset in °C, fetched from Tado when the toggle is on (no Smart Valve Control needed). With Offset Sync running, it tracks the correction the controller writes |
 | `offset_clamped` | `offset_celsius` present and at least one Offset Sync write has run | `true` if the last write hit Tado's ±10°C clamp |
 | `offset_clamp_direction` | Same as `offset_clamped` | `"none"` / `"hit_max"` / `"hit_min"` |
 

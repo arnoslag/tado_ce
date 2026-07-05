@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 
+## [4.1.2] - 2026-07-05
+
+### Bug fixes
+
+- **Device Temperature Offsets show up with the toggle alone** ([#311](https://github.com/hiall-fyi/tado_ce/discussions/311) - @janchrillesen) — a question on this thread turned up a latent bug: with Device Temperature Offsets on but no zone running Smart Valve Control or Offset Sync, the offset was never fetched, so `offset_celsius` never appeared for anyone who only wanted to watch it. The offset now follows its own toggle: switch it on and it shows on your heating climate entities, and it keeps re-reading on the usual cadence instead of freezing at the boot value. The earlier restriction was meant to skip a pointless fetch when nothing used the offset, but the display itself is what uses it.
+- **Bridge connection drops surface faster** — when the bridge API becomes unreachable (a network drop, or the Tado cloud rejecting the bridge call), the Bridge connected sensor now updates on the bridge's own polling cycle instead of waiting for the next cloud poll to come round. Only affects setups using the bridge connection with a serial and auth key.
+
+### Home Assistant compatibility
+
+- **Mobile presence trackers ready for Home Assistant 2027.7** — Home Assistant is retiring the old way location-based trackers report their state, and logged a deprecation warning for the Tado phone presence trackers on 2026.7.1. They've been moved to the connected/disconnected style that fits how Tado actually reports presence (a plain home / away flag, since Tado never gives out phone coordinates). The tracker state (`home` / `not_home`) and its attributes are unchanged; the one visible difference is the `source_type` attribute now reads `router` instead of `gps`, which is the honest label for a presence flag rather than a GPS fix. If you have an automation or template keyed on `source_type: gps` for a Tado tracker, update it to `router`.
+
+
 ## [4.1.1] - 2026-06-27
 
 ### Bug fixes

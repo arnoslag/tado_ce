@@ -206,7 +206,7 @@ OVERLAY_MODE_MANUAL = "MANUAL"
 OVERLAY_MODE_DEFAULT = OVERLAY_MODE_MANUAL
 OVERLAY_MODE_DEFAULT_DISPLAY = "Until you resume schedule"
 
-# Overlay mode display names: verbatim Tado app wording (APK 9.33.1).
+# Overlay mode display names: verbatim Tado app wording.
 OVERLAY_MODE_OPTIONS = [
     "Until you resume schedule",
     "Until next automatic change",
