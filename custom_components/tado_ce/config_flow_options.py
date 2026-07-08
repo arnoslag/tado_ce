@@ -386,10 +386,10 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
         # Connection status is surfaced in the section description via
         # description_placeholders (see async_step_advanced_settings),
         # NOT via a pseudo-editable TextSelector field.
-        # Show the HomeKit section (carrying the unpair toggle) whenever a
-        # pairing exists, not only when enabled, so a disabled-but-paired
-        # zone can still be unpaired.
-        if has_homekit_pairing:
+        # Show the HomeKit section whenever a pairing exists OR HomeKit is
+        # enabled, so both a disabled-but-paired zone can be unpaired AND a
+        # zone stuck enabled-but-unpaired can reach the re-pair control.
+        if has_homekit_pairing or opt("homekit_enabled", False):
             sections[vol.Required("homekit")] = data_entry_flow.section(
                 vol.Schema({
                     vol.Optional(
@@ -400,6 +400,7 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                         mode=NumberSelectorMode.BOX,
                         unit_of_measurement="min",
                     )),
+                    vol.Optional("homekit_repair", default=False): BooleanSelector(),
                     vol.Optional("homekit_unpair", default=False): BooleanSelector(),
                 }),
                 {"collapsed": True},
@@ -585,7 +586,9 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
             section = user_input["homekit"]
             if "homekit_cloud_sync_minutes" in section:
                 processed_input["homekit_cloud_sync_minutes"] = section["homekit_cloud_sync_minutes"]
-            # homekit_unpair triggers redirect to existing unpair flow (handled in async_step_advanced_settings)
+            # homekit_repair / homekit_unpair trigger redirects (handled in async_step_advanced_settings)
+            if section.get("homekit_repair", False):
+                self._homekit_repair_requested = True
             if section.get("homekit_unpair", False):
                 self._homekit_unpair_requested = True
 
@@ -602,7 +605,10 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
             self._process_internet_bridge(user_input, processed_input)
             self._process_weather_compensation(user_input, processed_input, errors)
 
-            # Handle HomeKit unpair redirect
+            # Handle HomeKit re-pair / unpair redirects (re-pair takes precedence)
+            if getattr(self, "_homekit_repair_requested", False):
+                self._homekit_repair_requested = False
+                return await self.async_step_homekit_pairing()
             if getattr(self, "_homekit_unpair_requested", False):
                 self._homekit_unpair_requested = False
                 return await self.async_step_homekit_unpair()

@@ -25,7 +25,7 @@ from .bridge_discovery import (
 from .bridge_type_inference import format_display_value
 from .device_manager import get_hub_device_info
 from .entity_registry import get_meta
-from .helpers import parse_iso_datetime
+from .helpers import PerEntityAvailabilityMixin, parse_iso_datetime
 from .sensor_hub import _ATTR_HISTORY_CAP
 
 if TYPE_CHECKING:
@@ -122,6 +122,7 @@ def _format_value(
 
 
 class TadoDynamicBridgeSensor(
+    PerEntityAvailabilityMixin,
     CoordinatorEntity["TadoDataUpdateCoordinator"],
     SensorEntity,
 ):
@@ -140,7 +141,7 @@ class TadoDynamicBridgeSensor(
         self._value_type = resolved.value_type
         self._value_formatter_name: str | None = None
         self._attr_device_info = get_hub_device_info(coordinator.home_id)
-        self._attr_available = False
+        self._data_present = False
         self._attr_native_value = None
 
         self._attr_unique_id = f"tado_ce_{coordinator.home_id}_{resolved.unique_id_suffix}"
@@ -181,13 +182,13 @@ class TadoDynamicBridgeSensor(
         """Update sensor from coordinator bridge data."""
         bridge = self.coordinator.data.get("bridge")
         if not bridge:
-            self._attr_available = False
+            self._data_present = False
             self.async_write_ha_state()
             return
 
         value = _resolve_dot_path(bridge, self._field_path)
         if value is None:
-            self._attr_available = False
+            self._data_present = False
         else:
             # SensorDeviceClass.TIMESTAMP requires a datetime, not a
             # raw ISO string, parse here so HA's value coercion path
@@ -209,7 +210,7 @@ class TadoDynamicBridgeSensor(
                     self._value_type,
                     self._value_formatter_name,
                 )
-            self._attr_available = self._attr_native_value is not None
+            self._data_present = self._attr_native_value is not None
         self.async_write_ha_state()
 
     @property
@@ -230,6 +231,7 @@ class TadoDynamicBridgeSensor(
 
 
 class TadoBridgeCapabilitiesSensor(
+    PerEntityAvailabilityMixin,
     CoordinatorEntity["TadoDataUpdateCoordinator"],
     SensorEntity,
 ):
@@ -255,13 +257,13 @@ class TadoBridgeCapabilitiesSensor(
         """Update capabilities from current bridge data."""
         bridge = self.coordinator.data.get("bridge")
         if not bridge:
-            self._attr_available = False
+            self._data_present = False
             self.async_write_ha_state()
             return
         fields = flatten_response(bridge)
         caps = extract_capabilities(fields)
         self._attr_native_value = caps.wiring_type
-        self._attr_available = True
+        self._data_present = True
         self._capabilities = caps
         self.async_write_ha_state()
 
@@ -282,6 +284,7 @@ class TadoBridgeCapabilitiesSensor(
 
 
 class TadoBridgeSchemaVersionSensor(
+    PerEntityAvailabilityMixin,
     CoordinatorEntity["TadoDataUpdateCoordinator"],
     SensorEntity,
 ):
@@ -310,13 +313,13 @@ class TadoBridgeSchemaVersionSensor(
         """Detect schema changes between polls."""
         bridge = self.coordinator.data.get("bridge")
         if not bridge:
-            self._attr_available = False
+            self._data_present = False
             self.async_write_ha_state()
             return
 
         current_fields = flatten_response(bridge)
         self._attr_native_value = len(current_fields)
-        self._attr_available = True
+        self._data_present = True
 
         if self._previous_fields is not None:
             diff = diff_responses(self._previous_fields, current_fields)

@@ -18,7 +18,12 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import SIGNAL_HOMEKIT_UPDATE
 from .device_manager import get_hub_device_info, get_zone_device_info
 from .entity_registry import ENTITY_REGISTRY, get_entity_category
-from .helpers import get_zone_state, get_zone_states, merge_homekit_into_zone_data
+from .helpers import (
+    PerEntityAvailabilityMixin,
+    get_zone_state,
+    get_zone_states,
+    merge_homekit_into_zone_data,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -28,7 +33,7 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 
-class TadoZoneSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], SensorEntity):
+class TadoZoneSensor(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateCoordinator"], SensorEntity):
     """Represent a base Tado zone sensor."""
 
     _attr_has_entity_name = True
@@ -42,7 +47,7 @@ class TadoZoneSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], SensorEntit
         self._zone_id = zone_id
         self._zone_name = zone_name
         self._zone_type = zone_type
-        self._attr_available = False
+        self._data_present = False
         self._attr_native_value = None
         self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type, coordinator.home_id)
         self._unsub_homekit_signal: Callable[[], None] | None = None
@@ -91,9 +96,9 @@ class TadoZoneSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], SensorEntit
         zone_data = self._get_zone_data()
         if zone_data:
             self._update_from_zone_data(zone_data)
-            self._attr_available = True
+            self._data_present = True
         else:
-            self._attr_available = False
+            self._data_present = False
         self.async_write_ha_state()
 
     @callback
@@ -144,9 +149,9 @@ class TadoTemperatureSensor(TadoZoneSensor):
         if zone_data:
             self._update_from_zone_data(zone_data)
             self._update_homekit_attributes()
-            self._attr_available = self._attr_native_value is not None
+            self._data_present = self._attr_native_value is not None
         else:
-            self._attr_available = False
+            self._data_present = False
         self.async_write_ha_state()
 
     @callback
@@ -224,9 +229,9 @@ class TadoHumiditySensor(TadoZoneSensor):
         if zone_data:
             self._update_from_zone_data(zone_data)
             self._update_homekit_attributes()
-            self._attr_available = self._attr_native_value is not None
+            self._data_present = self._attr_native_value is not None
         else:
-            self._attr_available = False
+            self._data_present = False
         self.async_write_ha_state()
 
     @callback
@@ -303,7 +308,9 @@ class TadoACPowerSensor(TadoZoneSensor):
         self._attr_native_value = power if power is not None else 0
 
 
-class TadoBoilerFlowTemperatureSensor(CoordinatorEntity["TadoDataUpdateCoordinator"], SensorEntity):
+class TadoBoilerFlowTemperatureSensor(
+    PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateCoordinator"], SensorEntity,
+):
     """Hub-level boiler flow temperature, sourced from whichever zone reports it."""
 
     _attr_has_entity_name = True
@@ -321,7 +328,7 @@ class TadoBoilerFlowTemperatureSensor(CoordinatorEntity["TadoDataUpdateCoordinat
         self._attr_icon = _meta.icon
         self._attr_entity_category = get_entity_category(_meta)
         self._attr_device_info = get_hub_device_info(coordinator.home_id)
-        self._attr_available = False
+        self._data_present = False
         self._attr_native_value = None
         self._source_zone: str | None = None
 
@@ -338,7 +345,7 @@ class TadoBoilerFlowTemperatureSensor(CoordinatorEntity["TadoDataUpdateCoordinat
         try:
             data = self.coordinator.data
             if not data:
-                self._attr_available = False
+                self._data_present = False
                 self.async_write_ha_state()
                 return
 
@@ -349,20 +356,20 @@ class TadoBoilerFlowTemperatureSensor(CoordinatorEntity["TadoDataUpdateCoordinat
                 if flow_temp is not None:
                     self._attr_native_value = flow_temp
                     self._source_zone = zone_id
-                    self._attr_available = True
+                    self._data_present = True
                     self.async_write_ha_state()
                     return
 
             self._attr_native_value = None
             self._source_zone = None
-            self._attr_available = False
+            self._data_present = False
         except Exception:
             _LOGGER.debug(
                 "Zone Sensor: boiler flow temperature update failed, "
                 "marking unavailable until the next poll",
                 exc_info=True,
             )
-            self._attr_available = False
+            self._data_present = False
         self.async_write_ha_state()
 
 

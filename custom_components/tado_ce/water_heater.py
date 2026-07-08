@@ -26,7 +26,13 @@ from .const import DOMAIN, MAX_RETRY_ATTEMPTS
 from .device_manager import get_zone_device_info
 from .entity_registry import ENTITY_REGISTRY
 from .format_helpers import format_overlay_type as _format_overlay_type
-from .helpers import async_retry_with_backoff, async_trigger_immediate_refresh, build_timer_termination, get_zone_state
+from .helpers import (
+    PerEntityAvailabilityMixin,
+    async_retry_with_backoff,
+    async_trigger_immediate_refresh,
+    build_timer_termination,
+    get_zone_state,
+)
 from .optimistic_helpers import (
     OptimisticUpdateResult,
     clear_optimistic_state,
@@ -88,7 +94,7 @@ async def async_setup_entry(
         _LOGGER.debug("Water Heater: no hot-water zones found in this home")
 
 
-class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeaterEntity):
+class TadoWaterHeater(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeaterEntity):
     """Tado CE Water Heater Entity."""
 
     _attr_has_entity_name = True
@@ -113,7 +119,7 @@ class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeate
         self._attr_current_operation = None
         self._attr_current_temperature = None
         self._attr_target_temperature = None
-        self._attr_available = False
+        self._data_present = False
 
         # Supported features - will be updated based on zone capabilities
         self._supports_temperature = False
@@ -226,7 +232,7 @@ class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeate
         try:
             zone_data = self._extract_zone_data()
             if not zone_data:
-                self._attr_available = False
+                self._data_present = False
                 return
 
             _LOGGER.debug(
@@ -277,7 +283,7 @@ class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeate
                 self._overlay_type = api_overlay_type
                 self._attr_target_temperature = api_target_temp
 
-            self._attr_available = True
+            self._data_present = True
 
         except FileNotFoundError as e:
             _LOGGER.warning(
@@ -285,21 +291,21 @@ class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeate
                 "unavailable until cache rebuilds",
                 self.name, e,
             )
-            self._attr_available = False
+            self._data_present = False
         except json.JSONDecodeError as e:
             _LOGGER.warning(
                 "Water Heater: %s data file is corrupt JSON (%s), entity "
                 "unavailable until next successful poll",
                 self.name, e,
             )
-            self._attr_available = False
+            self._data_present = False
         except Exception:
             _LOGGER.warning(
                 "Water Heater: %s update failed unexpectedly, entity "
                 "marked unavailable, will retry on next poll",
                 self.name, exc_info=True,
             )
-            self._attr_available = False
+            self._data_present = False
 
     async def _execute_operation_mode(self, operation_mode: str) -> bool:
         """Execute a single attempt to set the operation mode via API."""
@@ -321,7 +327,7 @@ class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeate
                     "Water Heater: %s schedule resumed", self._zone_name,
                 )
                 await async_trigger_immediate_refresh(self.hass, self.entity_id, "hot_water_auto")
-            return success
+            return bool(success)
 
         if operation_mode == STATE_HEAT:
             duration = self._get_timer_duration()
@@ -415,7 +421,7 @@ class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeate
         try:
             config_manager = self.coordinator.config_manager
             if config_manager:
-                return config_manager.get_hot_water_timer_duration()
+                return int(config_manager.get_hot_water_timer_duration())
         except (AttributeError, TypeError) as e:
             _LOGGER.debug(
                 "Water Heater: could not read timer duration from config "
@@ -452,7 +458,7 @@ class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeate
                 "Water Heater: %s turned off", self._zone_name,
             )
             self._attr_current_operation = STATE_OFF
-        return success
+        return bool(success)
 
     async def _async_set_timer(self, duration_minutes: int, temperature: float | None = None) -> bool:
         """Set a timer overlay turning the zone on for `duration_minutes`."""
@@ -487,7 +493,7 @@ class TadoWaterHeater(CoordinatorEntity["TadoDataUpdateCoordinator"], WaterHeate
                 self._zone_name, duration_minutes, temp_str,
             )
             self._attr_current_operation = STATE_HEAT
-        return success
+        return bool(success)
 
     async def async_set_timer(self, duration_minutes: int, temperature: float | None = None) -> bool:
         """Public async method to set timer (for service calls)."""

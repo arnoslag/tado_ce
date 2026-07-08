@@ -1748,11 +1748,13 @@
             "name": "HomeKit",
             "data": {
               "homekit_cloud_sync_minutes": "Actualización de datos en la nube",
-              "homekit_unpair": "Desemparejar HomeKit"
+              "homekit_unpair": "Desemparejar HomeKit",
+              "homekit_repair": "Vuelve a emparejarlo (introduce el código de configuración)"
             },
             "data_description": {
               "homekit_cloud_sync_minutes": "Frecuencia de obtención de datos en la nube, incluida la humedad, la potencia de calefacción y el estado de la superposición. La temperatura utiliza HomeKit localmente. Más baja = humedad más fresca pero más llamadas a la API (5-120 min).",
-              "homekit_unpair": "Desconecte la conexión local de HomeKit y elimine las credenciales de emparejamiento"
+              "homekit_unpair": "Desconecte la conexión local de HomeKit y elimine las credenciales de emparejamiento",
+              "homekit_repair": "Vuelve a abrir la ventana de configuración para volver a emparejar el dispositivo tras un emparejamiento fallido o perdido."
             },
             "description": "Estado de la conexión: {homekit_status}"
           },
@@ -1864,7 +1866,8 @@
       "svc_active_sensor_clear": "El control inteligente de válvulas está activado para esta zona. Si desactivas el sensor de temperatura externo, se desactivará el control inteligente de válvulas. Si deseas pausar el sensor sin detener el control inteligente de válvulas, configura primero el modo de control inteligente de válvulas en «Desactivado».",
       "homekit_max_tries": "Demasiados intentos fallidos: el puente está bloqueado temporalmente. Espera unos minutos o reinicia el puente y vuelve a intentarlo.",
       "homekit_busy": "El puente está ocupado; es posible que se esté realizando otra conexión. Inténtalo de nuevo dentro de un momento.",
-      "homekit_no_zeroconf": "El emparejamiento con HomeKit requiere el servicio zeroconf de Home Assistant, que no se está ejecutando en este servidor. Añade `default_config:` (o `zeroconf:`) a tu archivo configuration.yaml y reinicia el sistema; a continuación, vuelve a intentarlo."
+      "homekit_no_zeroconf": "El emparejamiento con HomeKit requiere el servicio zeroconf de Home Assistant, que no se está ejecutando en este servidor. Añade `default_config:` (o `zeroconf:`) a tu archivo configuration.yaml y reinicia el sistema; a continuación, vuelve a intentarlo.",
+      "homekit_pin_format": "Eso no parece un código de configuración de HomeKit. Introduce el código de 8 dígitos con el formato 123-45-678 (no el código de autorización de 4 dígitos) que aparece en tu puente o en la aplicación de Tado."
     }
   }
 }

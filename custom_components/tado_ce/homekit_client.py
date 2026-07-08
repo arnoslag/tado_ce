@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import random
+import re
 from typing import TYPE_CHECKING, Any, Final
 
 from aiohomekit.exceptions import (
@@ -520,6 +521,22 @@ def _shared_controller(flow: TadoCEOptionsFlow) -> Any | None:
     return getattr(coordinator, "homekit_controller", None)
 
 
+# HomeKit setup code: 8 digits, shown as XXX-XX-XXX. Accept the code with or
+# without dashes; aiohomekit's check_pin_format requires the dashed form.
+_PIN_DIGITS_RE = re.compile(r"^\d{8}$")
+_PIN_DASHED_RE = re.compile(r"^\d{3}-\d{2}-\d{3}$")
+
+
+def _normalise_homekit_pin(raw: str) -> str | None:
+    """Return the dashed XXX-XX-XXX form, or None if not a valid 8-digit code."""
+    candidate = raw.strip()
+    if _PIN_DASHED_RE.match(candidate):
+        return candidate
+    if _PIN_DIGITS_RE.match(candidate):
+        return f"{candidate[:3]}-{candidate[3:5]}-{candidate[5:]}"
+    return None
+
+
 async def async_step_homekit_pairing(
     flow: TadoCEOptionsFlow,
     user_input: dict[str, Any] | None = None,
@@ -531,8 +548,19 @@ async def async_step_homekit_pairing(
     errors: dict[str, str] = {}
 
     if user_input is not None:
-        pin = user_input.get("homekit_pin", "").strip()
-        if pin:
+        raw = user_input.get("homekit_pin", "").strip()
+        if not raw:
+            # Empty PIN: cancel pairing and revert the homekit_enabled
+            # flag so the options form reflects the actual state.
+            if flow._pending_general_options:
+                flow._pending_general_options["homekit_enabled"] = False
+                return flow.async_create_entry(title="", data=flow._pending_general_options)
+            return await flow.async_step_init()
+
+        pin = _normalise_homekit_pin(raw)
+        if pin is None:
+            errors["homekit_pin"] = "homekit_pin_format"
+        else:
             try:
                 from .homekit_mapping import async_rebuild_and_save_mapping
 
@@ -592,13 +620,6 @@ async def async_step_homekit_pairing(
                 # generic key. Broad catch is deliberate.
                 errors["homekit_pin"] = "homekit_pairing_failed"
                 _LOGGER.warning("HomeKit: pairing failed: %s", err)
-        else:
-            # Empty PIN: cancel pairing and revert the homekit_enabled
-            # flag so the options form reflects the actual state.
-            if flow._pending_general_options:
-                flow._pending_general_options["homekit_enabled"] = False
-                return flow.async_create_entry(title="", data=flow._pending_general_options)
-            return await flow.async_step_init()
 
     return flow.async_show_form(
         step_id="homekit_pairing",

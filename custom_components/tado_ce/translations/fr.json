@@ -1748,11 +1748,13 @@
             "name": "HomeKit",
             "data": {
               "homekit_cloud_sync_minutes": "Rafraîchissement des données dans le nuage",
-              "homekit_unpair": "Débrancher HomeKit"
+              "homekit_unpair": "Débrancher HomeKit",
+              "homekit_repair": "Effectuer à nouveau l'appairage (saisir le code de configuration)"
             },
             "data_description": {
               "homekit_cloud_sync_minutes": "Fréquence de récupération des données du nuage, y compris l'humidité, la puissance de chauffage et l'état de la superposition. La température utilise HomeKit localement. Plus bas = humidité plus fraîche mais plus d'appels à l'API (5-120 min)",
-              "homekit_unpair": "Déconnecter la connexion HomeKit locale et supprimer les identifiants d'appairage"
+              "homekit_unpair": "Déconnecter la connexion HomeKit locale et supprimer les identifiants d'appairage",
+              "homekit_repair": "Rouvrez la fenêtre de configuration pour procéder à un nouvel appairage après un échec ou une perte de connexion."
             },
             "description": "État de la connexion : {homekit_status}"
           },
@@ -1864,7 +1866,8 @@
       "svc_active_sensor_clear": "La fonction « Smart Valve Control » est activée pour cette zone. La désactivation du capteur de température externe désactivera la fonction « Smart Valve Control ». Réglez d'abord le mode « Smart Valve Control » sur « Off » si vous souhaitez mettre le capteur en pause sans désactiver la fonction SVC.",
       "homekit_max_tries": "Trop de tentatives infructueuses : le pont est temporairement verrouillé. Veuillez patienter quelques minutes ou réinitialiser le pont, puis réessayer.",
       "homekit_busy": "Le pont est très fréquenté — un autre appariement est peut-être en cours. Veuillez réessayer dans quelques instants.",
-      "homekit_no_zeroconf": "L'appairage HomeKit nécessite le service zeroconf de Home Assistant, qui n'est pas en cours d'exécution sur cet hôte. Ajoutez `default_config:` (ou `zeroconf:`) à votre fichier configuration.yaml, redémarrez, puis réessayez."
+      "homekit_no_zeroconf": "L'appairage HomeKit nécessite le service zeroconf de Home Assistant, qui n'est pas en cours d'exécution sur cet hôte. Ajoutez `default_config:` (ou `zeroconf:`) à votre fichier configuration.yaml, redémarrez, puis réessayez.",
+      "homekit_pin_format": "Cela ne ressemble pas à un code de configuration HomeKit. Saisissez le code à 8 chiffres au format 123-45-678 (et non le code d'authentification à 4 chiffres) qui s'affiche sur votre pont ou dans l'application Tado."
     }
   }
 }

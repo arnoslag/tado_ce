@@ -94,7 +94,6 @@ class TadoPresenceModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sel
         if _meta.translation_key is not None:
             self._attr_translation_key = _meta.translation_key
         self._attr_current_option = "auto"
-        self._attr_available = True
         self._attr_device_info = get_hub_device_info(home_id)
 
         # State tracking
@@ -263,7 +262,6 @@ class TadoOverlayModeSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Sele
             self._attr_translation_key = _meta.translation_key
         self._attr_entity_category = get_entity_category(_meta)
         self._attr_current_option = OVERLAY_MODE_DEFAULT_DISPLAY
-        self._attr_available = True
         self._attr_device_info = get_hub_device_info(home_id)
         self._attr_icon = _meta.icon
 
@@ -341,7 +339,6 @@ class TadoTimerDurationSelect(CoordinatorEntity["TadoDataUpdateCoordinator"], Se
             self._attr_translation_key = _meta.translation_key
         self._attr_entity_category = get_entity_category(_meta)
         self._attr_current_option = str(TIMER_DURATION_DEFAULT)
-        self._attr_available = True
         self._attr_device_info = get_hub_device_info(home_id)
         self._attr_icon = _meta.icon
         self._attr_unit_of_measurement = "min"

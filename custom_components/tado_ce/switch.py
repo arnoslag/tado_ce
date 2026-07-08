@@ -20,7 +20,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import DOMAIN
 from .device_manager import get_hub_device_info, get_zone_device_info
 from .entity_registry import ENTITY_REGISTRY, get_entity_category
-from .helpers import async_trigger_immediate_refresh, mask_serial
+from .helpers import PerEntityAvailabilityMixin, async_trigger_immediate_refresh, mask_serial
 from .optimistic_helpers import OptimisticUpdateResult, clear_optimistic_state, resolve_optimistic_update
 from .ratelimit import async_check_bootstrap_reserve_or_raise as _check_bootstrap_reserve_or_raise
 from .write_optimizer import DeviceOperation
@@ -146,7 +146,6 @@ class TadoEarlyStartSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switc
         self._attr_entity_category = get_entity_category(_meta)
         self._attr_icon = _meta.icon
         self._attr_is_on = initial_state
-        self._attr_available = True
         self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type, home_id)
 
         # Optimistic update tracking
@@ -317,7 +316,7 @@ class TadoEarlyStartSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switc
 
 
 
-class TadoChildLockSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], SwitchEntity):
+class TadoChildLockSwitch(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateCoordinator"], SwitchEntity):
     """Toggle child lock on a single Tado device.
 
     Each Tado device that supports child lock (TRVs, smart
@@ -355,7 +354,7 @@ class TadoChildLockSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switch
         self._attr_entity_category = get_entity_category(_meta)
         self._attr_icon = _meta.icon
         self._attr_is_on = initial_state
-        self._attr_available = True
+        self._data_present = True
         self._attr_device_info = get_zone_device_info(zone_id, zone_name, zone_type, home_id)
 
         # Optimistic update tracking
@@ -406,10 +405,13 @@ class TadoChildLockSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switch
                         if device.get("shortSerialNo") == self._serial:
                             if "childLockEnabled" in device:
                                 self._attr_is_on = device.get("childLockEnabled", False)
-                                self._attr_available = True
+                                self._data_present = True
                                 return
 
-            self._attr_available = False
+            # Device serial (or its childLockEnabled field) no longer present:
+            # unavailable, and drop the last-known state so nothing stale lingers.
+            self._attr_is_on = None
+            self._data_present = False
         except Exception:
             _LOGGER.debug(
                 "Switch: zone %s child lock (%s) update failed, "
@@ -417,7 +419,8 @@ class TadoChildLockSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switch
                 self._zone_name, mask_serial(self._serial),
                 exc_info=True,
             )
-            self._attr_available = False
+            self._attr_is_on = None
+            self._data_present = False
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Engage child lock on this device."""
@@ -515,7 +518,7 @@ class TadoChildLockSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], Switch
 
     async def _async_set_child_lock(self, enabled: bool) -> bool:
         """Send the child lock enable / disable to the cloud."""
-        return await self.coordinator.api_client.set_child_lock(self._serial, enabled)
+        return bool(await self.coordinator.api_client.set_child_lock(self._serial, enabled))
 
 
 class TadoHubToggleSwitch(CoordinatorEntity["TadoDataUpdateCoordinator"], SwitchEntity):

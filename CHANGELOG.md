@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 
+## [4.1.3] - 2026-07-08
+
+### Bug fixes
+
+- **Bridge connected sensor now reflects the bridge, not the cloud** ([#275](https://github.com/hiall-fyi/tado_ce/issues/275) - @50494554524F) — the "Bridge connected" sensor read whether the last call to Tado's cloud succeeded, not whether the bridge itself was online. Because that call is cloud-hosted, an offline bridge still got a reply and the sensor stayed on "connected" indefinitely, even across a reload. It now reads the bridge's own online status from Tado's response. Its on/off state tracks the bridge; if the Tado cloud itself becomes unreachable, the sensor shows unavailable rather than a stale reading. Only affects setups using the bridge connection with a serial and auth key.
+- **HomeKit pairing recovers from a wrong code** ([#313](https://github.com/hiall-fyi/tado_ce/issues/313) - @Siiya27) — entering the wrong code on the first pairing attempt (for example the 4-digit auth code instead of the 8-digit setup code) left HomeKit switched on but never actually paired, with no way back to the code prompt short of disabling and re-enabling it. Two fixes: the setup code is now checked for the right format before pairing is attempted, with a message naming the code you need, and a new "Pair again" option in the HomeKit settings reopens the code prompt directly so you can recover without the toggle dance.
+- **Mobile presence trackers no longer show unavailable** ([#314](https://github.com/hiall-fyi/tado_ce/issues/314) - @arnoslag) — a regression in v4.1.2: after the move to Home Assistant's connected/disconnected tracker style, the per-user phone trackers (`device_tracker.anne` and the like) all read "unavailable", while the home-wide presence sensor stayed correct. The new tracker type keys its identity on a hardware address, which Tado phones don't have, so each tracker registered with no identity and Home Assistant couldn't attach or restore it. The trackers now keep their own stable identity and report home / not_home per user as before. Downgrading to v4.1.1 was the workaround; this removes the need.
+- **Sensors show unavailable instead of a stale reading when their own data goes away** — a handful of sensors could keep displaying their last value as if it were current after the thing behind them disappeared. The battery, connection and child-lock entities for a TRV you've removed from your account held the old reading, and the outside temperature, solar and weather-state sensors kept their last value when a poll came back without weather data. These now report unavailable and drop the stale reading. Individual thermal-model sensors (heating rate, inertia, and so on) also go unavailable when a poll fails, rather than showing a value from before the failure.
+
+
 ## [4.1.2] - 2026-07-05
 
 ### Bug fixes

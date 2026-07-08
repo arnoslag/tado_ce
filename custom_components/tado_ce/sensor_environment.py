@@ -204,12 +204,12 @@ class TadoMoldRiskSensor(TadoZoneSensor):
         try:
             zone_data = self._get_zone_data()
             if not zone_data:
-                self._attr_available = False
+                self._data_present = False
                 return
 
             result = _extract_mold_risk_data(zone_data, self.hass, self._zone_id, self.coordinator)
             if result is None:
-                self._attr_available = False
+                self._data_present = False
                 return
 
             (
@@ -246,7 +246,7 @@ class TadoMoldRiskSensor(TadoZoneSensor):
                 target_temp=target_temp,
             )
 
-            self._attr_available = True
+            self._data_present = True
 
         except Exception as e:
             _LOGGER.debug(
@@ -254,7 +254,7 @@ class TadoMoldRiskSensor(TadoZoneSensor):
                 "(%s), marking unavailable until the next poll",
                 self._zone_id, e,
             )
-            self._attr_available = False
+            self._data_present = False
 
 
 class TadoMoldRiskPercentageSensor(TadoZoneSensor):
@@ -309,12 +309,12 @@ class TadoMoldRiskPercentageSensor(TadoZoneSensor):
         try:
             zone_data = self._get_zone_data()
             if not zone_data:
-                self._attr_available = False
+                self._data_present = False
                 return
 
             result = _extract_mold_risk_data(zone_data, self.hass, self._zone_id, self.coordinator)
             if result is None:
-                self._attr_available = False
+                self._data_present = False
                 return
 
             (
@@ -335,11 +335,11 @@ class TadoMoldRiskPercentageSensor(TadoZoneSensor):
                 else None
             )
             if surface_rh is None:
-                self._attr_available = False
+                self._data_present = False
                 return
 
             self._attr_native_value = surface_rh
-            self._attr_available = True
+            self._data_present = True
 
         except Exception as e:
             _LOGGER.debug(
@@ -348,7 +348,7 @@ class TadoMoldRiskPercentageSensor(TadoZoneSensor):
                 "next poll",
                 self._zone_id, e,
             )
-            self._attr_available = False
+            self._data_present = False
 
 
 class TadoCondensationRiskSensor(TadoZoneSensor):
@@ -458,14 +458,14 @@ class TadoCondensationRiskSensor(TadoZoneSensor):
         try:
             zone_data = self._get_zone_data()
             if not zone_data:
-                self._attr_available = False
+                self._data_present = False
                 return
 
             # Get room temperature (common to both zone types)
             sensor_data = zone_data.get("sensorDataPoints") or {}
             room_temp = (sensor_data.get("insideTemperature") or {}).get("celsius")
             if room_temp is None:
-                self._attr_available = False
+                self._data_present = False
                 return
 
             self._room_temp = room_temp
@@ -475,7 +475,7 @@ class TadoCondensationRiskSensor(TadoZoneSensor):
             zone_config_manager = self.coordinator.zone_config_manager
 
             if not config_manager:
-                self._attr_available = False
+                self._data_present = False
                 return
 
             # Get window type from per-zone config or global config
@@ -512,7 +512,7 @@ class TadoCondensationRiskSensor(TadoZoneSensor):
                 "failed (%s), marking unavailable until the next poll",
                 self._zone_id, e,
             )
-            self._attr_available = False
+            self._data_present = False
 
     @callback
     def _update_heating(self, sensor_data: dict[str, Any], config_manager: ConfigurationManager) -> None:
@@ -520,7 +520,7 @@ class TadoCondensationRiskSensor(TadoZoneSensor):
         # Get indoor humidity from zone sensor data
         humidity = (sensor_data.get("humidity") or {}).get("percentage")
         if humidity is None:
-            self._attr_available = False
+            self._data_present = False
             return
 
         self._indoor_humidity = humidity
@@ -575,7 +575,7 @@ class TadoCondensationRiskSensor(TadoZoneSensor):
             dew_point=self._indoor_dew_point,
         )
 
-        self._attr_available = True
+        self._data_present = True
 
     @callback
     def _update_ac(self, config_manager: ConfigurationManager) -> None:
@@ -583,18 +583,18 @@ class TadoCondensationRiskSensor(TadoZoneSensor):
         # Get outdoor temperature
         outdoor_entity = config_manager.get_outdoor_temp_entity()
         if not outdoor_entity:
-            self._attr_available = False
+            self._data_present = False
             return
 
         self._outdoor_temp = _get_outdoor_temp(self.hass, outdoor_entity)
         if self._outdoor_temp is None:
-            self._attr_available = False
+            self._data_present = False
             return
 
         # Get outdoor humidity (from weather entity)
         self._outdoor_humidity = self._get_outdoor_humidity(outdoor_entity)
         if self._outdoor_humidity is None:
-            self._attr_available = False
+            self._data_present = False
             return
 
         # Calculate outdoor dew point
@@ -628,7 +628,7 @@ class TadoCondensationRiskSensor(TadoZoneSensor):
             current_temp=self._room_temp,
         )
 
-        self._attr_available = True
+        self._data_present = True
 
     def _get_outdoor_humidity(self, entity_id: str) -> float | None:
         """Read outdoor humidity from a weather entity or companion sensor."""
@@ -727,14 +727,14 @@ class TadoSurfaceTemperatureSensor(TadoZoneSensor):
         try:
             zone_data = self._get_zone_data()
             if not zone_data:
-                self._attr_available = False
+                self._data_present = False
                 return
 
             # Get room temperature
             sensor_data = zone_data.get("sensorDataPoints") or {}
             room_temp = (sensor_data.get("insideTemperature") or {}).get("celsius")
             if room_temp is None:
-                self._attr_available = False
+                self._data_present = False
                 return
 
             self._room_temp = room_temp
@@ -751,7 +751,7 @@ class TadoSurfaceTemperatureSensor(TadoZoneSensor):
                 self._window_type = "unknown"
                 self._u_value = None
                 self._offset_applied = 0.0
-                self._attr_available = True
+                self._data_present = True
                 return
 
             # Try Tier 1: Surface temperature estimation
@@ -799,7 +799,7 @@ class TadoSurfaceTemperatureSensor(TadoZoneSensor):
                         self._calculation_method = "surface_estimation"
 
                     self._attr_native_value = round(surface_temp, 1)
-                    self._attr_available = True
+                    self._data_present = True
                     return
 
             # Tier 2: Fallback to room temperature
@@ -809,7 +809,7 @@ class TadoSurfaceTemperatureSensor(TadoZoneSensor):
             self._window_type = "unknown"
             self._u_value = None
             self._offset_applied = 0.0
-            self._attr_available = True
+            self._data_present = True
 
         except Exception as e:
             _LOGGER.debug(
@@ -818,7 +818,7 @@ class TadoSurfaceTemperatureSensor(TadoZoneSensor):
                 "next poll",
                 self._zone_id, e,
             )
-            self._attr_available = False
+            self._data_present = False
 
 
 class TadoDewPointSensor(TadoZoneSensor):
@@ -867,7 +867,7 @@ class TadoDewPointSensor(TadoZoneSensor):
         try:
             zone_data = self._get_zone_data()
             if not zone_data:
-                self._attr_available = False
+                self._data_present = False
                 return
 
             # Get temperature and humidity from zone data
@@ -876,12 +876,12 @@ class TadoDewPointSensor(TadoZoneSensor):
             self._humidity = (sensor_data.get("humidity") or {}).get("percentage")
 
             if self._room_temp is None or self._humidity is None:
-                self._attr_available = False
+                self._data_present = False
                 return
 
             # Calculate dew point using Magnus-Tetens formula
             self._attr_native_value = round(_calculate_dew_point(self._room_temp, self._humidity), 1)
-            self._attr_available = True
+            self._data_present = True
 
         except Exception as e:
             _LOGGER.debug(
@@ -889,7 +889,7 @@ class TadoDewPointSensor(TadoZoneSensor):
                 "(%s), marking unavailable until the next poll",
                 self._zone_id, e,
             )
-            self._attr_available = False
+            self._data_present = False
 
 
 class TadoComfortLevelSensor(TadoZoneSensor):
@@ -984,7 +984,7 @@ class TadoComfortLevelSensor(TadoZoneSensor):
         try:
             zone_data = self._get_zone_data()
             if not zone_data:
-                self._attr_available = False
+                self._data_present = False
                 return
 
             sensor_data = zone_data.get("sensorDataPoints") or {}
@@ -992,7 +992,7 @@ class TadoComfortLevelSensor(TadoZoneSensor):
             self._humidity = (sensor_data.get("humidity") or {}).get("percentage")
 
             if self._temperature is None:
-                self._attr_available = False
+                self._data_present = False
                 return
 
             if self._humidity is not None:
@@ -1041,7 +1041,7 @@ class TadoComfortLevelSensor(TadoZoneSensor):
                 heat_risk_level=self._heat_risk_level,
             )
 
-            self._attr_available = True
+            self._data_present = True
 
         except Exception as e:
             _LOGGER.debug(
@@ -1049,7 +1049,7 @@ class TadoComfortLevelSensor(TadoZoneSensor):
                 "failed (%s), marking unavailable until the next poll",
                 self._zone_id, e,
             )
-            self._attr_available = False
+            self._data_present = False
 
     def _calculate_adaptive_comfort(self) -> str:
         """Calculate comfort using ASHRAE 55 Adaptive Comfort model (0.31*outdoor + 17.8°C, ±3°C band)."""

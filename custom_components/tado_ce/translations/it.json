@@ -1748,11 +1748,13 @@
             "name": "HomeKit",
             "data": {
               "homekit_cloud_sync_minutes": "Aggiornamento dei dati nel cloud",
-              "homekit_unpair": "Disaccoppiamento di HomeKit"
+              "homekit_unpair": "Disaccoppiamento di HomeKit",
+              "homekit_repair": "Accoppiare nuovamente (inserire il codice di configurazione)"
             },
             "data_description": {
               "homekit_cloud_sync_minutes": "Con quale frequenza recuperare i dati del cloud, tra cui l'umidità, la potenza di riscaldamento e lo stato della sovrapposizione. La temperatura utilizza HomeKit localmente. Più basso = umidità più fresca, ma più chiamate API (5-120 min.)",
-              "homekit_unpair": "Disconnettere la connessione locale a HomeKit e rimuovere le credenziali di accoppiamento."
+              "homekit_unpair": "Disconnettere la connessione locale a HomeKit e rimuovere le credenziali di accoppiamento.",
+              "homekit_repair": "Riaprire la finestra di dialogo del codice di configurazione per eseguire nuovamente l'accoppiamento dopo un accoppiamento non riuscito o perso"
             },
             "description": "Stato della connessione: {homekit_status}"
           },
@@ -1864,7 +1866,8 @@
       "svc_active_sensor_clear": "Il controllo intelligente delle valvole è abilitato per questa zona. La disattivazione del sensore di temperatura esterno disattiverà il controllo intelligente delle valvole. Se desideri mettere in pausa il sensore senza interrompere il controllo intelligente delle valvole, imposta prima la modalità di controllo intelligente delle valvole su \"Off\".",
       "homekit_max_tries": "Troppi tentativi falliti: il bridge è temporaneamente bloccato. Attendere qualche minuto oppure resettare il bridge e riprovare.",
       "homekit_busy": "Il ponte è occupato: forse è in corso un altro accoppiamento. Riprova tra un attimo.",
-      "homekit_no_zeroconf": "L'accoppiamento HomeKit richiede il servizio zeroconf di Home Assistant, che non è in esecuzione su questo host. Aggiungi `default_config:` (o `zeroconf:`) al tuo file configuration.yaml e riavvia, quindi riprova."
+      "homekit_no_zeroconf": "L'accoppiamento HomeKit richiede il servizio zeroconf di Home Assistant, che non è in esecuzione su questo host. Aggiungi `default_config:` (o `zeroconf:`) al tuo file configuration.yaml e riavvia, quindi riprova.",
+      "homekit_pin_format": "Questo non sembra un codice di configurazione HomeKit. Inserisci il codice a 8 cifre nel formato 123-45-678 (non il codice di autenticazione a 4 cifre), visualizzato sul tuo bridge o nell'app Tado."
     }
   }
 }

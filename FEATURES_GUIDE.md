@@ -1192,14 +1192,14 @@ The Bridge API uses the serial number and auth key printed on the bottom of your
 
 | Entity | Friendly Name | Type | Description |
 |--------|--------------|------|-------------|
-| `binary_sensor.tado_ce_{home_id}_bridge_connected` | Bridge Connected | Binary Sensor | Whether the Internet Bridge is reachable |
+| `binary_sensor.tado_ce_{home_id}_bridge_connected` | Bridge Connected | Binary Sensor | Whether the Internet Bridge is online (on / off), from the bridge's own reported status |
 | `sensor.tado_ce_{home_id}_boiler_wiring_state` | Boiler Wiring State | Sensor | Bridge installation status (Ready / Installing / Failed) |
 | `sensor.tado_ce_{home_id}_boiler_output_temperature` | Boiler Output Temperature | Sensor | Real-time boiler output temperature (°C) |
 | `number.tado_ce_{home_id}_boiler_max_output_temperature` | Boiler Max Output Temperature | Number | Control max flow temperature (25–80°C, 0.5°C step) |
 
 ### Bridge Connected Sensor (v3.3.0+)
 
-The Bridge Connected binary sensor shows whether your Internet Bridge is reachable. It tolerates brief hiccups — the bridge is only marked as disconnected after 3 consecutive failures, so a single timeout won't trigger a false alarm.
+The Bridge Connected binary sensor shows whether your Internet Bridge is online, read from the bridge's own status in Tado's response. Its on/off state tracks the bridge: switch the bridge off and the sensor goes off. Availability is separate. If Tado's cloud can't be reached at all (a network drop, or the cloud rejecting the call), the sensor shows unavailable rather than a stale reading, and it tolerates brief hiccups: the cloud is only treated as unreachable after 3 consecutive failures, so a single timeout won't flip it. The `failure_count` and `last_successful_connection` attributes show what's happening on the cloud side when it does.
 
 **Attributes:**
 
@@ -1349,12 +1349,12 @@ Tado CE talks to your Tado two ways at once, and each reading follows the side t
 
 1. Go to **Settings → Tado CE → Configure → General Settings → Hardware Connections**
 2. Enable **Local Control (HomeKit)**
-3. Follow the pairing flow — you'll need the HomeKit setup code from your bridge
+3. Follow the pairing flow. You'll need the 8-digit HomeKit setup code from your bridge, in the format `123-45-678` (this is the setup code, not the 4-digit auth code used for the cloud bridge connection). The code is checked before pairing, so a wrong format is caught straight away rather than failing mid-handshake.
 4. Once paired, the integration connects automatically on every HA restart
 
 > **Note:** Your bridge can only be paired with one HomeKit controller at a time. If you're using Apple Home, you'll need to unpair it first. You can re-expose climate entities to Apple Home via the HA HomeKit Bridge integration.
 
-**If you factory-reset your bridge:** a reset issues a new HomeKit identity, so the stored pairing no longer matches. Tado CE detects this, stops retrying, and raises a Home Assistant Repairs notification telling you to re-pair. Go to **Settings → Tado CE → Configure → General Settings → Hardware Connections**, disable then re-enable Local Control (HomeKit), and follow the pairing flow with the new code.
+**If you factory-reset your bridge:** a reset issues a new HomeKit identity, so the stored pairing no longer matches. Tado CE detects this, stops retrying, and raises a Home Assistant Repairs notification telling you to re-pair. Go to **Settings → Tado CE → Configure → General Settings → Hardware Connections → HomeKit** and tick **Pair again**, which reopens the setup code prompt directly. (If a pairing attempt was interrupted and left HomeKit switched on but not connected, the same **Pair again** option gets you back to the code prompt without disabling and re-enabling.)
 
 ### Settings
 

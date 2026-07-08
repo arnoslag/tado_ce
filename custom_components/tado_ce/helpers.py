@@ -4,6 +4,10 @@ Pure functions used across the integration. The masking
 helpers (`mask_serial`, `mask_serial_dict`, `mask_home_id`)
 exist to keep PII out of shipped logs, every emit referring
 to a device serial / home_id should route through them.
+
+Also hosts `PerEntityAvailabilityMixin`, the one shared entity mixin
+that lets a `CoordinatorEntity` subclass surface its own data presence
+through `available` instead of only the coordinator's poll status.
 """
 
 from __future__ import annotations
@@ -26,8 +30,18 @@ from .const import (
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
+    from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
     from .coordinator import TadoDataUpdateCoordinator
+
+    # PerEntityAvailabilityMixin is only ever mixed into a CoordinatorEntity, whose
+    # `available` property it composes with `super()`. Declaring that host shape
+    # here (type-check only) lets mypy --strict resolve `super().available`; at
+    # runtime the mixin stays a plain object so it adds nothing to the MRO but its
+    # own `available`.
+    _AvailabilityHost = CoordinatorEntity[Any]
+else:
+    _AvailabilityHost = object
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -73,6 +87,25 @@ def mask_home_id(home_id: str | int | None) -> str:
     if len(s) <= _HOME_ID_VISIBLE_CHARS:
         return s
     return s[:_HOME_ID_VISIBLE_CHARS] + "…"
+
+
+class PerEntityAvailabilityMixin(_AvailabilityHost):
+    """Compose per-entity data presence with coordinator availability.
+
+    ``CoordinatorEntity.available`` reports only ``coordinator.last_update_success``
+    and shadows ``Entity._attr_available`` via the MRO, so a subclass that tracks
+    its own data presence never surfaces it. Subclasses set ``self._data_present``
+    in their update path; this mixin ANDs it with the coordinator's availability so
+    a per-entity data gap reads as unavailable while a coordinator failure still
+    wins. List this mixin FIRST in the bases so it owns ``available``.
+    """
+
+    _data_present: bool = False
+
+    @property
+    def available(self) -> bool:
+        """Return True only if the coordinator is healthy and this entity has data."""
+        return super().available and self._data_present
 
 
 def get_zone_states(coord_data: dict[str, Any] | None) -> dict[str, dict[str, Any]]:

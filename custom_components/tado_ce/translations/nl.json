@@ -1748,11 +1748,13 @@
             "name": "HomeKit",
             "data": {
               "homekit_cloud_sync_minutes": "Cloud gegevens vernieuwen",
-              "homekit_unpair": "HomeKit ontkoppelen"
+              "homekit_unpair": "HomeKit ontkoppelen",
+              "homekit_repair": "Opnieuw koppelen (voer de instellingscode in)"
             },
             "data_description": {
               "homekit_cloud_sync_minutes": "Hoe vaak cloudgegevens moeten worden opgehaald, inclusief vochtigheid, verwarmingsvermogen en overlaystatus. Temperatuur gebruikt HomeKit lokaal. Lager = frissere luchtvochtigheid maar meer API-oproepen (5-120 min)",
-              "homekit_unpair": "Verbreek de verbinding met de lokale HomeKit-verbinding en verwijder de koppelingsgegevens"
+              "homekit_unpair": "Verbreek de verbinding met de lokale HomeKit-verbinding en verwijder de koppelingsgegevens",
+              "homekit_repair": "Open het venster met de installatiecode opnieuw om opnieuw te koppelen nadat het koppelen is mislukt of de koppeling is verbroken"
             },
             "description": "Verbindingsstatus: {homekit_status}"
           },
@@ -1864,7 +1866,8 @@
       "svc_active_sensor_clear": "Slimme klepregeling is ingeschakeld voor deze zone. Als je de externe temperatuursensor uitschakelt, wordt de slimme klepregeling gedeactiveerd. Stel de modus voor slimme klepregeling eerst in op Uit als je de sensor wilt pauzeren zonder de slimme klepregeling te stoppen.",
       "homekit_max_tries": "Te veel mislukte pogingen — de bridge is tijdelijk geblokkeerd. Wacht een paar minuten of reset de bridge en probeer het opnieuw.",
       "homekit_busy": "Het is druk op de brug — er is mogelijk weer een koppeling bezig. Probeer het straks nog eens.",
-      "homekit_no_zeroconf": "Voor het koppelen van HomeKit is de zeroconf-service van Home Assistant nodig, die op deze host niet actief is. Voeg `default_config:` (of `zeroconf:`) toe aan je configuration.yaml, start het programma opnieuw op en probeer het dan nog eens."
+      "homekit_no_zeroconf": "Voor het koppelen van HomeKit is de zeroconf-service van Home Assistant nodig, die op deze host niet actief is. Voeg `default_config:` (of `zeroconf:`) toe aan je configuration.yaml, start het programma opnieuw op en probeer het dan nog eens.",
+      "homekit_pin_format": "Dat lijkt niet op een HomeKit-installatiecode. Voer de 8-cijferige code in de indeling 123-45-678 in (niet de 4-cijferige autorisatiecode), zoals weergegeven op je bridge of in de Tado-app."
     }
   }
 }

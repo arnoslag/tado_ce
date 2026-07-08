@@ -50,6 +50,7 @@ from .format_helpers import (
     format_overlay_type as _format_overlay_type,
 )
 from .helpers import (
+    PerEntityAvailabilityMixin,
     async_trigger_immediate_refresh,
     build_timer_termination,
     get_zone_overlay_termination,
@@ -75,7 +76,7 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 
-class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity, RestoreEntity):
+class TadoClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity, RestoreEntity):
     """Tado CE Heating Climate Entity."""
 
     _attr_has_entity_name = True
@@ -115,7 +116,7 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity,
         self._attr_target_temperature = None
         self._attr_hvac_mode = None
         self._attr_hvac_action = None
-        self._attr_available = False
+        self._data_present = False
         self._attr_current_humidity = None
 
         # Extra attributes
@@ -252,7 +253,7 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity,
                         self._zone_name, key, value,
                     )
 
-            self._unsub_zone_config = zone_config_manager.add_listener(_handle_zone_config_change)  # type: ignore[assignment]
+            self._unsub_zone_config = zone_config_manager.add_listener(_handle_zone_config_change)
             # Initial update of temp limits
             self._update_temp_limits()
 
@@ -660,7 +661,7 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity,
             zone_data = get_zone_state(coord_data, self._zone_id)
 
             if not zone_data:
-                self._attr_available = False
+                self._data_present = False
                 return
 
             self._update_sensor_data(zone_data)
@@ -690,7 +691,7 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity,
                 api_hvac_mode, api_hvac_action, power,
                 api_target_temperature=api_target_temp,
             )
-            self._attr_available = True
+            self._data_present = True
 
             self._record_smart_comfort()
             self._update_preset_mode()
@@ -702,7 +703,7 @@ class TadoClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity,
                 "unavailable, will retry on next poll",
                 self.name, e,
             )
-            self._attr_available = False
+            self._data_present = False
 
     @callback
     def _update_offset(self) -> None:

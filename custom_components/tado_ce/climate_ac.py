@@ -47,6 +47,7 @@ from .format_helpers import (
     format_zone_type as _format_zone_type,
 )
 from .helpers import (
+    PerEntityAvailabilityMixin,
     async_trigger_immediate_refresh,
     build_timer_termination,
     get_zone_overlay_termination,
@@ -253,7 +254,7 @@ def _build_swing_axis_modes(
     return result
 
 
-class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity, RestoreEntity):
+class TadoACClimate(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntity, RestoreEntity):
     """Tado CE Air Conditioning Climate Entity."""
 
     _attr_has_entity_name = True
@@ -360,7 +361,7 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
         self._attr_swing_horizontal_mode = (
             self._attr_swing_horizontal_modes[0] if self._attr_swing_horizontal_modes else None
         )
-        self._attr_available = False
+        self._data_present = False
         self._attr_current_humidity = None
 
         self._overlay_type = None
@@ -480,7 +481,7 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
                         self._zone_name, key, value,
                     )
 
-            self._unsub_zone_config = zone_config_manager.add_listener(_handle_zone_config_change)  # type: ignore[assignment]
+            self._unsub_zone_config = zone_config_manager.add_listener(_handle_zone_config_change)
             # Initial update of temp limits
             self._update_temp_limits()
 
@@ -836,7 +837,7 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
             zone_data = get_zone_state(coord_data, self._zone_id)
 
             if not zone_data:
-                self._attr_available = False
+                self._data_present = False
                 return
 
             self._update_ac_sensor_data(zone_data)
@@ -854,7 +855,7 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
             else:
                 self._handle_ac_off_state()
 
-            self._attr_available = True
+            self._data_present = True
 
             _scm = self.coordinator.smart_comfort_manager
             if _scm and _scm.is_enabled and self._attr_current_temperature is not None:
@@ -879,7 +880,7 @@ class TadoACClimate(CoordinatorEntity["TadoDataUpdateCoordinator"], ClimateEntit
                 self.name, e,
                 exc_info=True,
             )
-            self._attr_available = False
+            self._data_present = False
 
     def _resolve_ac_mode_for_temp_change(
         self, hvac_mode: HVACMode | None, temperature: float,

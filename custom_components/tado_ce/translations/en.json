@@ -1670,11 +1670,13 @@
             "name": "HomeKit",
             "data": {
               "homekit_cloud_sync_minutes": "Cloud Data Refresh",
-              "homekit_unpair": "Unpair HomeKit"
+              "homekit_unpair": "Unpair HomeKit",
+              "homekit_repair": "Pair again (enter the setup code)"
             },
             "data_description": {
               "homekit_cloud_sync_minutes": "How often to fetch cloud data including humidity, heating power, and overlay status. Temperature uses HomeKit locally. Lower = fresher humidity but more API calls (5–120 min)",
-              "homekit_unpair": "Disconnect the local HomeKit connection and remove pairing credentials"
+              "homekit_unpair": "Disconnect the local HomeKit connection and remove pairing credentials",
+              "homekit_repair": "Reopen the setup code prompt to pair again after a failed or lost pairing"
             },
             "description": "Connection status: {homekit_status}"
           },
@@ -1864,7 +1866,8 @@
       "svc_active_sensor_clear": "Smart Valve Control is enabled for this zone. Disabling the external temperature sensor will deactivate Smart Valve Control. Set Smart Valve Control Mode to Off first if you want to pause the sensor without stopping SVC.",
       "homekit_max_tries": "Too many failed attempts — the bridge is temporarily locked. Wait a few minutes or reset the bridge and try again.",
       "homekit_busy": "The bridge is busy — another pairing may be in progress. Try again in a moment.",
-      "homekit_no_zeroconf": "HomeKit pairing needs Home Assistant's zeroconf service, which isn't running on this host. Add `default_config:` (or `zeroconf:`) to your configuration.yaml and restart, then try again."
+      "homekit_no_zeroconf": "HomeKit pairing needs Home Assistant's zeroconf service, which isn't running on this host. Add `default_config:` (or `zeroconf:`) to your configuration.yaml and restart, then try again.",
+      "homekit_pin_format": "That does not look like a HomeKit setup code. Enter the 8-digit code in the format 123-45-678 (not the 4-digit auth code), shown on your bridge or in the Tado app."
     }
   }
 }

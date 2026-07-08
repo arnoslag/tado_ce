@@ -20,7 +20,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .device_manager import get_hub_device_info
 from .entity_registry import ENTITY_REGISTRY, get_entity_category
-from .helpers import mask_serial
+from .helpers import PerEntityAvailabilityMixin, mask_serial
 
 if TYPE_CHECKING:
     from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
@@ -75,7 +75,7 @@ async def async_setup_entry(
         )
 
 
-class TadoDeviceTracker(CoordinatorEntity["TadoDataUpdateCoordinator"], ScannerEntity):
+class TadoDeviceTracker(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateCoordinator"], ScannerEntity):
     """Represent a Tado mobile device tracker entity.
 
     Tado's cloud reports only a binary `atHome` for each phone (plus a
@@ -103,11 +103,15 @@ class TadoDeviceTracker(CoordinatorEntity["TadoDataUpdateCoordinator"], ScannerE
 
         _meta = ENTITY_REGISTRY["device_tracker_mobile"]
         self._attr_name = device_name
-        self._attr_unique_id = f"tado_ce_{home_id}_{_meta.unique_id_suffix.format(device_id=device_id)}"
+        # ScannerEntity overrides `unique_id` to return `mac_address` (None for a
+        # cloud-only tracker), which shadows `_attr_unique_id` via the MRO. Store
+        # our id privately and override `unique_id` below so HA can register and
+        # restore the entity. Tado gives no MAC, so the home/device id is our key.
+        self._unique_id = f"tado_ce_{home_id}_{_meta.unique_id_suffix.format(device_id=device_id)}"
         entity_category = get_entity_category(_meta)
         if entity_category is not None:
             self._attr_entity_category = entity_category
-        self._attr_available = False
+        self._data_present = False
         # Use hub device info for global entities
         self._attr_device_info = get_hub_device_info(home_id)  # type: ignore[assignment]
 
@@ -125,6 +129,15 @@ class TadoDeviceTracker(CoordinatorEntity["TadoDataUpdateCoordinator"], ScannerE
         """Handle updated data from the coordinator."""
         self._update_from_coordinator()
         self.async_write_ha_state()
+
+    @property
+    def unique_id(self) -> str | None:
+        """Return the entity's unique ID.
+
+        Overrides ScannerEntity.unique_id (which returns mac_address, None here)
+        so the entity registers against the Tado home / device id instead.
+        """
+        return self._unique_id
 
     @property
     def is_connected(self) -> bool | None:
@@ -171,14 +184,20 @@ class TadoDeviceTracker(CoordinatorEntity["TadoDataUpdateCoordinator"], ScannerE
                             self._is_home = None
                             self._location_status = "no_location_reported"
 
-                        self._attr_available = True
+                        self._data_present = True
                         return
 
-            self._attr_available = False
+            # Device id no longer present in the account: unavailable, and drop
+            # the last-known presence so is_connected does not report a stale state.
+            self._is_home = None
+            self._location_status = None
+            self._data_present = False
         except (KeyError, TypeError, AttributeError) as err:
             _LOGGER.debug(
                 "Device Tracker: %s update failed (%s), marking "
                 "unavailable until the next poll",
                 self._device_name, err,
             )
-            self._attr_available = False
+            self._is_home = None
+            self._location_status = None
+            self._data_present = False

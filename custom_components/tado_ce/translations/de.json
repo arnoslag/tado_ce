@@ -1748,11 +1748,13 @@
             "name": "HomeKit",
             "data": {
               "homekit_cloud_sync_minutes": "Cloud Data Refresh",
-              "homekit_unpair": "HomeKit entkoppeln"
+              "homekit_unpair": "HomeKit entkoppeln",
+              "homekit_repair": "Erneut koppeln (Setup-Code eingeben)"
             },
             "data_description": {
               "homekit_cloud_sync_minutes": "Wie oft Cloud-Daten wie Luftfeuchtigkeit, Heizleistung und Overlay-Status abgerufen werden sollen. Die Temperatur verwendet HomeKit lokal. Niedriger = frischere Luftfeuchtigkeit, aber mehr API-Aufrufe (5-120 min)",
-              "homekit_unpair": "Trennen Sie die lokale HomeKit-Verbindung und entfernen Sie die Pairing-Anmeldedaten"
+              "homekit_unpair": "Trennen Sie die lokale HomeKit-Verbindung und entfernen Sie die Pairing-Anmeldedaten",
+              "homekit_repair": "Öffnen Sie die Eingabeaufforderung für den Einrichtungscode erneut, um die Kopplung nach einem Fehlschlag oder einem Verlust der Verbindung erneut durchzuführen."
             },
             "description": "Verbindungsstatus: {homekit_status}"
           },
@@ -1864,7 +1866,8 @@
       "svc_active_sensor_clear": "Die intelligente Ventilsteuerung ist für diese Zone aktiviert. Durch Deaktivieren des externen Temperatursensors wird die intelligente Ventilsteuerung deaktiviert. Stellen Sie den Modus der intelligenten Ventilsteuerung zunächst auf „Aus“, wenn Sie den Sensor pausieren möchten, ohne die SVC zu stoppen.",
       "homekit_max_tries": "Zu viele fehlgeschlagene Versuche – die Brücke ist vorübergehend gesperrt. Warten Sie einige Minuten oder setzen Sie die Brücke zurück und versuchen Sie es erneut.",
       "homekit_busy": "Die Verbindung ist gerade ausgelastet – möglicherweise findet gerade eine weitere Paarung statt. Versuchen Sie es in einem Moment erneut.",
-      "homekit_no_zeroconf": "Für die HomeKit-Kopplung wird der Zeroconf-Dienst von Home Assistant benötigt, der auf diesem Host jedoch nicht läuft. Fügen Sie `default_config:` (oder `zeroconf:`) zu Ihrer configuration.yaml hinzu, starten Sie das System neu und versuchen Sie es dann erneut."
+      "homekit_no_zeroconf": "Für die HomeKit-Kopplung wird der Zeroconf-Dienst von Home Assistant benötigt, der auf diesem Host jedoch nicht läuft. Fügen Sie `default_config:` (oder `zeroconf:`) zu Ihrer configuration.yaml hinzu, starten Sie das System neu und versuchen Sie es dann erneut.",
+      "homekit_pin_format": "Das sieht nicht nach einem HomeKit-Einrichtungscode aus. Geben Sie den 8-stelligen Code im Format 123-45-678 ein (nicht den 4-stelligen Authentifizierungscode), der auf Ihrer Bridge oder in der Tado-App angezeigt wird."
     }
   }
 }

@@ -21,6 +21,7 @@ from .bridge_api import FLOW_TEMP_STEP, MAX_FLOW_TEMP, MIN_FLOW_TEMP
 from .device_manager import get_hub_device_info
 from .entity_registry import ENTITY_REGISTRY, get_entity_category
 from .exceptions import TadoBridgeApiError
+from .helpers import PerEntityAvailabilityMixin
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -66,6 +67,7 @@ async def async_setup_entry(
 
 
 class TadoBoilerMaxOutputTemperatureNumber(
+    PerEntityAvailabilityMixin,
     CoordinatorEntity["TadoDataUpdateCoordinator"],
     NumberEntity,
 ):
@@ -94,7 +96,7 @@ class TadoBoilerMaxOutputTemperatureNumber(
             self._attr_icon = _meta.icon
         self._attr_entity_category = get_entity_category(_meta)
         self._attr_device_info = get_hub_device_info(coordinator.home_id)
-        self._attr_available = False
+        self._data_present = False
         self._attr_native_value: float | None = None
 
     async def async_set_native_value(self, value: float) -> None:
@@ -124,13 +126,13 @@ class TadoBoilerMaxOutputTemperatureNumber(
         """Refresh boiler max output temperature from the latest bridge poll."""
         bridge = self.coordinator.data.get("bridge")
         if not bridge:
-            self._attr_available = False
+            self._data_present = False
             self.async_write_ha_state()
             return
         temp = bridge.get("boilerMaxOutputTemperatureInCelsius")
         if temp is not None:
             self._attr_native_value = float(temp)
-            self._attr_available = True
+            self._data_present = True
         else:
-            self._attr_available = False
+            self._data_present = False
         self.async_write_ha_state()

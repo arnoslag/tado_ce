@@ -1670,10 +1670,12 @@
             "name": "HomeKit",
             "data": {
               "homekit_cloud_sync_minutes": "Cloud Data Refresh",
+              "homekit_repair": "Pair again (enter the setup code)",
               "homekit_unpair": "Unpair HomeKit"
             },
             "data_description": {
               "homekit_cloud_sync_minutes": "How often to fetch cloud data including humidity, heating power, and overlay status. Temperature uses HomeKit locally. Lower = fresher humidity but more API calls (5–120 min)",
+              "homekit_repair": "Reopen the setup code prompt to pair again after a failed or lost pairing",
               "homekit_unpair": "Disconnect the local HomeKit connection and remove pairing credentials"
             },
             "description": "Connection status: {homekit_status}"
@@ -1857,6 +1859,7 @@
       "bridge_serial_invalid": "Only v3+ Internet Bridges (serial starting with IB) support the local API. Your serial suggests a v2 bridge (GW prefix) which does not have a local API. Weather Compensation can still be used without a bridge via cloud data.",
       "wc_min_exceeds_max": "Minimum flow temperature cannot exceed maximum flow temperature",
       "homekit_wrong_pin": "Incorrect HomeKit PIN — check the code on your bridge or in the Tado app",
+      "homekit_pin_format": "That does not look like a HomeKit setup code. Enter the 8-digit code in the format 123-45-678 (not the 4-digit auth code), shown on your bridge or in the Tado app.",
       "homekit_already_paired": "Bridge is already paired with another controller. Unpair from Apple Home first, then try again",
       "homekit_network_error": "Could not reach the bridge on your network. Check it is powered on and connected",
       "homekit_timeout": "Pairing timed out — the bridge did not respond in time",

@@ -23,6 +23,12 @@ Thank you to everyone who supported the project through [Buy Me a Coffee](https:
 
 Community contributors who helped shape each release through bug reports, feature requests, testing, and feedback.
 
+### v4.1.3
+
+- **[@50494554524F](https://github.com/50494554524F)** — Stayed on the bridge connection report ([#275](https://github.com/hiall-fyi/tado_ce/issues/275)) through several rounds and, crucially, sent the debug log that pinned the real cause: with the bridge physically off, Tado's cloud still answered the bridge call with an HTTP 200, so the sensor read "connected" indefinitely. That evidence is why the fix landed. The sensor now reads the bridge's own online flag from the response, and treats an unreachable cloud as unavailable rather than a stale reading.
+- **[@Siiya27](https://github.com/Siiya27)** — Reported that HomeKit pairing never attempted a handshake and behaved identically for right and wrong codes ([#313](https://github.com/hiall-fyi/tado_ce/issues/313)), with debug logs on both sides and a clean repro. Then confirmed the diagnosis and worked out the trigger himself (a wrong code on the first attempt left HomeKit enabled but unpaired, with no way back to the prompt), and suggested both fixes that shipped: checking the code format up front, and a "Pair again" option to recover.
+- **[@arnoslag](https://github.com/arnoslag)** — Caught a clean regression ([#314](https://github.com/hiall-fyi/tado_ce/issues/314)): per-user mobile trackers went unavailable on v4.1.2 while the home-wide presence sensor stayed fine, with a precise v4.1.1-worked / v4.1.2-broke split, repro steps, and the HACS downgrade workaround. That sharp before/after pointed straight at the tracker change and made the fix quick to pin.
+
 ### v4.1.2
 
 - **[@janchrillesen](https://github.com/janchrillesen)** — Asked on the discussions how to see the device temperature offset. His setup turned out fine once Offset Sync was on, but the question surfaced a real bug: with Device Temperature Offsets enabled and no zone running Smart Valve Control or Offset Sync, the offset was never fetched, so anyone who only wanted to watch `offset_celsius` saw nothing. Fixed so the toggle works on its own ([#311](https://github.com/hiall-fyi/tado_ce/discussions/311)).
