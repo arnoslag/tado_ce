@@ -1775,13 +1775,17 @@
               "smart_comfort_mode": "Smart Comfort Mode",
               "window_type": "Window Type",
               "window_predicted_mode": "Window Detection Mode",
-              "window_predicted_sensitivity": "Window Detection Sensitivity"
+              "window_predicted_sensitivity": "Window Detection Sensitivity",
+              "use_external_window": "Override with Physical Window Sensor",
+              "external_window_sensor": "External Window/Door Sensor"
             },
             "data_description": {
               "smart_comfort_mode": "Adjust target temp based on outdoor conditions",
               "window_type": "Window type for mold risk calculation",
               "window_predicted_mode": "Active: detects only when HVAC is running. Passive: detects regardless of HVAC state. Auto: uses Active when HVAC is on, Passive when off.",
-              "window_predicted_sensitivity": "How easily the window detection triggers. Higher sensitivity = more false positives but catches smaller drafts."
+              "window_predicted_sensitivity": "How easily the window detection triggers. Higher sensitivity = more false positives but catches smaller drafts.",
+              "use_external_window": "Turn off to temporarily revert to predictive (temperature-drop based) window detection. Your selection stays saved — toggle back on anytime.",
+              "external_window_sensor": "Select a door/window contact sensor to replace predictive detection for this zone. When open, the zone is treated as having an open window; when closed, predictive detection stays paused until the sensor reports closed."
             }
           },
           "sensor_section": {

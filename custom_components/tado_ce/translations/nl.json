@@ -1552,13 +1552,17 @@
               "smart_comfort_mode": "Slimme Comfortmodus",
               "window_type": "Raamtype",
               "window_predicted_mode": "Venster detectiemodus",
-              "window_predicted_sensitivity": "Gevoeligheid vensterdetectie"
+              "window_predicted_sensitivity": "Gevoeligheid vensterdetectie",
+              "use_external_window": "Overschrijven met fysieke raamsensor",
+              "external_window_sensor": "Externe raam-/deursensor"
             },
             "data_description": {
               "smart_comfort_mode": "Richttemperatuur aanpassen op basis van buitencondities",
               "window_type": "Venstertype voor schimmelrisicoberekening",
               "window_predicted_mode": "Actief: detecteert alleen wanneer HVAC actief is. Passief: detecteert ongeacht de HVAC-status. Auto: gebruikt Actief wanneer HVAC aan staat, Passief wanneer uit.",
-              "window_predicted_sensitivity": "Hoe snel de raamdetectie reageert. Een hogere gevoeligheid leidt tot meer valse alarmen, maar detecteert ook kleinere tochtjes."
+              "window_predicted_sensitivity": "Hoe snel de raamdetectie reageert. Een hogere gevoeligheid leidt tot meer valse alarmen, maar detecteert ook kleinere tochtjes.",
+              "use_external_window": "Zet uit om tijdelijk terug te schakelen naar predictieve (op temperatuurdaling gebaseerde) raamdetectie. Je selectie blijft bewaard — later weer aan te zetten.",
+              "external_window_sensor": "Kies een raam-/deurcontactsensor die de predictieve detectie voor deze zone vervangt. Bij open wordt de zone behandeld alsof er een raam open staat; bij dicht blijft predictieve detectie gepauzeerd totdat de sensor 'dicht' meldt."
             }
           },
           "sensor_section": {
