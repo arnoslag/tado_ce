@@ -1568,6 +1568,9 @@
               "external_temp_sensor": "Sensor de temperatura externo",
               "use_external_humidity": "Anular el sensor de humedad de Tado",
               "external_humidity_sensor": "Sensor de humedad externo",
+              "use_external_window": "Anular con sensor físico de ventana",
+              "external_window_sensor": "Sensor externo de ventana/puerta",
+              "external_window_open_delay_minutes": "Búfer de ventana abierta",
               "svc_mode": "Modo de control inteligente de válvulas",
               "svc_offset_min_change": "Sensibilidad de sincronización de desplazamiento"
             },
@@ -1576,6 +1579,9 @@
               "external_temp_sensor": "Selecciona un sensor para anular la lectura integrada de Tado. Desactiva el interruptor de arriba para pausar sin perder la selección.",
               "use_external_humidity": "Desactívalo para volver temporalmente al sensor de humedad integrado de Tado. Tu elección se guardará; puedes volver a activarlo cuando quieras.",
               "external_humidity_sensor": "Selecciona un sensor de humedad para anular la lectura integrada de Tado. Desactiva el interruptor de arriba para pausar sin perder la selección.",
+              "use_external_window": "Desactiva esta función para volver temporalmente a la detección predictiva (basada en la caída de temperatura). Tu selección permanece guardada — puedes volver a activarla en cualquier momento.",
+              "external_window_sensor": "Selecciona un sensor de contacto de puerta/ventana para sustituir la detección predictiva de esta zona. Cuando está abierto, la zona se trata como si tuviera una ventana abierta; cuando está cerrado, la detección predictiva permanece en pausa hasta que el sensor indique cerrado.",
+              "external_window_open_delay_minutes": "Cuánto tiempo debe permanecer abierta la ventana antes de que la calefacción se pause realmente (el modo real de ventana abierta de Tado). El indicador 'Ventana prevista' se actualiza de inmediato; solo la pausa real se retrasa. Cerrar siempre reanuda la calefacción al instante, sin retraso. 0 = pausar de inmediato.",
               "svc_mode": "Utiliza tu sensor externo para mejorar la precisión del termostato de válvula (TRV). La función «Offset Sync» (recomendada) corrige de forma silenciosa la lectura de temperatura del TRV; funciona junto con Tado y mejora la duración de la batería del TRV. La función «Valve Target» anula directamente el punto de consigna del TRV; es más agresiva, utilízala solo cuando «Offset Sync» no sea suficiente.",
               "svc_offset_min_change": "¿Cuánto debe modificarse el ajuste antes de que se actualice el TRV? Unos valores más altos suponen menos actualizaciones (lo que es mejor para la duración de la batería), pero una visualización de la temperatura menos precisa en la aplicación de Tado."
             }

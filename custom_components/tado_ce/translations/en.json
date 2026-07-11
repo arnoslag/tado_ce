@@ -1793,6 +1793,7 @@
               "external_humidity_sensor": "External Humidity Sensor",
               "use_external_window": "Override with Physical Window Sensor",
               "external_window_sensor": "External Window/Door Sensor",
+              "external_window_open_delay_minutes": "Open-Window Buffer",
               "svc_mode": "Smart Valve Control Mode",
               "svc_offset_min_change": "Offset Sync Sensitivity"
             },
@@ -1803,6 +1804,7 @@
               "external_humidity_sensor": "Select a humidity sensor to override Tado's built-in reading. Disable the toggle above to pause without losing the selection.",
               "use_external_window": "Turn off to temporarily revert to predictive (temperature-drop based) window detection. Your selection stays saved — toggle back on anytime.",
               "external_window_sensor": "Select a door/window contact sensor to replace predictive detection for this zone. When open, the zone is treated as having an open window; when closed, predictive detection stays paused until the sensor reports closed.",
+              "external_window_open_delay_minutes": "How long the window must stay open before heating is actually paused (Tado's real open-window mode). The 'Window Predicted' indicator updates immediately; only the real pause is delayed. Closing always resumes heating instantly, with no delay. 0 = pause immediately.",
               "svc_mode": "Use your external sensor to improve TRV accuracy. Offset Sync (recommended) quietly corrects the TRV's temperature reading — works alongside Tado, better TRV battery life. Valve Target directly overrides the TRV setpoint — more aggressive, use only when Offset Sync isn't enough.",
               "svc_offset_min_change": "How much the offset must change before writing to the TRV. Higher values mean fewer writes (better for battery life) but less precise temperature display in the Tado app"
             }

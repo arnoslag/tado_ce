@@ -1570,6 +1570,7 @@
               "external_humidity_sensor": "Externe vochtigheidssensor",
               "use_external_window": "Overschrijven met fysieke raamsensor",
               "external_window_sensor": "Externe raam-/deursensor",
+              "external_window_open_delay_minutes": "Buffer voor open raam",
               "svc_mode": "Slimme klepregelmodus",
               "svc_offset_min_change": "Gevoeligheid van de offsetsynchronisatie"
             },
@@ -1580,6 +1581,7 @@
               "external_humidity_sensor": "Kies een vochtigheidssensor om de ingebouwde meting van Tado te overschrijven. Schakel de schakelaar hierboven uit om te pauzeren zonder de selectie te verliezen.",
               "use_external_window": "Zet uit om tijdelijk terug te schakelen naar predictieve (op temperatuurdaling gebaseerde) raamdetectie. Je selectie blijft bewaard — later weer aan te zetten.",
               "external_window_sensor": "Kies een raam-/deurcontactsensor die de predictieve detectie voor deze zone vervangt. Bij open wordt de zone behandeld alsof er een raam open staat; bij dicht blijft predictieve detectie gepauzeerd totdat de sensor 'dicht' meldt.",
+              "external_window_open_delay_minutes": "Hoe lang het raam open moet blijven voordat de verwarming daadwerkelijk wordt gepauzeerd (Tado's echte open-raam-modus). De indicator 'Venster Voorspeld' wordt direct bijgewerkt; alleen de echte pauze wordt vertraagd. Sluiten hervat de verwarming altijd direct, zonder vertraging. 0 = direct pauzeren.",
               "svc_mode": "Gebruik je externe sensor om de nauwkeurigheid van de thermostaatkranen te verbeteren. Offset Sync (aanbevolen) corrigeert op subtiele wijze de temperatuurmeting van de thermostaatkranen — werkt samen met Tado en zorgt voor een langere levensduur van de batterij van de thermostaatkranen. Valve Target overschrijft het instelpunt van de thermostaatkranen direct — een agressievere aanpak, alleen gebruiken als Offset Sync niet voldoende is.",
               "svc_offset_min_change": "Hoeveel de offset moet worden aangepast voordat er naar de TRV wordt geschreven. Hogere waarden betekenen minder schrijfbewerkingen (beter voor de levensduur van de batterij), maar een minder nauwkeurige temperatuurweergave in de Tado-app"
             }

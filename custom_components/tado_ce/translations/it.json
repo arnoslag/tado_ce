@@ -1568,6 +1568,9 @@
               "external_temp_sensor": "Sensore di temperatura esterno",
               "use_external_humidity": "Disattivare il sensore di umidità di Tado",
               "external_humidity_sensor": "Sensore di umidità esterno",
+              "use_external_window": "Sovrascrivi con sensore fisico della finestra",
+              "external_window_sensor": "Sensore esterno finestra/porta",
+              "external_window_open_delay_minutes": "Buffer finestra aperta",
               "svc_mode": "Modalità di controllo intelligente delle valvole",
               "svc_offset_min_change": "Sensibilità della sincronizzazione offset"
             },
@@ -1576,6 +1579,9 @@
               "external_temp_sensor": "Seleziona un sensore per ignorare la lettura predefinita di Tado. Disattiva l'interruttore qui sopra per mettere in pausa senza perdere la selezione.",
               "use_external_humidity": "Disattiva questa opzione per tornare temporaneamente al sensore di umidità integrato di Tado. La tua scelta verrà salvata: potrai riattivarla in qualsiasi momento.",
               "external_humidity_sensor": "Seleziona un sensore di umidità per sovrascrivere la lettura integrata di Tado. Disattiva l'interruttore qui sopra per mettere in pausa senza perdere la selezione.",
+              "use_external_window": "Disattiva questa funzione per tornare temporaneamente al rilevamento predittivo (basato sul calo di temperatura). La tua selezione resta salvata — puoi riattivarla in qualsiasi momento.",
+              "external_window_sensor": "Seleziona un sensore di contatto porta/finestra che sostituisca il rilevamento predittivo per questa zona. Quando è aperto, la zona viene trattata come se avesse una finestra aperta; quando è chiuso, il rilevamento predittivo resta in pausa finché il sensore non segnala la chiusura.",
+              "external_window_open_delay_minutes": "Per quanto tempo la finestra deve rimanere aperta prima che il riscaldamento venga effettivamente messo in pausa (la reale modalità finestra aperta di Tado). L'indicatore 'Finestra prevista' si aggiorna immediatamente; solo la pausa reale viene ritardata. La chiusura riprende sempre il riscaldamento all'istante, senza ritardo. 0 = pausa immediata.",
               "svc_mode": "Utilizza il sensore esterno per migliorare la precisione del termostato a valvolina (TRV). La funzione Offset Sync (consigliata) corregge in modo silenzioso la lettura della temperatura del TRV: funziona in combinazione con Tado e garantisce una maggiore durata della batteria del TRV. La funzione Valve Target sovrascrive direttamente il setpoint del TRV: è più aggressiva, quindi utilizzala solo quando Offset Sync non è sufficiente.",
               "svc_offset_min_change": "Di quanto deve variare l'offset prima che venga effettuata una scrittura nel TRV. Valori più alti comportano un minor numero di scritture (migliore durata della batteria), ma una visualizzazione della temperatura meno precisa nell'app Tado"
             }

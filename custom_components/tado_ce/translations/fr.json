@@ -1568,6 +1568,9 @@
               "external_temp_sensor": "Capteur de température externe",
               "use_external_humidity": "Contourner le capteur d'humidité de Tado",
               "external_humidity_sensor": "Capteur d'humidité externe",
+              "use_external_window": "Remplacer par un capteur de fenêtre physique",
+              "external_window_sensor": "Capteur externe de fenêtre/porte",
+              "external_window_open_delay_minutes": "Délai de fenêtre ouverte",
               "svc_mode": "Mode de commande intelligent de la vanne",
               "svc_offset_min_change": "Sensibilité de la synchronisation de décalage"
             },
@@ -1576,6 +1579,9 @@
               "external_temp_sensor": "Sélectionnez un capteur pour remplacer la mesure intégrée de Tado. Désactivez le bouton ci-dessus pour mettre en pause sans perdre votre sélection.",
               "use_external_humidity": "Désactivez cette option pour revenir temporairement au capteur d'humidité intégré de Tado. Votre choix est enregistré : vous pouvez réactiver cette option à tout moment.",
               "external_humidity_sensor": "Sélectionnez un capteur d'humidité pour remplacer la mesure intégrée de Tado. Désactivez le bouton ci-dessus pour mettre en pause sans perdre votre sélection.",
+              "use_external_window": "Désactivez cette fonction pour revenir temporairement à la détection prédictive (basée sur la chute de température). Votre choix reste enregistré — vous pouvez réactiver cette fonction à tout moment.",
+              "external_window_sensor": "Sélectionnez un capteur de contact porte/fenêtre pour remplacer la détection prédictive de cette zone. Lorsqu'il est ouvert, la zone est traitée comme ayant une fenêtre ouverte ; lorsqu'il est fermé, la détection prédictive reste en pause jusqu'à ce que le capteur signale la fermeture.",
+              "external_window_open_delay_minutes": "Durée pendant laquelle la fenêtre doit rester ouverte avant que le chauffage ne soit réellement mis en pause (mode fenêtre ouverte réel de Tado). L'indicateur « Fenêtre prévue » se met à jour immédiatement ; seule la pause réelle est retardée. La fermeture relance toujours le chauffage instantanément, sans délai. 0 = pause immédiate.",
               "svc_mode": "Utilisez votre capteur externe pour améliorer la précision du thermostat à vanne thermostatique (TRV). La fonction « Offset Sync » (recommandée) corrige discrètement la mesure de température du TRV — elle fonctionne en tandem avec Tado et prolonge la durée de vie de la batterie du TRV. La fonction « Valve Target » remplace directement le point de consigne du TRV — elle est plus radicale ; à n'utiliser que lorsque la fonction « Offset Sync » ne suffit pas.",
               "svc_offset_min_change": "De combien le décalage doit-il varier avant qu'une mise à jour ne soit enregistrée dans le TRV ? Des valeurs plus élevées impliquent moins d'enregistrements (ce qui est préférable pour l'autonomie de la batterie), mais un affichage moins précis de la température dans l'application Tado."
             }

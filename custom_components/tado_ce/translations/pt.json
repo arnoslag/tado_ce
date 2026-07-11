@@ -1568,6 +1568,9 @@
               "external_temp_sensor": "Sensor de temperatura externo",
               "use_external_humidity": "Substituir o sensor de humidade do Tado",
               "external_humidity_sensor": "Sensor de humidade externo",
+              "use_external_window": "Substituir com sensor físico de janela",
+              "external_window_sensor": "Sensor externo de janela/porta",
+              "external_window_open_delay_minutes": "Buffer de janela aberta",
               "svc_mode": "Modo de controlo inteligente da válvula",
               "svc_offset_min_change": "Sensibilidade de sincronização de desvio"
             },
@@ -1576,6 +1579,9 @@
               "external_temp_sensor": "Selecione um sensor para substituir a leitura integrada do Tado. Desative o botão acima para pausar sem perder a seleção.",
               "use_external_humidity": "Desative esta função para voltar temporariamente a utilizar o sensor de humidade integrado do Tado. A sua escolha fica guardada — pode reativá-la a qualquer momento.",
               "external_humidity_sensor": "Selecione um sensor de humidade para substituir a leitura integrada do Tado. Desative o botão acima para pausar sem perder a seleção.",
+              "use_external_window": "Desative esta função para voltar temporariamente à deteção preditiva (baseada na queda de temperatura). A sua seleção permanece guardada — pode reativar esta função a qualquer momento.",
+              "external_window_sensor": "Selecione um sensor de contacto de porta/janela para substituir a deteção preditiva desta zona. Quando aberto, a zona é tratada como tendo uma janela aberta; quando fechado, a deteção preditiva permanece em pausa até o sensor indicar fechado.",
+              "external_window_open_delay_minutes": "Durante quanto tempo a janela deve permanecer aberta antes de o aquecimento ser realmente pausado (o modo real de janela aberta do Tado). O indicador 'Janela prevista' é atualizado de imediato; apenas a pausa real é atrasada. Fechar retoma sempre o aquecimento de imediato, sem atraso. 0 = pausar de imediato.",
               "svc_mode": "Utilize o seu sensor externo para melhorar a precisão do TRV. A função «Offset Sync» (recomendada) corrige discretamente a leitura de temperatura do TRV — funciona em conjunto com o Tado, prolongando a duração da bateria do TRV. A função «Valve Target» substitui diretamente o ponto de regulação do TRV — mais agressiva, utilize-a apenas quando a função «Offset Sync» não for suficiente.",
               "svc_offset_min_change": "Em quanto o desvio deve variar antes de se registar no TRV. Valores mais elevados significam menos registos (melhor para a duração da bateria), mas uma exibição menos precisa da temperatura na aplicação Tado"
             }

@@ -1568,6 +1568,9 @@
               "external_temp_sensor": "Externer Temperatursensor",
               "use_external_humidity": "Tados Feuchtigkeitssensor außer Kraft setzen",
               "external_humidity_sensor": "Externer Luftfeuchtigkeitssensor",
+              "use_external_window": "Mit physischem Fenstersensor überschreiben",
+              "external_window_sensor": "Externer Fenster-/Türsensor",
+              "external_window_open_delay_minutes": "Puffer für offenes Fenster",
               "svc_mode": "Intelligenter Ventilsteuerungsmodus",
               "svc_offset_min_change": "Empfindlichkeit der Offset-Synchronisation"
             },
@@ -1576,6 +1579,9 @@
               "external_temp_sensor": "Wählen Sie einen Sensor aus, um den integrierten Messwert von Tado zu überschreiben. Deaktivieren Sie den Schalter oben, um die Funktion anzuhalten, ohne die Auswahl zu verlieren.",
               "use_external_humidity": "Deaktivieren Sie diese Funktion, um vorübergehend wieder den integrierten Feuchtigkeitssensor von Tado zu verwenden. Ihre Auswahl bleibt gespeichert – Sie können die Funktion jederzeit wieder aktivieren.",
               "external_humidity_sensor": "Wählen Sie einen Feuchtigkeitssensor aus, um den integrierten Messwert von Tado zu überschreiben. Deaktivieren Sie den Schalter oben, um die Funktion zu unterbrechen, ohne die Auswahl zu verlieren.",
+              "use_external_window": "Deaktivieren Sie diese Funktion, um vorübergehend zur prädiktiven (temperaturabfallbasierten) Fenstererkennung zurückzukehren. Ihre Auswahl bleibt gespeichert — Sie können die Funktion jederzeit wieder aktivieren.",
+              "external_window_sensor": "Wählen Sie einen Tür-/Fensterkontaktsensor, der die prädiktive Erkennung für diese Zone ersetzt. Bei Offen wird die Zone so behandelt, als wäre ein Fenster geöffnet; bei Geschlossen bleibt die prädiktive Erkennung pausiert, bis der Sensor „geschlossen“ meldet.",
+              "external_window_open_delay_minutes": "Wie lange das Fenster geöffnet bleiben muss, bevor die Heizung tatsächlich pausiert wird (Tados echter Offenes-Fenster-Modus). Die Anzeige „Fenster vorhergesagt“ wird sofort aktualisiert; nur die tatsächliche Pause wird verzögert. Beim Schließen wird die Heizung immer sofort fortgesetzt, ohne Verzögerung. 0 = sofort pausieren.",
               "svc_mode": "Verwenden Sie Ihren externen Sensor, um die Genauigkeit des Thermostatventils zu verbessern. „Offset Sync“ (empfohlen) korrigiert die Temperaturanzeige des Thermostatventils unauffällig – funktioniert in Verbindung mit Tado und sorgt für eine längere Batterielebensdauer des Thermostatventils. „Valve Target“ überschreibt den Sollwert des Thermostatventils direkt – diese Funktion ist aggressiver und sollte nur verwendet werden, wenn „Offset Sync“ nicht ausreicht.",
               "svc_offset_min_change": "Um wie viel sich der Offset ändern muss, bevor ein Eintrag in den TRV erfolgt. Höhere Werte bedeuten weniger Schreibvorgänge (besser für die Batterielebensdauer), jedoch eine weniger genaue Temperaturanzeige in der Tado-App"
             }
