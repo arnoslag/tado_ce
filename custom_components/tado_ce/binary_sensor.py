@@ -13,6 +13,7 @@ from homeassistant.components.binary_sensor import (
 )
 from homeassistant.core import CALLBACK_TYPE, Event, EventStateChangedData, HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
+from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
@@ -655,6 +656,9 @@ class TadoWindowPredictedSensor(PerEntityAvailabilityMixin, CoordinatorEntity["T
         # Unsubscribe callbacks for external sensor state change listeners
         self._unsub_external_sensors: list[CALLBACK_TYPE] = []
 
+        # Unsubscribe callback for the physical window/door contact sensor override
+        self._unsub_window_sensor: CALLBACK_TYPE | None = None
+
         # Unsubscribe callback for HomeKit real-time events
         self._unsub_homekit_signal: CALLBACK_TYPE | None = None
 
@@ -673,6 +677,9 @@ class TadoWindowPredictedSensor(PerEntityAvailabilityMixin, CoordinatorEntity["T
         # Previous detection state for event firing
         self._prev_detected: bool = False
 
+        # Source of the most recent update() result: "predictive" or "external_sensor"
+        self._detection_source: str = "predictive"
+
     async def async_added_to_hass(self) -> None:
         """Register listeners when entity is added to hass."""
         await super().async_added_to_hass()
@@ -690,6 +697,7 @@ class TadoWindowPredictedSensor(PerEntityAvailabilityMixin, CoordinatorEntity["T
                     len(self._temp_history),
                 )
         self._subscribe_external_sensors()
+        self._subscribe_external_window_sensor()
 
         # Subscribe to HomeKit real-time events for faster window detection
         self._unsub_homekit_signal = async_dispatcher_connect(
@@ -701,6 +709,7 @@ class TadoWindowPredictedSensor(PerEntityAvailabilityMixin, CoordinatorEntity["T
     async def async_will_remove_from_hass(self) -> None:
         """Unregister listeners when entity is removed."""
         self._unsubscribe_external_sensors()
+        self._unsubscribe_external_window_sensor()
         if self._unsub_homekit_signal:
             self._unsub_homekit_signal()
             self._unsub_homekit_signal = None
@@ -745,6 +754,35 @@ class TadoWindowPredictedSensor(PerEntityAvailabilityMixin, CoordinatorEntity["T
         unsubscribe_external_sensors(self._unsub_external_sensors)
 
     @callback
+    def _subscribe_external_window_sensor(self) -> None:
+        """Subscribe to the configured physical window/door sensor for real-time overrides."""
+        self._unsubscribe_external_window_sensor()
+
+        zcm = self.coordinator.zone_config_manager
+        if not zcm:
+            return
+        window_entity = zcm.get_zone_value(self._zone_id, "external_window_sensor", "")
+        if not window_entity:
+            return
+
+        @callback
+        def _on_window_sensor_change(event: Event[EventStateChangedData]) -> None:
+            """Handle physical window sensor state change: re-run detection immediately."""
+            self.update()
+            self.async_write_ha_state()
+
+        self._unsub_window_sensor = async_track_state_change_event(
+            self.hass, [window_entity], _on_window_sensor_change,
+        )
+
+    @callback
+    def _unsubscribe_external_window_sensor(self) -> None:
+        """Unsubscribe from the physical window sensor state change listener."""
+        if self._unsub_window_sensor:
+            self._unsub_window_sensor()
+            self._unsub_window_sensor = None
+
+    @callback
     def _handle_homekit_update(self, zone_id: str) -> None:
         """Handle HomeKit real-time event: re-run window detection for this zone."""
         if zone_id != self._zone_id:
@@ -774,6 +812,7 @@ class TadoWindowPredictedSensor(PerEntityAvailabilityMixin, CoordinatorEntity["T
             "cooldown_active": self._cooldown_counter > 0,
             "last_detected_at": self._last_detected_at.isoformat() if self._last_detected_at else None,
             "detection_count_today": self._detection_count_today,
+            "detection_source": self._detection_source,
         }
 
     @property
@@ -883,6 +922,50 @@ class TadoWindowPredictedSensor(PerEntityAvailabilityMixin, CoordinatorEntity["T
                 self._data_present = False
                 return
 
+            # Physical window/door contact sensor override: when configured and
+            # available, it fully replaces predictive (temperature-drop based)
+            # detection for this zone rather than merely informing it.
+            zcm = self.coordinator.zone_config_manager
+            window_entity = (
+                zcm.get_zone_value(self._zone_id, "external_window_sensor", "") if zcm else ""
+            )
+            if window_entity and self.hass:
+                window_state = self.hass.states.get(window_entity)
+                if window_state is not None and window_state.state in ("on", "off"):
+                    detected = window_state.state == "on"
+                    result = WindowPredictedResult(
+                        detected=detected,
+                        confidence="high" if detected else "none",
+                        temp_drop=0.0,
+                        time_window_minutes=0,
+                        recommendation=(
+                            f"{self._zone_name}: contactsensor meldt raam open"
+                            if detected
+                            else f"{self._zone_name}: contactsensor meldt raam dicht"
+                        ),
+                        anomaly_readings=0,
+                        cooldown_active=False,
+                        detection_mode="external",
+                    )
+                    self._fire_detection_events(result)
+                    self._update_detection_history(result)
+                    self._attr_is_on = result.detected
+                    self._confidence = result.confidence
+                    self._temp_drop = 0.0
+                    self._recommendation = result.recommendation
+                    self._anomaly_readings = 0
+                    self._data_present = True
+                    self._detection_source = "external_sensor"
+                    self.coordinator.publish_entity_data(
+                        self._zone_id,
+                        ENTITY_DATA_WINDOW_PREDICTED,
+                        {
+                            "state": "on" if result.detected else "off",
+                            "recommendation": result.recommendation,
+                        },
+                    )
+                    return
+
             zone_data = merge_homekit_into_zone_data(zone_data, self._zone_id, self.coordinator)
             sensor_data = zone_data.get("sensorDataPoints") or {}
             temp_data = sensor_data.get("insideTemperature") or {}
@@ -892,7 +975,6 @@ class TadoWindowPredictedSensor(PerEntityAvailabilityMixin, CoordinatorEntity["T
             current_humidity = humidity_data.get("percentage")
 
             # External temp sensor override (fallback to Tado API value above)
-            zcm = self.coordinator.zone_config_manager
             ext_temp = read_external_sensor(self.hass, zcm, self._zone_id, "external_temp_sensor")
             if ext_temp is not None:
                 current_temp = ext_temp
@@ -979,6 +1061,7 @@ class TadoWindowPredictedSensor(PerEntityAvailabilityMixin, CoordinatorEntity["T
             self._recommendation = result.recommendation
             self._anomaly_readings = result.anomaly_readings
             self._data_present = True
+            self._detection_source = "predictive"
 
             # Publish computed data to coordinator for cross-component access
             self.coordinator.publish_entity_data(

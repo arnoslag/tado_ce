@@ -241,6 +241,8 @@ DEFAULT_ZONE_CONFIG = {
     "window_predicted_sensitivity": "medium",  # low/medium/high (Heating + AC)
     "external_temp_sensor": "",  # HA entity_id for external temperature sensor (Heating + AC)
     "external_humidity_sensor": "",  # HA entity_id for external humidity sensor (Heating + AC)
+    "external_window_sensor": "",  # HA entity_id for external window/door contact sensor (Heating + AC)
+    # When set, overrides predictive window-open detection with the physical sensor's state.
     "overlay_mode": OVERLAY_MODE_DEFAULT,
     "display_temp_source": "auto",  # auto / homekit / cloud (Heating + AC)
     "timer_duration": TIMER_DURATION_DEFAULT,  # 15-720 minutes (Heating + AC, when Timer)

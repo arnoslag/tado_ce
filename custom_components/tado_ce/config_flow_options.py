@@ -1008,6 +1008,19 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
             all_values["window_predicted_sensitivity"] = WINDOW_SENSITIVITY_MAP.get(
                 s.get("window_predicted_sensitivity", "Medium"), "medium",
             )
+            # Physical window/door contact sensor override, same collapsed-section
+            # preservation pattern as external_temp_sensor / external_humidity_sensor.
+            submitted_window = (s.get("external_window_sensor") or "").strip()
+            if "use_external_window" in s:
+                use_ext_window = s["use_external_window"]
+            else:
+                use_ext_window = bool(submitted_window) or bool(existing.get("external_window_sensor", ""))
+            if use_ext_window:
+                all_values["external_window_sensor"] = (
+                    submitted_window or existing.get("external_window_sensor", "")
+                )
+            else:
+                all_values["external_window_sensor"] = ""
 
         if "sensor_section" in user_input:
             s = user_input["sensor_section"]
@@ -1163,10 +1176,12 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
         )
         cur_temp_sensor = config.get("external_temp_sensor", "")
         cur_humidity_sensor = config.get("external_humidity_sensor", "")
+        cur_window_sensor = config.get("external_window_sensor", "")
         cur_svc_mode = config.get("svc_mode", "off")
         cur_svc_offset_min_change = config.get("svc_offset_min_change", 0.5)
         cur_use_ext_temp = bool(cur_temp_sensor)
         cur_use_ext_humidity = bool(cur_humidity_sensor)
+        cur_use_ext_window = bool(cur_window_sensor)
         cur_overlay = OVERLAY_MODE_REVERSE_MAP.get(
             config.get("overlay_mode", OVERLAY_MODE_DEFAULT), OVERLAY_MODE_DEFAULT_DISPLAY,
         )
@@ -1361,6 +1376,18 @@ class TadoCEOptionsFlow(config_entries.OptionsFlow):
                                     SelectSelectorConfig(
                                         options=WINDOW_SENSITIVITY_OPTIONS,
                                         mode=SelectSelectorMode.DROPDOWN,
+                                    ),
+                                ),
+                                vol.Optional(
+                                    "use_external_window", default=cur_use_ext_window,
+                                ): BooleanSelector(),
+                                vol.Optional(
+                                    "external_window_sensor",
+                                    description={"suggested_value": cur_window_sensor}
+                                    if cur_window_sensor else None,
+                                ): EntitySelector(
+                                    EntitySelectorConfig(
+                                        domain="binary_sensor", device_class=["window", "door", "opening"],
                                     ),
                                 ),
                             },
