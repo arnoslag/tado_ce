@@ -1775,17 +1775,13 @@
               "smart_comfort_mode": "Smart Comfort Mode",
               "window_type": "Window Type",
               "window_predicted_mode": "Window Detection Mode",
-              "window_predicted_sensitivity": "Window Detection Sensitivity",
-              "use_external_window": "Override with Physical Window Sensor",
-              "external_window_sensor": "External Window/Door Sensor"
+              "window_predicted_sensitivity": "Window Detection Sensitivity"
             },
             "data_description": {
               "smart_comfort_mode": "Adjust target temp based on outdoor conditions",
               "window_type": "Window type for mold risk calculation",
               "window_predicted_mode": "Active: detects only when HVAC is running. Passive: detects regardless of HVAC state. Auto: uses Active when HVAC is on, Passive when off.",
-              "window_predicted_sensitivity": "How easily the window detection triggers. Higher sensitivity = more false positives but catches smaller drafts.",
-              "use_external_window": "Turn off to temporarily revert to predictive (temperature-drop based) window detection. Your selection stays saved — toggle back on anytime.",
-              "external_window_sensor": "Select a door/window contact sensor to replace predictive detection for this zone. When open, the zone is treated as having an open window; when closed, predictive detection stays paused until the sensor reports closed."
+              "window_predicted_sensitivity": "How easily the window detection triggers. Higher sensitivity = more false positives but catches smaller drafts."
             }
           },
           "sensor_section": {
@@ -1795,6 +1791,8 @@
               "external_temp_sensor": "External Temperature Sensor",
               "use_external_humidity": "Override Tado's Humidity Sensor",
               "external_humidity_sensor": "External Humidity Sensor",
+              "use_external_window": "Override with Physical Window Sensor",
+              "external_window_sensor": "External Window/Door Sensor",
               "svc_mode": "Smart Valve Control Mode",
               "svc_offset_min_change": "Offset Sync Sensitivity"
             },
@@ -1803,6 +1801,8 @@
               "external_temp_sensor": "Select a sensor to override Tado's built-in reading. Disable the toggle above to pause without losing the selection.",
               "use_external_humidity": "Turn off to temporarily revert to Tado's built-in humidity sensor. Your selection stays saved — toggle back on anytime.",
               "external_humidity_sensor": "Select a humidity sensor to override Tado's built-in reading. Disable the toggle above to pause without losing the selection.",
+              "use_external_window": "Turn off to temporarily revert to predictive (temperature-drop based) window detection. Your selection stays saved — toggle back on anytime.",
+              "external_window_sensor": "Select a door/window contact sensor to replace predictive detection for this zone. When open, the zone is treated as having an open window; when closed, predictive detection stays paused until the sensor reports closed.",
               "svc_mode": "Use your external sensor to improve TRV accuracy. Offset Sync (recommended) quietly corrects the TRV's temperature reading — works alongside Tado, better TRV battery life. Valve Target directly overrides the TRV setpoint — more aggressive, use only when Offset Sync isn't enough.",
               "svc_offset_min_change": "How much the offset must change before writing to the TRV. Higher values mean fewer writes (better for battery life) but less precise temperature display in the Tado app"
             }
