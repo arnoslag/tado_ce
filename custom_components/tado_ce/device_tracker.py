@@ -13,7 +13,8 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.device_tracker import (  # type: ignore[attr-defined]
-    ScannerEntity,
+    SourceType,
+    TrackerEntity,
 )
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -75,17 +76,19 @@ async def async_setup_entry(
         )
 
 
-class TadoDeviceTracker(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateCoordinator"], ScannerEntity):
+class TadoDeviceTracker(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpdateCoordinator"], TrackerEntity):
     """Represent a Tado mobile device tracker entity.
 
     Tado's cloud reports only a binary `atHome` for each phone (plus a
-    bearing and relative distance from home), never absolute coordinates,
-    so this is a connection-type tracker: `is_connected` drives the
-    home / not_home state, and `source_type` is the base class default
-    (router) rather than GPS.
+    bearing and relative distance from home), never absolute coordinates.
+    Presence is published through `_attr_in_zones` (["zone.home"] when home,
+    [] when away, None when the phone hasn't reported), which HA derives into
+    home / not_home / unknown. `source_type` is `router` (a presence flag, not
+    a GPS fix), and the tracker groups under the Tado CE hub device.
     """
 
     _attr_has_entity_name = True
+    _attr_source_type = SourceType.ROUTER
 
     def __init__(
         self,
@@ -103,11 +106,7 @@ class TadoDeviceTracker(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataU
 
         _meta = ENTITY_REGISTRY["device_tracker_mobile"]
         self._attr_name = device_name
-        # ScannerEntity overrides `unique_id` to return `mac_address` (None for a
-        # cloud-only tracker), which shadows `_attr_unique_id` via the MRO. Store
-        # our id privately and override `unique_id` below so HA can register and
-        # restore the entity. Tado gives no MAC, so the home/device id is our key.
-        self._unique_id = f"tado_ce_{home_id}_{_meta.unique_id_suffix.format(device_id=device_id)}"
+        self._attr_unique_id = f"tado_ce_{home_id}_{_meta.unique_id_suffix.format(device_id=device_id)}"
         entity_category = get_entity_category(_meta)
         if entity_category is not None:
             self._attr_entity_category = entity_category
@@ -115,13 +114,11 @@ class TadoDeviceTracker(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataU
         # Use hub device info for global entities
         self._attr_device_info = get_hub_device_info(home_id)  # type: ignore[assignment]
 
-        self._is_home: bool | None = None
         self._bearing: float | None = None
         self._relative_distance: float | None = None
-        # WHY: when _is_home is None (Unknown state), surface why. Tado app's
-        # geo-tracking is on but the device hasn't reported a location block.
-        # On Android this is usually the Tado app being denied background
-        # location permission by the OS (battery optimisation, Doze mode).
+        # Surfaces why presence is unknown: geo-tracking is on but the device
+        # reported no location block. On Android this is usually the Tado app
+        # being denied background location by the OS (battery optimisation, Doze).
         self._location_status: str | None = None
 
     @callback
@@ -129,20 +126,6 @@ class TadoDeviceTracker(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataU
         """Handle updated data from the coordinator."""
         self._update_from_coordinator()
         self.async_write_ha_state()
-
-    @property
-    def unique_id(self) -> str | None:
-        """Return the entity's unique ID.
-
-        Overrides ScannerEntity.unique_id (which returns mac_address, None here)
-        so the entity registers against the Tado home / device id instead.
-        """
-        return self._unique_id
-
-    @property
-    def is_connected(self) -> bool | None:
-        """Return whether the device is home (None when it hasn't reported)."""
-        return self._is_home
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
@@ -171,7 +154,13 @@ class TadoDeviceTracker(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataU
                         location = device.get("location")
 
                         if location:
-                            self._is_home = location.get("atHome")
+                            at_home = location.get("atHome")
+                            if at_home is True:
+                                self._attr_in_zones = ["zone.home"]
+                            elif at_home is False:
+                                self._attr_in_zones = []
+                            else:
+                                self._attr_in_zones = None
                             self._bearing = (location.get("bearingFromHome") or {}).get("degrees")
                             self._relative_distance = location.get("relativeDistanceFromHomeFence")
                             self._location_status = "reporting"
@@ -181,15 +170,15 @@ class TadoDeviceTracker(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataU
                             # most commonly Android battery optimisation
                             # killing the Tado app's location service, or
                             # the user denying "always" permission.
-                            self._is_home = None
+                            self._attr_in_zones = None
                             self._location_status = "no_location_reported"
 
                         self._data_present = True
                         return
 
             # Device id no longer present in the account: unavailable, and drop
-            # the last-known presence so is_connected does not report a stale state.
-            self._is_home = None
+            # the last-known presence so it does not report a stale zone.
+            self._attr_in_zones = None
             self._location_status = None
             self._data_present = False
         except (KeyError, TypeError, AttributeError) as err:
@@ -198,6 +187,6 @@ class TadoDeviceTracker(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataU
                 "unavailable until the next poll",
                 self._device_name, err,
             )
-            self._is_home = None
+            self._attr_in_zones = None
             self._location_status = None
             self._data_present = False

@@ -959,40 +959,37 @@
         }
       },
       "bridge_wiring_state": {
-        "name": "Staat van brugbedrading"
+        "name": "Status van de bedrading van de ketel"
       },
       "bridge_boiler_output_temp": {
-        "name": "Uitgangstemperatuur brugketel"
+        "name": "Uitgangstemperatuur van de ketel"
       },
       "bridge_boiler_output_temp_time": {
-        "name": "Brug Boiler Uitgang Temperatuur Tijd"
+        "name": "Tijdstip van de uitgangstemperatuur van de ketel"
       },
       "bridge_boiler_flow_temp": {
-        "name": "Brug Ketel Aanvoertemperatuur"
+        "name": "Uitstroomtemperatuur van de ketel"
       },
       "bridge_boiler_flow_temp_time": {
-        "name": "Brug Ketel Debiet Temperatuur Tijd"
+        "name": "Ketel-aanvoertemperatuur-tijd"
       },
       "bridge_boiler_max_output_temp": {
-        "name": "Brug Boiler Max Uitgangstemperatuur"
-      },
-      "bridge_connected_state": {
-        "name": "Verbonden brug"
+        "name": "Maximale uitgangstemperatuur van de ketel"
       },
       "bridge_hot_water_present": {
-        "name": "Brug Warm Water Aanwezig"
+        "name": "Warm water aanwezig"
       },
       "bridge_device_type": {
-        "name": "Type brugapparaat"
+        "name": "Type ketel"
       },
       "bridge_device_serial": {
-        "name": "Brug Apparaat Serieel"
+        "name": "Serienummer van de ketel"
       },
       "bridge_therm_interface_type": {
-        "name": "Brug Therm Interface Type"
+        "name": "Type ketelinterface"
       },
       "bridge_device_connected": {
-        "name": "Aangesloten bridgeapparaat"
+        "name": "Boiler aangesloten"
       },
       "bridge_capabilities": {
         "name": "Brugmogelijkheden"

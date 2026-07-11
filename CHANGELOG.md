@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 
+## [4.1.4] - 2026-07-11
+
+### Bug fixes
+
+- **Phone trackers are grouped under the Tado CE device again** ([#314](https://github.com/hiall-fyi/tado_ce/issues/314) - @arnoslag) — v4.1.3 got the trackers reporting home / away again, but they sat loose in the entity list instead of under the Tado CE device. The tracker type introduced in v4.1.2 doesn't create a device entry at all. They've moved back to the tracker type that does, so each phone shows under the device as it did in v4.1.1, while keeping the Home Assistant compatibility that prompted the original change. Presence (home / not_home) and the geofencing sensor are unchanged.
+- **Bridge connected sensor now works on setups with no boiler** ([#275](https://github.com/hiall-fyi/tado_ce/issues/275) - @50494554524F) — the sensor read the bridge's online flag from the boiler-wiring response, which is empty when nothing is wired to the bridge (a radiator-only home). On those setups it showed Unknown and never updated. It now falls back to reading the bridge's own connection status from the home device list, so the on / off state works whether or not a boiler is wired. Setups with a boiler or heat pump were already correct and are unaffected.
+- **Hot water switches to Heat again on temperature-controlled tanks** ([#317](https://github.com/hiall-fyi/tado_ce/issues/317) - @Siiya27) — on hot-water zones that take a target temperature (solar or cylinder systems, not simple on/off combis), switching to Heat or pressing a boost-timer button failed every time the water was already off. Tado rejected the request because the sent payload left the temperature out. It now includes a target with the on request (your last-known one, or the tank's maximum if there isn't one), so Heat and the timer work again. On/off-only combi tanks are unaffected and still send a plain on with no temperature.
+
+### Improvements
+
+- **Boiler diagnostic sensors renamed from "Bridge …" to "Boiler …"** ([#275](https://github.com/hiall-fyi/tado_ce/issues/275) - @50494554524F) — the sensors fed by the bridge's boiler-wiring data (wiring state, flow and output temperature, the wired-device details) were all prefixed "Bridge", which read as if they were about the bridge itself rather than the boiler. They now read "Boiler Wiring State", "Boiler Flow Temperature", and so on. Display names only, so automations and dashboards keep working; the entity IDs are unchanged.
+
 ## [4.1.3] - 2026-07-08
 
 ### Bug fixes

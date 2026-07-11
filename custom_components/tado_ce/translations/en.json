@@ -959,40 +959,37 @@
         }
       },
       "bridge_wiring_state": {
-        "name": "Bridge Wiring State"
+        "name": "Boiler Wiring State"
       },
       "bridge_boiler_output_temp": {
-        "name": "Bridge Boiler Output Temperature"
+        "name": "Boiler Output Temperature"
       },
       "bridge_boiler_output_temp_time": {
-        "name": "Bridge Boiler Output Temperature Time"
+        "name": "Boiler Output Temperature Time"
       },
       "bridge_boiler_flow_temp": {
-        "name": "Bridge Boiler Flow Temperature"
+        "name": "Boiler Flow Temperature"
       },
       "bridge_boiler_flow_temp_time": {
-        "name": "Bridge Boiler Flow Temperature Time"
+        "name": "Boiler Flow Temperature Time"
       },
       "bridge_boiler_max_output_temp": {
-        "name": "Bridge Boiler Max Output Temperature"
-      },
-      "bridge_connected_state": {
-        "name": "Bridge Connected"
+        "name": "Boiler Max Output Temperature"
       },
       "bridge_hot_water_present": {
-        "name": "Bridge Hot Water Present"
+        "name": "Hot Water Present"
       },
       "bridge_device_type": {
-        "name": "Bridge Device Type"
+        "name": "Boiler Device Type"
       },
       "bridge_device_serial": {
-        "name": "Bridge Device Serial"
+        "name": "Boiler Device Serial"
       },
       "bridge_therm_interface_type": {
-        "name": "Bridge Therm Interface Type"
+        "name": "Boiler Interface Type"
       },
       "bridge_device_connected": {
-        "name": "Bridge Device Connected"
+        "name": "Boiler Device Connected"
       },
       "bridge_capabilities": {
         "name": "Bridge Capabilities"

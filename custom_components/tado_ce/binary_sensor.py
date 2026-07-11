@@ -149,6 +149,38 @@ async def async_setup_entry(
     _LOGGER.info("Binary Sensor: created %d entity(ies)", len(sensors))
 
 
+def _connection_value_to_bool(conn: dict[str, Any] | None) -> bool | None:
+    """Parse a Tado `connectionState` dict's value to a tri-state bool.
+
+    Tado returns the value as a JSON bool or, in some responses, the string
+    "true"/"false". Returns None when the value is missing (unknown), so a
+    caller can distinguish offline from not-yet-reported.
+    """
+    if not conn:
+        return None
+    raw = conn.get("value")
+    if isinstance(raw, bool):
+        return raw
+    if isinstance(raw, str):
+        return raw.upper() == "TRUE"
+    return None
+
+
+# Internet Bridge / Gateway device types as they appear in the home device
+# list. A GW bridge has no Bridge API (that boundary is TADO_BRIDGE_MODELS),
+# but it still lists here with its own connectionState, so reading its online
+# flag is valid and independent of the Bridge-API boundary.
+_BRIDGE_DEVICE_TYPES = ("IB01", "IB02", "GW01", "GW02", "GW03")
+
+
+def _find_bridge_in_home_devices(home_devices: list[Any] | None) -> dict[str, Any] | None:
+    """Return the bridge (Internet Bridge / Gateway) entry from a home device list."""
+    for dev in home_devices or []:
+        if isinstance(dev, dict) and dev.get("deviceType") in _BRIDGE_DEVICE_TYPES:
+            return dev
+    return None
+
+
 def _create_device_connection_sensors(
     coordinator: TadoDataUpdateCoordinator,
     zones_info: list[dict[str, Any]],
@@ -1011,8 +1043,7 @@ class TadoDeviceConnectionBinarySensor(
             self._attr_translation_placeholders = {"device_suffix": suffix}
 
         conn = device.get("connectionState") or {}
-        raw_value = conn.get("value")
-        self._attr_is_on = raw_value is True or (isinstance(raw_value, str) and raw_value.upper() == "TRUE")
+        self._attr_is_on = _connection_value_to_bool(conn)
         self._connection_timestamp = conn.get("timestamp")
         self._firmware = device.get("currentFwVersion")
         self._offline_minutes: int | None = None
@@ -1046,10 +1077,7 @@ class TadoDeviceConnectionBinarySensor(
                     for device in zone.get("devices") or []:
                         if device.get("shortSerialNo") == self._device_serial:
                             conn = device.get("connectionState") or {}
-                            raw_value = conn.get("value")
-                            self._attr_is_on = raw_value is True or (
-                                isinstance(raw_value, str) and raw_value.upper() == "TRUE"
-                            )
+                            self._attr_is_on = _connection_value_to_bool(conn)
                             self._connection_timestamp = conn.get("timestamp")
                             self._firmware = device.get("currentFwVersion")
 
@@ -1246,10 +1274,27 @@ class TadoBridgeConnectedSensor(
 
     @callback
     def _handle_coordinator_update(self) -> None:
-        """State reflects the bridge's own online flag from the response body."""
-        bridge = (self.coordinator.data or {}).get("bridge") or {}
-        flag = bridge.get("bridgeConnected")
-        self._attr_is_on = flag if isinstance(flag, bool) else None
+        """State = the bridge's real online flag.
+
+        Primary: `bridgeConnected` from the bridge-auth poll (zero cloud quota),
+        present whenever a boiler-side device is wired. Fallback: the bridge
+        device's own `connectionState` from the home device list, for
+        boiler-less setups whose bridge-auth body collapses without
+        `bridgeConnected`. When neither is available, stay Unknown (don't guess).
+        """
+        data = self.coordinator.data or {}
+        bridge = data.get("bridge")
+        flag = bridge.get("bridgeConnected") if isinstance(bridge, dict) else None
+        if isinstance(flag, bool):
+            self._attr_is_on = flag
+        elif isinstance(bridge, dict):
+            # Bridge body present but no bridgeConnected (collapsed boiler-less
+            # body) → fall back to the bridge device's own connectionState.
+            dev = _find_bridge_in_home_devices(data.get("home_devices"))
+            self._attr_is_on = _connection_value_to_bool((dev or {}).get("connectionState"))
+        else:
+            # Bridge poll hasn't run yet → Unknown; do not read the fallback.
+            self._attr_is_on = None
         self.async_write_ha_state()
 
     @property

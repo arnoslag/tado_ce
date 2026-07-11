@@ -959,40 +959,37 @@
         }
       },
       "bridge_wiring_state": {
-        "name": "État du câblage du pont"
+        "name": "État du câblage de la chaudière"
       },
       "bridge_boiler_output_temp": {
-        "name": "Température de sortie de la chaudière à pont"
+        "name": "Température de sortie de la chaudière"
       },
       "bridge_boiler_output_temp_time": {
-        "name": "Bridge Boiler Output Temperature Time"
+        "name": "Température de sortie de la chaudière - Durée"
       },
       "bridge_boiler_flow_temp": {
-        "name": "Température de départ de la chaudière de Bridge"
+        "name": "Température de départ de la chaudière"
       },
       "bridge_boiler_flow_temp_time": {
-        "name": "Bridge Boiler Flow Temperature Time"
+        "name": "Temps de température de départ de la chaudière"
       },
       "bridge_boiler_max_output_temp": {
-        "name": "Température de sortie maximale de la chaudière Bridge"
-      },
-      "bridge_connected_state": {
-        "name": "Pont connecté"
+        "name": "Température maximale de sortie de la chaudière"
       },
       "bridge_hot_water_present": {
-        "name": "Pont Eau Chaude Présente"
+        "name": "Eau chaude disponible"
       },
       "bridge_device_type": {
-        "name": "Type de dispositif de pont"
+        "name": "Type d'appareil de chauffage"
       },
       "bridge_device_serial": {
-        "name": "Bridge Device Serial"
+        "name": "Numéro de série de la chaudière"
       },
       "bridge_therm_interface_type": {
-        "name": "Bridge Therm Type d'interface"
+        "name": "Type d'interface de chaudière"
       },
       "bridge_device_connected": {
-        "name": "Dispositif de pont connecté"
+        "name": "Appareil de chauffage raccordé"
       },
       "bridge_capabilities": {
         "name": "Capacités des ponts"

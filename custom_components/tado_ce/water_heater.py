@@ -476,24 +476,52 @@ class TadoWaterHeater(PerEntityAvailabilityMixin, CoordinatorEntity["TadoDataUpd
 
         client = self.coordinator.api_client
 
-        setting = {"type": "HOT_WATER", "power": "ON"}
+        setting: dict[str, Any] = {"type": "HOT_WATER", "power": "ON"}
 
-        # Solar / store water-heater systems accept a target temperature
-        # alongside the timer; combi systems don't.
-        if temperature is not None:
-            setting["temperature"] = {"celsius": temperature}  # type: ignore[assignment]
+        # Temperature-capable DHW zones (solar / store systems) require a target
+        # on an ON overlay; combi (ON/OFF-only) zones reject one. Gate on the
+        # authoritative capability, not the poll-derived flag.
+        if self._zone_can_set_temperature():
+            setting["temperature"] = {"celsius": self._resolve_on_temperature(temperature)}
 
         termination = build_timer_termination(duration_minutes=duration_minutes)
 
         success = await client.set_zone_overlay(self._zone_id, setting, termination)
         if success:
-            temp_str = f" at {temperature}°C" if temperature is not None else ""
+            sent_temp = setting.get("temperature", {}).get("celsius")
+            temp_str = f" at {sent_temp}°C" if sent_temp is not None else ""
             _LOGGER.debug(
                 "Water Heater: %s timer set for %d min%s",
                 self._zone_name, duration_minutes, temp_str,
             )
             self._attr_current_operation = STATE_HEAT
         return bool(success)
+
+    def _zone_can_set_temperature(self) -> bool:
+        """Return whether this DHW zone's overlay accepts a target temperature.
+
+        Reads the authoritative `canSetTemperature` capability (survives OFF /
+        restart, unlike the poll-derived `_supports_temperature`), falling back
+        to that flag only while the capability cache is not yet populated.
+        """
+        caps = (self.coordinator.data or {}).get("ac_capabilities") or {}
+        zone_caps = caps.get(self._zone_id)
+        if isinstance(zone_caps, dict) and "canSetTemperature" in zone_caps:
+            return bool(zone_caps["canSetTemperature"])
+        return self._supports_temperature
+
+    def _resolve_on_temperature(self, explicit: float | None) -> float:
+        """Pick the ON-overlay celsius: explicit, then last-known, then caps max, then 65."""
+        if explicit is not None:
+            return explicit
+        if self._attr_target_temperature is not None:
+            return self._attr_target_temperature
+        caps = (self.coordinator.data or {}).get("ac_capabilities") or {}
+        zone_caps = caps.get(self._zone_id) or {}
+        cap_max = ((zone_caps.get("temperatures") or {}).get("celsius") or {}).get("max")
+        if isinstance(cap_max, (int, float)):
+            return float(cap_max)
+        return float(self._attr_max_temp)
 
     async def async_set_timer(self, duration_minutes: int, temperature: float | None = None) -> bool:
         """Public async method to set timer (for service calls)."""

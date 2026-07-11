@@ -959,40 +959,37 @@
         }
       },
       "bridge_wiring_state": {
-        "name": "Zustand der Brückenverdrahtung"
+        "name": "Zustand der Verkabelung des Heizkessels"
       },
       "bridge_boiler_output_temp": {
-        "name": "Brücke Kesselausgangstemperatur"
+        "name": "Ausgangstemperatur des Heizkessels"
       },
       "bridge_boiler_output_temp_time": {
-        "name": "Brücke Kesselausgangstemperatur Zeit"
+        "name": "Kesselleistung Temperatur Zeit"
       },
       "bridge_boiler_flow_temp": {
-        "name": "Brücke Kesselvorlauftemperatur"
+        "name": "Vorlauftemperatur des Heizkessels"
       },
       "bridge_boiler_flow_temp_time": {
-        "name": "Brücke Kessel Vorlauftemperatur Zeit"
+        "name": "Heizkessel-Vorlauftemperatur-Zeit"
       },
       "bridge_boiler_max_output_temp": {
-        "name": "Brückenkessel Max. Ausgangstemperatur"
-      },
-      "bridge_connected_state": {
-        "name": "Brücke Verbunden"
+        "name": "Maximale Ausgangstemperatur des Heizkessels"
       },
       "bridge_hot_water_present": {
-        "name": "Brücke Warmwasser vorhanden"
+        "name": "Warmwasser vorhanden"
       },
       "bridge_device_type": {
-        "name": "Brücke Gerätetyp"
+        "name": "Kesseltyp"
       },
       "bridge_device_serial": {
-        "name": "Brückengerät Seriell"
+        "name": "Seriennummer des Heizkessels"
       },
       "bridge_therm_interface_type": {
-        "name": "Bridge Therm Schnittstellentyp"
+        "name": "Typ der Kesselanschlussstelle"
       },
       "bridge_device_connected": {
-        "name": "Brückengerät Verbunden"
+        "name": "Heizkessel angeschlossen"
       },
       "bridge_capabilities": {
         "name": "Bridge-Fähigkeiten"

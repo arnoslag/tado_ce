@@ -64,6 +64,7 @@ _ALL_STORES: dict[str, int] = {
     "zones_info": 0,
     "weather": 0,
     "mobile_devices": 0,
+    "home_devices": 0,
     "offsets": 0,
     "schedules": 0,
     "ac_capabilities": 0,

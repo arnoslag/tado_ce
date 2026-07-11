@@ -373,6 +373,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         api_call_history_data: dict[str, Any] = dict(self.api_tracker._call_history) if self.api_tracker else {}
         zones_info_data = self.data_loader.get_cached("zones_info")
         mobile_devices_data = self.data_loader.get_cached("mobile_devices")
+        home_devices_data = self.data_loader.get_cached("home_devices")
 
         # Periodic offset drift refresh: fire BEFORE snapshotting
         # `offsets` so the result dict carries the freshly re-fetched
@@ -437,6 +438,7 @@ class TadoDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "zones_info": zones_info_data or [],
             "weather": weather_data or {},
             "mobile_devices": mobile_devices_data or [],
+            "home_devices": home_devices_data or [],
             "offsets": offsets_data or {},
             "schedules": schedules_data or {},
         }

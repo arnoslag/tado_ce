@@ -23,6 +23,12 @@ Thank you to everyone who supported the project through [Buy Me a Coffee](https:
 
 Community contributors who helped shape each release through bug reports, feature requests, testing, and feedback.
 
+### v4.1.4
+
+- **[@50494554524F](https://github.com/50494554524F)** — Kept going on the bridge sensor after v4.1.3 and pulled the raw API responses that cracked it: the boiler-wiring endpoint returns nothing useful on a radiator-only home, and the bridge's real status lives in the home device list instead. That is exactly the source the fix now reads. Also spotted that the boiler-wiring diagnostic sensors are misnamed as "bridge" ones, which is queued as a follow-up.
+- **[@arnoslag](https://github.com/arnoslag)** — Followed through on the tracker report ([#314](https://github.com/hiall-fyi/tado_ce/issues/314)): confirmed v4.1.3 restored presence but left the trackers ungrouped, and even patched his own copy to prove the device grouping was the missing piece. That confirmation is why the grouping fix shipped this release.
+- **[@Siiya27](https://github.com/Siiya27)** — Reported that switching hot water to Heat failed every time on his temperature-controlled tank ([#317](https://github.com/hiall-fyi/tado_ce/issues/317)), with the exact 422 from Tado and a clean repro. He also worked out the cause himself: the overlay payload was missing the temperature field that a temperature-capable tank requires. That analysis pointed straight at the fix.
+
 ### v4.1.3
 
 - **[@50494554524F](https://github.com/50494554524F)** — Stayed on the bridge connection report ([#275](https://github.com/hiall-fyi/tado_ce/issues/275)) through several rounds and, crucially, sent the debug log that pinned the real cause: with the bridge physically off, Tado's cloud still answered the bridge call with an HTTP 200, so the sensor read "connected" indefinitely. That evidence is why the fix landed. The sensor now reads the bridge's own online flag from the response, and treats an unreachable cloud as unavailable rather than a stale reading.

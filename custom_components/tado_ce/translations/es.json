@@ -959,40 +959,37 @@
         }
       },
       "bridge_wiring_state": {
-        "name": "Estado del cableado del puente"
+        "name": "Estado del cableado de la caldera"
       },
       "bridge_boiler_output_temp": {
-        "name": "Temperatura de salida de la caldera puente"
+        "name": "Temperatura de salida de la caldera"
       },
       "bridge_boiler_output_temp_time": {
-        "name": "Tiempo de temperatura de salida de la caldera de puente"
+        "name": "Temperatura de salida de la caldera Tiempo"
       },
       "bridge_boiler_flow_temp": {
-        "name": "Temperatura de flujo de la caldera puente"
+        "name": "Temperatura de salida de la caldera"
       },
       "bridge_boiler_flow_temp_time": {
-        "name": "Puente Caldera Flujo Temperatura Tiempo"
+        "name": "Tiempo de temperatura de salida de la caldera"
       },
       "bridge_boiler_max_output_temp": {
-        "name": "Temperatura máxima de salida de la caldera puente"
-      },
-      "bridge_connected_state": {
-        "name": "Puente conectado"
+        "name": "Temperatura máxima de salida de la caldera"
       },
       "bridge_hot_water_present": {
-        "name": "Puente Agua Caliente Presente"
+        "name": "Hay agua caliente"
       },
       "bridge_device_type": {
-        "name": "Puente Tipo de dispositivo"
+        "name": "Tipo de caldera"
       },
       "bridge_device_serial": {
-        "name": "Dispositivo Puente Serie"
+        "name": "Número de serie del dispositivo de la caldera"
       },
       "bridge_therm_interface_type": {
-        "name": "Puente térmico Tipo de interfaz"
+        "name": "Tipo de interfaz de la caldera"
       },
       "bridge_device_connected": {
-        "name": "Dispositivo puente conectado"
+        "name": "Dispositivo de caldera conectado"
       },
       "bridge_capabilities": {
         "name": "Capacidades de los puentes"

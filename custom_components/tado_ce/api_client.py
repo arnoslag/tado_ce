@@ -986,6 +986,13 @@ class TadoApiClient(TadoAuthMixin):
                     "API: mobile-devices count %s", len(mobile_data),
                 )
 
+        # Home device list: carries each device's connectionState, incl. the
+        # Internet Bridge's own online flag. The only cloud source for a
+        # standalone bridge's state (it isn't in a heating zone).
+        home_devices = await self._sync_and_save("devices", "home_devices", "home devices")
+        if home_devices:
+            _LOGGER.debug("API: home-devices count %s", len(home_devices))
+
         if offset_enabled:
             await self._sync_offsets(zones_info)
 
@@ -1149,12 +1156,15 @@ class TadoApiClient(TadoAuthMixin):
     async def _sync_ac_capabilities(
         self, zones_info: list[Any], force_zone_ids: set[str] | None = None,
     ) -> None:
-        """Cache per-zone AC capabilities, fetching only zones not cached or forced.
+        """Cache per-zone AC + hot-water capabilities, fetching only zones not cached or forced.
 
         Per-zone (not whole-store) skip: a zone absent from the cache is fetched
         (new zone), a zone in `force_zone_ids` is re-fetched (re-pair / hardware
         swap), and an already-cached zone is left alone. The result is merged
         into the existing store so a single-zone refresh never wipes the others.
+        Covers AIR_CONDITIONING (mode / fan / swing / temperature discovery) and
+        HOT_WATER (`canSetTemperature`: a temperature-capable DHW zone's ON
+        overlay must carry `temperature`).
         """
         cached_raw = (
             self._data_loader.get_cached("ac_capabilities")
@@ -1168,7 +1178,7 @@ class TadoApiClient(TadoAuthMixin):
             zone_id = str(zone.get("id"))
             zone_type = zone.get("type")
 
-            if zone_type != "AIR_CONDITIONING":
+            if zone_type not in ("AIR_CONDITIONING", "HOT_WATER"):
                 continue
 
             if zone_id in merged and zone_id not in force:
